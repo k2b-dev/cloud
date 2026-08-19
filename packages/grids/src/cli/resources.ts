@@ -99,8 +99,15 @@ export const listTables = (ctx: CloudCliContext, baseId: string, params: { q?: s
 export const resolveTable = async (ctx: CloudCliContext, baseId: string, ref: string): Promise<PublicTable> =>
   resolveNamedResource(await listTables(ctx, baseId), ref, "table");
 
-export const resolveTableFromSearch = async (ctx: CloudCliContext, baseId: string, ref: string): Promise<PublicTable> =>
-  resolveNamedResource(await listTables(ctx, baseId, { q: ref, limit: 100 }), ref, "table");
+export const resolveTableFromSearch = async (ctx: CloudCliContext, baseId: string, ref: string): Promise<PublicTable> => {
+  if (UUID_RE.test(ref)) throw new Error("Table references do not accept UUIDs. Use its 6-character public id or exact name.");
+  return resolveNamedResource(await listTables(ctx, baseId, { q: ref, limit: 100 }), ref, "table");
+};
+
+export const resolveTablePublicRefFromSearch = async (ctx: CloudCliContext, baseId: string, ref: string): Promise<string> => {
+  if (UUID_RE.test(ref)) throw new Error("Table references do not accept UUIDs. Use its 6-character public id or exact name.");
+  return PUBLIC_ID_RE.test(ref) ? ref : (await resolveTableFromSearch(ctx, baseId, ref)).id;
+};
 
 export const resolveTableFromFlags = async (
   ctx: CloudCliContext,

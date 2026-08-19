@@ -119,6 +119,7 @@ describe("preservation hold routes", () => {
         ).status,
       ).toBe(404);
 
+      await sql`UPDATE grids.tables SET deleted_at = now() WHERE id = ${tableId}::uuid`;
       const listed = await app.request(`${path}?status=active&scope=table&tableId=${tableShortId}&page=1&per_page=10`);
       expect(listed.status).toBe(200);
       expect(await listed.json()).toMatchObject({
@@ -126,6 +127,9 @@ describe("preservation hold routes", () => {
         pagination: { page: 1, per_page: 10, total: 1, has_next: false },
       });
       expect((await app.request(`${path}?status=active&scope=all&tableId=${tableShortId}`)).status).toBe(400);
+      const unknownTableFilter = await app.request(`${path}?status=active&scope=table&tableId=${testShortId("T")}`);
+      expect(unknownTableFilter.status).toBe(200);
+      expect(await unknownTableFilter.json()).toMatchObject({ items: [], pagination: { total: 0 } });
 
       const released = await app.request(`${path}/${created.id}/release`, {
         method: "POST",
@@ -134,15 +138,16 @@ describe("preservation hold routes", () => {
       });
       expect(released.status).toBe(200);
       expect(await released.json()).toMatchObject({ id: created.id, status: "released", releaseReason: "Review completed" });
-      expect(
-        (
-          await app.request(`${path}/${tableCreated.id}/release`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ reason: "Dispute resolved" }),
-          })
-        ).status,
-      ).toBe(200);
+      const tableReleased = await app.request(`${path}/${tableCreated.id}/release`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason: "Dispute resolved" }),
+      });
+      expect(tableReleased.status).toBe(200);
+      await sql`DELETE FROM grids.tables WHERE id = ${tableId}::uuid`;
+      const historical = await app.request(`${path}?status=released&scope=table&tableId=${tableShortId}`);
+      expect(historical.status).toBe(200);
+      expect(await historical.json()).toMatchObject({ items: [{ id: tableCreated.id }], pagination: { total: 1 } });
       expect(
         (
           await app.request(`${path}/${created.id}/release`, {

@@ -53,7 +53,7 @@ export const list = async (
   input: {
     status: "active" | "released" | "all";
     scope: "base" | "table" | "all";
-    tableId: string | null;
+    tablePublicId: string | null;
     perPage: number;
     offset: number;
   },
@@ -66,7 +66,7 @@ export const list = async (
         OR (${input.status} = 'active' AND hold.released_at IS NULL)
         OR (${input.status} = 'released' AND hold.released_at IS NOT NULL))
       AND (${input.scope} = 'all' OR hold.scope_type = ${input.scope})
-      AND (${input.tableId}::uuid IS NULL OR hold.table_id = ${input.tableId}::uuid)
+      AND (${input.tablePublicId}::text IS NULL OR hold.table_short_id = ${input.tablePublicId})
   `;
   const rows = await sql<HoldRow[]>`
     SELECT ${projection}
@@ -77,7 +77,7 @@ export const list = async (
         OR (${input.status} = 'active' AND hold.released_at IS NULL)
         OR (${input.status} = 'released' AND hold.released_at IS NOT NULL))
       AND (${input.scope} = 'all' OR hold.scope_type = ${input.scope})
-      AND (${input.tableId}::uuid IS NULL OR hold.table_id = ${input.tableId}::uuid)
+      AND (${input.tablePublicId}::text IS NULL OR hold.table_short_id = ${input.tablePublicId})
     ORDER BY hold.created_at DESC, hold.id DESC
     LIMIT ${input.perPage} OFFSET ${input.offset}
   `;
@@ -90,7 +90,10 @@ export const create = async (
   actor: { id: string | null; displayName: string | null },
 ): Promise<Result<PreservationHold>> =>
   sql.begin(async (tx) => {
-    await tx`SELECT id FROM grids.bases WHERE id = ${baseId}::uuid FOR UPDATE`;
+    const [base] = await tx<Array<{ id: string }>>`
+      SELECT id FROM grids.bases WHERE id = ${baseId}::uuid AND deleted_at IS NULL FOR UPDATE
+    `;
+    if (!base) return fail(err.notFound("Base not found"));
     let tableScope: { id: string; shortId: string; name: string } | null = null;
     if (input.scope.type === "table") {
       const [table] = await tx<Array<{ id: string; short_id: string; name: string }>>`
@@ -176,7 +179,14 @@ export type PreservationDestructionTarget = { type: "base"; baseId: string } | {
 /** Call inside the same transaction that would destroy evidence in this exact scope. */
 export const admitDestruction = async (target: PreservationDestructionTarget, client: SqlClient): Promise<Result<void>> => {
   await client`SELECT id FROM grids.bases WHERE id = ${target.baseId}::uuid FOR UPDATE`;
-  const tableId = target.type === "table" ? target.tableId : null;
+  let tableId: string | null = null;
+  if (target.type === "table") {
+    const [table] = await client<Array<{ base_id: string }>>`
+      SELECT base_id FROM grids.tables WHERE id = ${target.tableId}::uuid FOR SHARE
+    `;
+    if (!table || table.base_id !== target.baseId) return fail(err.notFound("Table not found in Base"));
+    tableId = target.tableId;
+  }
   const [hold] = await client<Array<{ short_id: string }>>`
     SELECT short_id FROM grids.preservation_holds
     WHERE base_id = ${target.baseId}::uuid AND released_at IS NULL

@@ -19,7 +19,7 @@ import {
   requirePublicId,
   resolveBase,
   resolveBaseFromCommand,
-  resolveTableFromSearch,
+  resolveTablePublicRefFromSearch,
 } from "./resources";
 import {
   applyDefined,
@@ -387,39 +387,39 @@ export const baseCrudCommands = [
     async run({ ctx, args, flags }) {
       const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
       if (flags.table && flags.scope !== "table") throw new Error("--table requires --scope table.");
-      const table = flags.table ? await resolveTableFromSearch(ctx, base.id, flags.table) : null;
+      const tableId = flags.table ? await resolveTablePublicRefFromSearch(ctx, base.id, flags.table) : null;
       const payload = await readApi<PreservationHoldsResponse>(
         ctx,
         `/bases/${encodeURIComponent(base.id)}/preservation-holds${queryString({
           status: flags.status,
           scope: flags.scope,
-          tableId: table?.id,
+          tableId,
           page: flags.page ?? 1,
           per_page: flags.perPage ?? 25,
         })}`,
       );
-      printJsonOrTable(
-        ctx,
-        payload,
-        payload.items.map((item) => ({
-          id: item.id,
-          scope: item.scope.type === "base" ? "Base" : `Table: ${item.scope.tableName} (${item.scope.tableId})`,
-          status: item.status,
-          reason: item.reason,
-          createdBy: item.createdByDisplayName ?? "-",
-          createdAt: item.createdAt,
-          releasedAt: item.releasedAt ?? "-",
-        })),
-        [
-          { key: "id", label: "ID" },
-          { key: "scope", label: "SCOPE" },
-          { key: "status", label: "STATUS" },
-          { key: "reason", label: "REASON" },
-          { key: "createdBy", label: "CREATED BY" },
-          { key: "createdAt", label: "CREATED" },
-          { key: "releasedAt", label: "RELEASED" },
-        ],
-      );
+      const rows = payload.items.map((item) => ({
+        id: item.id,
+        scope: item.scope.type === "base" ? "Base" : `Table: ${item.scope.tableName} (${item.scope.tableId})`,
+        status: item.status,
+        reason: item.reason,
+        createdBy: item.createdByDisplayName ?? "-",
+        createdAt: item.createdAt,
+        releasedAt: item.releasedAt ?? "-",
+      }));
+      if (ctx.options.output === "jsonl") {
+        payload.items.forEach((item) => ctx.jsonLine(item));
+        return;
+      }
+      printJsonOrTable(ctx, payload, rows, [
+        { key: "id", label: "ID" },
+        { key: "scope", label: "SCOPE" },
+        { key: "status", label: "STATUS" },
+        { key: "reason", label: "REASON" },
+        { key: "createdBy", label: "CREATED BY" },
+        { key: "createdAt", label: "CREATED" },
+        { key: "releasedAt", label: "RELEASED" },
+      ]);
     },
   }),
   command("bases preservation-holds create", {
@@ -437,13 +437,13 @@ export const baseCrudCommands = [
       const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
       if (flags.scope === "table" && !flags.table) throw new Error("Pass --table <table> with --scope table.");
       if (flags.scope === "base" && flags.table) throw new Error("--table requires --scope table.");
-      const table = flags.table ? await resolveTableFromSearch(ctx, base.id, flags.table) : null;
+      const tableId = flags.table ? await resolveTablePublicRefFromSearch(ctx, base.id, flags.table) : null;
       const hold = await readApi<PreservationHold>(
         ctx,
         `/bases/${encodeURIComponent(base.id)}/preservation-holds`,
         jsonRequest("POST", {
           reason: flags.reason.trim(),
-          scope: table ? { type: "table", tableId: table.id } : { type: "base" },
+          scope: tableId ? { type: "table", tableId } : { type: "base" },
         }),
       );
       const scopeLabel = hold.scope.type === "base" ? `${base.name} (${base.id})` : `${hold.scope.tableName} (${hold.scope.tableId})`;

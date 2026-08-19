@@ -211,12 +211,10 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const query = c.req.valid("query");
         const pagination = parsePagination(query);
-        const tableId = query.tableId ? await resolveHoldTableScope(baseId, query.tableId) : null;
-        if (query.tableId && !tableId) return c.json({ message: "Table not found" }, 404);
         const result = await gridsService.base.preservationHolds.list(baseId, {
           status: query.status,
           scope: query.scope,
-          tableId,
+          tablePublicId: query.tableId ?? null,
           perPage: pagination.perPage,
           offset: pagination.offset,
         });

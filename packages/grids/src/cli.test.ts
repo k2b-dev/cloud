@@ -669,6 +669,28 @@ describe("grids CLI", () => {
       `/api/grids/bases/${baseId}/preservation-holds?status=active&scope=table&tableId=${tableId}&page=1&per_page=25`,
     );
 
+    const historicalJsonl = createContext(
+      ["bases", "preservation-holds", "list", baseId],
+      { status: "released", scope: "table", table: tableId },
+      [jsonResponse(basePage), jsonResponse({ ...page, items: [tableHold] })],
+      { output: "jsonl" },
+    );
+    await gridsCli.run(historicalJsonl.ctx);
+    expect(historicalJsonl.calls).toHaveLength(2);
+    expect(historicalJsonl.calls.at(-1)?.path).toBe(
+      `/api/grids/bases/${baseId}/preservation-holds?status=released&scope=table&tableId=${tableId}&page=1&per_page=25`,
+    );
+    expect(historicalJsonl.jsonValues).toEqual([tableHold]);
+
+    const internalTableRef = createContext(
+      ["bases", "preservation-holds", "create", baseId],
+      { scope: "table", table: accessId, reason: "Internal ref" },
+      [jsonResponse(basePage)],
+      { output: "json" },
+    );
+    await expect(gridsCli.run(internalTableRef.ctx)).rejects.toThrow("Table references do not accept UUIDs");
+    expect(internalTableRef.calls).toHaveLength(1);
+
     const unconfirmed = createContext(["bases", "preservation-holds", "release", baseId, hold.id], {
       reason: "Review completed",
     });

@@ -34,27 +34,29 @@ const askReleaseReason = () =>
     variant: "danger",
   });
 
-const CreatePreservationHoldDialog = (props: { baseId: string; close: (input?: CreatePreservationHoldInput) => void }) => {
+export const buildPreservationHoldInput = (
+  scope: "base" | "table",
+  tableId: string | null,
+  reason: string,
+): CreatePreservationHoldInput | null => {
+  const trimmedReason = reason.trim();
+  if (!trimmedReason || trimmedReason.length > PRESERVATION_HOLD_REASON_MAX_LENGTH) return null;
+  if (scope === "table") return tableId ? { reason: trimmedReason, scope: { type: "table", tableId } } : null;
+  return { reason: trimmedReason, scope: { type: "base" } };
+};
+
+export const CreatePreservationHoldDialog = (props: { baseId: string; close: (input?: CreatePreservationHoldInput) => void }) => {
   const [scope, setScope] = createSignal<"base" | "table">("base");
   const [tableId, setTableId] = createSignal<string | null>(null);
   const [reason, setReason] = createSignal("");
-  const valid = () =>
-    reason().trim().length > 0 && reason().trim().length <= PRESERVATION_HOLD_REASON_MAX_LENGTH && (scope() === "base" || tableId());
+  const input = () => buildPreservationHoldInput(scope(), tableId(), reason());
 
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        const selectedScope = scope();
-        const selectedTableId = tableId();
-        if (!valid()) return;
-        const trimmedReason = reason().trim();
-        if (selectedScope === "table") {
-          if (!selectedTableId) return;
-          props.close({ reason: trimmedReason, scope: { type: "table", tableId: selectedTableId } });
-          return;
-        }
-        props.close({ reason: trimmedReason, scope: { type: "base" } });
+        const value = input();
+        if (value) props.close(value);
       }}
     >
       <div class="k2b-dialog__body">
@@ -70,7 +72,11 @@ const CreatePreservationHoldDialog = (props: { baseId: string; close: (input?: C
           }}
           options={[
             { id: "base", label: "Entire Base", description: "Blocks controlled destruction across every Table." },
-            { id: "table", label: "One Table", description: "Blocks controlled destruction only for the selected Table." },
+            {
+              id: "table",
+              label: "One Table",
+              description: "Preserves only this Table's contents. The parent Base cannot be destroyed while the hold is active.",
+            },
           ]}
         />
         <Show when={scope() === "table"}>
@@ -111,7 +117,7 @@ const CreatePreservationHoldDialog = (props: { baseId: string; close: (input?: C
         <Button type="button" variant="secondary" onClick={() => props.close()}>
           Cancel
         </Button>
-        <Button type="submit" disabled={!valid()}>
+        <Button type="submit" disabled={!input()}>
           Create hold
         </Button>
       </footer>
@@ -120,6 +126,7 @@ const CreatePreservationHoldDialog = (props: { baseId: string; close: (input?: C
 };
 
 export function PreservationHoldsSection(props: { baseId: string; onSavingChange: (saving: boolean) => void }) {
+  let disposed = false;
   const holds = query.create({
     source: () => props.baseId,
     load: async (baseId, { abortSignal }) => {
@@ -143,7 +150,9 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
     },
     onSuccess: () => {
       toast.success("Preservation hold created");
-      void holds.invalidate();
+      void holds
+        .invalidate()
+        .catch(() => !disposed && void prompts.error("The hold was created, but active holds could not be refreshed."));
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -159,7 +168,9 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
     },
     onSuccess: () => {
       toast.success("Preservation hold released");
-      void holds.invalidate();
+      void holds
+        .invalidate()
+        .catch(() => !disposed && void prompts.error("The hold was released, but active holds could not be refreshed."));
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -179,6 +190,7 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
     if (reason) releaseHold.mutate({ holdId, reason });
   };
   onCleanup(() => {
+    disposed = true;
     createHold.abort();
     releaseHold.abort();
     props.onSavingChange(false);
@@ -187,7 +199,7 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
   return (
     <SettingsGroup
       title="Preservation holds"
-      description="Base holds cover every Table. Table holds cover only their selected Table. Neither locks Records or changes access."
+      description="Base holds cover every Table. Table holds preserve only their selected Table, but also prevent destruction of the parent Base. Neither locks Records or changes access."
     >
       <Show when={!holds.loading()} fallback={<Placeholder state="loading" variant="compact" title="Loading preservation holds" />}>
         <Show
@@ -199,7 +211,7 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
               title="Preservation holds are unavailable"
               description={holds.error() instanceof Error ? holds.error()!.message : "Could not load preservation holds"}
               action={
-                <Button size="sm" variant="secondary" onClick={() => void holds.invalidate()}>
+                <Button size="sm" variant="secondary" onClick={() => void holds.refresh()}>
                   Retry
                 </Button>
               }

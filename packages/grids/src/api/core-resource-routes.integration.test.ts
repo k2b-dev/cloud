@@ -265,6 +265,16 @@ describe("classic resource route contracts", () => {
         expect(readable.status).toBe(200);
         expect((await readable.json()).map((table: { id: string }) => table.id)).toContain(fixture.tablePublicId);
 
+        for (let index = 0; index < 101; index += 1) {
+          await sql`
+            INSERT INTO grids.tables (id, short_id, base_id, name, position)
+            VALUES (${testUuid()}::uuid, ${testShortId("Q")}, ${fixture.baseId}::uuid, ${`Bounded search ${index}`}, ${index + 10})
+          `;
+        }
+        const boundedSearch = await app.request(`/tables/by-base/${fixture.basePublicId}?q=Bounded%20search`, bearer(fixture.tokens.read));
+        expect(boundedSearch.status).toBe(200);
+        expect(await boundedSearch.json()).toHaveLength(100);
+
         const foreign = await app.request(`/tables/by-base/${fixture.foreignBasePublicId}`, bearer(fixture.tokens.admin));
         expect(foreign.status).toBe(403);
 

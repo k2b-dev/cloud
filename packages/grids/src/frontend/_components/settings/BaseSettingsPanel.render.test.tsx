@@ -12,10 +12,8 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const [{ default: BaseSettingsPanel }, { DocumentProfileForm }] = await Promise.all([
-  import("./BaseSettingsPanel.tsx"),
-  import("./BaseSettingsSections.tsx"),
-]);
+const [{ default: BaseSettingsPanel }, { DocumentProfileForm }, { buildPreservationHoldInput, CreatePreservationHoldDialog }] =
+  await Promise.all([import("./BaseSettingsPanel.tsx"), import("./BaseSettingsSections.tsx"), import("./PreservationHoldsSection.tsx")]);
 
 const base = {
   id: "BASE01",
@@ -52,11 +50,38 @@ describe("Grids Base settings composition", () => {
     expect(source).toContain("Preservation holds");
     expect(source).toContain("query.create");
     expect(source).toContain("Every active hold must be released separately.");
-    expect(source).toContain("Base holds cover every Table. Table holds cover only their selected Table.");
+    expect(source).toContain("Table holds preserve only their selected Table, but also prevent destruction of the parent Base.");
     expect(source).toContain("fetchData");
     expect(source).toContain('limit: "25"');
     expect(source).toContain("Could not search Tables");
     expect(source).toContain("Could not load preservation holds");
+    expect(source).toContain("setTableId(null)");
+    expect(source).toContain("holds.refresh()");
+    expect(source).toContain("active holds could not be refreshed");
+  });
+
+  test("builds only valid Base and Table hold intents", () => {
+    expect(buildPreservationHoldInput("base", null, " Annual review ")).toEqual({
+      reason: "Annual review",
+      scope: { type: "base" },
+    });
+    expect(buildPreservationHoldInput("table", "TABLE1", " Invoice dispute ")).toEqual({
+      reason: "Invoice dispute",
+      scope: { type: "table", tableId: "TABLE1" },
+    });
+    expect(buildPreservationHoldInput("table", null, "Invoice dispute")).toBeNull();
+    expect(buildPreservationHoldInput("base", null, " ")).toBeNull();
+
+    const html = renderToString(() =>
+      createComponent(CreatePreservationHoldDialog, {
+        baseId: base.id,
+        close: () => undefined,
+      }),
+    );
+    expect(html).toContain("Entire Base");
+    expect(html).toContain("One Table");
+    expect(html).toContain("parent Base cannot be destroyed");
+    expect(html).toMatch(/type="submit"[^>]*disabled/);
   });
 
   test("groups the long document form behind one save footer", () => {

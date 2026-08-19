@@ -371,7 +371,11 @@ const app = new Hono<AuthContext>()
       const gate = await gateAt(c, { baseId }, "read");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
       const query = c.req.valid("query");
-      return c.json(await toPublicTables(await gridsService.table.listByBase(baseId, { search: query.q, limit: query.limit })));
+      return c.json(
+        await toPublicTables(
+          await gridsService.table.listByBase(baseId, { search: query.q, limit: query.limit ?? (query.q ? 100 : undefined) }),
+        ),
+      );
     },
   )
 

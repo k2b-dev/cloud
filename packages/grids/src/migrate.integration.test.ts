@@ -100,6 +100,63 @@ describe("grids schema migration", () => {
   );
 
   postgresTest(
+    "upgrades existing Base holds without changing their lifecycle",
+    async () => {
+      await withIsolatedDatabase(async (database) => {
+        await migrateCoreWorkflows(database);
+        await migrate(database);
+        await database`DROP INDEX grids.idx_grids_preservation_holds_active_table`.simple();
+        await database`
+          ALTER TABLE grids.preservation_holds
+            DROP CONSTRAINT preservation_holds_scope_chk,
+            DROP COLUMN table_name,
+            DROP COLUMN table_short_id,
+            DROP COLUMN table_id,
+            DROP COLUMN scope_type
+        `.simple();
+        const baseId = uuid();
+        const activeHoldId = shortId("H");
+        const releasedHoldId = shortId("R");
+        await database`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${shortId("B")}, 'Legacy hold fixture')`;
+        await database`
+          INSERT INTO grids.preservation_holds (short_id, base_id, reason)
+          VALUES (${activeHoldId}, ${baseId}::uuid, 'Active legacy hold')
+        `;
+        await database`
+          INSERT INTO grids.preservation_holds (short_id, base_id, reason, release_reason, released_at)
+          VALUES (${releasedHoldId}, ${baseId}::uuid, 'Released legacy hold', 'Legacy review complete', '2026-01-02T03:04:05Z')
+        `;
+
+        await migrate(database);
+
+        const rows = await database<
+          Array<{
+            shortId: string;
+            scopeType: string;
+            tableId: string | null;
+            tableShortId: string | null;
+            tableName: string | null;
+            releaseReason: string | null;
+            releasedAt: Date | string | null;
+          }>
+        >`
+          SELECT short_id AS "shortId", scope_type AS "scopeType", table_id AS "tableId",
+            table_short_id AS "tableShortId", table_name AS "tableName",
+            release_reason AS "releaseReason", released_at AS "releasedAt"
+          FROM grids.preservation_holds
+          WHERE base_id = ${baseId}::uuid
+          ORDER BY short_id
+        `;
+        expect(rows).toHaveLength(2);
+        expect(rows.every((row) => row.scopeType === "base" && !row.tableId && !row.tableShortId && !row.tableName)).toBe(true);
+        expect(rows.find((row) => row.shortId === activeHoldId)).toMatchObject({ releaseReason: null, releasedAt: null });
+        expect(rows.find((row) => row.shortId === releasedHoldId)).toMatchObject({ releaseReason: "Legacy review complete" });
+      });
+    },
+    30_000,
+  );
+
+  postgresTest(
     "says which container has not run yet when the kernel schema is missing",
     async () => {
       await withIsolatedDatabase(async (database) => {

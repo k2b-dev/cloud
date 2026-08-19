@@ -2,7 +2,7 @@
 id: grids-retention-preservation
 title: Retention and preservation
 icon: ti ti-archive
-description: Set a technical retention floor or block future controlled destruction across a Base.
+description: Set a technical retention floor or block future controlled destruction for a Base or Table.
 order: 148
 ---
 A retention floor is an optional technical minimum for trashed Records and newly unreferenced Files in a Base. It does not delete anything, schedule cleanup, decide whether destruction is appropriate, or establish legal compliance.
@@ -84,4 +84,4 @@ cld grids bases preservation-holds list 8yMtTb --scope table --table Invoices --
 cld grids bases preservation-holds release 8yMtTb HOLD01 --reason "Review completed" --yes --json
 ```
 
-Create defaults to `--scope base`. Use `--status released` or `--status all` to inspect older holds, and `--scope base|table|all` to narrow the list. Table lookup, filtering, and pagination run on the server. A Workflow, Custom App, direct API client, or background action cannot release or bypass an active hold through another path.
+Create defaults to `--scope base`. Use `--status released` or `--status all` to inspect older holds, and `--scope base|table|all` to narrow the list. An exact Table name resolves an active Table; its six-character public ID can still filter hold history after the Table is no longer active. Table lookup, filtering, and pagination run on the server. A Workflow, Custom App, direct API client, or background action cannot release or bypass an active hold through another path.
