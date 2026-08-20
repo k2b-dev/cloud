@@ -217,6 +217,8 @@ const GqlColumnSchema = z
 const RecordMetaSchema = z
   .object({
     version: z.number().int().positive(),
+    finalizedAt: TimestampSchema.nullable(),
+    finalizedBy: z.uuid().nullable(),
     deletedAt: TimestampSchema.nullable(),
     createdBy: z.uuid().nullable(),
     updatedBy: z.uuid().nullable(),

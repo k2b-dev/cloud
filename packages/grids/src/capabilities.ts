@@ -51,7 +51,7 @@ import {
   ViewCapabilityDataSchema,
   ViewReadInputSchema,
 } from "./capability-contracts";
-import type { DslQueryPreviewResponse } from "./contracts";
+import { type DslQueryPreviewResponse, ShortIdSchema } from "./contracts";
 import { isRecordWritableFieldType } from "./field-types";
 import { gridsService } from "./service";
 import { projectPublicIds, resolvePublicIds } from "./service/public-resources";
@@ -181,11 +181,14 @@ const requireTable = async (tableShortId: string, access: GridsAccessContext, re
   return gate.ok ? ok(table) : gate;
 };
 
-const requireTableRecordAccess = async (tableShortId: string, access: GridsAccessContext, required: "read" | "write") => {
-  const table = await gridsService.table.getByShortId(tableShortId);
-  if (!table) return fail(err.notFound("Table"));
+const gateTableRecordAccess = async (table: Table, access: GridsAccessContext, required: "read" | "write") => {
   const authorization = await gateBaseAtAccess(access, table.baseId, required);
   return authorization.ok ? ok({ table, recordAccess: ALL_RECORD_ACCESS }) : authorization;
+};
+
+const requireTableRecordAccess = async (tableShortId: string, access: GridsAccessContext, required: "read" | "write") => {
+  const table = await gridsService.table.getByShortId(tableShortId);
+  return table ? gateTableRecordAccess(table, access, required) : fail(err.notFound("Table"));
 };
 
 const runBaseRead = async (input: z.infer<typeof BaseReadInputSchema>, context: CapabilityExecutionContext) => {
@@ -193,6 +196,7 @@ const runBaseRead = async (input: z.infer<typeof BaseReadInputSchema>, context: 
   if (!result.ok) return result;
   return ok({
     data: mapBase(result.data),
+    summary: `Read Grids Base “${result.data.name}”.`,
     refs: [{ type: "grids.base", id: result.data.shortId }],
     links: [{ rel: "open" as const, href: baseHref(result.data) }],
   });
@@ -208,6 +212,7 @@ const runTableRead = async (input: z.infer<typeof TableReadInputSchema>, context
   if (!base) return fail(err.notFound("Table"));
   return ok({
     data: tableContextItem(table, base, permission.data),
+    summary: `Read Grids Table “${table.name}”.`,
     refs: [{ type: "grids.table", id: table.shortId }],
     links: [{ rel: "open" as const, href: tableHref(base, table) }],
   });
@@ -230,6 +235,7 @@ const runViewRead = async (input: z.infer<typeof ViewReadInputSchema>, context: 
       description: view.description,
       icon: view.icon ?? null,
     },
+    summary: `Read Grids View “${view.name}”.`,
     refs: [{ type: "grids.view", id: view.shortId }],
     ...(base ? { links: [{ rel: "open" as const, href: viewHref(base, table, view.shortId) }] } : {}),
   });
@@ -470,13 +476,25 @@ const runGqlContext = async (input: z.infer<typeof GqlContextInputSchema>, conte
   });
 };
 
-const gqlCapabilityResult = async (response: DslQueryPreviewResponse, base: Base) => {
+type GqlCapabilityOutcome = { kind: "preview" | "execute"; viewName?: string };
+
+const gqlCapabilitySummary = (response: DslQueryPreviewResponse, base: Base, outcome: GqlCapabilityOutcome) => {
+  if (!response.ok) {
+    return `Grids GQL ${outcome.kind} is invalid with ${response.diagnostics.length} ${response.diagnostics.length === 1 ? "diagnostic" : "diagnostics"}.`;
+  }
+  const rows = `${response.rows.length} ${response.rows.length === 1 ? "row" : "rows"}`;
+  if (outcome.viewName) return `Executed saved Grids View “${outcome.viewName}” with ${rows}.`;
+  return `${outcome.kind === "preview" ? "Previewed" : "Executed"} Grids GQL in “${base.name}” with ${rows}.`;
+};
+
+const gqlCapabilityResult = async (response: DslQueryPreviewResponse, base: Base, outcome: GqlCapabilityOutcome) => {
   if (!response.ok) {
     const tooLarge = response.diagnostics.find((diagnostic) => diagnostic.message.startsWith("GQL result is too large."));
     return tooLarge
       ? fail(err.badInput(tooLarge.message))
       : ok({
           data: response,
+          summary: gqlCapabilitySummary(response, base, outcome),
           refs: [{ type: "grids.base" as const, id: base.shortId }],
           links: [{ rel: "open" as const, href: baseHref(base) }],
         });
@@ -573,6 +591,7 @@ const gqlCapabilityResult = async (response: DslQueryPreviewResponse, base: Base
   const nextCursor = page?.nextCursor ?? undefined;
   return ok({
     data,
+    summary: gqlCapabilitySummary(response, base, outcome),
     refs,
     links: [{ rel: "open" as const, href: baseHref(base) }],
     page: capabilityPage(nextCursor),
@@ -621,9 +640,9 @@ const runGqlPreview = async (input: z.infer<typeof GqlPreviewInputSchema>, conte
         cursor: input.cursor,
         pageSize: input.pageSize,
       },
-      { maxRows: 25, maxResultBytes: GQL_CAPABILITY_RESULT_BUDGET_BYTES, operation: "preview" },
+      { maxRows: 25, maxResultBytes: GQL_CAPABILITY_RESULT_BUDGET_BYTES, operation: "preview", labelRelationValues: false },
     );
-    return await gqlCapabilityResult(result.response, base.data);
+    return await gqlCapabilityResult(result.response, base.data, { kind: "preview" });
   } catch (error) {
     return gqlUnavailable(error);
   }
@@ -647,9 +666,9 @@ const runGqlExecute = async (input: z.infer<typeof GqlExecuteInputSchema>, conte
         pageSize: input.pageSize,
         limit: input.limit,
       },
-      { maxRows: 1_000, maxResultBytes: GQL_CAPABILITY_RESULT_BUDGET_BYTES, operation: "execute" },
+      { maxRows: 1_000, maxResultBytes: GQL_CAPABILITY_RESULT_BUDGET_BYTES, operation: "execute", labelRelationValues: false },
     );
-    return await gqlCapabilityResult(result.response, base.data);
+    return await gqlCapabilityResult(result.response, base.data, { kind: "execute" });
   } catch (error) {
     return gqlUnavailable(error);
   }
@@ -670,8 +689,9 @@ const runGqlViewExecute = async (input: z.infer<typeof GqlViewExecuteInputSchema
       cursor: input.cursor,
       operation: "execute",
       surface: "api",
+      labelRelationValues: false,
     });
-    return await gqlCapabilityResult(response, base.data);
+    return await gqlCapabilityResult(response, base.data, { kind: "execute", viewName: view.name });
   } catch (error) {
     return gqlUnavailable(error);
   }
@@ -763,7 +783,7 @@ const runRecordRead = async (input: z.infer<typeof RecordReadInputSchema>, conte
   if (!resolved) return fail(err.notFound("Record"));
   const table = await gridsService.table.get(resolved.tableId);
   if (!table) return fail(err.notFound("Record"));
-  const tableAccess = await requireTableRecordAccess(table.shortId, access, "read");
+  const tableAccess = await gateTableRecordAccess(table, access, "read");
   if (!tableAccess.ok) return tableAccess;
   const dateConfig = await capabilityDateConfig();
   const record = await gridsService.record.get(table.id, resolved.id, {
@@ -771,7 +791,9 @@ const runRecordRead = async (input: z.infer<typeof RecordReadInputSchema>, conte
     viewer: actorViewerFor(access),
     recordAccess: tableAccess.data.recordAccess,
   });
-  return record ? recordResult(record, tableAccess.data.table) : fail(err.notFound("Record"));
+  return record
+    ? recordResult(record, tableAccess.data.table, `Read a record in “${tableAccess.data.table.name}” at version ${record.version}.`)
+    : fail(err.notFound("Record"));
 };
 
 const resolveRecordValues = async (tableId: string, values: Record<string, unknown>) => {
@@ -786,6 +808,9 @@ const resolveRecordValues = async (tableId: string, values: Record<string, unkno
     if (field.type !== "relation") continue;
     if (Array.isArray(value)) relationPublicIds.push(...value.filter((item): item is string => typeof item === "string"));
     else if (typeof value === "string") relationPublicIds.push(value);
+  }
+  if (relationPublicIds.some((publicId) => !ShortIdSchema.safeParse(publicId).success)) {
+    return fail(err.badInput("Related Record IDs must be 6-character public Grids IDs."));
   }
   const relationIds = await resolvePublicIds("record", relationPublicIds);
   if (relationPublicIds.some((publicId) => !relationIds.has(publicId))) return fail(err.badInput("Unknown related Record ID."));
@@ -870,7 +895,8 @@ export const gridsCapabilities = defineCapabilities({
   queries: {
     "base.search": {
       title: "Search Grids Bases",
-      description: "Find accessible Grids Bases by name, description, or short ID.",
+      description:
+        "Find an accessible Grids Base by name, description, or short ID when its ID is unknown. Use returned grids.base refs with base.read or their IDs with gql.context and GQL queries.",
       input: UniversalSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -879,7 +905,8 @@ export const gridsCapabilities = defineCapabilities({
     },
     "base.list": {
       title: "List Grids Bases",
-      description: "Start here to list accessible Grids Bases and obtain a baseId for schema or GQL calls.",
+      description:
+        "Normal entry for Base-scoped Grids work. List accessible Bases and use returned grids.base refs or IDs with base.read, gql.context, gql.preview, gql.execute, or gql.view.execute.",
       input: BaseListInputSchema,
       data: BaseListDataSchema,
       openWorld: false,
@@ -887,7 +914,7 @@ export const gridsCapabilities = defineCapabilities({
     },
     "base.read": {
       title: "Read Grids Base",
-      description: "Read one accessible Grids Base by stable ID.",
+      description: "Read one grids.base ref returned by base.list or base.search.",
       input: BaseReadInputSchema,
       data: BaseCapabilityDataSchema,
       openWorld: false,
@@ -895,7 +922,7 @@ export const gridsCapabilities = defineCapabilities({
     },
     "table.read": {
       title: "Read Grids Table",
-      description: "Read one accessible Grids Table by stable ID.",
+      description: "Read one grids.table ref returned by gql.context kind tables, including its Base context and effective permission.",
       input: TableReadInputSchema,
       data: TableCapabilityDataSchema,
       openWorld: false,
@@ -903,7 +930,7 @@ export const gridsCapabilities = defineCapabilities({
     },
     "view.read": {
       title: "Read Grids View",
-      description: "Read one accessible saved Grids View by stable ID.",
+      description: "Read one grids.view ref returned by gql.context kind views; execute it with gql.view.execute using the same baseId.",
       input: ViewReadInputSchema,
       data: ViewCapabilityDataSchema,
       openWorld: false,
@@ -912,7 +939,7 @@ export const gridsCapabilities = defineCapabilities({
     "gql.context": {
       title: "Load Grids GQL context",
       description:
-        "Inspect a Grids Base schema in steps: list Tables, then Fields and paginated select option IDs, or saved Views. Field results include effective write and audit requirements.",
+        "Load the schema before authoring GQL or record writes. Get baseId from base.list or base.search; request tables first, then fields or select options with returned IDs, or views for gql.view.execute. Field results include write and audit requirements.",
       input: GqlContextInputSchema,
       data: GqlContextDataSchema,
       openWorld: false,
@@ -921,7 +948,7 @@ export const gridsCapabilities = defineCapabilities({
     "gql.preview": {
       title: "Preview Grids GQL",
       description:
-        "Validate permission-safe GQL before execution and return actionable parser or resolver diagnostics without mutating data.",
+        "Validate permission-safe GQL after loading IDs with gql.context. Returns a small sample or actionable diagnostics without mutation; pass valid GQL unchanged to gql.execute.",
       input: GqlPreviewInputSchema,
       data: GqlResultDataSchema,
       openWorld: false,
@@ -930,7 +957,7 @@ export const gridsCapabilities = defineCapabilities({
     "gql.execute": {
       title: "Execute Grids GQL",
       description:
-        "Run a permission-safe Grids data query after gql.context. Select only needed fields; follow nextCursor for byte-bounded pages up to a 1,000-row logical ceiling.",
+        "Execute permission-safe GQL after gql.context and normally gql.preview. Select only needed fields; returned grids.record refs can be opened with record.read, and nextCursor continues byte-bounded pages.",
       input: GqlExecuteInputSchema,
       data: GqlResultDataSchema,
       openWorld: false,
@@ -939,7 +966,7 @@ export const gridsCapabilities = defineCapabilities({
     "gql.view.execute": {
       title: "Execute saved Grids View",
       description:
-        "Run the exact saved Grids data query for a viewId from gql.context kind views; follow nextCursor for byte-bounded pages.",
+        "Execute the exact saved query for a baseId and viewId returned by gql.context kind views. This is the direct saved-view path; use gql.execute for ad-hoc GQL and nextCursor for further pages.",
       input: GqlViewExecuteInputSchema,
       data: GqlResultDataSchema,
       openWorld: false,
@@ -948,7 +975,7 @@ export const gridsCapabilities = defineCapabilities({
     "record.read": {
       title: "Read Grids Record",
       description:
-        "Read bounded record metadata, finalization state, and current version for conflict-safe record.update. Use targeted gql.execute selects to read field values.",
+        "Read one grids.record ref returned by gql.execute, gql.preview, or a record Action. Returns metadata, finalization state, and the current version for record.update; use targeted gql.execute to read field values.",
       input: RecordReadInputSchema,
       data: RecordCapabilityDataSchema,
       openWorld: false,

@@ -432,6 +432,7 @@ type ExecuteSavedViewSourceOptions = {
   operation?: GqlRuntimeOperation;
   surface?: NonNullable<DslQuerySurface>;
   tracer?: GqlRuntimeTracer;
+  labelRelationValues?: boolean;
 };
 
 const executeSavedViewSourceUnadmitted = async (
@@ -531,6 +532,7 @@ const executeSavedViewSourceUnadmitted = async (
       cursor: decodedCursor.cursor,
       cursorFingerprint,
       cursorSigningKey,
+      labelRelationValues: options.labelRelationValues,
       signal: runtime.signal,
       primaryRecordAccess: ALL_RECORD_ACCESS,
     });

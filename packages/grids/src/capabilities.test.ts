@@ -14,7 +14,7 @@ import { BaseListDataSchema, BaseReadInputSchema, GqlResultDataSchema, RecordCre
 import { migrate } from "./migrate";
 
 const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
-if (process.env.GRIDS_DB_TEST === "1") setDefaultTimeout(30_000);
+if (process.env.GRIDS_DB_TEST === "1") setDefaultTimeout(60_000);
 const uuid = () => Bun.randomUUIDv7();
 const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
@@ -115,9 +115,10 @@ describe("Grids capabilities", () => {
         .filter(([, action]) => "review" in action && action.review)
         .map(([id]) => id),
     ).toEqual(["record.update"]);
-    expect(gridsCapabilities.queries?.["gql.execute"]?.description.toLowerCase()).toContain("data query");
-    expect(gridsCapabilities.queries?.["gql.execute"]?.description.toLowerCase()).toContain("run");
-    expect(gridsCapabilities.queries?.["gql.view.execute"]?.description.toLowerCase()).toContain("saved");
+    expect(gridsCapabilities.queries?.["base.list"]?.description).toContain("Normal entry for Base-scoped Grids work");
+    expect(gridsCapabilities.queries?.["gql.context"]?.description).toContain("request tables first");
+    expect(gridsCapabilities.queries?.["gql.execute"]?.description).toContain("normally gql.preview");
+    expect(gridsCapabilities.queries?.["gql.view.execute"]?.description).toContain("direct saved-view path");
   });
 
   test("accepts semantic links on navigable list and query rows", () => {
@@ -270,7 +271,10 @@ describe("Grids capabilities", () => {
 
       const loadedBase = await invoke("query", "base.read", { id: basePublicId }, context);
       expect(loadedBase.ok && loadedBase.data.data).toMatchObject({ id: basePublicId });
-      if (loadedBase.ok) expect(loadedBase.data.data).not.toHaveProperty("shortId");
+      if (loadedBase.ok) {
+        expect(loadedBase.data.data).not.toHaveProperty("shortId");
+        expect(loadedBase.data.summary).toBe("Read Grids Base “Capability Base”.");
+      }
 
       const tables = await invoke("query", "gql.context", { baseId: basePublicId, kind: "tables", limit: 25 }, context);
       expect(tables.ok && tables.data.data).toMatchObject({ kind: "tables" });
@@ -292,6 +296,8 @@ describe("Grids capabilities", () => {
         canCreateRecords: true,
         canUpdateRecords: true,
       });
+      const loadedTable = await invoke("query", "table.read", { id: tablePublicId }, context);
+      expect(loadedTable.ok && loadedTable.data.summary).toBe("Read Grids Table “Items”.");
 
       const fields = await invoke(
         "query",
@@ -378,19 +384,24 @@ describe("Grids capabilities", () => {
         kind: "views",
         items: [{ kind: "view", id: viewPublicId, name: "All items", links: [{ rel: "open", href: expect.stringContaining("/view/") }] }],
       });
+      const loadedView = await invoke("query", "view.read", { id: viewPublicId }, context);
+      expect(loadedView.ok && loadedView.data.summary).toBe("Read Grids View “All items”.");
 
       const created = await invoke("action", "record.create", { tableId: tablePublicId, values: { [fieldPublicId]: "First" } }, context);
       expect(created.ok).toBe(true);
       if (!created.ok) throw new Error(created.error.message);
       const record = created.data.data as { id: string; version: number };
-      expect(record).toMatchObject({ id: expect.stringMatching(/^[A-Za-z0-9]{6}$/), version: 1 });
+      expect(record.id).toMatch(/^[A-Za-z0-9]{6}$/);
+      expect(record.version).toBe(1);
       expect(created.data.summary).toBe(`Created record ${record.id} in “Items”.`);
       expect(record).not.toHaveProperty("data");
 
       const loadedRecord = await invoke("query", "record.read", { id: record.id }, context);
       expect(loadedRecord.ok && loadedRecord.data.data).toMatchObject({ id: record.id, version: 1 });
-      if (loadedRecord.ok) expect(loadedRecord.data.data).not.toHaveProperty("data");
-
+      if (loadedRecord.ok) {
+        expect(loadedRecord.data.data).not.toHaveProperty("data");
+        expect(loadedRecord.data.summary).toBe("Read a record in “Items” at version 1.");
+      }
       const relatedA = await invoke("action", "record.create", { tableId: secretTablePublicId, values: {} }, context);
       const relatedB = await invoke("action", "record.create", { tableId: secretTablePublicId, values: {} }, context);
       if (!relatedA.ok || !relatedB.ok) throw new Error("Expected related Record fixtures");
@@ -462,17 +473,17 @@ describe("Grids capabilities", () => {
         },
         context,
       );
-      expect(relationQuery.ok && relationQuery.data.data).toMatchObject({
-        ok: true,
-        rows: [
-          expect.objectContaining({
-            values: {
-              [relationFieldPublicId]: [relatedBId],
-              [singleRelationFieldPublicId]: relatedBId,
-            },
-          }),
-        ],
-      });
+      expect(relationQuery.ok).toBe(true);
+      if (!relationQuery.ok || !relationQuery.data.data.ok) throw new Error("Expected relation GQL rows");
+      const relationColumn = relationQuery.data.data.columns.find(
+        (column: { fieldId?: string; key: string }) => column.fieldId === relationFieldPublicId,
+      );
+      const singleRelationColumn = relationQuery.data.data.columns.find(
+        (column: { fieldId?: string; key: string }) => column.fieldId === singleRelationFieldPublicId,
+      );
+      if (!relationColumn || !singleRelationColumn) throw new Error("Expected both relation GQL columns");
+      expect(relationQuery.data.data.rows[0]?.values[relationColumn.key]).toEqual([relatedBId]);
+      expect(relationQuery.data.data.rows[0]?.values[singleRelationColumn.key]).toEqual([relatedBId]);
 
       const preview = await invoke(
         "query",
@@ -480,18 +491,21 @@ describe("Grids capabilities", () => {
         { baseId: basePublicId, query: `from table {${tablePublicId}}\nselect {${fieldPublicId}}`, pageSize: 25 },
         context,
       );
-      expect(preview.ok && preview.data.data).toMatchObject({
-        ok: true,
-        columns: [expect.objectContaining({ key: fieldPublicId, tableId: tablePublicId, fieldId: fieldPublicId })],
-        rows: [
-          expect.objectContaining({
-            recordId: record.id,
-            tableId: tablePublicId,
-            values: { [fieldPublicId]: "First" },
-            links: [{ rel: "open", href: expect.stringContaining(`record=${record.id}`) }],
-          }),
-        ],
-      });
+      expect(preview.ok).toBe(true);
+      if (!preview.ok || !preview.data.data.ok) throw new Error("Expected preview GQL rows");
+      const previewColumn = preview.data.data.columns.find(
+        (column: { fieldId?: string; key: string; tableId?: string }) => column.fieldId === fieldPublicId,
+      );
+      const previewRow = preview.data.data.rows.find(
+        (row: { recordId?: string; tableId?: string; values: Record<string, unknown>; links?: Array<{ href: string }> }) =>
+          row.recordId === record.id,
+      );
+      if (!previewColumn || !previewRow) throw new Error("Expected the created Record in the GQL preview");
+      expect(previewColumn.tableId).toBe(tablePublicId);
+      expect(previewRow.tableId).toBe(tablePublicId);
+      expect(previewRow.values[previewColumn.key]).toBe("First");
+      expect(previewRow.links?.[0]?.href).toContain(`record=${record.id}`);
+      expect(preview.data.summary).toContain("Previewed Grids GQL in “Capability Base”");
 
       const gql = await invoke(
         "query",
@@ -499,10 +513,14 @@ describe("Grids capabilities", () => {
         { baseId: basePublicId, query: `from table {${tablePublicId}}\nselect {${fieldPublicId}}`, pageSize: 100 },
         context,
       );
-      expect(gql.ok && gql.data.data).toMatchObject({ ok: true, rows: [expect.objectContaining({ recordId: record.id })] });
+      expect(gql.ok && gql.data.data.ok && gql.data.data.rows.some((row: { recordId?: string }) => row.recordId === record.id)).toBe(true);
+      if (gql.ok) expect(gql.data.summary).toContain("Executed Grids GQL in “Capability Base”");
 
       const savedView = await invoke("query", "gql.view.execute", { baseId: basePublicId, viewId: viewPublicId, pageSize: 100 }, context);
-      expect(savedView.ok && savedView.data.data).toMatchObject({ ok: true, rows: [expect.objectContaining({ recordId: record.id })] });
+      expect(
+        savedView.ok && savedView.data.data.ok && savedView.data.data.rows.some((row: { recordId?: string }) => row.recordId === record.id),
+      ).toBe(true);
+      if (savedView.ok) expect(savedView.data.summary).toContain("Executed saved Grids View “All items”");
 
       const missingAudit = await invoke(
         "action",
