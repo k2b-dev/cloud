@@ -576,6 +576,7 @@ const runSpaceRead = async (input: z.infer<typeof SpaceReadInputSchema>, context
       createdAt: publicDetail.createdAt,
       updatedAt: publicDetail.updatedAt,
     },
+    summary: boundedCapabilitySummary(`Read Space “${publicDetail.name}”.`),
     refs: [{ type: "spaces.space", id: publicDetail.id }],
     links: [{ rel: "open" as const, href: `/app/spaces/${publicDetail.id}` }],
   });
@@ -660,6 +661,7 @@ const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: 
       };
   return ok({
     data,
+    summary: boundedCapabilitySummary(`Read ${data.kind} ${itemTitle(data.title)}.`),
     refs: [{ type: "spaces.item", id: resolved.data.item.id }],
     links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
   });
@@ -706,6 +708,7 @@ const runCommentRead = async (input: z.infer<typeof CommentReadInputSchema>, con
   if (!resolved.ok) return resolved;
   return ok({
     data: mapComment(resolved.data.comment),
+    summary: boundedCapabilitySummary(`Read a comment on ${itemTitle(resolved.data.item.title)}.`),
     refs: [
       { type: "spaces.comment", id: resolved.data.comment.id },
       { type: "spaces.item", id: resolved.data.item.id },
@@ -1154,7 +1157,14 @@ const runCalendarInvitationPreview = async (
   context: CapabilityExecutionContext,
 ) => {
   const result = await spacesService.calendarInvitations.previewCalendarInvitation(input);
-  if (!result.ok || !result.data.existing) return result.ok ? ok({ data: result.data }) : result;
+  if (!result.ok || !result.data.existing) {
+    return result.ok
+      ? ok({
+          data: result.data,
+          summary: boundedCapabilitySummary(`Previewed calendar invitation ${itemTitle(result.data.invitation.title)}.`),
+        })
+      : result;
+  }
   const access = await requireSpaceUuid(result.data.existing.spaceId, context, "read");
   const item = access.ok ? await requireItemUuid(result.data.existing.itemId, context, "read") : null;
   return access.ok && item?.ok
@@ -1168,9 +1178,15 @@ const runCalendarInvitationPreview = async (
             href: buildSpaceItemHref(access.data.space.id, item.data.item.id),
           },
         },
+        summary: boundedCapabilitySummary(
+          `Previewed calendar invitation ${itemTitle(result.data.invitation.title)} linked to ${itemTitle(item.data.item.title)}.`,
+        ),
         links: [{ rel: "open" as const, href: buildSpaceItemHref(access.data.space.id, item.data.item.id) }],
       })
-    : ok({ data: { ...result.data, existing: null, response: null } });
+    : ok({
+        data: { ...result.data, existing: null, response: null },
+        summary: boundedCapabilitySummary(`Previewed calendar invitation ${itemTitle(result.data.invitation.title)}.`),
+      });
 };
 
 const runCalendarInvitationResponsePrepare = async (
@@ -1178,7 +1194,14 @@ const runCalendarInvitationResponsePrepare = async (
   context: CapabilityExecutionContext,
 ) => {
   const result = await spacesService.calendarInvitations.prepareCalendarResponse({ input, subject: context.accessSubject });
-  return result.ok ? ok({ data: result.data }) : result;
+  return result.ok
+    ? ok({
+        data: result.data,
+        summary: boundedCapabilitySummary(
+          `Prepared calendar response ${itemTitle(result.data.subject)} with status ${input.participationStatus}.`,
+        ),
+      })
+    : result;
 };
 
 const calendarDestinationContext = async (context: CapabilityExecutionContext) => {
@@ -1323,7 +1346,8 @@ export const spacesCapabilities = defineCapabilities({
   queries: {
     "space.search": {
       title: "Search spaces",
-      description: "Find accessible Spaces by name or description.",
+      description:
+        "Find an accessible Space by name or description when its ID is unknown. Use returned spaces.space refs with space.read or their IDs with task.list, event.list, and item Actions.",
       input: UniversalSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -1334,7 +1358,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "item.search": {
       title: "Search Space items",
-      description: "Find accessible tasks and events with optional workflow facets.",
+      description:
+        "Direct cross-Space entry for finding readable tasks and events by text or workflow facets. Use returned spaces.item refs with item.read; use task.list or event.list to browse one known Space.",
       input: UniversalSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -1350,7 +1375,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "item.link-candidate.search": {
       title: "Search writable Space items",
-      description: "Find writable tasks and events that can receive a Cloud resource link.",
+      description:
+        "Specialized cross-Space search for writable tasks or events before item.reference.add. Use item.search for normal reading; pass a returned spaces.item ref as the Action target.",
       input: ItemLinkCandidateSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -1358,7 +1384,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "space.list": {
       title: "List spaces",
-      description: "List accessible Spaces with effective permission, bounded pagination, and item-local spaces.space refs.",
+      description:
+        "Normal entry for Space-scoped work. List accessible Spaces with effective permission; use returned spaces.space refs or IDs with space.read, task.list, event.list, and item creation Actions.",
       input: SpaceListInputSchema,
       data: SpaceListDataSchema,
       openWorld: false,
@@ -1366,7 +1393,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "space.read": {
       title: "Read space",
-      description: "Read one Space from a spaces.space ref or Space ID, including the bounded column and tag IDs used by item operations.",
+      description:
+        "Read one spaces.space ref returned by space.list or space.search, including column and tag IDs required by filtered lists and item Actions.",
       input: SpaceReadInputSchema,
       data: SpaceDetailDataSchema,
       openWorld: false,
@@ -1374,7 +1402,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "space.assignee.list": {
       title: "List assignable Space members",
-      description: "Find people who can be assigned to a task or calendar event in one writable Space.",
+      description:
+        "List people eligible for task or event assignment in one writable Space. Get spaceId from space.list or space.search and pass a returned user ID to an item Action.",
       input: SpaceAssigneeListInputSchema,
       data: SpaceAssigneeListDataSchema,
       openWorld: false,
@@ -1382,7 +1411,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "task.list": {
       title: "List tasks",
-      description: "List tasks in one readable Space with bounded filters, pagination, and item-local spaces.item refs.",
+      description:
+        "Browse tasks in one known Space. Get spaceId, columnIds, and tagIds from space.read; use returned spaces.item refs with item.read, dependency queries, comments, or task Actions.",
       input: TaskListInputSchema,
       data: TaskListDataSchema,
       openWorld: false,
@@ -1390,7 +1420,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "event.list": {
       title: "List events",
-      description: "List events in one readable Space with bounded filters, pagination, and item-local spaces.item refs.",
+      description:
+        "Browse calendar events in one known Space. Get spaceId, columnIds, and tagIds from space.read; use returned spaces.item refs with item.read, comments, or event Actions.",
       input: EventListInputSchema,
       data: EventListDataSchema,
       openWorld: false,
@@ -1398,7 +1429,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "item.read": {
       title: "Read Space item",
-      description: "Read one task or event from a spaces.item ref or item ID with an explicit kind discriminator.",
+      description:
+        "Read one spaces.item ref returned by item.search, task.list, event.list, or a reference query. The kind field distinguishes tasks from events for subsequent Actions.",
       input: ItemReadInputSchema,
       data: ItemDataSchema,
       openWorld: false,
@@ -1406,7 +1438,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "item.reference.find": {
       title: "Find items linked to a resource",
-      description: "Find readable Space items linked to one stable Cloud resource reference.",
+      description:
+        "Find readable Space items linked to one known Cloud resource ref. Use returned spaces.item refs with item.read; use item.search for title or workflow discovery instead.",
       input: ItemResourceReferenceFindInputSchema,
       data: ItemResourceReferenceFindDataSchema,
       openWorld: false,
@@ -1414,7 +1447,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "item.reference.list": {
       title: "List item resource links",
-      description: "List the Cloud resource references stored on one readable Space item.",
+      description:
+        "List Cloud resource refs attached to one known spaces.item ref. Returned refs can be passed directly to their owning app readers; use item.reference.find for the reverse lookup.",
       input: ItemResourceReferenceListInputSchema,
       data: ItemResourceReferenceListDataSchema,
       openWorld: false,
@@ -1422,7 +1456,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "task.blocker.list": {
       title: "List task blockers",
-      description: "List the tasks that currently block one readable task.",
+      description:
+        "List tasks that block one known task. Get itemId from task.list, item.search, or item.read; returned spaces.item refs can be opened with item.read.",
       input: TaskDependencyListInputSchema,
       data: TaskDependencyListDataSchema,
       openWorld: false,
@@ -1430,7 +1465,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "task.blocks.list": {
       title: "List tasks blocked by a task",
-      description: "List the tasks for which one readable task is a blocker.",
+      description:
+        "List tasks currently blocked by one known task. Get itemId from task.list, item.search, or item.read; use task.blocker.list for the opposite direction.",
       input: TaskDependencyListInputSchema,
       data: TaskDependentListDataSchema,
       openWorld: false,
@@ -1439,7 +1475,7 @@ export const spacesCapabilities = defineCapabilities({
     "comment.list": {
       title: "List comments",
       description:
-        "List comments with spaces.comment refs in one bounded item or recurring-occurrence discussion after checking parent Space access.",
+        "List comments on one known item or recurring occurrence after checking Space access. Get itemId from a spaces.item ref; use returned spaces.comment refs with comment.read.",
       input: CommentListInputSchema,
       data: CommentListDataSchema,
       openWorld: false,
@@ -1447,7 +1483,7 @@ export const spacesCapabilities = defineCapabilities({
     },
     "comment.read": {
       title: "Read comment",
-      description: "Read one comment from a spaces.comment ref or comment ID after checking its parent item and Space.",
+      description: "Read one spaces.comment ref returned by comment.list after checking its parent item and Space.",
       input: CommentReadInputSchema,
       data: CommentDataSchema,
       openWorld: false,
@@ -1455,7 +1491,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "calendar-invitation.preview": {
       title: "Preview calendar invitation",
-      description: "Parse a bounded iCalendar invitation and show any linked Space event visible to the actor.",
+      description:
+        "Start a Mail-to-Spaces invitation flow by parsing bounded iCalendar content with its Mail mailboxId and messageId. Shows a visible linked event; otherwise use calendar-destination.list before calendar-invitation.import.",
       input: CalendarInvitationPreviewCapabilityInputSchema,
       data: CalendarInvitationPreviewCapabilityDataSchema,
       openWorld: false,
@@ -1463,7 +1500,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "calendar-destination.list": {
       title: "List calendar destinations",
-      description: "List up to 100 writable Spaces that can receive a calendar invitation.",
+      description:
+        "List writable destination Spaces after calendar-invitation.preview finds no linked event. Pass a returned spaceId to calendar-invitation.import.",
       input: CalendarDestinationListInputSchema,
       data: CalendarDestinationListDataSchema,
       openWorld: false,
@@ -1472,7 +1510,7 @@ export const spacesCapabilities = defineCapabilities({
     "calendar-invitation.response.prepare": {
       title: "Prepare calendar response",
       description:
-        "Prepare a standards-based response for an invitation already imported into a writable Space. Mail identifiers are opaque correlation values and grant no Space access. Create the draft with mail.draft.create, then commit it.",
+        "Prepare a standards-based response after calendar-invitation.preview finds an imported writable Space event. Create the returned payload with mail.draft.create, then call calendar-invitation.response.commit; Mail IDs are correlation values, not Space authorization.",
       input: CalendarInvitationResponsePrepareInputSchema,
       data: CalendarInvitationResponsePrepareDataSchema,
       openWorld: false,

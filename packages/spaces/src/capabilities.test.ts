@@ -333,6 +333,10 @@ describe("spaces capabilities", () => {
       "task.set-completed",
       "task.update",
     ]);
+    expect(spacesCapabilities.queries["space.list"].description).toContain("Normal entry for Space-scoped work");
+    expect(spacesCapabilities.queries["item.search"].description).toContain("Direct cross-Space entry");
+    expect(spacesCapabilities.queries["item.link-candidate.search"].description).toContain("before item.reference.add");
+    expect(spacesCapabilities.queries["calendar-invitation.preview"].description).toContain("Start a Mail-to-Spaces invitation flow");
     expect(
       Object.entries(spacesCapabilities.actions)
         .filter(([, action]) => "review" in action && action.review)
@@ -579,7 +583,7 @@ describe("spaces capabilities", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      data: { data: { id: spaceId, columns: [{ id: columnId }], tags: [{ id: tagId }] } },
+      data: { data: { id: spaceId, columns: [{ id: columnId }], tags: [{ id: tagId }] }, summary: `Read Space “${space.name}”.` },
     });
   });
 
@@ -622,6 +626,7 @@ describe("spaces capabilities", () => {
             },
           ],
         },
+        summary: `Read task “${task.title}”.`,
       },
     });
     expect(result.ok && capabilityResultSchema(ItemDataSchema).safeParse(result.data).success).toBeTrue();
@@ -834,6 +839,57 @@ describe("spaces capabilities", () => {
     });
   });
 
+  test("summarizes calendar preview and response preparation without extra lookups", async () => {
+    const invitation = {
+      method: "request" as const,
+      uid: "planning@example.test",
+      sequence: 1,
+      status: "confirmed" as const,
+      title: event.title,
+      description: null,
+      location: null,
+      url: null,
+      startsAt: event.startsAt!,
+      endsAt: event.endsAt!,
+      allDay: false,
+      recurrenceRule: null,
+      organizer: null,
+      attendees: [],
+    };
+    const preview = spyOn(spacesService.calendarInvitations, "previewCalendarInvitation").mockResolvedValue({
+      ok: true,
+      data: { invitation, response: null, existing: null },
+    });
+    const prepare = spyOn(spacesService.calendarInvitations, "prepareCalendarResponse").mockResolvedValue({
+      ok: true,
+      data: {
+        to: { name: "Organizer", address: "organizer@example.test" },
+        subject: `Accepted: ${event.title}`,
+        body: "Accepted",
+        calendar: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
+      },
+    });
+    const input = { mailboxId: "mail01", messageId: "msg001", calendar: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n" };
+
+    const previewResult = await spacesCapabilities.queries["calendar-invitation.preview"].run(input, userContext);
+    const prepareResult = await spacesCapabilities.queries["calendar-invitation.response.prepare"].run(
+      {
+        ...input,
+        attendee: { name: "Ada", address: "ada@example.test" },
+        participationStatus: "accepted",
+      },
+      userContext,
+    );
+
+    expect(preview).toHaveBeenCalledTimes(1);
+    expect(prepare).toHaveBeenCalledTimes(1);
+    expect(previewResult).toMatchObject({ ok: true, data: { summary: `Previewed calendar invitation “${event.title}”.` } });
+    expect(prepareResult).toMatchObject({
+      ok: true,
+      data: { summary: `Prepared calendar response “Accepted: ${event.title}” with status accepted.` },
+    });
+  });
+
   test("fails a resource-bound credential closed before reading another Space", async () => {
     const get = spyOn(spacesService.space, "get");
 
@@ -982,6 +1038,7 @@ describe("spaces capabilities", () => {
       ok: true,
       data: {
         data: { id: commentId, itemId, content: comment.content, canEdit: false, canDelete: false },
+        summary: `Read a comment on “${task.title}”.`,
         refs: [
           { type: "spaces.comment", id: commentId },
           { type: "spaces.item", id: itemId },
