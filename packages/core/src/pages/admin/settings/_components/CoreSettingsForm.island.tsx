@@ -53,6 +53,7 @@ import type { AiEnrichmentOverview } from "@valentinkolb/cloud/ai";
 import { coreClient } from "@valentinkolb/cloud/clients/core";
 import { AI_PLATFORM_PROMPT_TEMPLATE, formatBytes, renderLiquidTemplate } from "@valentinkolb/cloud/shared";
 import { createMemo, createSignal, type JSX, Show } from "solid-js";
+import { aiModelChoiceGroups, aiModelGroupFiltersFor } from "./ai-model-choice-groups";
 import { LegacySettingsSection } from "./LegacySettingsPanel.island";
 
 type SettingValueSource = "custom" | "env" | "default";
@@ -1108,7 +1109,10 @@ function AiSettingsPanel(props: {
                 label: profile.enabled ? profile.label : `${profile.label} (disabled)`,
                 description: `${providerOption(profile.provider).label} · ${profile.model}`,
                 icon: "ti ti-sparkles",
+                groups: aiModelChoiceGroups(profile),
               }))}
+            groups={aiModelGroupFiltersFor(profiles().filter((profile) => profile.enabled || profile.id === defaultModelId()))}
+            groupsAriaLabel="Filter models"
             placeholder={profiles().length > 0 ? "Choose default model" : "Add a provider first"}
             icon="ti ti-sparkles"
             disabled={profiles().length === 0}
@@ -1164,8 +1168,11 @@ function AiSettingsPanel(props: {
                   label: profile.label,
                   description: `${providerOption(profile.provider).label} · ${profile.model}`,
                   icon: "ti ti-photo-spark",
+                  groups: aiModelChoiceGroups(profile),
                 })),
             ]}
+            groups={aiModelGroupFiltersFor(profiles().filter((profile) => profile.enabled && profile.capabilities.includes("vision")))}
+            groupsAriaLabel="Filter vision models"
             icon="ti ti-photo-spark"
             error={() => props.errorFor(AI_VISION_MODEL_SETTING_KEY)}
           />
@@ -1202,8 +1209,11 @@ function AiSettingsPanel(props: {
                   label: profile.label,
                   description: `${providerOption(profile.provider).label} · ${profile.model}`,
                   icon: "ti ti-sparkles",
+                  groups: aiModelChoiceGroups(profile),
                 })),
             ]}
+            groups={aiModelGroupFiltersFor(profiles().filter((profile) => profile.enabled))}
+            groupsAriaLabel="Filter background models"
             icon="ti ti-clock-bolt"
             error={() => props.errorFor(AI_BACKGROUND_MODEL_SETTING_KEY)}
           />
@@ -1222,8 +1232,11 @@ function AiSettingsPanel(props: {
                   label: profile.label,
                   description: `${providerOption(profile.provider).label} · ${profile.model}`,
                   icon: "ti ti-sparkles",
+                  groups: aiModelChoiceGroups(profile),
                 })),
             ]}
+            groups={aiModelGroupFiltersFor(profiles().filter((profile) => profile.enabled))}
+            groupsAriaLabel="Filter workflow models"
             icon="ti ti-route"
             error={() => props.errorFor(AI_WORKFLOW_MODEL_SETTING_KEY)}
           />
