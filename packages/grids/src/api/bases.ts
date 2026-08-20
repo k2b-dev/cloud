@@ -5,6 +5,11 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { CreateBaseSchema, UpdateBaseSchema } from "../contracts";
 import {
+  ControlledDestructionOverviewSchema,
+  ControlledDestructionRunSchema,
+  StartControlledDestructionInputSchema,
+} from "../controlled-destruction-contracts";
+import {
   CreatePreservationHoldInputSchema,
   PreservationHoldInputSchema,
   PreservationHoldSchema,
@@ -289,6 +294,107 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
           displayName: actor?.displayName ?? null,
         });
         return result.ok ? c.json(result.data) : c.json({ message: result.error.message }, result.error.status);
+      },
+    )
+
+    .get(
+      "/:baseId/controlled-destruction",
+      requirePublicIdParam("baseId", "base", "Base"),
+      describeRoute({
+        tags: ["Grids:Base"],
+        summary: "Preview controlled File destruction and list recent runs",
+        responses: {
+          200: jsonResponse(ControlledDestructionOverviewSchema, "Controlled destruction overview"),
+          403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+          404: jsonResponse(ErrorResponseSchema, "Base not found"),
+        },
+      }),
+      async (c) => {
+        const baseId = internalIdParam(c, "baseId")!;
+        const gate = await gateAt(c, { baseId }, "admin");
+        if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+        return c.json(await gridsService.base.controlledDestruction.overview(baseId));
+      },
+    )
+
+    .post(
+      "/:baseId/controlled-destruction",
+      requirePublicIdParam("baseId", "base", "Base"),
+      describeRoute({
+        tags: ["Grids:Base"],
+        summary: "Start bounded controlled File destruction",
+        responses: {
+          201: jsonResponse(ControlledDestructionRunSchema, "Controlled destruction started"),
+          400: jsonResponse(ErrorResponseSchema, "Invalid confirmation"),
+          403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+          404: jsonResponse(ErrorResponseSchema, "Base not found"),
+          409: jsonResponse(ErrorResponseSchema, "Preview changed"),
+        },
+      }),
+      v("json", StartControlledDestructionInputSchema),
+      async (c) => {
+        const baseId = internalIdParam(c, "baseId")!;
+        const gate = await gateAt(c, { baseId }, "admin");
+        if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+        const actor = currentActorUser(c);
+        const result = await gridsService.base.controlledDestruction.start(baseId, c.req.valid("json"), {
+          id: actor?.id ?? null,
+          displayName: actor?.displayName ?? null,
+        });
+        return result.ok ? c.json(result.data, 201) : c.json({ message: result.error.message }, result.error.status);
+      },
+    )
+
+    .get(
+      "/:baseId/controlled-destruction/:runId",
+      requirePublicIdParam("baseId", "base", "Base"),
+      async (c, next) => {
+        if (!publicIdParam(c, "runId")) return c.json({ message: "Controlled destruction run not found" }, 404);
+        await next();
+      },
+      describeRoute({
+        tags: ["Grids:Base"],
+        summary: "Get one controlled destruction run",
+        responses: {
+          200: jsonResponse(ControlledDestructionRunSchema, "Controlled destruction run"),
+          403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+          404: jsonResponse(ErrorResponseSchema, "Not found"),
+        },
+      }),
+      async (c) => {
+        const baseId = internalIdParam(c, "baseId")!;
+        const gate = await gateAt(c, { baseId }, "admin");
+        if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+        const run = await gridsService.base.controlledDestruction.get(baseId, c.req.param("runId"));
+        return run ? c.json(ControlledDestructionRunSchema.parse(run)) : c.json({ message: "Controlled destruction run not found" }, 404);
+      },
+    )
+
+    .post(
+      "/:baseId/controlled-destruction/:runId/cancel",
+      requirePublicIdParam("baseId", "base", "Base"),
+      async (c, next) => {
+        if (!publicIdParam(c, "runId")) return c.json({ message: "Controlled destruction run not found" }, 404);
+        await next();
+      },
+      describeRoute({
+        tags: ["Grids:Base"],
+        summary: "Cancel remaining controlled destruction work",
+        responses: {
+          200: jsonResponse(ControlledDestructionRunSchema, "Cancellation requested"),
+          403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+          404: jsonResponse(ErrorResponseSchema, "Not found"),
+          409: jsonResponse(ErrorResponseSchema, "Run is terminal"),
+        },
+      }),
+      async (c) => {
+        const baseId = internalIdParam(c, "baseId")!;
+        const gate = await gateAt(c, { baseId }, "admin");
+        if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+        const result = await gridsService.base.controlledDestruction.cancel(baseId, c.req.param("runId"));
+        return result.ok
+          ? c.json(ControlledDestructionRunSchema.parse(result.data))
+          : c.json({ message: result.error.message }, result.error.status);
       },
     )
 

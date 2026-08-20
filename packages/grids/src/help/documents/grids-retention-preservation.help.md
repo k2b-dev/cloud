@@ -2,7 +2,7 @@
 id: grids-retention-preservation
 title: Retention and preservation
 icon: ti ti-archive
-description: Set a technical retention floor or block future controlled destruction for a Base or Table.
+description: Set a technical retention floor, preserve a Base or Table, or destroy eligible unreferenced File bytes.
 order: 148
 ---
 A retention floor is an optional technical minimum for trashed Records and newly unreferenced Files in a Base. It does not delete anything, schedule cleanup, decide whether destruction is appropriate, or establish legal compliance.
@@ -11,7 +11,7 @@ You need **Admin** access to the Base. Custom Apps, Workflows, API clients, and 
 
 ## Set the floor {icon="calendar-time"}
 
-1. Open the Base settings and select **Retention and preservation**.
+1. Open the Base settings and select **Retention**.
 2. Enter **Minimum retention days** between 1 and 36,500.
 3. Review the live **Retention preview**. It distinguishes Records and unreferenced Files still retained by the proposed floor, items that have reached the floor, and evidence protected independently.
 4. Select **Review Records** to inspect the complete paginated list. **Open in Trash** hands restoration or record actions to the existing table Trash view.
@@ -66,11 +66,32 @@ Increasing the number preserves affected trashed Records and unreferenced Files 
 
 Durable History revisions, finalized Records, immutable Documents, Number allocations, protected Files, preservation holds, and actual controlled destruction keep their separate lifecycle contracts.
 
+## Destroy eligible unreferenced Files {icon="trash-x"}
+
+Controlled File destruction permanently removes stored bytes for newly unreferenced Files after the Base retention floor has been reached. It never includes Records, trashed Records, Documents, evidence exports, Durable History, or indirect references promised by another owner.
+
+You need **Admin** access and an active retention floor. Open **Base settings → Controlled destruction**. The preview shows the current eligible total and separates Files that are still retained, blocked by a preservation hold, or cannot be destroyed safely. One run contains at most 100 exact File candidates.
+
+Select **Destroy eligible Files**, read the irreversible consequence, and type the exact Base name. Grids queues a durable run and checks every File again immediately before deletion. If its retention floor, references, origin Table, or preservation holds changed, that File is skipped. The run can therefore finish as **partial** without weakening a hold or deleting a newly referenced File.
+
+The recent-run list shows destroyed, skipped, and failed counts. **Cancel remaining** stops Files that have not been processed yet; bytes already destroyed cannot be recovered. Refresh the preview to start another bounded batch.
+
+The Cloud CLI uses the same Admin-only preview and run owner:
+
+```bash
+cld grids bases destruction preview 8yMtTb --json
+cld grids bases destruction run 8yMtTb --confirm "Example Base" --json
+cld grids bases destruction status 8yMtTb RUN001 --json
+cld grids bases destruction cancel 8yMtTb RUN001 --yes --json
+```
+
+`run` always fetches a fresh preview and selects only that bounded set. The command refuses an empty batch or a `--confirm` value that does not exactly match the Base name. A queued run can be canceled immediately; a running run stops its remaining work at the next safe boundary.
+
 ## Preserve a Base or one Table {icon="lock"}
 
 A preservation hold blocks future controlled destruction in its selected scope. A Base hold covers every Table. A Table hold covers only the selected Table and also blocks destruction of its parent Base so the Table hold cannot be bypassed. Holds do not lock Records, stop normal edits, grant access, change Finalization, expire automatically, or decide that the Base meets a legal requirement.
 
-You need **Admin** access. Open **Base settings → Retention and preservation**, then select **Create hold**. Choose **Entire Base** or **One Table**. Table search runs on the server and lists active Tables in this Base. Enter a reason that tells other administrators why the hold exists. The active-hold list shows the scope, public ID, creator, creation time, and reason.
+You need **Admin** access. Open **Base settings → Preservation holds**, then select **Create hold**. Choose **Entire Base** or **One Table**. Table search runs on the server and lists active Tables in this Base. Enter a reason that tells other administrators why the hold exists. The active-hold list shows the scope, public ID, creator, creation time, and reason.
 
 More than one hold can be active. Releasing one hold requires a new reason and leaves every other hold active. Releasing the last hold only removes that block; it does not delete anything or start cleanup.
 

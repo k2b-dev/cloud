@@ -1,5 +1,5 @@
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, Placeholder, prompts, Select, SettingsCollection, SettingsGroup, StatusBadge, TextInput, toast } from "@k2b/ui";
+import { Button, InlineGuidance, Placeholder, prompts, Select, SettingsCollection, StatusBadge, TextInput, toast } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicTable } from "../../../api/public-dto";
@@ -197,10 +197,10 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
   });
 
   return (
-    <SettingsGroup
-      title="Preservation holds"
-      description="Base holds cover every Table. Table holds preserve only their selected Table, but also prevent destruction of the parent Base. Neither locks Records or changes access."
-    >
+    <>
+      <InlineGuidance tone="info" icon="ti ti-info-circle">
+        A Table hold also prevents deleting its parent Base, so the hold cannot be bypassed. Holds do not lock Records or change access.
+      </InlineGuidance>
       <Show when={!holds.loading()} fallback={<Placeholder state="loading" variant="compact" title="Loading preservation holds" />}>
         <Show
           when={!holds.error()}
@@ -219,7 +219,12 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
           }
         >
           <SettingsCollection
-            title="Active holds"
+            class="mt-5"
+            title={
+              <span class="inline-flex items-center gap-2">
+                <i class="ti ti-lock" aria-hidden="true" /> Active holds
+              </span>
+            }
             description="Every active hold must be released separately."
             empty="No active preservation holds."
           >
@@ -239,7 +244,7 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
                     icon={<i class={hold.scope.type === "base" ? "ti ti-database-lock" : "ti ti-table-lock"} aria-hidden="true" />}
                   >
                     <SettingsCollection.Item.Status>
-                      <StatusBadge tone="warning" label={scopeDescription} icon={null} />
+                      <StatusBadge tone="neutral" variant="text" label={scopeDescription} icon={null} />
                     </SettingsCollection.Item.Status>
                     <SettingsCollection.Item.Actions>
                       <Button size="sm" variant="secondary" disabled={busy()} onClick={() => void release(hold.id)}>
@@ -256,6 +261,6 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
           </Show>
         </Show>
       </Show>
-    </SettingsGroup>
+    </>
   );
 }

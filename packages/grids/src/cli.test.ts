@@ -401,7 +401,7 @@ describe("grids CLI", () => {
     const commands = commandGroups.flat();
     const paths = commands.map((item) => item.path.join(" "));
 
-    expect(commands).toHaveLength(166);
+    expect(commands).toHaveLength(170);
     expect(new Set(paths).size).toBe(paths.length);
 
     for (const path of paths) {
@@ -595,6 +595,96 @@ describe("grids CLI", () => {
     expect(confirmed.calls.at(-1)?.path).toBe(`/api/grids/bases/${baseId}/retention-policy`);
     expect(confirmed.calls.at(-1)?.init?.method).toBe("DELETE");
     expect(confirmed.jsonValues).toEqual([{ removed: true, baseId }]);
+  });
+
+  test("previews, starts, inspects, and cancels bounded File destruction", async () => {
+    const preview = {
+      observedAt: "2026-08-20T08:00:00.000Z",
+      minimumDays: 30,
+      counts: { total: 2, eligible: 1, retained: 1, held: 0, unknown: 0, eligibleBytes: 18 },
+      items: [
+        {
+          fileId,
+          tableId,
+          tableName: "Authors",
+          filename: "evidence.txt",
+          sizeBytes: 18,
+          unreferencedAt: "2026-07-01T08:00:00.000Z",
+          notBefore: "2026-07-31T08:00:00.000Z",
+        },
+      ],
+      truncated: false,
+    };
+    const run = {
+      id: "DEST01",
+      baseId,
+      status: "queued",
+      requestedByDisplayName: "Base Admin",
+      requestedAt: "2026-08-20T08:01:00.000Z",
+      startedAt: null,
+      completedAt: null,
+      counts: { total: 1, processed: 0, destroyed: 0, skipped: 0, failed: 0 },
+      items: [
+        {
+          fileId,
+          tableId,
+          tableName: "Authors",
+          filename: "evidence.txt",
+          sizeBytes: 18,
+          status: "pending",
+          message: null,
+        },
+      ],
+      error: null,
+    };
+    const overview = { preview, runs: [] };
+    const show = createContext(["bases", "destruction", "preview", baseId], {}, [jsonResponse(basePage), jsonResponse(overview)], {
+      output: "json",
+    });
+    await gridsCli.run(show.ctx);
+    expect(show.calls.at(-1)?.path).toBe(`/api/grids/bases/${baseId}/controlled-destruction`);
+    expect(show.jsonValues).toEqual([preview]);
+
+    const wrong = createContext(["bases", "destruction", "run", baseId], { confirm: "Wrong" }, [jsonResponse(basePage)]);
+    await expect(gridsCli.run(wrong.ctx)).rejects.toThrow("--confirm must exactly match the Base name: Bookshop");
+    expect(wrong.calls).toHaveLength(1);
+
+    const start = createContext(
+      ["bases", "destruction", "run", baseId],
+      { confirm: "Bookshop" },
+      [jsonResponse(basePage), jsonResponse(overview), jsonResponse(run, 201)],
+      { output: "json" },
+    );
+    await gridsCli.run(start.ctx);
+    expect(start.calls.at(-1)?.path).toBe(`/api/grids/bases/${baseId}/controlled-destruction`);
+    expect(start.calls.at(-1)?.init?.method).toBe("POST");
+    expect(JSON.parse(String(start.calls.at(-1)?.init?.body))).toEqual({
+      fileIds: [fileId],
+      confirmation: "Bookshop",
+    });
+    expect(start.jsonValues).toEqual([run]);
+
+    const status = createContext(["bases", "destruction", "status", baseId, run.id], {}, [jsonResponse(basePage), jsonResponse(run)], {
+      output: "json",
+    });
+    await gridsCli.run(status.ctx);
+    expect(status.calls.at(-1)?.path).toBe(`/api/grids/bases/${baseId}/controlled-destruction/${run.id}`);
+    expect(status.jsonValues).toEqual([run]);
+
+    const unconfirmed = createContext(["bases", "destruction", "cancel", baseId, run.id]);
+    await expect(gridsCli.run(unconfirmed.ctx)).rejects.toThrow("Pass --yes to cancel remaining controlled destruction work.");
+    expect(unconfirmed.calls).toEqual([]);
+    const canceled = { ...run, status: "canceled" };
+    const cancel = createContext(
+      ["bases", "destruction", "cancel", baseId, run.id],
+      { yes: true },
+      [jsonResponse(basePage), jsonResponse(canceled)],
+      { output: "json" },
+    );
+    await gridsCli.run(cancel.ctx);
+    expect(cancel.calls.at(-1)?.path).toBe(`/api/grids/bases/${baseId}/controlled-destruction/${run.id}/cancel`);
+    expect(cancel.calls.at(-1)?.init?.method).toBe("POST");
+    expect(cancel.jsonValues).toEqual([canceled]);
   });
 
   test("creates, filters, and confirms release of preservation holds", async () => {

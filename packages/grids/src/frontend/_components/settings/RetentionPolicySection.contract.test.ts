@@ -5,11 +5,11 @@ describe("Retention policy settings contract", () => {
     const source = await Bun.file(new URL("./RetentionPolicySection.tsx", import.meta.url)).text();
     for (const text of [
       "Base retention floor",
-      "Preservation only",
+      "This floor only delays eligibility",
       "No minimum retention configured",
       "Minimum retention days",
       "Finalized Records and protected Files remain protected",
-      "does not permit or perform destruction",
+      "No destruction performed",
       "Remove minimum retention?",
       "Nothing is deleted now",
       "Loading retention policy",
@@ -18,7 +18,7 @@ describe("Retention policy settings contract", () => {
       "Retention preview",
       "Review Records",
       "Review Files",
-      "Protected references are excluded",
+      "Protected references excluded",
     ])
       expect(source).toContain(text);
   });
@@ -51,9 +51,13 @@ describe("Retention policy settings contract", () => {
     expect(source).not.toContain("apiClient");
   });
 
-  test("uses one shared preview surface without decorative section rules", async () => {
+  test("uses the shared compact stats surface without decorative section rules", async () => {
     const source = await Bun.file(new URL("./RetentionPolicySection.tsx", import.meta.url)).text();
-    expect(source).toContain("<Paper");
+    expect(source).toContain("<StatGrid");
+    expect(source).toContain("<StatCell");
+    expect(source).toContain("<InlineGuidance");
+    expect(source).not.toContain("<Paper");
+    expect(source).not.toContain('class="max-w-sm"');
     expect(source).not.toContain("border-t");
     expect(source).not.toContain("border-y");
   });

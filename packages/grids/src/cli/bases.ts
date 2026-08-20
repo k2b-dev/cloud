@@ -1,5 +1,6 @@
 import { arg, command, confirmFlag, flag, paginationFlags } from "@valentinkolb/cloud/cli";
 import type { PublicBase as Base, PublicField as Field, PublicTable as Table } from "../api/public-dto";
+import type { ControlledDestructionOverview, ControlledDestructionRun } from "../controlled-destruction-contracts";
 import type { PreservationHold, PreservationHoldsResponse } from "../preservation-hold-contracts";
 import {
   RETENTION_MAX_DAYS,
@@ -50,6 +51,16 @@ type BaseTrash = {
 };
 
 type RetentionPolicyResponse = { policy: RetentionPolicy | null };
+
+const destructionRows = (run: ControlledDestructionRun) =>
+  run.items.map((item) => ({
+    fileId: item.fileId,
+    table: `${item.tableName} (${item.tableId})`,
+    filename: item.filename,
+    sizeBytes: item.sizeBytes,
+    status: item.status,
+    message: item.message ?? "-",
+  }));
 
 const trashRows = (trash: BaseTrash) => [
   ...trash.tables.map((item) => ({ kind: "table", name: item.name, parent: "-", deletedAt: item.deletedAt, id: item.id })),
@@ -420,6 +431,93 @@ export const baseCrudCommands = [
         { key: "createdAt", label: "CREATED" },
         { key: "releasedAt", label: "RELEASED" },
       ]);
+    },
+  }),
+  command("bases destruction preview", {
+    summary: "Preview bounded controlled File destruction",
+    description: "Requires Base admin access. Preview never deletes data and returns at most 100 exact eligible File candidates.",
+    args: baseArgs,
+    flags: { ...baseFlag },
+    async run({ ctx, args }) {
+      const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
+      const payload = await readApi<ControlledDestructionOverview>(ctx, `/bases/${encodeURIComponent(base.id)}/controlled-destruction`);
+      const rows = payload.preview.items.map((item) => ({
+        fileId: item.fileId,
+        table: `${item.tableName} (${item.tableId})`,
+        filename: item.filename,
+        sizeBytes: item.sizeBytes,
+        notBefore: item.notBefore,
+      }));
+      printJsonOrTable(ctx, payload.preview, rows, [
+        { key: "fileId", label: "FILE" },
+        { key: "table", label: "TABLE" },
+        { key: "filename", label: "FILENAME" },
+        { key: "sizeBytes", label: "BYTES" },
+        { key: "notBefore", label: "ELIGIBLE SINCE" },
+      ]);
+      if (ctx.options.output !== "json" && ctx.options.output !== "jsonl") {
+        ctx.print(`Showing ${payload.preview.items.length} of ${payload.preview.counts.eligible} eligible File candidates.`);
+      }
+    },
+  }),
+  command("bases destruction run", {
+    summary: "Start the currently previewed controlled File destruction batch",
+    description: "Irreversible. Pass the exact Base name through --confirm. Eligibility and holds are rechecked before every File.",
+    args: baseArgs,
+    flags: { ...baseFlag, confirm: flag.string({ required: true, description: "Exact Base name" }) },
+    async run({ ctx, args, flags }) {
+      const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
+      if (flags.confirm !== base.name) throw new Error(`--confirm must exactly match the Base name: ${base.name}`);
+      const overview = await readApi<ControlledDestructionOverview>(ctx, `/bases/${encodeURIComponent(base.id)}/controlled-destruction`);
+      if (overview.preview.items.length === 0)
+        throw new Error("No eligible unreferenced Files are available in the current bounded preview.");
+      const run = await readApi<ControlledDestructionRun>(
+        ctx,
+        `/bases/${encodeURIComponent(base.id)}/controlled-destruction`,
+        jsonRequest("POST", {
+          fileIds: overview.preview.items.map((item) => item.fileId),
+          confirmation: flags.confirm,
+        }),
+      );
+      printJsonOrMessage(ctx, run, `Started controlled destruction ${run.id} for ${run.counts.total} File candidates.`);
+    },
+  }),
+  command("bases destruction status", {
+    summary: "Show one controlled destruction run",
+    args: baseArgs,
+    flags: { ...baseFlag },
+    async run({ ctx, args }) {
+      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, 1);
+      const runId = requirePublicId(requireRestArg(rest, 0, "Controlled destruction run public id"), "Controlled destruction run id");
+      const run = await readApi<ControlledDestructionRun>(
+        ctx,
+        `/bases/${encodeURIComponent(base.id)}/controlled-destruction/${encodeURIComponent(runId)}`,
+      );
+      printJsonOrTable(ctx, run, destructionRows(run), [
+        { key: "fileId", label: "FILE" },
+        { key: "table", label: "TABLE" },
+        { key: "filename", label: "FILENAME" },
+        { key: "sizeBytes", label: "BYTES" },
+        { key: "status", label: "STATUS" },
+        { key: "message", label: "DETAIL" },
+      ]);
+    },
+  }),
+  command("bases destruction cancel", {
+    summary: "Cancel remaining work in one controlled destruction run",
+    description: "Already destroyed bytes cannot be recovered.",
+    args: baseArgs,
+    flags: { ...baseFlag, yes: confirmFlag("Cancel remaining controlled destruction work") },
+    async run({ ctx, args, flags }) {
+      if (!flags.yes) throw new Error("Pass --yes to cancel remaining controlled destruction work.");
+      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, 1);
+      const runId = requirePublicId(requireRestArg(rest, 0, "Controlled destruction run public id"), "Controlled destruction run id");
+      const run = await readApi<ControlledDestructionRun>(
+        ctx,
+        `/bases/${encodeURIComponent(base.id)}/controlled-destruction/${encodeURIComponent(runId)}/cancel`,
+        jsonRequest("POST"),
+      );
+      printJsonOrMessage(ctx, run, `Cancellation requested for controlled destruction ${run.id}.`);
     },
   }),
   command("bases preservation-holds create", {

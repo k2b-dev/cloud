@@ -3,7 +3,9 @@ import type { AccessEntry } from "@valentinkolb/cloud/contracts";
 import { createSignal } from "solid-js";
 import type { PublicBase } from "../../../api/public-dto";
 import { DangerZone, DocumentProfileForm, GeneralForm, PermissionsSection, TrashSection } from "./BaseSettingsSections";
+import { ControlledDestructionSection } from "./ControlledDestructionSection";
 import { EvidenceExportsSection } from "./EvidenceExportsSection";
+import { PreservationHoldsSection } from "./PreservationHoldsSection";
 import { RetentionPolicySection } from "./RetentionPolicySection";
 
 type Props = {
@@ -113,9 +115,9 @@ export default function BaseSettingsPanel(props: Props) {
         <SettingsModal.Group title="Lifecycle">
           <SettingsModal.Tab
             id="retention"
-            title="Retention and preservation"
+            title="Retention"
             icon="ti ti-archive"
-            description="Technical minimum preservation before future controlled destruction."
+            description="Keep deleted Records and unreferenced Files recoverable for a minimum time—for example, through an internal review period."
           >
             <RetentionPolicySection
               baseId={props.base.id}
@@ -124,12 +126,33 @@ export default function BaseSettingsPanel(props: Props) {
             />
           </SettingsModal.Tab>
           <SettingsModal.Tab
+            id="holds"
+            title="Preservation holds"
+            icon="ti ti-lock"
+            description="Pause future destruction for a Base or Table—for example, while a complaint or audit is being resolved."
+          >
+            <PreservationHoldsSection baseId={props.base.id} onSavingChange={(value) => setSectionSaving("holds", value)} />
+          </SettingsModal.Tab>
+          <SettingsModal.Tab
             id="evidence"
             title="Evidence exports"
             icon="ti ti-package-export"
-            description="Bounded, verifiable packages of available evidence."
+            description="Create a verifiable snapshot of available Records and artifacts—for example, to hand a review package to an auditor."
           >
             <EvidenceExportsSection base={props.base} />
+          </SettingsModal.Tab>
+          <SettingsModal.Tab
+            id="destruction"
+            title="Controlled destruction"
+            icon="ti ti-trash-x"
+            description="Permanently remove eligible unreferenced File bytes—for example, after an approved retention period has ended."
+            tone="danger"
+          >
+            <ControlledDestructionSection
+              baseId={props.base.id}
+              baseName={props.base.name}
+              onSavingChange={(value) => setSectionSaving("destruction", value)}
+            />
           </SettingsModal.Tab>
 
           <SettingsModal.Tab

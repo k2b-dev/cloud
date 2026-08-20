@@ -123,14 +123,25 @@ describe("durable file asset lifecycle Postgres integration", () => {
       if (!replacement.ok) throw replacement.error;
       expect((await remove({ ...fixture, fileId: replacement.data.id, userId: null, origin: "direct" })).ok).toBe(true);
 
-      const candidates = await sql<Array<{ file_id: string; base_id: string; unreferenced_at: Date }>>`
-        SELECT file_id::text, base_id::text, unreferenced_at
+      const candidates = await sql<
+        Array<{
+          file_id: string;
+          base_id: string;
+          table_id: string | null;
+          table_short_id: string | null;
+          table_name: string | null;
+          unreferenced_at: Date;
+        }>
+      >`
+        SELECT file_id::text, base_id::text, table_id::text, table_short_id, table_name, unreferenced_at
         FROM grids.file_retention_candidates
         WHERE file_id IN (${original.data.id}::uuid, ${replacement.data.id}::uuid)
         ORDER BY file_id
       `;
       expect(candidates).toHaveLength(2);
       expect(candidates.every((candidate) => candidate.base_id === fixture.baseId)).toBe(true);
+      expect(candidates.every((candidate) => candidate.table_id === fixture.tableId)).toBe(true);
+      expect(candidates.every((candidate) => candidate.table_short_id && candidate.table_name === "Records")).toBe(true);
       const retainedCleanup = await cleanup(original.data.id);
       expect(retainedCleanup.ok).toBe(true);
       if (retainedCleanup.ok) expect(retainedCleanup.data).toBe(false);
@@ -157,13 +168,14 @@ describe("durable file asset lifecycle Postgres integration", () => {
         )[0]?.exists,
       ).toBe(false);
       expect((await releaseProtection({ fileId: original.data.id, ownerKind: "record_revision", ownerId })).ok).toBe(true);
-      const [renewed] = await sql<Array<{ unreferenced_at: Date; bytes: Uint8Array }>>`
-        SELECT candidate.unreferenced_at, file.bytes
+      const [renewed] = await sql<Array<{ unreferenced_at: Date; table_id: string | null; bytes: Uint8Array }>>`
+        SELECT candidate.unreferenced_at, candidate.table_id::text, file.bytes
         FROM grids.file_retention_candidates candidate
         JOIN grids.files file ON file.id = candidate.file_id
         WHERE candidate.file_id = ${original.data.id}::uuid
       `;
       expect(renewed?.bytes).toEqual(bytes("retained original"));
+      expect(renewed?.table_id).toBe(fixture.tableId);
       expect(renewed && firstUnreferencedAt && renewed.unreferenced_at >= firstUnreferencedAt).toBe(true);
     } finally {
       await destroyFixture(fixture.baseId);

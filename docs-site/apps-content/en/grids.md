@@ -40,6 +40,13 @@ documents, and workflows without splitting the domain across unrelated tools.
   destruction of its parent Base so the hold cannot be bypassed. Records remain
   editable, access and Finalization do not change, and releasing a hold never
   starts deletion.
+- Let a Base admin preview and start a durable, irreversible destruction run
+  for at most 100 exact unreferenced File candidates whose retention floor has
+  been reached. The admin confirms the exact Base name; every File is rechecked
+  for retention, references, origin Table, and preservation holds immediately
+  before deletion. Records, Documents, evidence exports, and Durable History
+  are excluded. Remaining work can be canceled, but destroyed bytes cannot be
+  recovered.
 - Irreversibly enable Durable History for a stored table when every future
   Record, Relation, and File state must remain inspectable from an honest
   activation baseline. Existing tables stay unchanged until an admin opts in.

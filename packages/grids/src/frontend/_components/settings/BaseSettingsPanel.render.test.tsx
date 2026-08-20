@@ -37,7 +37,17 @@ describe("Grids Base settings composition", () => {
     );
 
     for (const group of ["Base", "Sharing", "Recovery", "Lifecycle"]) expect(html).toContain(group);
-    for (const tab of ["General", "Documents", "Access", "Trash", "Retention and preservation", "Evidence exports", "Danger zone"])
+    for (const tab of [
+      "General",
+      "Documents",
+      "Access",
+      "Trash",
+      "Retention",
+      "Preservation holds",
+      "Evidence exports",
+      "Controlled destruction",
+      "Danger zone",
+    ])
       expect(html).toContain(tab);
     expect(html).toContain("Identity shown across Grids.");
     expect(html).toContain("Describe this Base wherever it appears in Grids.");
@@ -45,12 +55,15 @@ describe("Grids Base settings composition", () => {
     expect(html).toContain('aria-describedby="k2b-settings-field-');
   });
 
-  test("keeps scoped holds in the retention category with explicit consequences", () => {
+  test("keeps scoped holds in their own lifecycle category with explicit consequences", () => {
     const source = readFileSync(join(import.meta.dir, "PreservationHoldsSection.tsx"), "utf8");
+    const panel = readFileSync(join(import.meta.dir, "BaseSettingsPanel.tsx"), "utf8");
     expect(source).toContain("Preservation holds");
     expect(source).toContain("query.create");
     expect(source).toContain("Every active hold must be released separately.");
-    expect(source).toContain("Table holds preserve only their selected Table, but also prevent destruction of the parent Base.");
+    expect(source).toContain("A Table hold also prevents deleting its parent Base");
+    expect(source).toContain('class="mt-5"');
+    expect(source).toContain('class="ti ti-lock"');
     expect(source).toContain("fetchData");
     expect(source).toContain('limit: "25"');
     expect(source).toContain("Could not search Tables");
@@ -58,6 +71,9 @@ describe("Grids Base settings composition", () => {
     expect(source).toContain("setTableId(null)");
     expect(source).toContain("holds.refresh()");
     expect(source).toContain("active holds could not be refreshed");
+    expect(panel).toContain('id="holds"');
+    expect(panel).toContain('id="destruction"');
+    expect(readFileSync(join(import.meta.dir, "RetentionPolicySection.tsx"), "utf8")).not.toContain("ControlledDestructionSection");
   });
 
   test("builds only valid Base and Table hold intents", () => {

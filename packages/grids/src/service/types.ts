@@ -59,6 +59,8 @@ export type AuditAction =
   | "retention_policy.removed"
   | "preservation_hold.created"
   | "preservation_hold.released"
+  | "controlled_destruction.started"
+  | "controlled_destruction.file_destroyed"
   | "access.granted"
   | "access.updated"
   | "access.revoked"

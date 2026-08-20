@@ -2,21 +2,21 @@ import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
   Button,
   formatFileViewSize,
-  NoticeCard,
+  InlineGuidance,
   NumberInput,
-  Paper,
   Placeholder,
   prompts,
   SettingsGroup,
   SettingsModal,
   SettingsPanelFooter,
+  StatCell,
+  StatGrid,
   toast,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS, type RetentionPolicy, type RetentionPreview } from "../../../retention-policy-contracts";
 import { errorMessage } from "../utils/api-helpers";
-import { PreservationHoldsSection } from "./PreservationHoldsSection";
 import { openRetentionFilesDialog } from "./RetentionFilesDialog";
 import { openRetentionRecordsDialog } from "./RetentionRecordsDialog";
 
@@ -36,7 +36,6 @@ export function RetentionPolicySection(props: {
   const [days, setDays] = createSignal<number | null>(null);
   const [savedDays, setSavedDays] = createSignal<number | null>(null);
   const [initialized, setInitialized] = createSignal(false);
-  const [holdSaving, setHoldSaving] = createSignal(false);
   createEffect(() => {
     if (!policy.loading() && !policy.error() && !initialized()) {
       setDays(policy.data()?.minimumDays ?? null);
@@ -119,7 +118,7 @@ export function RetentionPolicySection(props: {
     },
   });
   const saving = () => save.loading() || remove.loading();
-  createEffect(() => props.onSavingChange(saving() || holdSaving()));
+  createEffect(() => props.onSavingChange(saving()));
   onCleanup(() => props.onSavingChange(false));
 
   return (
@@ -130,16 +129,15 @@ export function RetentionPolicySection(props: {
       >
         <SettingsGroup.Action>
           <Show when={savedDays() !== null}>
-            <Button variant="danger" size="sm" disabled={saving()} onClick={() => remove.mutate(undefined)}>
+            <Button variant="secondary" size="sm" disabled={saving()} onClick={() => remove.mutate(undefined)}>
               Remove floor
             </Button>
           </Show>
         </SettingsGroup.Action>
-        <NoticeCard
-          tone="info"
-          title="Preservation only"
-          detail="This setting never deletes Records or Files, starts no cleanup job, and is not a legal or compliance assessment."
-        />
+        <InlineGuidance tone="info" icon="ti ti-info-circle">
+          This floor only delays eligibility. It never deletes Records or Files, starts no cleanup job, and is not a legal or compliance
+          assessment.
+        </InlineGuidance>
         <Show when={!policy.loading()} fallback={<Placeholder state="loading" variant="compact" title="Loading retention policy" />}>
           <Show
             when={!policy.error()}
@@ -193,28 +191,25 @@ export function RetentionPolicySection(props: {
             </Show>
             <Show when={currentPreview()} keyed>
               {(impact) => (
-                <Paper as="section" class="space-y-4 p-4" aria-labelledby="retention-preview-title">
-                  <div>
-                    <h3 id="retention-preview-title" class="font-semibold text-primary">
-                      Retention preview
-                    </h3>
+                <div class="space-y-3">
+                  <StatGrid title="Retention preview" columns={3} size="sm" surface="muted">
+                    <StatCell label="Records retained" value={impact.counts.retainedUntilLater} sub="Until later" />
+                    <StatCell label="Records at floor" value={impact.counts.floorReached} sub="No destruction performed" />
+                    <StatCell label="Finalized Records" value={impact.counts.protectedFinalized} sub="Protected independently" />
+                    <StatCell label="Files retained" value={impact.files.counts.retainedUntilLater} sub="Until later" />
+                    <StatCell label="Files at floor" value={impact.files.counts.floorReached} sub="Protected references excluded" />
+                    <StatCell
+                      label="Unreferenced storage"
+                      value={formatFileViewSize(impact.files.counts.sizeBytes)}
+                      sub={`${impact.files.counts.unreferenced} Files`}
+                    />
+                  </StatGrid>
+                  <div class="flex flex-wrap items-center justify-between gap-3">
                     <p class="text-xs text-dimmed">
                       Calculated {new Date(impact.observedAt).toLocaleString()}
                       {changed() ? ` for the unsaved ${days()}-day floor` : ""}.
                     </p>
-                  </div>
-                  <div class="grid gap-5 sm:grid-cols-2">
-                    <div class="flex min-w-0 flex-col items-start gap-3">
-                      <div>
-                        <p class="font-medium text-primary">Records</p>
-                        <p class="text-sm text-secondary">
-                          {impact.counts.retainedUntilLater} retained until later · {impact.counts.floorReached} reached the floor ·{" "}
-                          {impact.counts.protectedFinalized} finalized
-                        </p>
-                        <p class="text-xs text-dimmed">
-                          {impact.counts.trashedRecords} total in trash. Reaching the floor does not permit or perform destruction.
-                        </p>
-                      </div>
+                    <div class="flex flex-wrap gap-2">
                       <Button
                         size="sm"
                         variant="secondary"
@@ -223,19 +218,6 @@ export function RetentionPolicySection(props: {
                       >
                         Review Records
                       </Button>
-                    </div>
-                    <div class="flex min-w-0 flex-col items-start gap-3">
-                      <div>
-                        <p class="font-medium text-primary">Files</p>
-                        <p class="text-sm text-secondary">
-                          {impact.files.counts.retainedUntilLater} retained until later · {impact.files.counts.floorReached} reached the
-                          floor
-                        </p>
-                        <p class="text-xs text-dimmed">
-                          {impact.files.counts.unreferenced} unreferenced Files · {formatFileViewSize(impact.files.counts.sizeBytes)}{" "}
-                          stored. Protected references are excluded.
-                        </p>
-                      </div>
                       <Button
                         size="sm"
                         variant="secondary"
@@ -246,13 +228,12 @@ export function RetentionPolicySection(props: {
                       </Button>
                     </div>
                   </div>
-                </Paper>
+                </div>
               )}
             </Show>
           </Show>
         </Show>
       </SettingsGroup>
-      <PreservationHoldsSection baseId={props.baseId} onSavingChange={setHoldSaving} />
       <SettingsModal.Footer>
         <SettingsPanelFooter
           changeCount={() => (changed() ? 1 : 0)}

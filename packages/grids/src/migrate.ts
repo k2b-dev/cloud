@@ -26,6 +26,7 @@ const PUBLIC_ID_RESOURCES = [
   { table: "document_links", key: "id", parent: "document_run_id", index: "idx_grids_document_links_short_id" },
   { table: "evidence_exports", key: "id", parent: "base_id", index: "idx_grids_evidence_exports_short_id" },
   { table: "preservation_holds", key: "id", parent: "base_id", index: "idx_grids_preservation_holds_short_id" },
+  { table: "controlled_destruction_runs", key: "id", parent: "base_id", index: "idx_grids_controlled_destruction_runs_short_id" },
   { table: "custom_apps", key: "id", parent: "base_id", index: "idx_grids_custom_apps_short_id" },
   { table: "workflow_profile", key: "id", parent: "base_id", index: "idx_grids_workflow_profile_short_id" },
   { table: "workflow_launchers", key: "id", parent: "workflow_id", index: "idx_grids_workflow_launchers_short_id" },
@@ -2209,9 +2210,15 @@ const migrateRetentionPolicies = async (sql: SQL): Promise<void> => {
     CREATE TABLE IF NOT EXISTS grids.file_retention_candidates (
       file_id UUID PRIMARY KEY REFERENCES grids.files(id) ON DELETE CASCADE,
       base_id UUID NOT NULL,
+      table_id UUID,
+      table_short_id TEXT,
+      table_name TEXT,
       unreferenced_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `.simple();
+  await sql`ALTER TABLE grids.file_retention_candidates ADD COLUMN IF NOT EXISTS table_id UUID`.simple();
+  await sql`ALTER TABLE grids.file_retention_candidates ADD COLUMN IF NOT EXISTS table_short_id TEXT`.simple();
+  await sql`ALTER TABLE grids.file_retention_candidates ADD COLUMN IF NOT EXISTS table_name TEXT`.simple();
   await sql`
     CREATE TABLE IF NOT EXISTS grids.preservation_holds (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2272,6 +2279,47 @@ const migrateRetentionPolicies = async (sql: SQL): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_grids_preservation_holds_active_table
     ON grids.preservation_holds(base_id, table_id, created_at DESC, id DESC)
     WHERE released_at IS NULL AND scope_type = 'table'
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.controlled_destruction_runs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      short_id TEXT NOT NULL,
+      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE CASCADE,
+      status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'cancel_requested', 'completed', 'partial', 'canceled', 'failed')),
+      requested_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      requested_by_display_name TEXT,
+      requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      started_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      last_error TEXT,
+      CONSTRAINT controlled_destruction_runs_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$')
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_controlled_destruction_runs_short_id
+    ON grids.controlled_destruction_runs(short_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_controlled_destruction_runs_base
+    ON grids.controlled_destruction_runs(base_id, requested_at DESC, id DESC)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.controlled_destruction_items (
+      run_id UUID NOT NULL REFERENCES grids.controlled_destruction_runs(id) ON DELETE CASCADE,
+      position INT NOT NULL,
+      file_id UUID NOT NULL,
+      file_short_id TEXT NOT NULL,
+      table_id UUID NOT NULL,
+      table_short_id TEXT NOT NULL,
+      table_name TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      size_bytes BIGINT NOT NULL CHECK (size_bytes >= 0),
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'destroyed', 'skipped', 'failed')),
+      message TEXT,
+      processed_at TIMESTAMPTZ,
+      PRIMARY KEY (run_id, position),
+      UNIQUE (run_id, file_id)
+    )
   `.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_file_retention_candidates_base

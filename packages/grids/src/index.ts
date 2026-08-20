@@ -10,6 +10,7 @@ import { gridsHelp } from "./help";
 import { migrate } from "./migrate";
 import { gridsService } from "./service";
 import { stopBoundedQueryPool } from "./service/bounded-query";
+import { stopControlledDestructionJobs } from "./service/controlled-destruction";
 import { stopEvidenceExportJobs } from "./service/evidence-exports";
 import { startFieldIndexMaintenance, stopFieldIndexMaintenance } from "./service/field-index-maintenance";
 import { startRecordEventOutbox, stopRecordEventOutbox } from "./service/record-event-outbox";
@@ -36,6 +37,7 @@ const gridsRuntimeLifecycle = createRuntimeLifecycle({
       stopWorkflowRuntime,
       stopRecordEventOutbox,
       stopBoundedQueryPool,
+      stopControlledDestructionJobs,
       stopEvidenceExportJobs,
     ]),
 });

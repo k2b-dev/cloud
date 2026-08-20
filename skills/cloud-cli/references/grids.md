@@ -126,7 +126,7 @@ Built-in templates create complete example bases with schema, views, Grids Apps,
 records are included by default; pass `--empty` to keep the complete configuration without those records. Commands are
 `templates list|instantiate`.
 
-Base commands are `list`, `use`, `current`, and `bases list|get|create|update|delete|restore|trash|retention|preservation-holds`. Table commands are `tables list|get|create|update|delete|restore|mutation-policy|mutation-policy impact|mutation-policy set|history|history enable|finalization|finalization enable|finalization disable`.
+Base commands are `list`, `use`, `current`, and `bases list|get|create|update|delete|restore|trash|retention|preservation-holds|destruction`. Table commands are `tables list|get|create|update|delete|restore|mutation-policy|mutation-policy impact|mutation-policy set|history|history enable|finalization|finalization enable|finalization disable`.
 
 A Base Admin can configure a technical minimum age for trashed Records. Read and preview it before changing it:
 
@@ -152,6 +152,17 @@ cld grids bases preservation-holds release Bookshop HOLD01 --reason "Review comp
 ```
 
 Create defaults to `--scope base`; `--scope table` requires `--table` with a Table public ID or exact name. An exact name resolves an active Table; its six-character public ID can still filter hold history after the Table is no longer active. A Base hold covers every Table. A Table hold covers only that Table and blocks destruction of its parent Base so the hold cannot be bypassed. Creating and releasing require a non-empty reason. Releasing one hold leaves every other active hold in force. Holds do not lock Records, change access or Finalization, expire automatically, start cleanup, or establish legal compliance. `list` supports `active`, `released`, and `all` status filters, `base`, `table`, and `all` scope filters, optional exact Table filtering, and server-side pagination. Every command requires Base Admin permission and uses the same backend hold owner as future controlled destruction.
+
+A Base Admin can irreversibly destroy one bounded batch of eligible unreferenced File bytes. Preview before starting the run:
+
+```bash
+cld grids bases destruction preview Bookshop --json
+cld grids bases destruction run Bookshop --confirm "Bookshop" --json
+cld grids bases destruction status Bookshop RUN001 --json
+cld grids bases destruction cancel Bookshop RUN001 --yes --json
+```
+
+`preview` returns at most 100 exact eligible File candidates and reports totals for Files that are eligible, still retained, held, or unknown/protected. `run` fetches a fresh preview, requires the exact Base name through `--confirm`, and queues only those public File IDs. It refuses an empty batch. Before deleting each File, the server rechecks the active retention floor, current and protected references, saved origin Table, and Base/Table preservation holds. A changed File is skipped, so a run can complete as `partial`. `cancel --yes` stops only remaining work; already destroyed bytes cannot be recovered. Records, trashed Records, Documents, evidence exports, and Durable History are never included. Every command requires Base Admin permission.
 
 Stored tables allow every record change source by default. Before tightening that setting, preview the active Forms, Actions, and Workflows that would stop changing the table, then apply the same policy:
 
@@ -1084,6 +1095,7 @@ bases retention preview|set|remove
 bases retention records list
 bases retention files list|download
 bases preservation-holds list|create|release
+bases destruction preview|run|status|cancel
 access reference|list|grant|set|revoke|search-principals
 tables list|get|create|update|delete|restore|history|finalization|mutation-policy
 tables history enable|finalization enable|finalization disable

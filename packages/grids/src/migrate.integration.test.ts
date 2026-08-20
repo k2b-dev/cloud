@@ -157,6 +157,51 @@ describe("grids schema migration", () => {
   );
 
   postgresTest(
+    "adds durable controlled destruction storage without guessing legacy File lineage",
+    async () => {
+      await withIsolatedDatabase(async (database) => {
+        await migrateCoreWorkflows(database);
+        await migrate(database);
+        await database`DROP TABLE grids.controlled_destruction_items, grids.controlled_destruction_runs`.simple();
+        await database`
+          ALTER TABLE grids.file_retention_candidates
+            DROP COLUMN table_name,
+            DROP COLUMN table_short_id,
+            DROP COLUMN table_id
+        `.simple();
+        const baseId = uuid();
+        const fileId = uuid();
+        await database`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${shortId("B")}, 'Legacy candidate fixture')`;
+        await database`
+          INSERT INTO grids.files (id, short_id, filename, mime_type, size_bytes, sha256, bytes)
+          VALUES (${fileId}::uuid, ${shortId("F")}, 'legacy.txt', 'text/plain', 6, ${"a".repeat(64)}, ${new TextEncoder().encode("legacy")})
+        `;
+        await database`
+          INSERT INTO grids.file_retention_candidates (file_id, base_id, unreferenced_at)
+          VALUES (${fileId}::uuid, ${baseId}::uuid, now() - interval '40 days')
+        `;
+
+        await migrate(database);
+
+        const [candidate] = await database<Array<{ tableId: string | null; tableShortId: string | null; tableName: string | null }>>`
+          SELECT table_id::text AS "tableId", table_short_id AS "tableShortId", table_name AS "tableName"
+          FROM grids.file_retention_candidates WHERE file_id = ${fileId}::uuid
+        `;
+        expect(candidate).toEqual({ tableId: null, tableShortId: null, tableName: null });
+        const tables = await database<Array<{ tableName: string }>>`
+          SELECT table_name AS "tableName"
+          FROM information_schema.tables
+          WHERE table_schema = 'grids'
+            AND table_name IN ('controlled_destruction_items', 'controlled_destruction_runs')
+          ORDER BY table_name
+        `;
+        expect(tables.map((table) => table.tableName)).toEqual(["controlled_destruction_items", "controlled_destruction_runs"]);
+      });
+    },
+    30_000,
+  );
+
+  postgresTest(
     "says which container has not run yet when the kernel schema is missing",
     async () => {
       await withIsolatedDatabase(async (database) => {
@@ -193,7 +238,7 @@ describe("grids schema migration", () => {
         `;
         // Durable History and the evidence lifecycle add explicit owners
         // without replacing the lightweight live rows.
-        expect(row?.tableCount).toBe(45);
+        expect(row?.tableCount).toBe(47);
         const historyTables = await database<Array<{ tableName: string }>>`
           SELECT table_name AS "tableName"
           FROM information_schema.tables

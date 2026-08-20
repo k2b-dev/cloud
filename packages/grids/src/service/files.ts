@@ -78,7 +78,7 @@ const lockMutationTarget = async (client: SqlClient, recordId: string, fieldId: 
   await client`SELECT pg_advisory_xact_lock(hashtext(${recordId}), hashtext(${fieldId}))`;
 };
 
-const settleUnreferenced = async (client: SqlClient, fileId: string, ownerBaseId?: string): Promise<boolean> => {
+const settleUnreferenced = async (client: SqlClient, fileId: string, owner?: { baseId: string; tableId?: string }): Promise<boolean> => {
   const [state] = await client<Array<{ attached: boolean; protected: boolean; candidate_base_id: string | null }>>`
     SELECT
       EXISTS (SELECT 1 FROM grids.file_attachments attachment WHERE attachment.file_id = file.id) AS attached,
@@ -94,16 +94,23 @@ const settleUnreferenced = async (client: SqlClient, fileId: string, ownerBaseId
     return false;
   }
 
-  const baseId = ownerBaseId ?? state.candidate_base_id;
+  const baseId = owner?.baseId ?? state.candidate_base_id;
   if (baseId) {
     const [policy] = await client<{ exists: boolean }[]>`
       SELECT EXISTS (SELECT 1 FROM grids.retention_policies WHERE base_id = ${baseId}::uuid) AS exists
     `;
     if (policy?.exists) {
       await client`
-        INSERT INTO grids.file_retention_candidates (file_id, base_id)
-        VALUES (${fileId}::uuid, ${baseId}::uuid)
-        ON CONFLICT (file_id) DO NOTHING
+        INSERT INTO grids.file_retention_candidates (file_id, base_id, table_id, table_short_id, table_name)
+        SELECT ${fileId}::uuid, ${baseId}::uuid, table_info.id, table_info.short_id, table_info.name
+        FROM (VALUES (1)) seed(value)
+        LEFT JOIN grids.tables table_info
+          ON table_info.id = ${owner?.tableId ?? null}::uuid AND table_info.base_id = ${baseId}::uuid
+        ON CONFLICT (file_id) DO UPDATE SET
+          base_id = EXCLUDED.base_id,
+          table_id = COALESCE(grids.file_retention_candidates.table_id, EXCLUDED.table_id),
+          table_short_id = COALESCE(grids.file_retention_candidates.table_short_id, EXCLUDED.table_short_id),
+          table_name = COALESCE(grids.file_retention_candidates.table_name, EXCLUDED.table_name)
       `;
       return false;
     }
@@ -613,7 +620,7 @@ export const replace = async (params: {
       },
       tx,
     );
-    await settleUnreferenced(tx, params.fileId, target.data.baseId);
+    await settleUnreferenced(tx, params.fileId, { baseId: target.data.baseId, tableId: params.tableId });
     return ok(next);
   });
 };
@@ -707,7 +714,7 @@ export const remove = async (params: {
       },
       tx,
     );
-    await settleUnreferenced(tx, params.fileId, target.data.baseId);
+    await settleUnreferenced(tx, params.fileId, { baseId: target.data.baseId, tableId: params.tableId });
     return ok();
   });
 };
@@ -793,14 +800,16 @@ const releaseProtectionWithClient = async (params: ProtectionIdentity, client: S
     SELECT id::text AS id FROM grids.files WHERE id = ${params.fileId}::uuid FOR UPDATE
   `;
   if (!asset) return ok();
-  const [released] = await client<Array<{ base_id: string }>>`
+  const [released] = await client<Array<{ base_id: string; table_id: string | null }>>`
     DELETE FROM grids.file_protected_references
     WHERE file_id = ${params.fileId}::uuid
       AND owner_kind = ${params.ownerKind}
       AND owner_id = ${params.ownerId}::uuid
-    RETURNING base_id::text AS base_id
+    RETURNING base_id::text AS base_id, table_id::text AS table_id
   `;
-  if (released) await settleUnreferenced(client, params.fileId, released.base_id);
+  if (released) {
+    await settleUnreferenced(client, params.fileId, { baseId: released.base_id, tableId: released.table_id ?? undefined });
+  }
   return ok();
 };
 

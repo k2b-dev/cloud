@@ -3,6 +3,7 @@ import * as audit from "./audit";
 import * as baseCatalog from "./base-catalog";
 import * as bases from "./bases";
 import * as combinedAudit from "./combined-audit";
+import * as controlledDestruction from "./controlled-destruction";
 import * as customApps from "./custom-apps";
 import * as documents from "./documents";
 import * as durableHistory from "./durable-history";
@@ -74,6 +75,7 @@ export const gridsService = {
     restore: bases.restore,
     retentionPolicy,
     preservationHolds,
+    controlledDestruction,
     admin: {
       list: bases.adminList,
       summary: bases.adminSummary,

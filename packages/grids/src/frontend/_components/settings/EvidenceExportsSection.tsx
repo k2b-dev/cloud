@@ -1,11 +1,12 @@
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
   Button,
-  ButtonLink,
   CheckboxCard,
   CopyButton,
   DateRangePicker,
+  DescriptionList,
   dialogCore,
+  InlineGuidance,
   NoticeCard,
   PanelDialog,
   Placeholder,
@@ -14,6 +15,8 @@ import {
   Select,
   SettingsCollection,
   SettingsGroup,
+  StatCell,
+  StatGrid,
   StatusBadge,
   toast,
 } from "@k2b/ui";
@@ -27,6 +30,7 @@ import {
   type EvidenceExportSection,
 } from "../../../evidence-export-contracts";
 import { errorMessage } from "../utils/api-helpers";
+import { openEvidenceCoverageDialog } from "./EvidenceCoverageDialog";
 
 const SECTION_OPTIONS: Array<{ id: EvidenceExportSection; label: string; description: string; icon: string }> = [
   { id: "records", label: "Records", description: "Current and deleted stored Records at the export cut.", icon: "ti ti-table" },
@@ -69,14 +73,6 @@ const STATUS_TONE = {
   expired: "neutral",
 } as const;
 
-const HISTORY_COVERAGE = {
-  unavailable: { label: "History not enabled", tone: "neutral" },
-  legacy: { label: "Earlier states unavailable", tone: "warning" },
-  activating: { label: "Building history baseline", tone: "running" },
-  active: { label: "History active", tone: "ok" },
-  incomplete: { label: "History incomplete", tone: "warning" },
-} as const;
-
 const statusLabel = (status: EvidenceExport["status"]): string => status.replaceAll("_", " ");
 const dateLabel = (value: string): string => new Date(value).toLocaleString();
 const bytesLabel = (bytes: number): string => {
@@ -89,6 +85,50 @@ const verificationCommand = (item: EvidenceExport): string | null =>
   item.package
     ? `cld grids evidence verify ${item.package.filename} --sha256 ${item.package.sha256} --manifest-sha256 ${item.package.manifestSha256}`
     : null;
+
+const openPackageDetails = (item: EvidenceExport) =>
+  prompts.dialog<void>(
+    () => (
+      <div class="k2b-dialog__body space-y-4">
+        <Show when={item.error}>
+          {(error) => (
+            <InlineGuidance tone="danger" icon="ti ti-alert-circle">
+              {error()}
+            </InlineGuidance>
+          )}
+        </Show>
+        <Show when={item.package} keyed>
+          {(pkg) => (
+            <DescriptionList
+              layout="rows"
+              size="sm"
+              items={[
+                { term: "Filename", description: pkg.filename },
+                { term: "Size", description: bytesLabel(pkg.sizeBytes) },
+                { term: "Package SHA-256", description: <code class="break-all text-xs">{pkg.sha256}</code> },
+                { term: "Manifest SHA-256", description: <code class="break-all text-xs">{pkg.manifestSha256}</code> },
+                {
+                  term: "Offline verification",
+                  description: <code class="break-all text-xs">{verificationCommand(item)}</code>,
+                  action: (
+                    <CopyButton
+                      text={verificationCommand(item)!}
+                      label="Copy command"
+                      copiedLabel="Verification command copied"
+                      variant="secondary"
+                      size="sm"
+                      onCopyError={() => prompts.error("Could not copy the verification command")}
+                    />
+                  ),
+                },
+              ]}
+            />
+          )}
+        </Show>
+      </div>
+    ),
+    { title: "Package details", icon: "ti ti-package", size: "medium" },
+  );
 
 const requestRange = (range: { start: string | null; end: string | null }) => ({
   from: range.start ? `${range.start}T00:00:00.000Z` : undefined,
@@ -184,14 +224,14 @@ function EvidenceExportDialog(props: { base: PublicBase; tables: PublicTable[]; 
         <div class="grid gap-3 sm:grid-cols-2">
           <Select
             label="Scope"
-            description="Choose the complete Base or one table."
+            description="Choose the complete Base or one Table."
             value={tableId}
             onValueChange={(value) => setTableId(value ?? "")}
             options={[{ id: "", label: "Complete Base" }, ...props.tables.map((table) => ({ id: table.id, label: table.name }))]}
           />
           <DateRangePicker
             label="Period"
-            description="Optional. Current Records are always captured at the cut; event sources use this period."
+            description="Optional. Limits dated evidence; current Records are always included."
             value={range}
             onValueChange={setRange}
             clearable
@@ -333,6 +373,11 @@ export function EvidenceExportsSection(props: { base: PublicBase }) {
     if (!response.ok) throw new Error(await errorMessage(response, `Could not ${action} evidence export`));
     setRefresh((value) => value + 1);
   };
+  const exportAction = () => (
+    <Button variant="primary" size="sm" loading={opening()} disabled={opening()} onClick={() => void open()}>
+      <i class="ti ti-package-export" aria-hidden="true" /> New export
+    </Button>
+  );
 
   return (
     <>
@@ -371,87 +416,60 @@ export function EvidenceExportsSection(props: { base: PublicBase }) {
           >
             <Show when={coverage.data()} keyed>
               {(preview) => {
-                const cards = [
-                  {
-                    title: `${preview.known.records} Records · ${preview.known.revisions} revisions`,
-                    detail: `${preview.known.auditEvents} audit events in the current scope.`,
-                  },
-                  {
-                    title: `${preview.known.files} Files · ${preview.known.documents} Documents`,
-                    detail: `${bytesLabel(preview.known.fileBytes + preview.known.documentBytes)} stored artifact bytes.`,
-                  },
-                  {
-                    title: `${preview.known.numberSeries} Number Series`,
-                    detail: `${preview.known.numberSeriesVersions} format versions · ${preview.known.numberAllocations} durable allocations.`,
-                  },
-                ];
                 return (
-                  <>
-                    <NoticeCard.Grid items={cards}>
-                      {(card) => <NoticeCard tone="neutral" title={card.title} detail={card.detail} />}
-                    </NoticeCard.Grid>
-                    <details class="mt-3">
-                      <summary class="cursor-pointer text-sm font-medium">Coverage by stored table ({preview.tables.length})</summary>
-                      <div class="mt-2">
-                        <SettingsCollection title="Stored tables" empty="No stored tables in this Base.">
-                          <For each={preview.tables}>
-                            {(table) => {
-                              const history = () => HISTORY_COVERAGE[table.history.state];
-                              const historyLabel = () =>
-                                table.history.state === "active" && table.history.startsAt
-                                  ? `${history().label} since ${dateLabel(table.history.startsAt)}`
-                                  : history().label;
-                              return (
-                                <SettingsCollection.Item
-                                  title={`${table.name}${table.trashed ? " (in trash)" : ""}`}
-                                  description={`${table.records} Records · ${historyLabel()} · ${
-                                    table.finalization.enabled
-                                      ? `${table.finalization.finalizedRecords} finalized`
-                                      : "Finalization not enabled"
-                                  }`}
-                                  icon={<i class="ti ti-table" aria-hidden="true" />}
-                                >
-                                  <SettingsCollection.Item.Status>
-                                    <StatusBadge tone={history().tone} label={history().label} icon={null} />
-                                  </SettingsCollection.Item.Status>
-                                  <Show when={!table.trashed}>
-                                    <SettingsCollection.Item.Actions>
-                                      <ButtonLink
-                                        variant="secondary"
-                                        size="sm"
-                                        href={`/app/grids/${encodeURIComponent(props.base.id)}/table/${encodeURIComponent(table.tableId)}`}
-                                      >
-                                        Open table
-                                      </ButtonLink>
-                                    </SettingsCollection.Item.Actions>
-                                  </Show>
-                                </SettingsCollection.Item>
-                              );
-                            }}
-                          </For>
-                        </SettingsCollection>
-                      </div>
-                    </details>
-                  </>
+                  <div class="space-y-3">
+                    <StatGrid columns={3} size="sm" surface="muted">
+                      <StatCell label="Records" value={preview.known.records} sub={`${preview.known.revisions} revisions`} />
+                      <StatCell label="Audit events" value={preview.known.auditEvents} sub="Current scope" />
+                      <StatCell
+                        label="Stored artifacts"
+                        value={preview.known.files + preview.known.documents}
+                        sub={`${bytesLabel(preview.known.fileBytes + preview.known.documentBytes)} stored`}
+                      />
+                      <StatCell label="Files" value={preview.known.files} sub={`${preview.known.documents} Documents`} />
+                      <StatCell
+                        label="Number Series"
+                        value={preview.known.numberSeries}
+                        sub={`${preview.known.numberSeriesVersions} formats`}
+                      />
+                      <StatCell label="Number allocations" value={preview.known.numberAllocations} sub="Durable allocations" />
+                    </StatGrid>
+                    <div class="flex justify-end">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void openEvidenceCoverageDialog(props.base.id, props.base.name, preview.tables)}
+                      >
+                        Review Table coverage ({preview.tables.length})
+                      </Button>
+                    </div>
+                  </div>
                 );
               }}
             </Show>
           </Show>
         </Show>
       </SettingsGroup>
-      <SettingsGroup
-        title="Evidence packages"
-        description="Create bounded, hash-verifiable exports from the evidence Grids actually has. Ordinary CSV and JSON exports are unchanged."
+      <Show
+        when={!jobs.loading()}
+        fallback={
+          <SettingsGroup
+            title="Evidence packages"
+            description="Create bounded, hash-verifiable exports from the evidence Grids actually has. Ordinary CSV and JSON exports are unchanged."
+          >
+            <SettingsGroup.Action>{exportAction()}</SettingsGroup.Action>
+            <Placeholder state="loading" variant="compact" title="Loading evidence exports" />
+          </SettingsGroup>
+        }
       >
-        <SettingsGroup.Action>
-          <Button variant="primary" size="sm" loading={opening()} disabled={opening()} onClick={() => void open()}>
-            <i class="ti ti-package-export" aria-hidden="true" /> New export
-          </Button>
-        </SettingsGroup.Action>
-        <Show when={!jobs.loading()} fallback={<Placeholder state="loading" variant="compact" title="Loading evidence exports" />}>
-          <Show
-            when={!jobs.error()}
-            fallback={
+        <Show
+          when={!jobs.error()}
+          fallback={
+            <SettingsGroup
+              title="Evidence packages"
+              description="Create bounded, hash-verifiable exports from the evidence Grids actually has. Ordinary CSV and JSON exports are unchanged."
+            >
+              <SettingsGroup.Action>{exportAction()}</SettingsGroup.Action>
               <Placeholder
                 state="error"
                 variant="compact"
@@ -463,83 +481,65 @@ export function EvidenceExportsSection(props: { base: PublicBase }) {
                   </Button>
                 }
               />
-            }
+            </SettingsGroup>
+          }
+        >
+          <SettingsCollection
+            title="Evidence packages"
+            description="Create bounded, hash-verifiable exports from the evidence Grids actually has. Ordinary CSV and JSON exports are unchanged."
+            empty="No evidence exports yet."
           >
-            <SettingsCollection title="Recent packages" empty="No evidence exports yet.">
-              <For each={jobs.data()?.items ?? []}>
-                {(item) => (
-                  <SettingsCollection.Item
-                    title={item.tableId ? `Table ${item.tableId}` : "Complete Base"}
-                    description={`Requested ${dateLabel(item.requestedAt)}${item.expiresAt ? ` · expires ${dateLabel(item.expiresAt)}` : ""}`}
-                    icon={<i class="ti ti-package" aria-hidden="true" />}
-                  >
-                    <SettingsCollection.Item.Status>
-                      <StatusBadge tone={STATUS_TONE[item.status]} label={statusLabel(item.status)} icon={null} />
-                    </SettingsCollection.Item.Status>
-                    <SettingsCollection.Item.Actions>
-                      <Show when={item.status === "completed" && item.package}>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => void download(item).catch((error) => prompts.error(error.message))}
-                        >
-                          Download
-                        </Button>
-                        <CopyButton
-                          text={verificationCommand(item)!}
-                          label="Copy verification command"
-                          copiedLabel="Verification command copied"
-                          variant="secondary"
-                          size="sm"
-                          onCopyError={() => prompts.error("Could not copy the verification command")}
-                        />
-                      </Show>
-                      <Show when={item.status === "failed" || item.status === "canceled"}>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => void mutateJob(item, "retry").catch((error) => prompts.error(error.message))}
-                        >
-                          Retry
-                        </Button>
-                      </Show>
-                      <Show when={item.status === "queued" || item.status === "running"}>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => void mutateJob(item, "cancel").catch((error) => prompts.error(error.message))}
-                        >
-                          Cancel
-                        </Button>
-                      </Show>
-                      <Show when={item.error || item.package}>
-                        <details class="mt-2 text-xs text-muted">
-                          <summary class="cursor-pointer">Technical details</summary>
-                          <Show when={item.error}>
-                            <p class="mt-1 text-danger">{item.error}</p>
-                          </Show>
-                          <Show when={item.package} keyed>
-                            {(pkg) => (
-                              <dl class="mt-1 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1 font-mono">
-                                <dt>Size</dt>
-                                <dd>{bytesLabel(pkg.sizeBytes)}</dd>
-                                <dt>Package SHA-256</dt>
-                                <dd class="break-all">{pkg.sha256}</dd>
-                                <dt>Manifest SHA-256</dt>
-                                <dd class="break-all">{pkg.manifestSha256}</dd>
-                              </dl>
-                            )}
-                          </Show>
-                        </details>
-                      </Show>
-                    </SettingsCollection.Item.Actions>
-                  </SettingsCollection.Item>
-                )}
-              </For>
-            </SettingsCollection>
-          </Show>
+            <SettingsCollection.Action>{exportAction()}</SettingsCollection.Action>
+            <For each={jobs.data()?.items ?? []}>
+              {(item) => (
+                <SettingsCollection.Item
+                  title={item.tableId ? `Table ${item.tableId}` : "Complete Base"}
+                  description={`Requested ${dateLabel(item.requestedAt)}${item.expiresAt ? ` · expires ${dateLabel(item.expiresAt)}` : ""}`}
+                  icon={<i class="ti ti-package" aria-hidden="true" />}
+                >
+                  <SettingsCollection.Item.Status>
+                    <StatusBadge tone={STATUS_TONE[item.status]} label={statusLabel(item.status)} icon={null} />
+                  </SettingsCollection.Item.Status>
+                  <SettingsCollection.Item.Actions>
+                    <Show when={item.status === "completed" && item.package}>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void download(item).catch((error) => prompts.error(error.message))}
+                      >
+                        Download
+                      </Button>
+                    </Show>
+                    <Show when={item.status === "failed" || item.status === "canceled"}>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void mutateJob(item, "retry").catch((error) => prompts.error(error.message))}
+                      >
+                        Retry
+                      </Button>
+                    </Show>
+                    <Show when={item.status === "queued" || item.status === "running"}>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void mutateJob(item, "cancel").catch((error) => prompts.error(error.message))}
+                      >
+                        Cancel
+                      </Button>
+                    </Show>
+                    <Show when={item.error || item.package}>
+                      <Button variant="ghost" size="sm" onClick={() => void openPackageDetails(item)}>
+                        Details
+                      </Button>
+                    </Show>
+                  </SettingsCollection.Item.Actions>
+                </SettingsCollection.Item>
+              )}
+            </For>
+          </SettingsCollection>
         </Show>
-      </SettingsGroup>
+      </Show>
     </>
   );
 }
