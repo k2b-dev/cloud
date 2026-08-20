@@ -11,6 +11,7 @@ import type {
   AiMemory,
   AiMemoryKind,
   AiMemoryPriority,
+  AiRoutes,
   AiSkill,
   AiSkillAccess,
   AiSkillExtraFrontmatter,
@@ -19,11 +20,10 @@ import type {
   AiSkillsRoutes,
   AiStoredMessage,
   AiUserPrefs,
-  AiRoutes,
+  AiChatTaskView as AssistantChatTask,
 } from "@valentinkolb/cloud/ai";
 import { api } from "@valentinkolb/cloud/browser";
 import type { AssistantChatContextSnapshot } from "../chat-context";
-import type { AiChatTaskView as AssistantChatTask } from "@valentinkolb/cloud/ai";
 import type { AssistantProjectContextSnapshot } from "../project-context";
 import type { AssistantSidebarSnapshot } from "../sidebar";
 import type { ApiType } from ".";
@@ -79,6 +79,11 @@ export const assistantApi = {
   deleteSkill: async (skillId: string): Promise<void> => {
     const response = await skillsClient[":skillId"].$delete({ param: { skillId } });
     if (!response.ok) throw new Error(await readError(response, "Failed to delete skill"));
+  },
+
+  setSkillEnabled: async (skillId: string, enabled: boolean): Promise<void> => {
+    const response = await skillsClient[":skillId"].enabled.$put({ param: { skillId }, json: { enabled } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to update skill preference"));
   },
 
   listSkillAccess: async (skillId: string): Promise<AiSkillAccess[]> => {

@@ -20,11 +20,7 @@ import { coreClient } from "@valentinkolb/cloud/clients/core";
 import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { assistantConversationHref } from "./assistant-navigation";
-import {
-  AssistantSkillEditor,
-  type AssistantSkillEditorRequest,
-  AssistantSkillsSettings,
-} from "./AssistantSkillsSettings";
+import { AssistantSkillEditor, type AssistantSkillEditorRequest, AssistantSkillsSettings } from "./AssistantSkillsSettings";
 
 // Kept in sync with the server limits; browser code does not import server-only constants.
 const MEMORY_MAX_CHARS = 500;
@@ -503,15 +499,17 @@ function PrefsDialog(props: { prefs: AiUserPrefs; initialTab: AssistantPrefsTab;
         }
       >
         {(request) => (
-          <AssistantSkillEditor
-            request={request()}
-            onBack={(changed) => {
-              setSkillEditor(undefined);
-              setActiveTab("skills");
-              if (changed) setSkillsRefreshKey((value) => value + 1);
-            }}
-            onClose={props.close}
-          />
+          <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--ui-radius-frame)] bg-[var(--k2b-surface)] [box-shadow:var(--ui-shadow-float)]">
+            <AssistantSkillEditor
+              request={request()}
+              onBack={(changed) => {
+                setSkillEditor(undefined);
+                setActiveTab("skills");
+                if (changed) setSkillsRefreshKey((value) => value + 1);
+              }}
+              onClose={props.close}
+            />
+          </div>
         )}
       </Show>
     </div>

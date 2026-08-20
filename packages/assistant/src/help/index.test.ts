@@ -18,5 +18,7 @@ describe("assistantHelp", () => {
     expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("Always approve");
     expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Assistant works best when the request states");
     expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Assistant settings > Skills");
+    expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Create a Skill that loads at the right time");
+    expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Write a direct description");
   });
 });

@@ -1060,6 +1060,16 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`ALTER TABLE ai.skill_access ALTER COLUMN short_id SET NOT NULL`.simple();
 
   await sql`
+    CREATE TABLE IF NOT EXISTS ai.skill_user_disabled (
+      skill_id UUID NOT NULL REFERENCES ai.skills(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      disabled_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (skill_id, user_id)
+    )
+  `.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_ai_skill_user_disabled_user ON ai.skill_user_disabled(user_id)`.simple();
+
+  await sql`
     CREATE TABLE IF NOT EXISTS ai.skill_references (
       skill_id UUID NOT NULL REFERENCES ai.skills(id) ON DELETE CASCADE,
       path TEXT NOT NULL,

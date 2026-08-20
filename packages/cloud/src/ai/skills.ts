@@ -10,6 +10,7 @@ import {
 } from "../server/services/access";
 import { toPgUuidArray } from "../services/postgres";
 import { mountAiSkillFilePath } from "./file-mount";
+import { withAiShortIdForDb } from "./short-id";
 import {
   type AiSkillExtraFrontmatter,
   type AiSkillReferenceInput,
@@ -20,7 +21,6 @@ import {
   validateAiSkillName,
   validateAiSkillReferences,
 } from "./skill-format";
-import { withAiShortIdForDb } from "./short-id";
 import type { AiSkillFileToolContent, AiSkillFileToolStat } from "./types";
 
 export type AiSkillPermission = Exclude<PermissionLevel, "none">;
@@ -33,6 +33,7 @@ export type AiSkillSummary = {
   name: string;
   description: string;
   permission: AiSkillPermission;
+  enabled: boolean;
   revision: number;
   referenceCount: number;
   createdAt: string;
@@ -89,6 +90,7 @@ type SkillAccessRow = {
 type SkillSummaryRow = SkillRow & {
   permission: AiSkillPermission;
   reference_count: number;
+  enabled: boolean;
 };
 
 type SnapshotRow = {
@@ -167,6 +169,16 @@ const permissionFor = async (skillId: string, subject: AccessSubject | null, db:
   return rows[0]?.permission ?? "none";
 };
 
+const enabledFor = async (skillId: string, subject: AccessSubject | null, db: SQL = sql): Promise<boolean> => {
+  if (subject?.type !== "user") return true;
+  const [disabled] = await db<{ disabled: boolean }[]>`
+    SELECT true AS disabled
+    FROM ai.skill_user_disabled
+    WHERE skill_id = ${skillId}::uuid AND user_id = ${subject.userId}::uuid
+  `;
+  return !disabled;
+};
+
 const listReferences = async (skillId: string, db: SQL = sql): Promise<AiSkillReference[]> =>
   db<AiSkillReference[]>`
     SELECT path, content FROM ai.skill_references
@@ -188,6 +200,7 @@ const toSkill = async (row: SkillRow, subject: AccessSubject | null, db: SQL = s
     references,
     referenceCount: references.length,
     permission,
+    enabled: await enabledFor(row.id, subject, db),
     revision: Number(row.revision),
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
@@ -342,14 +355,18 @@ export const aiSkills = {
   }): Promise<AiSkill> {
     const fields = validatedFields(input);
     return sql.begin(async (tx) => {
-      const rows = await withAiShortIdForDb(tx, "idx_ai_skills_short_id", (attempt, shortId) => attempt<SkillRow[]>`
+      const rows = await withAiShortIdForDb(
+        tx,
+        "idx_ai_skills_short_id",
+        (attempt, shortId) => attempt<SkillRow[]>`
         INSERT INTO ai.skills (short_id, name, description, instructions, extra_frontmatter)
         VALUES (
           ${shortId}, ${fields.name}, ${fields.description}, ${fields.instructions},
           (${JSON.stringify(fields.extraFrontmatter)}::text)::jsonb
         )
         RETURNING *
-      `);
+      `,
+      );
       for (const reference of fields.references) {
         await tx`
           INSERT INTO ai.skill_references (skill_id, path, content)
@@ -363,18 +380,22 @@ export const aiSkills = {
 
   async list(subject: AccessSubject | null): Promise<AiSkillSummary[]> {
     const match = accessMatch(subject);
+    const userId = subject?.type === "user" ? subject.userId : null;
     const rows = await sql<SkillSummaryRow[]>`
       SELECT skill.*,
              (array_agg(access.permission ORDER BY
                CASE access.permission WHEN 'admin' THEN 3 WHEN 'write' THEN 2 WHEN 'read' THEN 1 ELSE 0 END DESC
              ))[1] AS permission,
-             count(DISTINCT reference.path)::int AS reference_count
+             count(DISTINCT reference.path)::int AS reference_count,
+             (disabled.user_id IS NULL) AS enabled
       FROM ai.skills skill
       JOIN ai.skill_access skill_access ON skill_access.skill_id = skill.id
       JOIN auth.access access ON access.id = skill_access.access_id
       LEFT JOIN ai.skill_references reference ON reference.skill_id = skill.id
+      LEFT JOIN ai.skill_user_disabled disabled
+        ON disabled.skill_id = skill.id AND disabled.user_id = ${userId}::uuid
       WHERE access.permission <> 'none' AND ${match}
-      GROUP BY skill.id
+      GROUP BY skill.id, disabled.user_id
       ORDER BY skill.name, skill.id
       LIMIT 200
     `;
@@ -386,6 +407,7 @@ export const aiSkills = {
       permission: row.permission,
       revision: Number(row.revision),
       referenceCount: Number(row.reference_count),
+      enabled: row.enabled,
       createdAt: iso(row.created_at),
       updatedAt: iso(row.updated_at),
     }));
@@ -469,12 +491,7 @@ export const aiSkills = {
     });
   },
 
-  async updateAccess(
-    skillId: string,
-    accessId: string,
-    subject: AccessSubject | null,
-    permission: AiSkillPermission,
-  ): Promise<boolean> {
+  async updateAccess(skillId: string, accessId: string, subject: AccessSubject | null, permission: AiSkillPermission): Promise<boolean> {
     return sql.begin(async (tx) => {
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
       return row && hasPermission(await permissionFor(row.id, subject, tx), "admin")
@@ -486,9 +503,27 @@ export const aiSkills = {
   async revokeAccess(skillId: string, accessId: string, subject: AccessSubject | null): Promise<boolean> {
     return sql.begin(async (tx) => {
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
-      return row && hasPermission(await permissionFor(row.id, subject, tx), "admin")
-        ? revokeSkillAccess(skillId, accessId, tx)
-        : false;
+      return row && hasPermission(await permissionFor(row.id, subject, tx), "admin") ? revokeSkillAccess(skillId, accessId, tx) : false;
+    });
+  },
+
+  async setEnabled(skillId: string, subject: AccessSubject | null, enabled: boolean): Promise<boolean | null> {
+    if (subject?.type !== "user") return null;
+    return sql.begin(async (tx) => {
+      if (!(await requireSkill(await getRow(skillId, tx), subject, "read", tx))) return null;
+      if (enabled) {
+        await tx`
+          DELETE FROM ai.skill_user_disabled
+          WHERE skill_id = ${skillId}::uuid AND user_id = ${subject.userId}::uuid
+        `;
+      } else {
+        await tx`
+          INSERT INTO ai.skill_user_disabled (skill_id, user_id)
+          VALUES (${skillId}::uuid, ${subject.userId}::uuid)
+          ON CONFLICT (skill_id, user_id) DO NOTHING
+        `;
+      }
+      return enabled;
     });
   },
 
@@ -498,7 +533,7 @@ export const aiSkills = {
         SELECT * FROM ai.skills WHERE name = ${validateAiSkillName(name)} FOR SHARE
       `;
       const skill = await requireSkill(row ?? null, subject, "read", tx);
-      if (!skill) return null;
+      if (!skill?.enabled) return null;
       const files = skillSnapshotFiles(skill);
       await tx`
         INSERT INTO ai.turn_skill_snapshots (turn_id, skill_id, skill_name, description, revision, instructions, files)
@@ -528,13 +563,17 @@ export const aiSkills = {
 
   async listTurnFiles(turnId: string, subject: AccessSubject | null): Promise<AiSkillFileToolStat[]> {
     const match = accessMatch(subject);
+    const userId = subject?.type === "user" ? subject.userId : null;
     const rows = await sql<SnapshotRow[]>`
       SELECT DISTINCT snapshot.skill_name, snapshot.description, snapshot.revision, snapshot.instructions,
              snapshot.files, snapshot.loaded_at
       FROM ai.turn_skill_snapshots snapshot
       JOIN ai.skill_access skill_access ON skill_access.skill_id = snapshot.skill_id
       JOIN auth.access access ON access.id = skill_access.access_id
+      LEFT JOIN ai.skill_user_disabled disabled
+        ON disabled.skill_id = snapshot.skill_id AND disabled.user_id = ${userId}::uuid
       WHERE snapshot.turn_id = ${turnId}::uuid AND access.permission <> 'none' AND ${match}
+        AND disabled.user_id IS NULL
       ORDER BY snapshot.skill_name
     `;
     return rows.flatMap((row) =>
@@ -553,14 +592,17 @@ export const aiSkills = {
     if (!stat) return null;
     const [skillName] = path.split("/", 1);
     const match = accessMatch(subject);
+    const userId = subject?.type === "user" ? subject.userId : null;
     const [row] = await sql<SnapshotRow[]>`
       SELECT DISTINCT snapshot.skill_name, snapshot.description, snapshot.revision, snapshot.instructions,
              snapshot.files, snapshot.loaded_at
       FROM ai.turn_skill_snapshots snapshot
       JOIN ai.skill_access skill_access ON skill_access.skill_id = snapshot.skill_id
       JOIN auth.access access ON access.id = skill_access.access_id
+      LEFT JOIN ai.skill_user_disabled disabled
+        ON disabled.skill_id = snapshot.skill_id AND disabled.user_id = ${userId}::uuid
       WHERE snapshot.turn_id = ${turnId}::uuid AND snapshot.skill_name = ${skillName}
-        AND access.permission <> 'none' AND ${match}
+        AND access.permission <> 'none' AND ${match} AND disabled.user_id IS NULL
       LIMIT 1
     `;
     const file = row ? snapshotFiles(row.files).find((entry) => entry.path === path) : null;

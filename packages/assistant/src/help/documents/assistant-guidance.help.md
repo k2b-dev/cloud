@@ -37,9 +37,20 @@ Assistant works best when the request states the outcome, the relevant context, 
 
 Open **Assistant settings > Skills** to create, import, edit, export, or share reusable Assistant workflows. A Skill keeps its instructions in `SKILL.md` and may include Markdown reference files.
 
+### Create a Skill that loads at the right time
+
+:::steps
+1. **Choose a short, action-oriented name:** Use lowercase letters, numbers, and hyphens, such as `weekly-status`.
+2. **Write a direct description:** Say what Assistant should do and when it should use the Skill. Keep it specific enough to distinguish the Skill from similar workflows. For example: `Create weekly status reports from recent work. Use when asked for progress updates.`
+3. **Add only useful instructions:** Define the expected outcome, important constraints, and workflow. Omit generic advice Assistant already knows.
+4. **Move supporting detail to Extra info:** Add policies, schemas, examples, or background material that Assistant needs only for some requests. Keep essential instructions in the Skill itself.
+5. **Try realistic requests:** Check that Assistant loads the Skill for relevant requests and ignores it otherwise. Refine the description when selection is too broad or too narrow.
+:::
+
 - Import a bare `SKILL.md`, or use a ZIP when the Skill has references. Scripts and assets are not supported.
 - Use Cloud access to share a Skill. Readers can use and export it, writers can edit it, and admins can also manage access or delete it.
-- Assistant sees the names and descriptions of Skills you can read. It loads a relevant Skill before applying its instructions and reads references only when needed.
+- Skills you can read start enabled for you. Turn off **Enabled for me** when you do not want Assistant to use a shared Skill; this does not change anyone else's access.
+- Assistant sees the names and descriptions of your enabled Skills. It loads a relevant Skill before applying its instructions and reads references only when needed.
 - A Skill loaded for an in-progress turn stays on that revision. New turns use later edits, while revoked access takes effect immediately.
 
 :::warning Review consequential output

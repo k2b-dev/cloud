@@ -17,8 +17,6 @@ import { createCloudAiMemoryTool } from "./memory-tool";
 import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
 import { createCloudAiReadProjectKnowledgeTool, createCloudAiSearchProjectTool } from "./project-tool";
 import { aiProjects } from "./projects";
-import { createCloudAiLoadSkillTool } from "./skill-tool";
-import { aiSkills, type AiSkillSummary } from "./skills";
 import {
   type AiTurnBlock,
   type AiWireEvent,
@@ -33,6 +31,8 @@ import {
 } from "./protocol";
 import { collectConversationResourceObservations } from "./resource-refs";
 import { isAiVisionModelConfigured, type resolveAiModel } from "./settings";
+import { createCloudAiLoadSkillTool } from "./skill-tool";
+import { type AiSkillSummary, aiSkills } from "./skills";
 import { aiConversations } from "./store";
 import { publishAiWireEvent } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
@@ -200,17 +200,12 @@ const accessSubjectForActor = (actor: RequestActor | undefined): AccessSubject |
   return { type: "service_account", serviceAccountId: actor.serviceAccount.id };
 };
 
-const boundedSkillCatalog = (
-  skills: readonly AiSkillSummary[],
-  contextWindow: number,
-): { name: string; description: string }[] => {
+const boundedSkillCatalog = (skills: readonly AiSkillSummary[], contextWindow: number): { name: string; description: string }[] => {
   if (!skills.length) return [];
   const minimumDescriptionChars = 64;
   const budget = Math.max(
     skills.reduce((total, skill) => total + skill.name.length + minimumDescriptionChars + 5, 0),
-    contextWindow > 0
-      ? Math.min(AI_SKILL_CATALOG_MAX_CHARS, Math.floor(contextWindow * 0.02 * 4))
-      : AI_SKILL_CATALOG_MAX_CHARS,
+    contextWindow > 0 ? Math.min(AI_SKILL_CATALOG_MAX_CHARS, Math.floor(contextWindow * 0.02 * 4)) : AI_SKILL_CATALOG_MAX_CHARS,
   );
   const baseChars = skills.reduce((total, skill) => total + skill.name.length + 5, 0);
   const descriptionChars = Math.max(0, Math.floor((budget - baseChars) / skills.length));
@@ -674,10 +669,9 @@ export class AiTurnExecutor {
     const projectSubject = project ? accessSubjectForActor(material.actor) : null;
     // Skills are an Assistant/default-tool capability. Custom and structured
     // executions must not gain an implicit database dependency or extra tools.
-    const skillSubject = defaultToolSource && resolved.profile.capabilities.includes("tools")
-      ? accessSubjectForActor(material.actor)
-      : null;
-    const availableSkills = skillSubject ? await aiSkills.list(skillSubject) : [];
+    const skillSubject =
+      defaultToolSource && resolved.profile.capabilities.includes("tools") ? accessSubjectForActor(material.actor) : null;
+    const availableSkills = skillSubject ? (await aiSkills.list(skillSubject)).filter((skill) => skill.enabled) : [];
     const projectFiles =
       project && resolvedProjectId && projectSubject
         ? {

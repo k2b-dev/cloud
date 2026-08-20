@@ -3,13 +3,16 @@ import {
   Button,
   confirmDiscardIfDirty,
   Dropdown,
+  dialogCore,
   IconButton,
   MarkdownEditor,
+  NoticeCard,
   PanelDialog,
   Placeholder,
+  panelDialogOptions,
   prompts,
-  Select,
   SettingsCollection,
+  Switch,
   TextInput,
   toast,
 } from "@k2b/ui";
@@ -17,12 +20,7 @@ import { PermissionEditor } from "@valentinkolb/cloud/access/ui";
 import type { AiSkill, AiSkillExtraFrontmatter, AiSkillReferenceInput, AiSkillSummary } from "@valentinkolb/cloud/ai";
 import { createEffect, createMemo, createResource, createSignal, For, Show } from "solid-js";
 import { assistantApi } from "../api/client";
-import {
-  type AiSkillImport,
-  downloadAiSkillMarkdown,
-  downloadAiSkillZip,
-  readAiSkillImport,
-} from "./assistant-skill-files";
+import { type AiSkillImport, downloadAiSkillMarkdown, downloadAiSkillZip, readAiSkillImport } from "./assistant-skill-files";
 
 export type AssistantSkillEditorRequest = { skillId?: string; imported?: AiSkillImport };
 
@@ -51,6 +49,15 @@ const fieldsFromImport = (skill: AiSkillImport): SkillFields => ({
 });
 
 const skillFieldsEqual = (left: SkillFields, right: SkillFields): boolean => JSON.stringify(left) === JSON.stringify(right);
+const referenceName = (path: string): string => path.replace(/^references\//, "").replace(/\.md$/i, "");
+const normalizedReferenceName = (value: string): string =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/\.md$/i, "")
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^[._-]+|[._-]+$/g, "");
+const referencePath = (name: string): string => `references/${normalizedReferenceName(name)}.md`;
 
 const openSkillAccess = async (skill: AiSkillSummary): Promise<void> => {
   const entries = await assistantApi.listSkillAccess(skill.id).catch(async (error) => {
@@ -77,18 +84,16 @@ const openSkillAccess = async (skill: AiSkillSummary): Promise<void> => {
   );
 };
 
-export function AssistantSkillsSettings(props: {
-  refreshKey: number;
-  onOpenEditor: (request: AssistantSkillEditorRequest) => void;
-}) {
+export function AssistantSkillsSettings(props: { refreshKey: number; onOpenEditor: (request: AssistantSkillEditorRequest) => void }) {
   const [query, setQuery] = createSignal("");
   const [busyId, setBusyId] = createSignal<string | null>(null);
-  const [skills, { refetch }] = createResource(() => props.refreshKey, () => assistantApi.listSkills());
+  const [skills, { refetch }] = createResource(
+    () => props.refreshKey,
+    () => assistantApi.listSkills(),
+  );
   const filtered = createMemo(() => {
     const needle = query().trim().toLowerCase();
-    return (skills() ?? []).filter(
-      (skill) => !needle || skill.name.includes(needle) || skill.description.toLowerCase().includes(needle),
-    );
+    return (skills() ?? []).filter((skill) => !needle || skill.name.includes(needle) || skill.description.toLowerCase().includes(needle));
   });
 
   const importSkill = async () => {
@@ -127,8 +132,27 @@ export function AssistantSkillsSettings(props: {
     }
   };
 
+  const setEnabled = async (skill: AiSkillSummary, enabled: boolean) => {
+    if (busyId()) return;
+    setBusyId(skill.id);
+    try {
+      await assistantApi.setSkillEnabled(skill.id, enabled);
+      await refetch();
+      toast.success(enabled ? "Skill enabled for you" : "Skill disabled for you");
+    } catch (error) {
+      await prompts.error(error instanceof Error ? error.message : "Failed to update skill preference");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return (
     <div class="flex min-h-0 flex-col gap-3" aria-busy={skills.loading || Boolean(busyId())}>
+      <NoticeCard
+        tone="info"
+        title="Skills teach Assistant how to handle specific tasks"
+        detail="Each Skill combines reusable instructions with optional extra information. Shared Skills start enabled for you; turn off any you don't want Assistant to use."
+      />
       <div class="flex items-center gap-2">
         <TextInput
           class="min-w-0 flex-1"
@@ -194,7 +218,15 @@ export function AssistantSkillsSettings(props: {
                 icon={<i class="ti ti-sparkles" aria-hidden="true" />}
               >
                 <SettingsCollection.Item.Status>
-                  <span class="text-xs capitalize text-dimmed">{skill.permission}</span>
+                  <div class="flex items-center gap-3">
+                    <span class="text-xs capitalize text-dimmed">{skill.permission}</span>
+                    <Switch
+                      label="Enabled for me"
+                      value={skill.enabled}
+                      onValueChange={(enabled) => void setEnabled(skill, enabled)}
+                      disabled={Boolean(busyId())}
+                    />
+                  </div>
                 </SettingsCollection.Item.Status>
                 <SettingsCollection.Item.Actions>
                   <Dropdown.Root
@@ -243,6 +275,208 @@ export function AssistantSkillsSettings(props: {
   );
 }
 
+function AssistantSkillReferenceEditor(props: {
+  reference?: AiSkillReferenceInput;
+  existingPaths: readonly string[];
+  readOnly: boolean;
+  close: () => void;
+  onSave: (reference: AiSkillReferenceInput) => void;
+  onRemove?: () => void;
+}) {
+  const initialName = props.reference ? referenceName(props.reference.path) : "";
+  const initialContent = props.reference?.content ?? "";
+  const [name, setName] = createSignal(initialName);
+  const [content, setContent] = createSignal(initialContent);
+  const path = () => referencePath(name());
+  const duplicate = () => props.existingPaths.some((existing) => existing !== props.reference?.path && existing === path());
+  const invalid = () => !normalizedReferenceName(name()) || duplicate();
+  const dirty = () => name() !== initialName || content() !== initialContent;
+  const requestClose = async () => {
+    if (await confirmDiscardIfDirty(dirty)) props.close();
+  };
+  const save = () => {
+    if (props.readOnly || invalid()) return;
+    props.onSave({ path: path(), content: content() });
+    props.close();
+  };
+  const remove = async () => {
+    if (!props.reference || !props.onRemove) return;
+    const confirmed = await prompts.confirm(`Remove "${initialName}" from this Skill?`, {
+      title: "Remove reference",
+      confirmText: "Remove reference",
+      variant: "danger",
+    });
+    if (!confirmed) return;
+    props.onRemove();
+    props.close();
+  };
+
+  return (
+    <PanelDialog>
+      <PanelDialog.Header
+        title={props.reference ? "Edit reference" : "Create reference"}
+        subtitle={props.readOnly ? "View supporting context for this Skill." : "Add supporting context Assistant can read when needed."}
+        icon="ti ti-file-text"
+        close={() => void requestClose()}
+      />
+      <PanelDialog.Body scrollPreserveKey="assistant-skill-reference-editor">
+        <div class="flex flex-col gap-4">
+          <TextInput
+            label="Reference name"
+            description="Use a short, recognizable name such as product-rules."
+            value={name}
+            onValueChange={setName}
+            error={duplicate() ? "A reference with this name already exists." : undefined}
+            maxLength={186}
+            required
+            readOnly={props.readOnly}
+            autofocus={!props.reference}
+          />
+          <MarkdownEditor
+            label="Content"
+            description="Add the supporting information Assistant may need for this workflow."
+            value={content}
+            onValueChange={setContent}
+            placeholder="Add supporting context."
+            lines={14}
+            maxLength={100_000}
+            disabled={props.readOnly}
+            onSave={save}
+            saveDisabled={invalid() || !dirty()}
+          />
+        </div>
+      </PanelDialog.Body>
+      <PanelDialog.Footer>
+        <div>
+          <Show when={!props.readOnly && props.reference}>
+            <Button type="button" variant="danger" onClick={() => void remove()}>
+              <i class="ti ti-trash" aria-hidden="true" />
+              Remove reference
+            </Button>
+          </Show>
+        </div>
+        <div class="flex items-center gap-2">
+          <Button type="button" variant="secondary" onClick={() => void requestClose()}>
+            {props.readOnly ? "Close" : "Cancel"}
+          </Button>
+          <Show when={!props.readOnly}>
+            <Button type="button" onClick={save} disabled={invalid() || !dirty()}>
+              Save reference
+            </Button>
+          </Show>
+        </div>
+      </PanelDialog.Footer>
+    </PanelDialog>
+  );
+}
+
+function AssistantSkillReferencesEditor(props: {
+  references: () => AiSkillReferenceInput[];
+  readOnly: boolean;
+  saving: boolean;
+  close: () => void;
+  onChange: (references: AiSkillReferenceInput[]) => void;
+}) {
+  const openReferenceEditor = async (reference?: AiSkillReferenceInput) => {
+    await dialogCore.open<void>(
+      (close) => (
+        <AssistantSkillReferenceEditor
+          reference={reference}
+          existingPaths={props.references().map((item) => item.path)}
+          readOnly={props.readOnly}
+          close={() => close()}
+          onSave={(next) =>
+            props.onChange(
+              reference ? props.references().map((item) => (item.path === reference.path ? next : item)) : [...props.references(), next],
+            )
+          }
+          onRemove={reference ? () => props.onChange(props.references().filter((item) => item.path !== reference.path)) : undefined}
+        />
+      ),
+      { ...panelDialogOptions, cancelBehavior: "ignore" },
+    );
+  };
+
+  return (
+    <PanelDialog>
+      <PanelDialog.Header
+        title="Extra info"
+        subtitle="Manage supporting information Assistant can read when this Skill needs it."
+        icon="ti ti-files"
+        close={props.close}
+      />
+      <PanelDialog.Body scrollPreserveKey="assistant-skill-references-editor">
+        <Show
+          when={props.references().length > 0}
+          fallback={
+            <Placeholder
+              state="empty"
+              surface="paper"
+              variant="panel"
+              icon="ti ti-files"
+              title="No extra info yet"
+              description="Add supporting information Assistant can read when this Skill needs it."
+              action={
+                !props.readOnly ? (
+                  <Button type="button" onClick={() => void openReferenceEditor()} disabled={props.saving}>
+                    <i class="ti ti-plus" aria-hidden="true" />
+                    Add reference
+                  </Button>
+                ) : undefined
+              }
+            />
+          }
+        >
+          <SettingsCollection title={<span class="sr-only">References</span>}>
+            <Show when={!props.readOnly}>
+              <SettingsCollection.Action>
+                <Button type="button" size="sm" variant="input" onClick={() => void openReferenceEditor()} disabled={props.saving}>
+                  <i class="ti ti-plus" aria-hidden="true" />
+                  Add reference
+                </Button>
+              </SettingsCollection.Action>
+            </Show>
+            <For each={props.references()}>
+              {(reference) => (
+                <SettingsCollection.Item
+                  title={
+                    <button
+                      type="button"
+                      class="text-left text-inherit hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--k2b-focus-ring)]"
+                      onClick={() => void openReferenceEditor(reference)}
+                    >
+                      {referenceName(reference.path)}
+                    </button>
+                  }
+                  icon={<i class="ti ti-file-text" aria-hidden="true" />}
+                >
+                  <SettingsCollection.Item.Actions>
+                    <IconButton
+                      label={`${props.readOnly ? "View" : "Edit"} reference ${referenceName(reference.path)}`}
+                      title={props.readOnly ? "View reference" : "Edit reference"}
+                      variant="ghost"
+                      onClick={() => void openReferenceEditor(reference)}
+                      disabled={props.saving}
+                    >
+                      <i class={props.readOnly ? "ti ti-eye" : "ti ti-pencil"} aria-hidden="true" />
+                    </IconButton>
+                  </SettingsCollection.Item.Actions>
+                </SettingsCollection.Item>
+              )}
+            </For>
+          </SettingsCollection>
+        </Show>
+      </PanelDialog.Body>
+      <PanelDialog.Footer>
+        <div />
+        <Button type="button" variant="secondary" onClick={props.close}>
+          Done
+        </Button>
+      </PanelDialog.Footer>
+    </PanelDialog>
+  );
+}
+
 export function AssistantSkillEditor(props: {
   request: AssistantSkillEditorRequest;
   onBack: (changed: boolean) => void;
@@ -257,9 +491,6 @@ export function AssistantSkillEditor(props: {
   const [fields, setFields] = createSignal<SkillFields>(initialFields);
   // Imported content has not been persisted yet and must therefore remain saveable.
   const [baseline, setBaseline] = createSignal<SkillFields>(props.request.skillId ? initialFields : emptySkill());
-  const [selectedFile, setSelectedFile] = createSignal("SKILL.md");
-  const [newReference, setNewReference] = createSignal("");
-  const [addingReference, setAddingReference] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
   let initialized = Boolean(imported || !props.request.skillId);
 
@@ -274,19 +505,6 @@ export function AssistantSkillEditor(props: {
 
   const readOnly = () => Boolean(detail() && detail()!.permission === "read");
   const dirty = () => !skillFieldsEqual(fields(), baseline());
-  const fileOptions = createMemo(() => [
-    { value: "SKILL.md", label: "SKILL.md" },
-    ...fields().references.map((reference) => ({ value: reference.path, label: reference.path })),
-  ]);
-  const selectedReference = () => fields().references.find((reference) => reference.path === selectedFile()) ?? null;
-  const bodyValue = () => (selectedFile() === "SKILL.md" ? fields().instructions : selectedReference()?.content ?? "");
-  const setBodyValue = (value: string) => {
-    if (selectedFile() === "SKILL.md") setFields((current) => ({ ...current, instructions: value }));
-    else setFields((current) => ({
-      ...current,
-      references: current.references.map((reference) => (reference.path === selectedFile() ? { ...reference, content: value } : reference)),
-    }));
-  };
 
   const requestBack = async () => {
     if (await confirmDiscardIfDirty(dirty)) props.onBack(false);
@@ -295,26 +513,19 @@ export function AssistantSkillEditor(props: {
     if (await confirmDiscardIfDirty(dirty)) props.onClose();
   };
 
-  const addReference = () => {
-    const raw = newReference().trim().toLowerCase().replace(/\.md$/i, "");
-    const filename = raw.replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
-    if (!filename) return;
-    const path = `references/${filename}.md`;
-    if (fields().references.some((reference) => reference.path === path)) {
-      void prompts.error(`Reference ${path} already exists.`);
-      return;
-    }
-    setFields((current) => ({ ...current, references: [...current.references, { path, content: "" }] }));
-    setSelectedFile(path);
-    setNewReference("");
-    setAddingReference(false);
-  };
-
-  const removeReference = () => {
-    const path = selectedFile();
-    if (path === "SKILL.md") return;
-    setFields((current) => ({ ...current, references: current.references.filter((reference) => reference.path !== path) }));
-    setSelectedFile("SKILL.md");
+  const openReferencesEditor = async () => {
+    await dialogCore.open<void>(
+      (close) => (
+        <AssistantSkillReferencesEditor
+          references={() => fields().references}
+          readOnly={readOnly()}
+          saving={saving()}
+          close={() => close()}
+          onChange={(references) => setFields((current) => ({ ...current, references }))}
+        />
+      ),
+      { ...panelDialogOptions, cancelBehavior: "ignore" },
+    );
   };
 
   const save = async () => {
@@ -340,8 +551,10 @@ export function AssistantSkillEditor(props: {
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title={props.request.skillId ? detail()?.name ?? "Edit skill" : imported ? "Import skill" : "Create skill"}
-        subtitle={readOnly() ? "You can view and export this shared skill." : "Edit the portable SKILL.md source and its Markdown references."}
+        title={props.request.skillId ? (detail()?.name ?? "Edit skill") : imported ? "Import skill" : "Create skill"}
+        subtitle={
+          readOnly() ? "You can view and export this shared Skill." : "Define reusable instructions and optional supporting references."
+        }
         icon="ti ti-sparkles"
         close={() => void requestClose()}
         closeDisabled={saving()}
@@ -353,10 +566,17 @@ export function AssistantSkillEditor(props: {
             fallback={<Placeholder state="error" title="Could not load skill" description={detail.error?.message} />}
           >
             <div class="flex min-h-[32rem] flex-1 flex-col gap-4">
-              <div class="grid items-start gap-4 lg:grid-cols-[minmax(14rem,0.34fr)_minmax(20rem,1fr)]">
+              <Show when={!readOnly()}>
+                <NoticeCard
+                  tone="info"
+                  title="Description controls when this Skill loads"
+                  detail="Assistant sees the name and description before deciding to load a Skill. Say what to do and when to use it."
+                />
+              </Show>
+              <div class="flex flex-col gap-4">
                 <TextInput
                   label="Skill name"
-                  description="Lowercase letters, numbers, and hyphens. This becomes /skills/<name>."
+                  description="Use a short, action-oriented name with lowercase letters, numbers, and hyphens."
                   value={() => fields().name}
                   onValueChange={(name) => setFields((current) => ({ ...current, name }))}
                   maxLength={64}
@@ -367,10 +587,11 @@ export function AssistantSkillEditor(props: {
                 />
                 <TextInput
                   label="Description"
-                  description="Tell Assistant what the skill does and when it should load it."
+                  description="Start with an action and say when to use it. Keep it short, direct, and specific."
                   value={() => fields().description}
                   onValueChange={(description) => setFields((current) => ({ ...current, description }))}
                   maxLength={1024}
+                  placeholder="Create weekly status reports from recent work. Use when asked for progress updates."
                   multiline
                   lines={3}
                   required
@@ -378,85 +599,45 @@ export function AssistantSkillEditor(props: {
                 />
               </div>
 
-              <div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-lg bg-zinc-50 px-3 py-2 text-xs text-secondary dark:bg-zinc-900">
-                <code class="break-all text-primary">/skills/{fields().name || "<name>"}/SKILL.md</code>
-                <span>References load only when Assistant needs them.</span>
-              </div>
-
-              <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-                <div class="flex flex-wrap items-end gap-2">
-                  <Select
-                    class="min-w-[14rem] flex-1"
-                    label="Skill file"
-                    value={selectedFile}
-                    onValueChange={setSelectedFile}
-                    options={fileOptions()}
-                    disabled={saving()}
-                  />
-                  <Show when={!readOnly()}>
-                    <Button type="button" variant="secondary" onClick={() => setAddingReference(true)} disabled={saving() || addingReference()}>
-                      <i class="ti ti-file-plus" aria-hidden="true" />
-                      Add reference
-                    </Button>
-                    <Show when={selectedFile() !== "SKILL.md"}>
-                      <IconButton label="Delete reference" title="Delete reference" variant="secondary" onClick={removeReference} disabled={saving()}>
-                        <i class="ti ti-trash" aria-hidden="true" />
-                      </IconButton>
-                    </Show>
-                  </Show>
-                </div>
-                <Show when={addingReference()}>
-                  <div class="flex items-end gap-2 rounded-lg bg-zinc-50 p-3 dark:bg-zinc-900">
-                    <TextInput
-                      class="min-w-0 flex-1"
-                      label="Reference filename"
-                      prefix="references/"
-                      suffix=".md"
-                      value={newReference}
-                      onValueChange={setNewReference}
-                      onSubmit={addReference}
-                      autofocus
-                    />
-                    <Button type="button" variant="secondary" onClick={() => setAddingReference(false)}>
-                      Cancel
-                    </Button>
-                    <Button type="button" onClick={addReference} disabled={!newReference().trim()}>
-                      Add
-                    </Button>
-                  </div>
-                </Show>
-                <MarkdownEditor
-                  class="min-h-[20rem] flex-1"
-                  label={selectedFile() === "SKILL.md" ? "Instructions" : selectedFile()}
-                  description={
-                    selectedFile() === "SKILL.md"
-                      ? "These instructions become active only after load_skill."
-                      : "Reference content remains untrusted data and is read only when needed."
-                  }
-                  value={bodyValue}
-                  onValueChange={setBodyValue}
-                  placeholder={selectedFile() === "SKILL.md" ? "Explain the workflow, constraints, and expected output." : "Add reference material."}
-                  lines={14}
-                  fill
-                  disabled={readOnly() || saving()}
-                  maxLength={100_000}
-                  onSave={() => void save()}
-                  saveDisabled={invalid() || !dirty()}
-                  saving={saving()}
-                />
-              </div>
+              <MarkdownEditor
+                class="min-h-[18rem] flex-1"
+                label="Instructions"
+                description="Define the expected outcome, important constraints, and workflow. Include only guidance that changes how Assistant should work."
+                value={() => fields().instructions}
+                onValueChange={(instructions) => setFields((current) => ({ ...current, instructions }))}
+                placeholder="Explain the workflow, constraints, and expected output."
+                lines={12}
+                fill
+                disabled={readOnly() || saving()}
+                maxLength={100_000}
+                onSave={() => void save()}
+                saveDisabled={invalid() || !dirty()}
+                saving={saving()}
+              />
             </div>
           </Show>
         </Show>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <Button type="button" variant="secondary" onClick={() => void requestBack()} disabled={saving()}>
-          <i class="ti ti-arrow-left" aria-hidden="true" />
-          Back to skills
+        <Button type="button" variant="input" onClick={() => void openReferencesEditor()} disabled={saving()}>
+          <i class="ti ti-files" aria-hidden="true" />
+          Extra info
+          <Show when={fields().references.length > 0}>
+            <span class="text-xs text-dimmed">{fields().references.length}</span>
+          </Show>
         </Button>
         <div class="flex items-center gap-2">
+          <Button type="button" variant="secondary" onClick={() => void requestBack()} disabled={saving()}>
+            Cancel
+          </Button>
           <Show when={!readOnly()}>
-            <Button type="button" variant="primary" onClick={() => void save()} loading={saving()} disabled={invalid() || !dirty() || detail.loading}>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => void save()}
+              loading={saving()}
+              disabled={invalid() || !dirty() || detail.loading}
+            >
               {props.request.skillId ? "Save skill" : "Create skill"}
             </Button>
           </Show>

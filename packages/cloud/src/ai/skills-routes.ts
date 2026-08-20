@@ -29,16 +29,17 @@ const SkillFieldsSchema = z.object({
   name: z.string().trim().min(1).max(AI_SKILL_NAME_MAX_CHARS).regex(AI_SKILL_NAME_PATTERN),
   description: z.string().trim().min(1).max(AI_SKILL_DESCRIPTION_MAX_CHARS),
   instructions: z.string().trim().min(1).max(AI_SKILL_INSTRUCTIONS_MAX_CHARS),
-  extraFrontmatter: z.record(z.string(), z.unknown()).default({}).refine(
-    (value) => JSON.stringify(value).length <= AI_SKILL_EXTRA_FRONTMATTER_MAX_CHARS,
-    "Optional SKILL.md frontmatter is too large.",
-  ),
+  extraFrontmatter: z
+    .record(z.string(), z.unknown())
+    .default({})
+    .refine((value) => JSON.stringify(value).length <= AI_SKILL_EXTRA_FRONTMATTER_MAX_CHARS, "Optional SKILL.md frontmatter is too large."),
   references: z.array(SkillReferenceSchema).max(AI_SKILL_REFERENCE_MAX_ITEMS).default([]),
 });
 
 const UpdateSkillSchema = SkillFieldsSchema.extend({ expectedRevision: z.number().int().positive() });
 const SkillAccessSchema = z.object({ principal: PrincipalSchema, permission: z.enum(["read", "write", "admin"]) });
 const SkillAccessUpdateSchema = z.object({ permission: z.enum(["read", "write", "admin"]) });
+const SkillEnabledSchema = z.object({ enabled: z.boolean() });
 
 const publicSummary = (skill: AiSkillSummary): AiSkillSummary => ({ ...skill, id: skill.shortId });
 const publicSkill = (skill: AiSkill): AiSkill => ({ ...skill, id: skill.shortId });
@@ -55,9 +56,7 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
   new Hono<AuthContext>()
     .use(dependencies.limit ?? rateLimit())
     .use("*", dependencies.authenticate ?? auth.requireRole("*"))
-    .get("/", async (c) =>
-      respond(c, ok({ skills: (await aiSkills.list(c.get("accessSubject") ?? null)).map(publicSummary) })),
-    )
+    .get("/", async (c) => respond(c, ok({ skills: (await aiSkills.list(c.get("accessSubject") ?? null)).map(publicSummary) })))
     .post("/", dependencies.authenticate ?? auth.requireRole("authenticated"), v("json", SkillFieldsSchema), async (c) => {
       const subject = c.get("accessSubject");
       if (!subject) return respond(c, fail(err.forbidden("Skills require an authenticated access subject.")));
@@ -92,6 +91,12 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
         ? respond(c, ok({ deleted: true }))
         : respond(c, fail(err.notFound("Skill")));
     })
+    .put("/:skillId/enabled", dependencies.authenticate ?? auth.requireRole("authenticated"), v("json", SkillEnabledSchema), async (c) => {
+      const subject = c.get("accessSubject") ?? null;
+      const skill = await aiSkills.getByShortId(c.req.param("skillId")!, subject);
+      const enabled = skill ? await aiSkills.setEnabled(skill.id, subject, c.req.valid("json").enabled) : null;
+      return enabled === null ? respond(c, fail(err.notFound("Skill"))) : respond(c, ok({ enabled }));
+    })
     .get("/:skillId/access", async (c) => {
       const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "admin");
       const access = skill ? await aiSkills.listAccess(skill.id, c.get("accessSubject") ?? null) : null;
@@ -106,12 +111,7 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
       const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "admin");
       try {
         return skill &&
-          (await aiSkills.updateAccess(
-            skill.id,
-            c.req.param("accessId")!,
-            c.get("accessSubject") ?? null,
-            c.req.valid("json").permission,
-          ))
+          (await aiSkills.updateAccess(skill.id, c.req.param("accessId")!, c.get("accessSubject") ?? null, c.req.valid("json").permission))
           ? respond(c, ok({ updated: true }))
           : respond(c, fail(err.notFound("Access entry")));
       } catch (error) {
@@ -122,8 +122,7 @@ const buildAiSkillsRoutes = (dependencies: AiSkillsRouteDependencies = {}) =>
     .delete("/:skillId/access/:accessId", async (c) => {
       const skill = await aiSkills.getByShortId(c.req.param("skillId")!, c.get("accessSubject") ?? null, "admin");
       try {
-        return skill &&
-          (await aiSkills.revokeAccess(skill.id, c.req.param("accessId")!, c.get("accessSubject") ?? null))
+        return skill && (await aiSkills.revokeAccess(skill.id, c.req.param("accessId")!, c.get("accessSubject") ?? null))
           ? respond(c, ok({ deleted: true }))
           : respond(c, fail(err.notFound("Access entry")));
       } catch (error) {

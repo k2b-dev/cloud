@@ -29,6 +29,7 @@ const skill = (permission: AiSkill["permission"] = "admin"): AiSkill => ({
   references: [{ path: "references/style.md", content: "Be concise." }],
   referenceCount: 1,
   permission,
+  enabled: true,
   revision: 3,
   createdAt: "2026-08-20T10:00:00.000Z",
   updatedAt: "2026-08-20T11:00:00.000Z",
@@ -92,6 +93,21 @@ describe("AI Skill routes", () => {
     expect((await routes.request(`/${skillShortId}/access`)).status).toBe(404);
     expect((await routes.request(`/${skillShortId}`, { method: "DELETE" })).status).toBe(404);
     expect(aiSkills.getByShortId).toHaveBeenCalledWith(skillShortId, subject, "admin");
+  });
+
+  test("updates only the current user's Skill preference", async () => {
+    spyOn(aiSkills, "getByShortId").mockResolvedValue(skill("read"));
+    spyOn(aiSkills, "setEnabled").mockResolvedValue(false);
+    const routes = __buildAiSkillsRoutesForTest({ limit: pass, authenticate });
+    const response = await routes.request(`/${skillShortId}/enabled`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ enabled: false }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ enabled: false });
+    expect(aiSkills.setEnabled).toHaveBeenCalledWith(skillId, subject, false);
   });
 
   test("lists readable skills for anonymous public grants without allowing creation", async () => {

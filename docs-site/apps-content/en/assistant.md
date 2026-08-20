@@ -47,6 +47,7 @@ proposed actions before relying on them.
 | Message and turn | A request and the assistant run that answers it |
 | Chat files | Source files and editable artifacts kept with one conversation |
 | Preferences and memory | Reusable personal context applied across conversations when enabled |
+| Skills | Shared reusable workflows that each user can enable or disable for themselves |
 | Remembered approvals | User-managed choices for bounded Actions that may run without asking each time |
 | Project | Shared instructions, knowledge, files, references, and defaults used by private chats |
 
@@ -59,6 +60,10 @@ Project chats present that shared context together with chat sources and files,
 but Project editing remains on the Project page. Instructions and knowledge
 open as rendered Markdown, images open in the image viewer, and files open in
 the file browser.
+
+Readable Skills start enabled for each user. Open **Assistant settings → Skills**
+to disable a Skill only for yourself or enable it again. This personal choice
+does not change the Skill's Cloud access or availability for other users.
 
 The empty chat keeps the composer in the center and offers editable starters
 for common mail, scheduling, Cloud search, and planning work. Choosing a starter
