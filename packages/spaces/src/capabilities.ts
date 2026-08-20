@@ -718,6 +718,69 @@ const audited = async <T>(
   return result.ok ? audit.recordResultAfterSideEffect({ ...params, result }) : audit.recordResult({ ...params, result });
 };
 
+const boundedCapabilitySummary = (value: string): string => {
+  let summary = "";
+  for (const character of value.trim()) {
+    if (`${summary}${character}`.length > 500) break;
+    summary += character;
+  }
+  return summary;
+};
+
+const itemTitle = (title: string): string => `“${title}”`;
+const formatSummaryList = (values: string[]): string => {
+  if (values.length <= 1) return values[0] ?? "";
+  if (values.length === 2) return `${values[0]} and ${values[1]}`;
+  return `${values.slice(0, -1).join(", ")}, and ${values.at(-1)}`;
+};
+
+const tagSetSummary = (before: SpaceItem, after: SpaceItem): string => {
+  const beforeIds = new Set((before.tags ?? []).map((tag) => tag.id));
+  const afterIds = new Set((after.tags ?? []).map((tag) => tag.id));
+  const added = (after.tags ?? []).filter((tag) => !beforeIds.has(tag.id)).map((tag) => `#${tag.name}`);
+  const removed = (before.tags ?? []).filter((tag) => !afterIds.has(tag.id)).map((tag) => `#${tag.name}`);
+  const target = itemTitle(after.title);
+  if (added.length > 0 && removed.length > 0) {
+    return `Added ${formatSummaryList(added)} and removed ${formatSummaryList(removed)} from ${target}.`;
+  }
+  if (added.length > 0) return `Added ${formatSummaryList(added)} to ${target}.`;
+  if (removed.length > 0) return `Removed ${formatSummaryList(removed)} from ${target}.`;
+  return `${target} already had the requested tags.`;
+};
+
+const ITEM_SUMMARY_FIELDS: Record<string, string> = {
+  title: "title",
+  description: "description",
+  deadline: "deadline",
+  estimatedDurationMinutes: "estimate",
+  priority: "priority",
+  assigneeIds: "assignees",
+  tagIds: "tags",
+  location: "location",
+  url: "link",
+  startsAt: "time",
+  endsAt: "time",
+  allDay: "all-day setting",
+  recurrence: "recurrence",
+};
+
+const itemUpdateSummary = (before: SpaceItem, after: SpaceItem, input: Record<string, unknown>): string => {
+  const fields = [
+    ...new Set(
+      Object.keys(input)
+        .filter((field) => field !== "itemId")
+        .map((field) => ITEM_SUMMARY_FIELDS[field] ?? field),
+    ),
+  ];
+  if (fields.length === 1 && fields[0] === "title" && before.title !== after.title) {
+    return `Renamed ${itemTitle(before.title)} to ${itemTitle(after.title)}.`;
+  }
+  if (fields.length === 1 && fields[0] === "time") return `Moved ${itemTitle(after.title)} to a new time.`;
+  return fields.length === 1
+    ? `Changed the ${fields[0]} of ${itemTitle(after.title)}.`
+    : `Updated the ${formatSummaryList(fields)} of ${itemTitle(after.title)}.`;
+};
+
 const mutationError = <T>(result: Exclude<MutationResult<T>, { ok: true }>) => {
   if (result.status === 403) return fail(err.forbidden(result.error));
   if (result.status === 404) return fail(err.notFound(result.error.replace(/ not found$/i, "")));
@@ -726,12 +789,13 @@ const mutationError = <T>(result: Exclude<MutationResult<T>, { ok: true }>) => {
   return fail(err.badInput(result.error));
 };
 
-const itemMutationResult = async (result: MutationResult<SpaceItem>) => {
+const itemMutationResult = async (result: MutationResult<SpaceItem>, summary: (item: SpaceItem) => string) => {
   if (!result.ok) return mutationError(result);
   const [item] = await spacesPublicResources.projectItems([result.data]);
   if (!item) return fail(err.internal("Failed to project Space item"));
   return ok({
     data: mapItem(item),
+    summary: boundedCapabilitySummary(summary(item)),
     refs: [{ type: "spaces.item", id: item.id }],
     links: [{ rel: "open" as const, href: buildSpaceItemHref(item.spaceId, item.id) }],
   });
@@ -759,6 +823,7 @@ const runItemReferenceAdd = async (input: z.infer<typeof ItemResourceReferenceAd
     if (!data) return fail(err.conflict("Space item already has the maximum number of linked resources"));
     return ok({
       data,
+      summary: boundedCapabilitySummary(`Linked ${itemTitle(input.reference.label)} to ${itemTitle(resolved.data.item.title)}.`),
       refs: [{ type: "spaces.item", id: input.itemId }, input.reference.ref],
       links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
     });
@@ -775,6 +840,11 @@ const runItemReferenceRemove = async (input: z.infer<typeof ItemResourceReferenc
     });
     return ok({
       data: { itemId: input.itemId, ref: input.ref, deleted },
+      summary: boundedCapabilitySummary(
+        deleted
+          ? `Removed a resource link from ${itemTitle(resolved.data.item.title)}.`
+          : `${itemTitle(resolved.data.item.title)} had no matching resource link.`,
+      ),
       refs: [{ type: "spaces.item", id: input.itemId }, input.ref],
       links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
     });
@@ -786,7 +856,9 @@ const runItemTagsSet = async (input: z.infer<typeof ItemTagsSetInputSchema>, con
     if (!resolved.ok) return resolved;
     const tagIds = await spacesPublicResources.resolveSpacePublicIds("tags", resolved.data.internalSpaceId, input.tagIds);
     if (!tagIds) return fail(err.badInput("Unknown Space tag"));
-    return itemMutationResult(await spacesService.item.update({ id: resolved.data.internalId, data: { tagIds } }));
+    return itemMutationResult(await spacesService.item.update({ id: resolved.data.internalId, data: { tagIds } }), (item) =>
+      tagSetSummary(resolved.data.item, item),
+    );
   });
 
 const runTaskDependencyList = async (input: z.infer<typeof TaskDependencyListInputSchema>, context: CapabilityExecutionContext) => {
@@ -834,6 +906,7 @@ const runTaskDependencyAdd = async (input: z.infer<typeof TaskDependencyInputSch
     if (!data) return fail(err.internal("Failed to project task dependency"));
     return ok({
       data,
+      summary: boundedCapabilitySummary(`${itemTitle(resolved.data.item.title)} now waits for ${itemTitle(blocker.data.item.title)}.`),
       refs: [
         { type: "spaces.item", id: input.itemId },
         { type: "spaces.item", id: input.blockerItemId },
@@ -858,6 +931,9 @@ const runTaskDependencyRemove = async (input: z.infer<typeof TaskDependencyInput
     if (!result.ok) return mutationError(result);
     return ok({
       data: { itemId: input.itemId, blockerItemId: input.blockerItemId, removed: true as const },
+      summary: boundedCapabilitySummary(
+        `${itemTitle(resolved.data.item.title)} no longer waits for ${itemTitle(blocker.data.item.title)}.`,
+      ),
       refs: [
         { type: "spaces.item", id: input.itemId },
         { type: "spaces.item", id: input.blockerItemId },
@@ -866,12 +942,13 @@ const runTaskDependencyRemove = async (input: z.infer<typeof TaskDependencyInput
     });
   });
 
-const commentMutationResult = async (result: MutationResult<SpaceComment>, item: SpaceItem) => {
+const commentMutationResult = async (result: MutationResult<SpaceComment>, item: SpaceItem, summary: string) => {
   if (!result.ok) return mutationError(result);
   const [comment] = await spacesPublicResources.projectComments([result.data]);
   if (!comment) return fail(err.internal("Failed to project Space comment"));
   return ok({
     data: mapComment(comment),
+    summary: boundedCapabilitySummary(summary),
     refs: [
       { type: "spaces.comment", id: comment.id },
       { type: "spaces.item", id: item.id },
@@ -897,6 +974,7 @@ const runTaskCreate = async (input: z.infer<typeof TaskCreateInputSchema>, conte
         data: { ...data, columnId, tagIds },
         createdBy: context.user?.id ?? null,
       }),
+      (item) => `Created ${itemTitle(item.title)} in ${access.data.space.name}.`,
     );
   });
 
@@ -910,6 +988,7 @@ const runTaskUpdate = async (input: z.infer<typeof TaskUpdateInputSchema>, conte
     if (!tagIds) return fail(err.badInput("Unknown Space tag"));
     return itemMutationResult(
       await spacesService.item.update({ id: resolved.data.internalId, data: { ...data, ...(data.tagIds ? { tagIds } : {}) } }),
+      (item) => itemUpdateSummary(resolved.data.item, item, input),
     );
   });
 
@@ -918,7 +997,10 @@ const runTaskSetCompleted = async (input: z.infer<typeof TaskSetCompletedInputSc
     const resolved = await requireItem(input.itemId, context, "write");
     if (!resolved.ok) return resolved;
     if (isEvent(resolved.data.item)) return fail(err.badInput("Item is not a task"));
-    return itemMutationResult(await spacesService.item.setCompleted({ id: resolved.data.internalId, completed: input.completed }));
+    return itemMutationResult(
+      await spacesService.item.setCompleted({ id: resolved.data.internalId, completed: input.completed }),
+      (item) => `${input.completed ? "Completed" : "Reopened"} ${itemTitle(item.title)}.`,
+    );
   });
 
 const runEventCreate = async (input: z.infer<typeof EventCreateInputSchema>, context: CapabilityExecutionContext) =>
@@ -938,6 +1020,7 @@ const runEventCreate = async (input: z.infer<typeof EventCreateInputSchema>, con
         data: { ...data, columnId, tagIds },
         createdBy: context.user?.id ?? null,
       }),
+      (item) => `Created ${itemTitle(item.title)} in ${access.data.space.name}.`,
     );
   });
 
@@ -951,6 +1034,7 @@ const runEventUpdate = async (input: z.infer<typeof EventUpdateInputSchema>, con
     if (!tagIds) return fail(err.badInput("Unknown Space tag"));
     return itemMutationResult(
       await spacesService.item.update({ id: resolved.data.internalId, data: { ...data, ...(data.tagIds ? { tagIds } : {}) } }),
+      (item) => itemUpdateSummary(resolved.data.item, item, input),
     );
   });
 
@@ -959,7 +1043,14 @@ const runItemDelete = async (input: z.infer<typeof ItemDeleteInputSchema>, conte
     const resolved = await requireItem(input.itemId, context, "write");
     if (!resolved.ok) return resolved;
     const result = await spacesService.item.remove({ id: resolved.data.internalId });
-    return result.ok ? ok({ data: { itemId: input.itemId, deleted: true as const } }) : mutationError(result);
+    return result.ok
+      ? ok({
+          data: { itemId: input.itemId, deleted: true as const },
+          summary: boundedCapabilitySummary(
+            `Deleted ${isEvent(resolved.data.item) ? "event" : "task"} ${itemTitle(resolved.data.item.title)}.`,
+          ),
+        })
+      : mutationError(result);
   });
 
 const runCommentCreate = async (input: z.infer<typeof CommentCreateInputSchema>, context: CapabilityExecutionContext) =>
@@ -975,6 +1066,7 @@ const runCommentCreate = async (input: z.infer<typeof CommentCreateInputSchema>,
         content: input.content,
       }),
       resolved.data.item,
+      `Added a comment to ${itemTitle(resolved.data.item.title)}.`,
     );
   });
 
@@ -986,6 +1078,7 @@ const runCommentUpdate = async (input: z.infer<typeof CommentUpdateInputSchema>,
     return commentMutationResult(
       await spacesService.comment.update({ id: resolved.data.internalId, content: input.content, userId: context.user.id }),
       resolved.data.item,
+      `Updated your comment on ${itemTitle(resolved.data.item.title)}.`,
     );
   });
 
@@ -995,7 +1088,12 @@ const runCommentDelete = async (input: z.infer<typeof CommentDeleteInputSchema>,
     const resolved = await resolveComment(input.commentId, context, "write");
     if (!resolved.ok) return resolved;
     const result = await spacesService.comment.remove({ id: resolved.data.internalId, userId: context.user.id });
-    return result.ok ? ok({ data: { commentId: input.commentId, deleted: true as const } }) : mutationError(result);
+    return result.ok
+      ? ok({
+          data: { commentId: input.commentId, deleted: true as const },
+          summary: boundedCapabilitySummary(`Deleted your comment from ${itemTitle(resolved.data.item.title)}.`),
+        })
+      : mutationError(result);
   });
 
 const runCalendarInvitationPreview = async (
@@ -1074,6 +1172,15 @@ const runCalendarInvitationImport = async (
     };
     return ok({
       data,
+      summary: boundedCapabilitySummary(
+        result.data.outcome === "created"
+          ? `Added ${itemTitle(item.data.item.title)} to ${access.data.space.name}.`
+          : result.data.outcome === "updated"
+            ? `Updated ${itemTitle(item.data.item.title)} from the calendar invitation.`
+            : result.data.outcome === "cancelled"
+              ? `Cancelled ${itemTitle(item.data.item.title)} from the calendar invitation.`
+              : `${itemTitle(item.data.item.title)} was already up to date.`,
+      ),
       refs: [{ type: "spaces.item", id: data.itemId }],
       links: [{ rel: "open", href: data.href }],
     });
@@ -1084,10 +1191,18 @@ const runCalendarInvitationResponseCommit = async (
   context: CapabilityExecutionContext,
 ) =>
   audited(actionAudit(context, "calendar-invitation.response.commit", "mail_draft", input.draftId), async () => {
+    const source = await spacesService.calendarInvitations.getCalendarResponseCommitContext({
+      input,
+      subject: context.accessSubject,
+    });
+    if (!source.ok) return source;
     const result = await spacesService.calendarInvitations.commitCalendarResponse({ input, subject: context.accessSubject });
     return result.ok
       ? ok({
           data: result.data,
+          summary: boundedCapabilitySummary(
+            `Added your ${input.participationStatus === "accepted" ? "acceptance" : input.participationStatus} response for ${itemTitle(source.data.title)} to the mail draft.`,
+          ),
           refs: [{ type: "mail.draft", id: input.draftId }],
         })
       : result;
@@ -1109,6 +1224,7 @@ const runEventInvitationPrepare = async (input: z.infer<typeof EventInvitationPr
     return result.ok
       ? ok({
           data: { ...result.data, itemId: resolved.data.item.id },
+          summary: boundedCapabilitySummary(`Prepared an invitation for ${itemTitle(resolved.data.item.title)}.`),
           refs: [
             { type: "spaces.item", id: resolved.data.item.id },
             { type: "mail.draft", id: result.data.draftId },
@@ -1129,6 +1245,7 @@ const runEventInvitationCommit = async (input: z.infer<typeof EventInvitationCom
     if (!resolved.ok) return resolved;
     return ok({
       data: { ...result.data, itemId: resolved.data.item.id },
+      summary: boundedCapabilitySummary(`Attached the invitation for ${itemTitle(resolved.data.item.title)} to the mail draft.`),
       refs: [
         { type: "spaces.item", id: resolved.data.item.id },
         { type: "mail.draft", id: result.data.draftId },

@@ -928,6 +928,55 @@ describe("capability v1 compilation", () => {
     expect(JSON.stringify(result)).not.toContain("must-not-leak");
   });
 
+  test("accepts one bounded provider-authored result summary", async () => {
+    const base = example();
+    const compiled = compileCapabilities("example", {
+      ...base,
+      queries: {
+        ...base.queries,
+        get: {
+          ...base.queries!.get!,
+          run: async () => ok({ data: { id: "one", name: "Example" }, summary: "Loaded Example" }),
+        },
+      },
+    });
+    const result = await invokeCompiledCapability({
+      compiled,
+      kind: "query",
+      localId: "get",
+      input: { id: "one" },
+      expectedSchemaHash: compiled.manifest.queries[0]!.schemaHash,
+      context,
+    });
+
+    expect(result).toMatchObject({ ok: true, data: { summary: "Loaded Example" } });
+  });
+
+  test("rejects empty or oversized result summaries", async () => {
+    for (const summary of ["", "x".repeat(501)]) {
+      const base = example();
+      const compiled = compileCapabilities("example", {
+        ...base,
+        queries: {
+          ...base.queries,
+          get: {
+            ...base.queries!.get!,
+            run: async () => ok({ data: { id: "one", name: "Example" }, summary }),
+          },
+        },
+      });
+      const result = await invokeCompiledCapability({
+        compiled,
+        kind: "query",
+        localId: "get",
+        input: { id: "one" },
+        expectedSchemaHash: compiled.manifest.queries[0]!.schemaHash,
+        context,
+      });
+      expect(result).toMatchObject({ ok: false, error: { code: "INVALID_APP_RESPONSE" } });
+    }
+  });
+
   test("rejects malformed provider failure results", async () => {
     const base = example();
     const compiled = compileCapabilities("example", {

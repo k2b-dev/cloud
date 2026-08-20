@@ -164,6 +164,7 @@ const mapNote = (note: Note, notebookShortId: string, parentShortId: string | nu
 const notebookHref = (notebook: Pick<Notebook, "shortId">) => `/app/notebooks/${notebook.shortId}`;
 const noteHref = (notebook: Pick<Notebook, "shortId">, note: Pick<Note, "shortId">) =>
   `/app/notebooks/${notebook.shortId}/notes/${note.shortId}`;
+const notebookApprovalScope = (notebook: Pick<Notebook, "shortId">): string => `notebook:${notebook.shortId}`;
 
 const resolveParentShortId = async (note: Note): Promise<string | null> => {
   if (!note.parentId) return null;
@@ -241,6 +242,35 @@ const noteEditOperationDetails = (operation: NoteEditOperation, index: number) =
     }\n\n${preview}`,
     display: "block" as const,
   };
+};
+
+const noteTitle = (title: string): string => `“${title}”`;
+const lineCount = (content: string): number => (content.length === 0 ? 0 : content.split(/\r?\n/).length);
+const lines = (count: number): string => `${count} ${count === 1 ? "line" : "lines"}`;
+
+export const noteEditCapabilitySummary = (operations: NoteEditOperation[], title: string, changed: boolean): string => {
+  const target = noteTitle(title);
+  if (!changed) return `${target} was already up to date.`;
+  if (operations.length !== 1) return `Made ${operations.length} changes to ${target}.`;
+  const operation = operations[0]!;
+  switch (operation.kind) {
+    case "append":
+    case "prepend":
+      return `Added ${lines(lineCount(operation.content))} to ${target}.`;
+    case "insert-before-line":
+    case "insert-after-line":
+      return `Inserted ${lines(lineCount(operation.content))} in ${target}.`;
+    case "replace-lines":
+      return `Replaced ${lines(operation.endLine - operation.startLine + 1)} in ${target}.`;
+    case "delete-lines":
+      return `Deleted ${lines(operation.endLine - operation.startLine + 1)} from ${target}.`;
+    case "replace-block":
+    case "append-block":
+    case "prepend-block":
+      return `Updated @${operation.name} in ${target}.`;
+    case "set-content":
+      return `Replaced the content of ${target}.`;
+  }
 };
 
 const runNotebookSearch = async (input: UniversalSearchInput, context: CapabilityExecutionContext) => {
@@ -506,10 +536,11 @@ const mutationError = <T>(result: Exclude<MutationResult<T>, { ok: true }>) => {
   return fail(err.badInput(result.error));
 };
 
-const noteMutationResult = async (result: MutationResult<Note>, notebook: Notebook) => {
+const noteMutationResult = async (result: MutationResult<Note>, notebook: Notebook, summary: (note: Note) => string) => {
   if (!result.ok) return mutationError(result);
   return ok({
     data: mapNote(result.data, notebook.shortId, await resolveParentShortId(result.data)),
+    summary: summary(result.data),
     refs: [
       { type: "notebooks.note", id: result.data.shortId },
       { type: "notebooks.notebook", id: notebook.shortId },
@@ -539,6 +570,10 @@ const runNoteCreate = async (input: z.infer<typeof NoteCreateInputSchema>, conte
         creatorId: context.user?.id ?? null,
       }),
       access.data.notebook,
+      (note) =>
+        note.title === "Untitled"
+          ? `Created a new note in ${access.data.notebook.name}.`
+          : `Created ${noteTitle(note.title)} in ${access.data.notebook.name}.`,
     ),
   );
 };
@@ -559,6 +594,7 @@ const runNoteEdit = async (input: z.infer<typeof NoteEditInputSchema>, context: 
         blocks: result.data.blocks.slice(0, 500),
         blocksTruncated: result.data.blocks.length > 500,
       },
+      summary: noteEditCapabilitySummary(input.operations, result.data.note.title, result.data.changed),
       refs: [
         { type: "notebooks.note", id: result.data.note.shortId },
         { type: "notebooks.notebook", id: resolved.data.notebook.shortId },
@@ -572,13 +608,22 @@ const runNoteMove = async (input: z.infer<typeof NoteMoveInputSchema>, context: 
   const resolved = await requireNoteByShortId(input.noteId, context, "write");
   if (!resolved.ok) return resolved;
   let parentId: string | null = null;
+  let parentTitle: string | null = null;
   if (input.parentId) {
     const parent = await requireNoteByShortId(input.parentId, context, "write");
     if (!parent.ok || parent.data.note.notebookId !== resolved.data.note.notebookId) return fail(err.notFound("Parent note"));
     parentId = parent.data.note.id;
+    parentTitle = parent.data.note.title;
   }
   return audited(actionAudit(context, "note.move", "note", resolved.data.note.id), async () =>
-    noteMutationResult(await noteStore.move({ id: resolved.data.note.id, parentId, position: input.position }), resolved.data.notebook),
+    noteMutationResult(
+      await noteStore.move({ id: resolved.data.note.id, parentId, position: input.position }),
+      resolved.data.notebook,
+      (note) =>
+        parentTitle
+          ? `Moved ${noteTitle(note.title)} under ${noteTitle(parentTitle)}.`
+          : `Moved ${noteTitle(note.title)} to the notebook root.`,
+    ),
   );
 };
 
@@ -682,6 +727,41 @@ export const notebooksCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "none",
+      approval: "rememberable",
+      review: async (input, context) => {
+        const access = await requireNotebookByShortId(input.notebookId, context, "write");
+        if (!access.ok) return access;
+        let parentTitle = "Notebook root";
+        if (input.parentId) {
+          const parent = await requireNoteByShortId(input.parentId, context, "write");
+          if (!parent.ok || parent.data.note.notebookId !== access.data.notebook.id) return fail(err.notFound("Parent note"));
+          parentTitle = parent.data.note.title;
+        }
+        const content = input.content ?? "";
+        const previewLimit = 9_000;
+        const truncated = content.length > previewLimit;
+        return ok({
+          message: `Create a note in ${access.data.notebook.name}.`,
+          details: [
+            { label: "Notebook", value: access.data.notebook.name },
+            { label: "Parent", value: parentTitle },
+            ...(input.position === undefined ? [] : [{ label: "Position", value: String(input.position) }]),
+            ...(input.content === undefined
+              ? []
+              : [
+                  {
+                    label: "Initial Markdown",
+                    value: `${content.length} character${content.length === 1 ? "" : "s"}.${
+                      truncated ? ` Showing the first ${previewLimit.toLocaleString("en")} characters.` : ""
+                    }\n\n${truncated ? `${content.slice(0, previewLimit - 1)}…` : content}`,
+                    display: "block" as const,
+                  },
+                ]),
+          ],
+          links: [{ rel: "open" as const, href: notebookHref(access.data.notebook) }],
+          approvalScope: notebookApprovalScope(access.data.notebook),
+        });
+      },
       run: runNoteCreate,
     },
     "note.edit": {
@@ -700,6 +780,7 @@ export const notebooksCapabilities = defineCapabilities({
           message: `Edit ${resolved.data.note.title}.`,
           details: input.operations.map(noteEditOperationDetails),
           links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, resolved.data.note) }],
+          approvalScope: notebookApprovalScope(resolved.data.notebook),
         });
       },
       run: runNoteEdit,
@@ -730,6 +811,7 @@ export const notebooksCapabilities = defineCapabilities({
             { label: "New position", value: String(input.position) },
           ],
           links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, resolved.data.note) }],
+          approvalScope: notebookApprovalScope(resolved.data.notebook),
         });
       },
       run: runNoteMove,

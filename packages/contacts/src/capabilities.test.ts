@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
-import type { CapabilityActionDefinition, CapabilityExecutionContext, User } from "@valentinkolb/cloud/contracts";
+import {
+  type CapabilityActionDefinition,
+  type CapabilityActionReviewResult,
+  CapabilityActionReviewSchema,
+  type CapabilityExecutionContext,
+  capabilityResultSchema,
+  type User,
+} from "@valentinkolb/cloud/contracts";
+import { audit } from "@valentinkolb/cloud/services";
 import { contactsCapabilities, decodeContactCapabilityCursor } from "./capabilities";
 import {
   CONTACT_COLLECTION_LIMIT,
@@ -23,12 +31,12 @@ const publicContactId = "Cont01";
 const publicTagId = "Tag001";
 const timestamp = "2026-08-02T08:00:00.000Z";
 
-test("only exposes remembered approval for reversible contact changes", () => {
+test("only exposes remembered approval for bounded contact changes", () => {
   const rememberable = (Object.entries(contactsCapabilities.actions) as Array<[string, CapabilityActionDefinition]>)
     .filter(([, action]) => action.approval === "rememberable")
     .map(([localId]) => localId)
     .sort();
-  expect(rememberable).toEqual(["contact.update", "favorite.set", "tag.change"]);
+  expect(rememberable).toEqual(["contact.create", "contact.update", "favorite.set", "note.create", "tag.change"]);
 });
 
 const user = {
@@ -178,7 +186,7 @@ describe("contacts capabilities", () => {
         .filter(([, action]) => "review" in action && action.review)
         .map(([id]) => id)
         .sort(),
-    ).toEqual(["contact.delete", "contact.move", "contact.update", "favorite.set", "tag.change"]);
+    ).toEqual(["contact.create", "contact.delete", "contact.move", "contact.update", "favorite.set", "note.create", "tag.change"]);
   });
 
   test("separates general contact discovery from mail-specific lookup", () => {
@@ -375,6 +383,110 @@ describe("contacts capabilities", () => {
       value: "Current\n1. work — ada@example.test\n\nProposed\n1. work — grace@example.test",
       display: "block",
     });
+    expect(result.data.approvalScope).toBe(`book:${publicBookId}`);
+  });
+
+  test("summarizes contact changes as user-visible outcomes", async () => {
+    spyOn(contactsService.contact, "findBookId").mockResolvedValue(bookId);
+    spyOn(contactsService.book, "get").mockResolvedValue(book);
+    spyOn(contactsService.contact, "get").mockResolvedValue(contact);
+    spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+
+    spyOn(contactsService.contact, "update").mockResolvedValue({
+      ok: true,
+      data: { ...contact, emails: [{ ...contact.emails[0]!, email: "grace@example.test" }] },
+    });
+    const update = await contactsCapabilities.actions["contact.update"].run(
+      {
+        contactId: publicContactId,
+        expectedUpdatedAt: timestamp,
+        emails: [{ label: "work", email: "grace@example.test" }],
+      },
+      context,
+    );
+    expect(update).toMatchObject({ ok: true, data: { summary: "Changed the email address of Ada Example." } });
+    if (update.ok)
+      expect(capabilityResultSchema(contactsCapabilities.actions["contact.update"].data).safeParse(update.data).success).toBeTrue();
+
+    const customerTag = {
+      id: "66666666-6666-4666-8666-666666666666",
+      bookId,
+      name: "customer",
+      color: "#112233",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    spyOn(contactsService.tag, "changeAssignments").mockResolvedValue({ ok: true, data: [customerTag] });
+    const tags = await contactsCapabilities.actions["tag.change"].run(
+      { contactId: publicContactId, addTagIds: [publicTagId], removeTagIds: [] },
+      context,
+    );
+    expect(tags).toMatchObject({ ok: true, data: { summary: "Added #customer to Ada Example." } });
+    if (tags.ok) expect(capabilityResultSchema(contactsCapabilities.actions["tag.change"].data).safeParse(tags.data).success).toBeTrue();
+
+    spyOn(contactsService.favorite, "set").mockResolvedValue();
+    const favorite = await contactsCapabilities.actions["favorite.set"].run({ contactId: publicContactId, favorite: true }, context);
+    expect(favorite).toMatchObject({ ok: true, data: { summary: "Ada Example is in favorites." } });
+  });
+
+  test("returns a valid app-owned scope from every rememberable action review", async () => {
+    const tag = {
+      id: "66666666-6666-4666-8666-666666666666",
+      bookId,
+      name: "Customer",
+      color: "#2563eb",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    spyOn(contactsService.contact, "findBookId").mockResolvedValue(bookId);
+    spyOn(contactsService.book, "get").mockResolvedValue(book);
+    spyOn(contactsService.contact, "get").mockResolvedValue(contact);
+    spyOn(contactsService.tag, "list").mockResolvedValue([tag]);
+
+    const tagReview = await contactsCapabilities.actions["tag.change"].review!(
+      { contactId: publicContactId, addTagIds: [publicTagId], removeTagIds: [] },
+      context,
+    );
+    const results: CapabilityActionReviewResult[] = [
+      await contactsCapabilities.actions["contact.create"].review!({ bookId: publicBookId, label: "New contact" }, context),
+      await contactsCapabilities.actions["contact.update"].review!(
+        { contactId: publicContactId, expectedUpdatedAt: timestamp, firstName: "Grace" },
+        context,
+      ),
+      await contactsCapabilities.actions["favorite.set"].review!({ contactId: publicContactId, favorite: true }, context),
+      tagReview,
+      await contactsCapabilities.actions["note.create"].review!({ contactId: publicContactId, content: "Follow up next week." }, context),
+    ];
+
+    expect(results).toHaveLength(
+      (Object.values(contactsCapabilities.actions) as CapabilityActionDefinition[]).filter((action) => action.approval === "rememberable")
+        .length,
+    );
+    expect(results.map((result) => (result.ok ? result.data.approvalScope : null))).toEqual([
+      `book:${publicBookId}`,
+      `book:${publicBookId}`,
+      "favorites",
+      `book:${publicBookId}`,
+      `contact:${publicContactId}`,
+    ]);
+    expect(tagReview).toMatchObject({
+      ok: true,
+      data: {
+        details: [
+          { label: "Contact", value: "Ada Example" },
+          { label: "Add", value: "Customer" },
+          { label: "Remove", value: "None" },
+        ],
+        links: [{ rel: "open", href: `/app/contacts/${publicBookId}?contact=${publicContactId}&contactBook=${publicBookId}` }],
+      },
+    });
+    for (const [index, result] of results.entries()) {
+      expect(result.ok).toBeTrue();
+      if (!result.ok) continue;
+      expect(result.data.approvalScope?.length).toBeGreaterThan(0);
+      const parsed = CapabilityActionReviewSchema.safeParse(result.data);
+      if (!parsed.success) throw new Error(`Review ${index} is invalid: ${JSON.stringify(parsed.error.issues)}`);
+    }
   });
 
   test("keeps tag changes explicit and closed", () => {

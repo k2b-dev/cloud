@@ -6,6 +6,7 @@ import type { CapabilityActionReview } from "../../contracts/capabilities";
 import { markdown } from "../../shared";
 import type { AiTurnBlock } from "../protocol";
 import { isRenderableTurnBlock } from "../protocol";
+import { hasSpecializedBuiltinToolView, SpecializedBuiltinToolBlock } from "./builtin-tools";
 import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
 import {
@@ -393,6 +394,24 @@ function ApprovalBlockView(props: { turnId: string; block: ToolBlock }) {
 function CapabilityToolView(props: { block: ToolBlock }) {
   const presentation = () => props.block.presentation!;
   const label = () => presentation().title;
+  const result = () => (isRecord(props.block.result) ? props.block.result : null);
+  const summary = () => {
+    const value = result()?.summary;
+    if (typeof value !== "string") return "";
+    const trimmed = value.trim();
+    return trimmed.length <= 500 ? trimmed : "";
+  };
+  const refs = () => {
+    const value = result()?.refs;
+    return Array.isArray(value) ? value.filter((ref) => isRecord(ref) && typeof ref.type === "string" && typeof ref.id === "string") : [];
+  };
+  const links = () => {
+    const value = result()?.links;
+    return Array.isArray(value)
+      ? value.filter((link) => isRecord(link) && typeof link.href === "string" && /^\/(?![\\/])[^\\\u0000-\u001f\u007f]*$/.test(link.href))
+      : [];
+  };
+  const hasReadableResult = () => !props.block.isError && Boolean(summary());
   return (
     <Show
       when={props.block.status !== "running"}
@@ -406,16 +425,55 @@ function CapabilityToolView(props: { block: ToolBlock }) {
         />
       }
     >
-      <ToolResultDisclosure
-        name={label()}
-        labelOnError={label()}
-        icon={aiToolIcon(props.block.name, presentation().appIcon)}
-        accent={presentation().appAccent}
-        toolName={props.block.name}
-        args={props.block.args}
-        result={props.block.result}
-        isError={Boolean(props.block.isError)}
-      />
+      <Show
+        when={hasReadableResult()}
+        fallback={
+          <ToolResultDisclosure
+            name={label()}
+            labelOnError={label()}
+            icon={aiToolIcon(props.block.name, presentation().appIcon)}
+            accent={presentation().appAccent}
+            toolName={props.block.name}
+            args={props.block.args}
+            result={props.block.result}
+            isError={Boolean(props.block.isError)}
+          />
+        }
+      >
+        <Chat.Activity
+          icon={aiToolIcon(props.block.name, presentation().appIcon)}
+          label={label()}
+          description={summary()}
+          accent={presentation().appAccent}
+          bodyInset={false}
+        >
+          {refs().length > 0 || links().length > 0 ? (
+            <div class="flex w-full min-w-0 flex-wrap gap-1.5 rounded-md bg-zinc-100/70 p-2 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+              <For each={refs()}>
+                {(ref) => (
+                  <span class="inline-flex min-w-0 items-center gap-1 rounded bg-white/65 px-1.5 py-1 text-secondary dark:bg-white/5">
+                    <i class="ti ti-link shrink-0" aria-hidden="true" />
+                    <span class="truncate">{`${String(ref.type ?? "resource")}:${String(ref.id ?? "")}`}</span>
+                  </span>
+                )}
+              </For>
+              <For each={links()}>
+                {(link) => (
+                  <ButtonLink href={String(link.href)} size="xs" variant="ghost">
+                    {typeof link.title === "string"
+                      ? link.title
+                      : link.rel === "edit"
+                        ? "Edit"
+                        : link.rel === "download"
+                          ? "Download"
+                          : "Open"}
+                  </ButtonLink>
+                )}
+              </For>
+            </div>
+          ) : undefined}
+        </Chat.Activity>
+      </Show>
     </Show>
   );
 }
@@ -533,7 +591,7 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
       <Match when={props.block.presentation?.kind === "capability"}>
         <CapabilityToolView block={props.block} />
       </Match>
-      <Match when={props.block.name === "present"}>
+      <Match when={props.block.name === "present" && !props.block.isError}>
         <PresentToolBlock block={props.block} />
       </Match>
       <Match when={props.block.name === "web_search" && !props.block.isError}>
@@ -545,10 +603,13 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
       <Match when={props.block.name === "memory"}>
         <MemoryToolView block={props.block} />
       </Match>
-      <Match when={isCardToolName(props.block.name)}>
+      <Match when={hasSpecializedBuiltinToolView(props.block.name, props.block.result) && status() === "completed" && !props.block.isError}>
+        <SpecializedBuiltinToolBlock block={props.block} />
+      </Match>
+      <Match when={isCardToolName(props.block.name) && !props.block.isError}>
         <CloudCardBlock args={props.block.args} />
       </Match>
-      <Match when={isSurveyToolName(props.block.name)}>
+      <Match when={isSurveyToolName(props.block.name) && !props.block.isError}>
         <SurveyToolView turnId={props.turnId} block={props.block} active={props.active} />
       </Match>
       <Match when={isTextEditorToolName(props.block.name)}>

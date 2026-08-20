@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import type { CapabilityActionDefinition, CapabilityExecutionContext, User } from "@valentinkolb/cloud/contracts";
+import {
+  type CapabilityActionDefinition,
+  type CapabilityActionReviewResult,
+  CapabilityActionReviewSchema,
+  type CapabilityExecutionContext,
+  capabilityResultSchema,
+  type User,
+} from "@valentinkolb/cloud/contracts";
 import { audit } from "@valentinkolb/cloud/services";
-import { decodeNotebookCapabilityCursor, decodeNotebookTreeCursor, notebooksCapabilities } from "./capabilities";
+import { decodeNotebookCapabilityCursor, decodeNotebookTreeCursor, notebooksCapabilities, noteEditCapabilitySummary } from "./capabilities";
 import {
   NotebookReadInputSchema,
   NoteCreateInputSchema,
@@ -32,12 +39,12 @@ const noteId = "55555555-5555-4555-8555-555555555555";
 const createdAt = "2026-08-02T08:00:00.000Z";
 const activeSpies: Array<{ mockRestore(): void }> = [];
 
-test("only exposes remembered approval for reversible note changes", () => {
+test("only exposes remembered approval for bounded notebook-local note changes", () => {
   const rememberable = (Object.entries(notebooksCapabilities.actions) as Array<[string, CapabilityActionDefinition]>)
     .filter(([, action]) => action.approval === "rememberable")
     .map(([localId]) => localId)
     .sort();
-  expect(rememberable).toEqual(["note.edit", "note.move"]);
+  expect(rememberable).toEqual(["note.create", "note.edit", "note.move"]);
 });
 
 const trackedSpy = <T extends { mockRestore(): void }>(spy: T): T => {
@@ -151,7 +158,7 @@ describe("notebooks capabilities", () => {
         .filter(([, action]) => "review" in action && action.review)
         .map(([id]) => id)
         .sort(),
-    ).toEqual(["note.edit", "note.move"]);
+    ).toEqual(["note.create", "note.edit", "note.move"]);
     expect(notebooksCapabilities.actions["note.edit"]).toMatchObject({
       destructive: true,
       openWorld: false,
@@ -376,6 +383,8 @@ describe("notebooks capabilities", () => {
     );
     expect(result.ok).toBeTrue();
     if (result.ok) {
+      expect(result.data.summary).toBe(`Added 1 line to “${note.title}”.`);
+      expect(capabilityResultSchema(notebooksCapabilities.actions["note.edit"].data).safeParse(result.data).success).toBeTrue();
       expect(result.data.refs).toEqual([
         { type: "notebooks.note", id: note.shortId },
         { type: "notebooks.notebook", id: notebook.shortId },
@@ -390,6 +399,18 @@ describe("notebooks capabilities", () => {
       createdBy: userId,
     });
     expect(record).toHaveBeenCalledWith(expect.objectContaining({ action: "notebooks.capability.note.edit" }));
+  });
+
+  test("summarizes note edits by their visible effect", () => {
+    expect(noteEditCapabilitySummary([{ kind: "insert-after-line", line: 2, content: "First\nSecond" }], note.title, true)).toBe(
+      `Inserted 2 lines in “${note.title}”.`,
+    );
+    expect(noteEditCapabilitySummary([{ kind: "append-block", name: "facts", content: "Updated" }], note.title, true)).toBe(
+      `Updated @facts in “${note.title}”.`,
+    );
+    expect(noteEditCapabilitySummary([{ kind: "set-content", content: note.contentMd }], note.title, false)).toBe(
+      `“${note.title}” was already up to date.`,
+    );
   });
 
   test("normalizes tagged-note timestamps before validating the capability result", async () => {
@@ -443,5 +464,37 @@ describe("notebooks capabilities", () => {
         display: "block",
       },
     ]);
+    expect(result.data.approvalScope).toBe(`notebook:${notebook.shortId}`);
+  });
+
+  test("returns a valid notebook scope from every rememberable action review", async () => {
+    trackedSpy(spyOn(notebookStore, "getByShortId")).mockResolvedValue(notebook);
+    trackedSpy(spyOn(noteStore, "getByShortId")).mockResolvedValue(note);
+    trackedSpy(spyOn(notebookStore, "get")).mockResolvedValue(notebook);
+    trackedSpy(spyOn(notebookStore, "getPermission")).mockResolvedValue("write");
+
+    const results: CapabilityActionReviewResult[] = [
+      await notebooksCapabilities.actions["note.create"].review!(
+        { notebookId: notebook.shortId, parentId: note.shortId, content: "# New note" },
+        userContext,
+      ),
+      await notebooksCapabilities.actions["note.edit"].review!(
+        { noteId: note.shortId, operations: [{ kind: "append", content: "Update" }] },
+        userContext,
+      ),
+      await notebooksCapabilities.actions["note.move"].review!({ noteId: note.shortId, parentId: null, position: 1 }, userContext),
+    ];
+
+    expect(results).toHaveLength(
+      (Object.values(notebooksCapabilities.actions) as CapabilityActionDefinition[]).filter((action) => action.approval === "rememberable")
+        .length,
+    );
+    for (const [index, result] of results.entries()) {
+      expect(result.ok).toBeTrue();
+      if (!result.ok) continue;
+      expect(result.data.approvalScope).toBe(`notebook:${notebook.shortId}`);
+      const parsed = CapabilityActionReviewSchema.safeParse(result.data);
+      if (!parsed.success) throw new Error(`Review ${index} is invalid: ${JSON.stringify(parsed.error.issues)}`);
+    }
   });
 });

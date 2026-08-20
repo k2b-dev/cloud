@@ -167,13 +167,16 @@ Keep the Stop action available until the server accepts the abort.
 Render tool input and output as data. Do not inject model text as HTML.
 
 Compact capability rows use the saved capability title, app icon, and optional
-accent in running, success, and failure states. They stay on one line and omit
-the app name and result summary; the disclosure still contains the complete
-input and response. Expanded generic disclosures show JSON-like payloads as
-structured data previews with at most eight visible rows and an optional raw
-view. Expanded data surfaces span the available message column. Plain text and
-specialized tool results keep their readable renderers; web search and extract
-results also span the column without inheriting the activity icon inset.
+accent in running, success, and failure states. A successful result with a
+provider-authored `summary` shows that escaped plain-text summary plus semantic
+resource references and links; older results without one retain the complete
+generic input and response disclosure. Expanded generic disclosures show
+JSON-like payloads as structured data previews with at most eight visible rows
+and an optional raw view. Expanded data surfaces span the available message
+column. Built-in discovery, Help, Project, file, calculation, image, web,
+memory, and interaction tools use Cloud-owned readable renderers and omit raw
+input or output that adds no user value. Unknown tools and failures retain the
+generic technical details.
 Approval prompts additionally show the owning application's saved name. The
 saved snapshot keeps history readable when an app is
 temporarily unavailable or later changes its registry metadata; ordinary Nessi

@@ -171,6 +171,12 @@ authoritative input validation and the complete result contract. If an
 operation disappears from the live catalog, AI Core treats it as temporarily
 unavailable rather than inferring a replacement.
 
+Capability providers may add the fixed result envelope's optional `summary`
+when one short statement communicates the successful outcome better than raw
+data. AI Core stores and displays that provider-authored text together with
+semantic refs and links. It does not ask the model to supply a second
+explanation of its own call.
+
 Discovery is not authorization. Every invocation resolves the conversation's
 current user, creates a short-lived request delegation, and lets the owning app
 authenticate and authorize the operation again. Cloud never persists or

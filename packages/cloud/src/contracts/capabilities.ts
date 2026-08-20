@@ -134,6 +134,8 @@ export const capabilityPage = (nextCursor?: string | null): CapabilityPage =>
 
 export type CapabilityResult<T> = {
   data: T;
+  /** Provider-authored, user-facing summary of the successful result. Render as escaped plain text. */
+  summary?: string;
   refs?: CloudResourceRef[];
   page?: CapabilityPage;
   links?: CapabilitySemanticLink[];
@@ -143,6 +145,7 @@ export const capabilityResultSchema = <T extends z.ZodType>(data: T): z.ZodType<
   z
     .object({
       data,
+      summary: z.string().trim().min(1).max(500).optional(),
       refs: z.array(CloudResourceRefSchema).max(100).optional(),
       page: CapabilityPageSchema.optional(),
       links: z.array(CapabilitySemanticLinkSchema).max(20).optional(),

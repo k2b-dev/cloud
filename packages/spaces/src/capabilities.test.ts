@@ -6,6 +6,7 @@ import {
   type CapabilityActionReviewResult,
   CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
+  capabilityResultSchema,
   type User,
 } from "@valentinkolb/cloud/contracts";
 import { audit } from "@valentinkolb/cloud/services";
@@ -469,6 +470,7 @@ describe("spaces capabilities", () => {
     expect(result).toMatchObject({
       ok: true,
       data: {
+        summary: `Prepared an invitation for “${event.title}”.`,
         refs: [
           { type: "spaces.item", id: itemId },
           { type: "mail.draft", id: "draft1" },
@@ -826,7 +828,11 @@ describe("spaces capabilities", () => {
     });
     expect(result).toMatchObject({
       ok: true,
-      data: { data: { kind: "task", id: itemId }, refs: [{ type: "spaces.item", id: itemId }] },
+      data: {
+        data: { kind: "task", id: itemId },
+        summary: `Created “${task.title}” in ${space.name}.`,
+        refs: [{ type: "spaces.item", id: itemId }],
+      },
     });
     expect(recordAllowed).toHaveBeenCalledWith(expect.objectContaining({ action: "spaces.capability.task.create" }));
   });
@@ -843,8 +849,77 @@ describe("spaces capabilities", () => {
     expect(update).toHaveBeenCalledWith({ id: itemUuid, data: { tagIds: [tagUuid] } });
     expect(result).toMatchObject({
       ok: true,
-      data: { data: { id: itemId, tags: [{ id: tagId }] }, refs: [{ type: "spaces.item", id: itemId }] },
+      data: {
+        data: { id: itemId, tags: [{ id: tagId }] },
+        summary: `Added #${tag.name} to “${task.title}”.`,
+        refs: [{ type: "spaces.item", id: itemId }],
+      },
     });
+  });
+
+  test("summarizes removal of a resource link without exposing its identifier", async () => {
+    spyOn(spacesService.item, "get").mockResolvedValue(task);
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    spyOn(spacesService.item.references, "remove").mockResolvedValue(true);
+    spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+
+    const result = await spacesCapabilities.actions["item.reference.remove"].run(
+      { itemId, ref: { type: "notebooks.note", id: "Note01" } },
+      userContext,
+    );
+
+    expect(result).toMatchObject({ ok: true, data: { summary: `Removed a resource link from “${task.title}”.` } });
+  });
+
+  test("summarizes calendar imports and responses by their visible outcome", async () => {
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    spyOn(spacesService.item, "get").mockResolvedValue(event);
+    spyOn(spacesService.calendarInvitations, "importCalendarInvitation").mockResolvedValue({
+      ok: true,
+      data: { itemId: itemUuid, spaceId: spaceUuid, href: `/app/spaces/${spaceId}?item=${itemId}`, outcome: "created" },
+    });
+    spyOn(spacesService.calendarInvitations, "getCalendarResponseCommitContext").mockResolvedValue({
+      ok: true,
+      data: { itemId: itemUuid, spaceId: spaceUuid, title: event.title },
+    });
+    spyOn(spacesService.calendarInvitations, "commitCalendarResponse").mockResolvedValue({
+      ok: true,
+      data: { participationStatus: "accepted", state: "drafted", draftId: "draft1", updatedAt: createdAt },
+    });
+    spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+
+    const imported = await spacesCapabilities.actions["calendar-invitation.import"].run(
+      {
+        mailboxId: "mail01",
+        messageId: "msg001",
+        calendar: "BEGIN:VCALENDAR\r\nEND:VCALENDAR\r\n",
+        spaceId,
+        conversation: { ref: { type: "mail.conversation", id: "Conv01" }, label: "Planning" },
+      },
+      userContext,
+    );
+    expect(imported).toMatchObject({ ok: true, data: { summary: `Added “${event.title}” to ${space.name}.` } });
+
+    const response = await spacesCapabilities.actions["calendar-invitation.response.commit"].run(
+      { mailboxId: "mail01", messageId: "msg001", participationStatus: "accepted", draftId: "draft1" },
+      userContext,
+    );
+    expect(response).toMatchObject({
+      ok: true,
+      data: { summary: `Added your acceptance response for “${event.title}” to the mail draft.` },
+    });
+    if (imported.ok) {
+      expect(
+        capabilityResultSchema(spacesCapabilities.actions["calendar-invitation.import"].data).safeParse(imported.data).success,
+      ).toBeTrue();
+    }
+    if (response.ok) {
+      expect(
+        capabilityResultSchema(spacesCapabilities.actions["calendar-invitation.response.commit"].data).safeParse(response.data).success,
+      ).toBeTrue();
+    }
   });
 
   test("reads comments through parent Space access without exposing avatar hashes", async () => {

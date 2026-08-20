@@ -122,6 +122,165 @@ describe("capability tool presentation", () => {
     expect(html).not.toContain("max-w-xl");
   });
 
+  test("renders internal discovery results as readable tool lists instead of JSON", () => {
+    const completed: AiTurnBlock = {
+      id: "search-tools-call",
+      kind: "tool",
+      callId: "search-tools-1",
+      name: "search_tools",
+      args: { query: "tag mail" },
+      status: "completed",
+      result: {
+        tools: [
+          {
+            name: "mail__action__conversation_dot_tag_dot_change",
+            title: "Change conversation tags",
+            description: "Add or remove mailbox tags.",
+            kind: "action",
+            appId: "mail",
+          },
+        ],
+      },
+    };
+
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
+
+    expect(html).toContain("Search tools: tag mail");
+    expect(html).toContain("Change conversation tags");
+    expect(html).toContain("Add or remove mailbox tags.");
+    expect(html).toContain(">mail</span>");
+    expect(html).not.toContain(">Input</p>");
+    expect(html).not.toContain(">Response</p>");
+    expect(html).not.toContain("k2b-content-structured-data");
+  });
+
+  test("uses provider-authored capability summaries and semantic links", () => {
+    const completed = block("completed");
+    if (completed.kind !== "tool") throw new Error("tool block missing");
+    completed.result = {
+      data: { conversationId: "nTf34n", tags: ["#foo"] },
+      summary: "Tagged mail with #foo",
+      refs: [{ type: "mail.conversation", id: "nTf34n" }],
+      links: [{ rel: "open", href: "/app/mail/5guDsC?conversation=nTf34n" }],
+    };
+
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
+
+    expect(html).toContain("Tagged mail with #foo");
+    expect(html).toContain("mail.conversation:nTf34n");
+    expect(html).toContain('href="/app/mail/5guDsC?conversation=nTf34n"');
+    expect(html).not.toContain(">Input</p>");
+    expect(html).not.toContain(">Response</p>");
+    expect(html).not.toContain("k2b-content-structured-data");
+  });
+
+  test("does not turn malformed historical capability links into navigation", () => {
+    const completed = block("completed");
+    if (completed.kind !== "tool") throw new Error("tool block missing");
+    completed.result = {
+      data: { conversationId: "nTf34n" },
+      summary: "Loaded conversation",
+      links: [{ rel: "open", href: "//example.test/escape", title: "Open" }],
+    };
+
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
+
+    expect(html).toContain("Loaded conversation");
+    expect(html).not.toContain("example.test");
+  });
+
+  test.each([
+    ["list_apps", {}, { apps: { contacts: "People and address books" } }, "People and address books"],
+    ["load_tools", { names: ["calculate"] }, { loaded: ["calculate"], alreadyLoaded: [], missing: [], evicted: [] }, "calculate"],
+    [
+      "search_help",
+      { query: "mail tags" },
+      { documents: [{ appId: "mail", appName: "Mail", documentId: "tags", title: "Organize with tags" }] },
+      "Organize with tags",
+    ],
+    [
+      "read_help",
+      { appId: "mail", documentId: "tags" },
+      { document: { appId: "mail", appName: "Mail", documentId: "tags", title: "Organize with tags", markdown: "# Tags" } },
+      "Read help: Organize with tags",
+    ],
+    [
+      "search_project",
+      { query: "invoice" },
+      { items: [{ kind: "knowledge", id: "abc123", title: "Invoice policy" }], truncated: false },
+      "Invoice policy",
+    ],
+    [
+      "read_project_knowledge",
+      { id: "abc123" },
+      { title: "Invoice policy", content: "Policy text" },
+      "Read Project knowledge: Invoice policy",
+    ],
+    [
+      "list_files",
+      { path: "/" },
+      { files: [{ path: "/report.pdf", size: 2048, mediaType: "application/pdf", origin: "assistant" }], truncated: false },
+      "report.pdf",
+    ],
+    [
+      "read_file",
+      { path: "/notes.md", offset: 0, length: 100 },
+      {
+        path: "/notes.md",
+        mediaType: "text/markdown",
+        representation: "text",
+        content: "hidden",
+        offset: 0,
+        nextOffset: 42,
+        eof: true,
+        truncated: false,
+      },
+      "bytes 0–42 · complete",
+    ],
+    [
+      "write_file",
+      { path: "/notes.md", content: "hidden" },
+      { path: "/notes.md", size: 42, mediaType: "text/markdown" },
+      "Wrote file: notes.md",
+    ],
+    ["calculate", { kind: "math", expression: "21 * 2" }, { result: "42" }, "21 * 2"],
+    [
+      "view_image",
+      { path: "/chart.png" },
+      { path: "/chart.png", mediaType: "image/png", description: "A rising line chart." },
+      "A rising line chart.",
+    ],
+    [
+      "markdown_to_pdf",
+      { path: "/report.md" },
+      { sourcePath: "/report.md", path: "/report.pdf", size: 4096, mediaType: "application/pdf" },
+      "Created PDF: report.pdf",
+    ],
+    [
+      "read_cloud_resource",
+      { type: "contacts.contact", id: "abc123" },
+      { data: { id: "abc123" }, summary: "Loaded contact Ada" },
+      "Loaded contact Ada",
+    ],
+  ] as const)("renders %s with its readable built-in presentation", (name, args, result, expected) => {
+    const completed: AiTurnBlock = {
+      id: `${name}-call`,
+      kind: "tool",
+      callId: `${name}-1`,
+      name,
+      args,
+      status: "completed",
+      result,
+    };
+
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
+
+    expect(html).toContain(expected);
+    expect(html).not.toContain(">Input</p>");
+    expect(html).not.toContain(">Response</p>");
+    expect(html).not.toContain("k2b-content-structured-data");
+  });
+
   test("renders persisted local Bash calls without execution controls", () => {
     const completed: AiTurnBlock = {
       id: "bash-call-1",

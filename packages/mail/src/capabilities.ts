@@ -2261,6 +2261,12 @@ const actionDefinitions = {
           conversationId: input.conversationId,
           tags: result.data.tags.map((tag) => ({ ...tag, id: requirePublicId(tagIds, tag.id), mailboxId: input.mailboxId })),
         },
+        summary: truncateText(
+          result.data.tags.length > 0
+            ? `Updated conversation tags: ${result.data.tags.map((tag) => tag.name).join(", ")}`
+            : "Removed all conversation tags",
+          500,
+        ).text,
         ...conversationMetadata(input.mailboxId, input.conversationId),
       });
     },

@@ -188,6 +188,7 @@ export const inventoryCapabilities = defineCapabilities({
         items.set(itemId, renamed);
         return ok({
           data: { id: renamed.id, name: renamed.name },
+          summary: `Renamed inventory item to ${renamed.name}`,
           refs: [{ type: "inventory.item", id: renamed.id }],
           links: [
             { rel: "edit", href: `/app/inventory/items/${renamed.id}/edit` },
@@ -552,6 +553,7 @@ metadata the caller can use:
 ```ts
 type CapabilityResult<T> = {
   data: T;
+  summary?: string;
   refs?: Array<{ type: string; id: string }>;
   page?:
     | { hasMore: true; nextCursor: string }
@@ -563,6 +565,29 @@ type CapabilityResult<T> = {
   }>;
 };
 ```
+
+Use the optional `summary` for one concise, provider-authored description of a
+successful result. Describe the outcome the user cares about, the readable
+target, and any important resulting state. Prefer names and public labels from
+the validated result or authorized domain state; do not expose internal IDs or
+implementation steps. Be specific about one changed field, and group several
+changes into one readable result.
+
+Good summaries:
+
+- `Added #customer to Reiner Schmiedt.`
+- `Completed “Launch plan”.`
+
+Bad summaries:
+
+- `Updated tags successfully.` — it hides the affected person and actual tag.
+- `Contact mutation completed.` — it describes an implementation step instead
+  of the user's outcome.
+
+The summary is trimmed, limited to 500 characters, persisted with the result,
+and rendered as escaped plain text. Derive it from the operation's validated
+result instead of asking an agent to describe what supposedly happened. Omit
+it when the operation title and structured data already say everything useful.
 
 Provider-owned `refs` use qualified declared Types. Foreign qualified refs are
 opaque cross-app identities and need not be redeclared by the provider. Links

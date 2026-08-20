@@ -71,6 +71,10 @@ const NOTE_CREATE_ACTION_ID = "contacts.note.create";
 const contactHrefById = (bookId: string, contactId: string): string =>
   `/app/contacts/${encodeURIComponent(bookId)}?contact=${encodeURIComponent(contactId)}&contactBook=${encodeURIComponent(bookId)}`;
 const contactHref = (contact: Pick<Contact, "id" | "bookId">): string => contactHrefById(contact.bookId, contact.id);
+const bookHref = (bookId: string): string => `/app/contacts/${encodeURIComponent(bookId)}`;
+const bookApprovalScope = (bookId: string): string => `book:${bookId}`;
+const contactApprovalScope = (contactId: string): string => `contact:${contactId}`;
+const FAVORITES_APPROVAL_SCOPE = "favorites";
 
 const mapTag = (tag: ContactTag) => ({
   id: tag.id,
@@ -208,6 +212,55 @@ const CONTACT_REVIEW_LABELS: Record<ContactReviewField, string> = {
   addresses: "Postal addresses",
   websites: "Websites",
   bankAccounts: "Bank accounts",
+};
+
+const CONTACT_SUMMARY_LABELS: Record<ContactReviewField, string> = {
+  label: "name",
+  firstName: "first name",
+  lastName: "last name",
+  companyName: "organization",
+  department: "department",
+  jobTitle: "job title",
+  vatId: "VAT ID",
+  birthday: "birthday",
+  salutation: "salutation",
+  pronouns: "pronouns",
+  preferredLanguage: "language",
+  parentContactId: "parent contact",
+  tagIds: "tags",
+  emails: "email address",
+  phones: "phone number",
+  addresses: "postal address",
+  websites: "website",
+  bankAccounts: "bank account",
+};
+
+const formatSummaryList = (values: string[]): string => {
+  if (values.length <= 1) return values[0] ?? "";
+  if (values.length === 2) return `${values[0]} and ${values[1]}`;
+  return `${values.slice(0, -1).join(", ")}, and ${values.at(-1)}`;
+};
+
+const contactUpdateSummary = (before: Contact, after: Contact, fields: ContactReviewField[]): string => {
+  const beforeName = resolveContactName(before);
+  const afterName = resolveContactName(after);
+  const nameFields = new Set<ContactReviewField>(["label", "firstName", "lastName", "companyName"]);
+  if (fields.every((field) => nameFields.has(field)) && beforeName !== afterName) return `Renamed ${beforeName} to ${afterName}.`;
+  const labels = [...new Set(fields.map((field) => CONTACT_SUMMARY_LABELS[field]))];
+  return labels.length === 1 ? `Changed the ${labels[0]} of ${afterName}.` : `Updated the ${formatSummaryList(labels)} of ${afterName}.`;
+};
+
+const contactTagSummary = (before: ContactTag[], after: ContactTag[], contactName: string): string => {
+  const beforeIds = new Set(before.map((tag) => tag.id));
+  const afterIds = new Set(after.map((tag) => tag.id));
+  const added = after.filter((tag) => !beforeIds.has(tag.id)).map((tag) => `#${tag.name}`);
+  const removed = before.filter((tag) => !afterIds.has(tag.id)).map((tag) => `#${tag.name}`);
+  if (added.length > 0 && removed.length > 0) {
+    return `Added ${formatSummaryList(added)} and removed ${formatSummaryList(removed)} from ${contactName}.`;
+  }
+  if (added.length > 0) return `Added ${formatSummaryList(added)} to ${contactName}.`;
+  if (removed.length > 0) return `Removed ${formatSummaryList(removed)} from ${contactName}.`;
+  return `${contactName} already had the requested tags.`;
 };
 
 const boundedReviewText = (value: unknown, limit = 240): string => {
@@ -440,6 +493,14 @@ const actorKey = (context: CapabilityExecutionContext): string =>
     ? `user:${context.accessSubject.userId}:${context.accessSubject.delegatedByServiceAccountId ?? "direct"}`
     : `service_account:${context.accessSubject.serviceAccountId}`;
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
+const boundedCapabilitySummary = (value: string): string => {
+  let summary = "";
+  for (const character of value.trim()) {
+    if (`${summary}${character}`.length > 500) break;
+    summary += character;
+  }
+  return summary;
+};
 
 const runSearch = async (input: UniversalSearchInput, context: CapabilityExecutionContext) => {
   const user = userBacked(context);
@@ -704,13 +765,16 @@ const reviewContactAction = async (
   contactId: string,
   context: CapabilityExecutionContext,
   required: PermissionLevel,
-  describe: (contact: Contact) => Omit<CapabilityActionReview, "links"> | Promise<Omit<CapabilityActionReview, "links">>,
+  describe: (
+    contact: Contact,
+    internalContact: Contact,
+  ) => Omit<CapabilityActionReview, "links"> | Promise<Omit<CapabilityActionReview, "links">>,
 ) => {
   const resolved = await resolveContact(contactId, context, required);
   if (!resolved.ok) return resolved;
   const [contact] = await projectContacts([resolved.data.contact]);
   if (!contact) return fail(err.notFound("Contact"));
-  return ok({ ...(await describe(contact)), links: [{ rel: "open" as const, href: contactHref(contact) }] });
+  return ok({ ...(await describe(contact, resolved.data.contact)), links: [{ rel: "open" as const, href: contactHref(contact) }] });
 };
 
 const resolveWriteRelations = async <T extends { parentContactId?: string | null; tagIds?: string[] }>(bookId: string, data: T) => {
@@ -752,6 +816,7 @@ const runContactCreate = async (input: z.infer<typeof ContactCreateInputSchema>,
       return publicContact
         ? ok({
             data: { contact: mapContactDetail(publicContact) },
+            summary: boundedCapabilitySummary(`Created ${resolveContactName(publicContact)} in ${access.data.book.name}.`),
             refs: [{ type: "contacts.contact", id: publicContact.id }],
             links: [{ rel: "edit", href: contactHref(publicContact) }],
           })
@@ -779,6 +844,9 @@ const runContactUpdate = async (input: z.infer<typeof ContactUpdateInputSchema>,
     return result.ok
       ? ok({
           data: { contact: mapContactDetail(contact!) },
+          summary: boundedCapabilitySummary(
+            contactUpdateSummary(resolved.data.contact, result.data, Object.keys(data) as ContactReviewField[]),
+          ),
           refs: [{ type: "contacts.contact", id: contact!.id }],
           links: [{ rel: "edit", href: contactHref(contact!) }],
         })
@@ -803,6 +871,7 @@ const runContactMove = async (input: z.infer<typeof ContactMoveInputSchema>, con
     return result.ok
       ? ok({
           data: { contact: mapContactDetail(contact!) },
+          summary: boundedCapabilitySummary(`Moved ${resolveContactName(contact!)} to ${target.data.book.name}.`),
           refs: [{ type: "contacts.contact", id: contact!.id }],
           links: [{ rel: "edit", href: contactHref(contact!) }],
         })
@@ -820,7 +889,12 @@ const runContactDelete = async (input: z.infer<typeof ContactDeleteInputSchema>,
       id: resolved.data.contactId,
       expectedUpdatedAt: input.expectedUpdatedAt,
     });
-    return result.ok ? ok({ data: { contactId: input.contactId, deleted: true as const } }) : result;
+    return result.ok
+      ? ok({
+          data: { contactId: input.contactId, deleted: true as const },
+          summary: boundedCapabilitySummary(`Deleted ${resolveContactName(resolved.data.contact)}.`),
+        })
+      : result;
   });
 };
 
@@ -839,6 +913,9 @@ const runFavoriteSet = async (input: z.infer<typeof FavoriteSetInputSchema>, con
     });
     return ok({
       data: { contactId: input.contactId, favorite: input.favorite },
+      summary: boundedCapabilitySummary(
+        `${resolveContactName(resolved.data.contact)} ${input.favorite ? "is in favorites" : "is no longer in favorites"}.`,
+      ),
       refs: [{ type: "contacts.contact", id: input.contactId }],
       links: [{ rel: "open" as const, href: contactHref((await projectContacts([resolved.data.contact]))[0]!) }],
     });
@@ -868,6 +945,9 @@ const runTagChange = async (input: z.infer<typeof ContactTagChangeInputSchema>, 
             tags: tags.slice(0, CONTACT_TAG_LIMIT).map(mapTag),
             tagsTruncated: result.data.length > CONTACT_TAG_LIMIT,
           },
+          summary: boundedCapabilitySummary(
+            contactTagSummary(resolved.data.contact.tags, result.data, resolveContactName(resolved.data.contact)),
+          ),
           refs: [{ type: "contacts.contact", id: input.contactId }],
           links: [{ rel: "open" as const, href: contactHref(contact!) }],
         })
@@ -903,6 +983,7 @@ const runNoteCreate = async (input: z.infer<typeof ContactNoteCreateInputSchema>
       const [contact] = await projectContacts([resolved.data.contact]);
       return ok({
         data: { note: mapNote(note!) },
+        summary: boundedCapabilitySummary(`Added a note to ${resolveContactName(resolved.data.contact)}.`),
         refs: [
           { type: "contacts.note", id: note!.id },
           { type: "contacts.contact", id: input.contactId },
@@ -1042,6 +1123,48 @@ export const contactsCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "required",
+      approval: "rememberable",
+      review: async (input, context) => {
+        const access = await requireBookPermission(input.bookId, context, "write");
+        if (!access.ok) return access;
+        const { bookId: _bookId, ...data } = input;
+        const internalData = await resolveWriteRelations(access.data.bookId, data);
+        if (!internalData.ok) return internalData;
+        const [publicBook] = await projectBooks([access.data.book]);
+        if (!publicBook) return fail(err.notFound("Book"));
+        const fields = Object.keys(data) as ContactReviewField[];
+        const tagNames = new Map<string, string>();
+        if (fields.includes("tagIds")) {
+          const tags = await projectTags(await contactsService.tag.list({ bookId: access.data.bookId }));
+          for (const tag of tags) tagNames.set(tag.id, tag.name);
+        }
+        return ok({
+          message: `Create a contact in ${publicBook.name}.`,
+          details: [
+            { label: "Address book", value: publicBook.name },
+            ...fields.map((field): NonNullable<CapabilityActionReview["details"]>[number] => {
+              const value = data[field];
+              if (field === "birthday" && typeof value === "string") {
+                return { label: CONTACT_REVIEW_LABELS[field], value, format: "date" };
+              }
+              if (CONTACT_COLLECTION_FIELDS.has(field)) {
+                const full = contactCollectionReviewValue(field, value, tagNames);
+                return {
+                  label: CONTACT_REVIEW_LABELS[field],
+                  value:
+                    full.length > CONTACT_REVIEW_BLOCK_MAX_CHARS
+                      ? `${full.slice(0, CONTACT_REVIEW_BLOCK_MAX_CHARS)}\n\nPreview truncated. Review the full validated input under Details.`
+                      : full,
+                  display: "block",
+                };
+              }
+              return { label: CONTACT_REVIEW_LABELS[field], value: contactReviewValue(field, value, tagNames) };
+            }),
+          ],
+          links: [{ rel: "open" as const, href: bookHref(publicBook.id) }],
+          approvalScope: bookApprovalScope(publicBook.id),
+        });
+      },
       run: runContactCreate,
     },
     "contact.update": {
@@ -1054,13 +1177,14 @@ export const contactsCapabilities = defineCapabilities({
       idempotency: "none",
       approval: "rememberable",
       review: (input, context) =>
-        reviewContactAction(input.contactId, context, "write", async (contact) => {
+        reviewContactAction(input.contactId, context, "write", async (contact, internalContact) => {
           const changedFields = Object.keys(input).filter(
             (field): field is ContactReviewField => field !== "contactId" && field !== "expectedUpdatedAt",
           );
           const tagNames = new Map<string, string>();
           if (changedFields.includes("tagIds")) {
-            for (const tag of await contactsService.tag.list({ bookId: contact.bookId })) tagNames.set(tag.id, tag.name);
+            const tags = await projectTags(await contactsService.tag.list({ bookId: internalContact.bookId }));
+            for (const tag of tags) tagNames.set(tag.id, tag.name);
           }
           return {
             message: `Update ${resolveContactName(contact)}.`,
@@ -1094,6 +1218,7 @@ export const contactsCapabilities = defineCapabilities({
                 ];
               }),
             ],
+            approvalScope: bookApprovalScope(contact.bookId),
           };
         }),
       run: runContactUpdate,
@@ -1149,6 +1274,7 @@ export const contactsCapabilities = defineCapabilities({
         return reviewContactAction(input.contactId, context, "read", (contact) => ({
           message: `${input.favorite ? "Add" : "Remove"} ${resolveContactName(contact)} ${input.favorite ? "to" : "from"} favorites.`,
           details: [{ label: "Contact", value: resolveContactName(contact) }],
+          approvalScope: FAVORITES_APPROVAL_SCOPE,
         }));
       },
       run: runFavoriteSet,
@@ -1165,16 +1291,27 @@ export const contactsCapabilities = defineCapabilities({
       review: async (input, context) => {
         const resolved = await resolveContact(input.contactId, context, "write");
         if (!resolved.ok) return resolved;
-        const tags = await contactsService.tag.list({ bookId: resolved.data.bookId });
+        const [addTagIds, removeTagIds] = await Promise.all([
+          resolveBookPublicIds("tags", resolved.data.bookId, input.addTagIds),
+          resolveBookPublicIds("tags", resolved.data.bookId, input.removeTagIds),
+        ]);
+        if (!addTagIds || !removeTagIds) return fail(err.notFound("Tag"));
+        const [contacts, tags] = await Promise.all([
+          projectContacts([resolved.data.contact]),
+          projectTags(await contactsService.tag.list({ bookId: resolved.data.bookId })),
+        ]);
+        const contact = contacts[0];
+        if (!contact) return fail(err.notFound("Contact"));
         const names = new Map(tags.map((tag) => [tag.id, tag.name]));
         return ok({
-          message: `Change tags for ${resolveContactName(resolved.data.contact)}.`,
+          message: `Change tags for ${resolveContactName(contact)}.`,
           details: [
-            { label: "Contact", value: resolveContactName(resolved.data.contact) },
+            { label: "Contact", value: resolveContactName(contact) },
             { label: "Add", value: input.addTagIds.map((id: string) => names.get(id) ?? id).join(", ") || "None" },
             { label: "Remove", value: input.removeTagIds.map((id: string) => names.get(id) ?? id).join(", ") || "None" },
           ],
-          links: [{ rel: "open" as const, href: contactHref(resolved.data.contact) }],
+          links: [{ rel: "open" as const, href: contactHref(contact) }],
+          approvalScope: bookApprovalScope(contact.bookId),
         });
       },
       run: runTagChange,
@@ -1187,6 +1324,18 @@ export const contactsCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "required",
+      approval: "rememberable",
+      review: async (input, context) => {
+        if (!userBacked(context)) return fail(err.forbidden("Notes require a user-backed actor"));
+        return reviewContactAction(input.contactId, context, "write", (contact) => ({
+          message: `Add a note to ${resolveContactName(contact)}.`,
+          details: [
+            { label: "Contact", value: resolveContactName(contact) },
+            { label: "Note", value: input.content, display: "block" },
+          ],
+          approvalScope: contactApprovalScope(contact.id),
+        }));
+      },
       run: runNoteCreate,
     },
   },
