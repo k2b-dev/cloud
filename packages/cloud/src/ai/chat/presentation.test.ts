@@ -25,12 +25,16 @@ test("uses the full message width for every tool, including persisted messages",
   expect(cloudStyles).toMatch(/\.k2b-chat-message\.ai-chat-message-wide\s*\{\s*width:\s*100%;/);
   expect(cloudStyles).toMatch(/\.k2b-chat-message\.ai-chat-message-wide\s*\{[^}]*max-width:\s*none;/);
   expect(cloudStyles).toMatch(/\.k2b-chat-message\.ai-chat-message-wide\s+:where\([^}]+min-width:\s*0;/);
+  expect(cloudStyles).toMatch(/\.k2b-button\.ai-chat-result-link\[data-size="xs"\]\s*\{[^}]*min-height:\s*1\.25rem;/);
+  expect(cloudStyles).toMatch(/\.k2b-button\.ai-chat-result-link\[data-size="xs"\]\s*\{[^}]*padding-block:\s*0;/);
 });
 
 test("keeps persisted assistant blocks in their original order without a Worked wrapper", () => {
   const presentationSource = readFileSync(resolve(import.meta.dir, "presentation.tsx"), "utf8");
 
-  expect(presentationSource).toContain("<AiTurnBlockList blocks={renderable()} turnId={turnId()} />");
+  expect(presentationSource).toContain(
+    "<AiTurnBlockList blocks={renderable()} turnId={turnId()} disclosureState={props.disclosureState} />",
+  );
   expect(presentationSource).not.toContain("const worked =");
   expect(presentationSource).not.toContain("const visible =");
   expect(presentationSource).not.toContain("Worked for ${");

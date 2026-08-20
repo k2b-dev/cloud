@@ -2,6 +2,7 @@ import { Chat } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import type { AiTurnBlock } from "../protocol";
 import { isRecord } from "./message-utils";
+import { AiToolActivity } from "./tool-disclosure";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 
@@ -67,7 +68,8 @@ export function WebSearchToolBlock(props: { block: ToolBlock }) {
 
   return (
     <Show when={!running()} fallback={<Chat.Activity label={searchQuery(props.block.args)} icon="ti ti-search" busy />}>
-      <Chat.Activity
+      <AiToolActivity
+        blockId={props.block.id}
         defaultOpen
         icon="ti ti-search"
         label={searchQuery(props.block.args)}
@@ -79,7 +81,7 @@ export function WebSearchToolBlock(props: { block: ToolBlock }) {
             <For each={results()}>{(result) => <WebLinkRow url={result.url} title={result.title} />}</For>
           </Show>
         </div>
-      </Chat.Activity>
+      </AiToolActivity>
     </Show>
   );
 }
@@ -101,7 +103,8 @@ export function WebExtractToolBlock(props: { block: ToolBlock }) {
 
   return (
     <Show when={!running()} fallback={<Chat.Activity label={domainOf(url()) || "Reading page"} icon="ti ti-world-download" busy />}>
-      <Chat.Activity
+      <AiToolActivity
+        blockId={props.block.id}
         defaultOpen
         icon="ti ti-world-download"
         leading={<Favicon url={url()} fallbackIcon="ti ti-world-download" />}
@@ -125,7 +128,7 @@ export function WebExtractToolBlock(props: { block: ToolBlock }) {
             <p class="text-[11px] text-dimmed">Content was truncated for the model.</p>
           </Show>
         </div>
-      </Chat.Activity>
+      </AiToolActivity>
     </Show>
   );
 }

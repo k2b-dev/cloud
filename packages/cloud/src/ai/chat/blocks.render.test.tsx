@@ -3,10 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
-import { createComponent } from "solid-js";
+import { type Accessor, createComponent, createRoot, createSignal } from "solid-js";
 import { renderToString } from "solid-js/web";
+import type { AiActiveTurn } from "../client/projection";
 import type { AiTurnBlock } from "../protocol";
 import type { AiAssistantTimelineItem } from "../timeline";
+import type { AiStoredMessage } from "../types";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-capability-block-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
@@ -15,7 +17,8 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { AiTurnBlockList, AiTurnBlockView } = await import("./blocks");
 const { AiChatActionsProvider } = await import("./message-actions");
-const { AiAssistantContent } = await import("./presentation");
+const { AiAssistantContent, createAiChatTimeline } = await import("./presentation");
+const { createAiToolDisclosureState } = await import("./tool-disclosure");
 const { CloudSurveyBlock, CloudTextEditorBlock } = await import("./visual-tools");
 
 const hasOpenDetails = (html: string): boolean => /<details\b[^>]*\sopen(?:=""|(?=[\s>]))/.test(html);
@@ -179,6 +182,7 @@ describe("capability tool presentation", () => {
     expect(html).not.toContain(">List contacts</strong>");
     expect(html).not.toContain("mail.conversation:nTf34n");
     expect(html).toContain('href="/app/mail/5guDsC?conversation=nTf34n"');
+    expect(html).toMatch(/class="k2b-button ai-chat-result-link\s*"/);
     expect(html).not.toContain(">Input</p>");
     expect(html).not.toContain(">Response</p>");
     expect(html).not.toContain("k2b-content-structured-data");
@@ -496,6 +500,82 @@ describe("capability tool presentation", () => {
     expect(customHtml.indexOf(">Open in Contacts</span></a>")).toBeLessThan(customHtml.indexOf(">Reject</span>"));
     expect(customHtml).toContain('data-variant="ghost"');
     expect(customHtml).not.toContain("book:default");
+  });
+});
+
+describe("live tool disclosure stability", () => {
+  test("keeps a user disclosure override across a remounted loop block", () => {
+    const disclosureState = createAiToolDisclosureState();
+    const completed: AiTurnBlock = {
+      id: "tool-stable",
+      kind: "tool",
+      callId: "call-stable",
+      name: "unknown_tool",
+      status: "completed",
+      result: { step: 1 },
+    };
+
+    const initialHtml = renderToString(() =>
+      createComponent(AiTurnBlockList, { blocks: [completed], turnId: "turn-stable", disclosureState }),
+    );
+    expect(hasOpenDetails(initialHtml)).toBe(false);
+
+    disclosureState.set(completed.id, true);
+    const nextHtml = renderToString(() =>
+      createComponent(AiTurnBlockList, {
+        blocks: [{ ...completed, result: { step: 2 } }],
+        turnId: "turn-stable",
+        disclosureState,
+      }),
+    );
+    expect(hasOpenDetails(nextHtml)).toBe(true);
+  });
+
+  test("does not recreate stored timeline items for active-turn updates", () => {
+    const storedMessage: AiStoredMessage = {
+      id: "message-1",
+      shortId: "msg1",
+      conversationId: "conversation-1",
+      seq: 1,
+      kind: "message",
+      message: { role: "user", content: [{ type: "text", text: "Hello" }] },
+      loopId: null,
+      modelProfileId: null,
+      providerModel: null,
+      usage: null,
+      stopReason: null,
+      loopAggregate: null,
+      loopDoneReason: null,
+      compactedAt: null,
+      meta: null,
+      createdAt: "2026-08-20T12:00:00.000Z",
+    };
+    const activeTurn: AiActiveTurn = {
+      turnId: "turn-1",
+      attempt: 1,
+      seq: 2,
+      status: "running",
+      blocks: [{ id: "text-1", kind: "text", text: "Working" }],
+      modelProfileId: null,
+    };
+
+    createRoot((dispose) => {
+      const [messages] = createSignal<readonly AiStoredMessage[]>([storedMessage]);
+      const [active, setActive] = createSignal<AiActiveTurn | null>(activeTurn);
+      let timeline: Accessor<readonly import("@k2b/ui").ChatTimelineItem[]> | undefined;
+      createComponent(AiChatActionsProvider, {
+        actions: {},
+        get children() {
+          timeline = createAiChatTimeline({ messages, activeTurn: active });
+          return undefined;
+        },
+      });
+
+      const storedBefore = timeline?.()[0];
+      setActive({ ...activeTurn, seq: 3, blocks: [...activeTurn.blocks, { id: "text-2", kind: "text", text: "More" }] });
+      expect(timeline?.()[0]).toBe(storedBefore);
+      dispose();
+    });
   });
 });
 

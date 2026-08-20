@@ -7,6 +7,7 @@ import type { AiConversationTimelineEntry, AiStoredMessage } from "../types";
 import { AiTurnBlockList } from "./blocks";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
 import { textFromMessage } from "./message-utils";
+import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
 import { TurnNavigator } from "./turn-navigator";
 import { activeTimelineSeq } from "./turn-navigator-utils";
 import {
@@ -26,18 +27,22 @@ export { type AiChatActions, AiChatActionsProvider };
 
 const isWideBlock = (block: AiAssistantTimelineItem["blocks"][number]) => block.kind === "tool";
 
-export function AiAssistantContent(props: { item: AiAssistantTimelineItem }): JSX.Element {
+export function AiAssistantContent(props: { item: AiAssistantTimelineItem; disclosureState?: AiToolDisclosureState }): JSX.Element {
   const renderable = createMemo(() => props.item.blocks.filter(isRenderableTurnBlock));
   const turnId = () => props.item.loopId ?? props.item.id;
 
   return (
     <div class="flex flex-col gap-2">
-      <AiTurnBlockList blocks={renderable()} turnId={turnId()} />
+      <AiTurnBlockList blocks={renderable()} turnId={turnId()} disclosureState={props.disclosureState} />
     </div>
   );
 }
 
-const storedItems = (messages: readonly AiStoredMessage[], actions: AiChatActions): ChatTimelineItem[] =>
+const storedItems = (
+  messages: readonly AiStoredMessage[],
+  actions: AiChatActions,
+  disclosureState: AiToolDisclosureState,
+): ChatTimelineItem[] =>
   buildAiMessageTimeline([...messages]).map((item): ChatTimelineItem => {
     if (item.type === "user") {
       const text = aiUserMessageText(item.entry);
@@ -120,7 +125,7 @@ const storedItems = (messages: readonly AiStoredMessage[], actions: AiChatAction
       role: "assistant",
       createdAt: actionEntry?.createdAt ?? item.entries.at(-1)?.createdAt,
       class: item.blocks.some(isWideBlock) ? "ai-chat-message-wide" : undefined,
-      content: <AiAssistantContent item={item} />,
+      content: <AiAssistantContent item={item} disclosureState={disclosureState} />,
       actions: actionEntry
         ? createAssistantMessageActions({
             entry: actionEntry,
@@ -133,7 +138,7 @@ const storedItems = (messages: readonly AiStoredMessage[], actions: AiChatAction
     };
   });
 
-const activeItems = (turn: AiActiveTurn | null, actions: AiChatActions): ChatTimelineItem[] => {
+const activeItems = (turn: AiActiveTurn | null, actions: AiChatActions, disclosureState: AiToolDisclosureState): ChatTimelineItem[] => {
   if (!turn) return [];
   const segments = splitActiveTurnBlocks(turn.blocks);
   if (segments.length === 0) {
@@ -176,16 +181,12 @@ const activeItems = (turn: AiActiveTurn | null, actions: AiChatActions): ChatTim
           turnId={turn.turnId}
           streaming={turn.status === "running" && index === segments.length - 1}
           active
+          disclosureState={disclosureState}
         />
       ),
     };
   });
 };
-
-const aiChatTimelineItems = (session: AiChatTimelineSession, actions: AiChatActions): ChatTimelineItem[] => [
-  ...storedItems(session.messages, actions),
-  ...activeItems(session.activeTurn, actions),
-];
 
 export type AiChatTimelineSource = {
   messages: Accessor<readonly AiStoredMessage[]>;
@@ -199,15 +200,10 @@ export type AiChatTimelineSource = {
  */
 export function createAiChatTimeline(source: AiChatTimelineSource): Accessor<readonly ChatTimelineItem[]> {
   const actions = useAiChatActions();
-  return createMemo(() =>
-    aiChatTimelineItems(
-      {
-        messages: source.messages(),
-        activeTurn: source.activeTurn(),
-      },
-      actions,
-    ),
-  );
+  const disclosureState = createAiToolDisclosureState();
+  const stored = createMemo(() => storedItems(source.messages(), actions, disclosureState));
+  const active = createMemo(() => activeItems(source.activeTurn(), actions, disclosureState));
+  return createMemo(() => [...stored(), ...active()]);
 }
 
 export type AiChatTurnNavigatorProps = {

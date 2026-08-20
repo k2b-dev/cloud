@@ -206,6 +206,14 @@ describe("@k2b/ui portable chat family", () => {
         children: "Source details",
       }),
     );
+    const controlledClosed = renderToString(() =>
+      createComponent(Chat.Activity, {
+        label: "Controlled disclosure",
+        defaultOpen: true,
+        open: false,
+        children: "Controlled details",
+      }),
+    );
 
     expect(message).toContain('data-role="assistant"');
     expect(message).toContain('aria-busy="true"');
@@ -222,6 +230,8 @@ describe("@k2b/ui portable chat family", () => {
     expect(activity).toContain('data-accent="true"');
     expect(activity).toContain('data-body-inset="false"');
     expect(activity).toContain("--k2b-chat-activity-accent:#0f766e");
+    expect(controlledClosed).toContain("<details");
+    expect(controlledClosed).not.toMatch(/<details\b[^>]*\sopen(?:=""|(?=[\s>]))/);
   });
 
   test("keeps visible timestamps explicit and SSR-stable", () => {

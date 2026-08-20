@@ -1,9 +1,9 @@
 import { fileIcons } from "@k2b/stdlib";
-import { Chat } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import { formatAiFileSize } from "../attachments";
 import type { AiTurnBlock } from "../protocol";
 import { aiToolIcon, displayToolName, formatToolDetailText, isRecord } from "./message-utils";
+import { AiToolActivity } from "./tool-disclosure";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 
@@ -79,7 +79,8 @@ function CompletedActivity(props: {
   children?: JSX.Element;
 }) {
   return (
-    <Chat.Activity
+    <AiToolActivity
+      blockId={props.block.id}
       icon={aiToolIcon(props.block.name)}
       label={props.label}
       description={props.description}
@@ -87,7 +88,7 @@ function CompletedActivity(props: {
       bodyInset={false}
     >
       {props.children}
-    </Chat.Activity>
+    </AiToolActivity>
   );
 }
 

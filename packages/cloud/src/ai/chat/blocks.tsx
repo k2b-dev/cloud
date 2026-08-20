@@ -21,6 +21,7 @@ import {
   memoryToolPresentation,
 } from "./message-utils";
 import { AssistantMarkdownBlock } from "./primitives";
+import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
 import { CloudCardBlock, CloudSurveyBlock, CloudSurveyResultBlock, CloudTextEditorBlock, CloudTextEditorResultBlock } from "./visual-tools";
 import { WebExtractToolBlock, WebSearchToolBlock } from "./web-tools";
 
@@ -135,6 +136,7 @@ function ToolDetail(props: { title: string; toolName: string; value: unknown }) 
 }
 
 function ToolResultDisclosure(props: {
+  blockId: string;
   name: string;
   toolName: string;
   args?: unknown;
@@ -145,7 +147,8 @@ function ToolResultDisclosure(props: {
   labelOnError?: string;
 }) {
   return (
-    <Chat.Activity
+    <AiToolActivity
+      blockId={props.blockId}
       icon={props.icon ?? (props.isError ? "ti ti-alert-circle" : aiToolIcon(props.toolName))}
       label={props.isError ? `${props.labelOnError ?? props.name} failed` : props.name}
       tone={props.isError ? "danger" : "neutral"}
@@ -159,7 +162,7 @@ function ToolResultDisclosure(props: {
         </Show>
         <ToolDetail title="Response" toolName={props.toolName} value={props.result} />
       </div>
-    </Chat.Activity>
+    </AiToolActivity>
   );
 }
 
@@ -426,6 +429,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
         when={hasReadableResult()}
         fallback={
           <ToolResultDisclosure
+            blockId={props.block.id}
             name={label()}
             labelOnError={label()}
             icon={aiToolIcon(props.block.name, presentation().appIcon)}
@@ -446,7 +450,7 @@ function CapabilityToolView(props: { block: ToolBlock }) {
               <span class="flex min-w-0 flex-wrap items-center justify-end gap-1">
                 <For each={links()}>
                   {(link) => (
-                    <ButtonLink href={String(link.href)} size="xs" variant="ghost">
+                    <ButtonLink class="ai-chat-result-link" href={String(link.href)} size="xs" variant="ghost">
                       {typeof link.title === "string"
                         ? link.title
                         : link.rel === "edit"
@@ -483,7 +487,9 @@ function SurveyToolView(props: { turnId: string; block: ToolBlock; active?: bool
         />
       </Match>
       <Match when={submittedResult()}>
-        {(result) => <CloudSurveyResultBlock args={props.block.args} result={result()} continuing={props.active} />}
+        {(result) => (
+          <CloudSurveyResultBlock blockId={props.block.id} args={props.block.args} result={result()} continuing={props.active} />
+        )}
       </Match>
     </Switch>
   );
@@ -504,6 +510,7 @@ function TextEditorToolView(props: { turnId: string; block: ToolBlock; active?: 
     <Switch
       fallback={
         <ToolResultDisclosure
+          blockId={props.block.id}
           name="text editor"
           toolName={props.block.name}
           args={props.block.args}
@@ -524,7 +531,9 @@ function TextEditorToolView(props: { turnId: string; block: ToolBlock; active?: 
         />
       </Match>
       <Match when={completedResult()}>
-        {(result) => <CloudTextEditorResultBlock args={props.block.args} result={result()} continuing={props.active} />}
+        {(result) => (
+          <CloudTextEditorResultBlock blockId={props.block.id} args={props.block.args} result={result()} continuing={props.active} />
+        )}
       </Match>
     </Switch>
   );
@@ -538,6 +547,7 @@ function MemoryToolView(props: { block: ToolBlock }) {
         when={presentation()}
         fallback={
           <ToolResultDisclosure
+            blockId={props.block.id}
             name="Memory"
             toolName={props.block.name}
             args={props.block.args}
@@ -565,6 +575,7 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
     <Switch
       fallback={
         <ToolResultDisclosure
+          blockId={props.block.id}
           name={displayToolName(props.block.name)}
           toolName={props.block.name}
           args={props.block.args}
@@ -636,20 +647,24 @@ export function AiTurnBlockList(props: {
   streaming?: boolean;
   compact?: boolean;
   active?: boolean;
+  disclosureState?: AiToolDisclosureState;
 }) {
   const visible = () => props.blocks.filter(isRenderableTurnBlock);
+  const disclosureState = props.disclosureState ?? createAiToolDisclosureState();
   return (
-    <div class={`flex flex-col ${props.compact ? "gap-1" : "gap-2"}`}>
-      <For each={visible()}>
-        {(block, index) => (
-          <AiTurnBlockView
-            block={block}
-            turnId={props.turnId}
-            streaming={props.streaming && index() === visible().length - 1}
-            active={props.active}
-          />
-        )}
-      </For>
-    </div>
+    <AiToolDisclosureProvider state={disclosureState}>
+      <div class={`flex flex-col ${props.compact ? "gap-1" : "gap-2"}`}>
+        <For each={visible()}>
+          {(block, index) => (
+            <AiTurnBlockView
+              block={block}
+              turnId={props.turnId}
+              streaming={props.streaming && index() === visible().length - 1}
+              active={props.active}
+            />
+          )}
+        </For>
+      </div>
+    </AiToolDisclosureProvider>
   );
 }

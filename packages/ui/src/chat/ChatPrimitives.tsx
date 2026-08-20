@@ -32,6 +32,10 @@ export type ChatActivityProps = {
   /** Marks the activity as running with the shared accent sweep. */
   busy?: boolean;
   trailing?: JSX.Element;
+  /** Controlled disclosure state. Omit to keep native details behavior. */
+  open?: boolean;
+  /** Reports disclosure changes when `open` is controlled by the host. */
+  onOpenChange?: (open: boolean) => void;
   defaultOpen?: boolean;
   /** Set to false when the body is a peer list that should align with the activity row. */
   bodyInset?: boolean;
@@ -317,7 +321,8 @@ export function ChatActivity(props: ChatActivityProps): JSX.Element {
         data-body-inset={props.bodyInset === false ? "false" : undefined}
         data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
         style={style()}
-        open={props.defaultOpen}
+        open={props.open ?? props.defaultOpen}
+        onToggle={(event) => props.onOpenChange?.(event.currentTarget.open)}
         aria-busy={props.busy ? "true" : undefined}
       >
         <summary class="k2b-chat-activity__row">

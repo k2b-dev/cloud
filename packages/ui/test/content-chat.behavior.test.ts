@@ -235,6 +235,36 @@ describe("@k2b/ui content and chat behavior", () => {
     dom.cleanup();
   });
 
+  test("reports and follows controlled ChatActivity disclosure changes", async () => {
+    const dom = createDomTestHarness();
+    const { Chat } = await import("../src/chat");
+    const [open, setOpen] = createSignal(false);
+    const dispose = render(
+      () =>
+        createComponent(Chat.Activity, {
+          label: "Tool details",
+          get open() {
+            return open();
+          },
+          onOpenChange: setOpen,
+          children: "Result",
+        }),
+      dom.root,
+    );
+    const details = dom.root.querySelector<HTMLDetailsElement>("details")!;
+
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+    expect(open()).toBe(true);
+
+    setOpen(false);
+    await Promise.resolve();
+    expect(details.open).toBe(false);
+
+    dispose();
+    dom.cleanup();
+  });
+
   test("follows new messages only while the reader remains pinned", async () => {
     const dom = createDomTestHarness();
     const { Chat } = await import("../src/chat");

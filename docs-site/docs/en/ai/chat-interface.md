@@ -195,7 +195,9 @@ Generic tool rows and disclosures use `Chat.Activity` from `@k2b/ui`. Cloud
 only supplies protocol-derived labels and specialized bodies such as web search
 results, first-party favicons, structured data, and approval controls. Keep
 those domain renderers in Cloud instead of duplicating the shared activity
-shell.
+shell. Use `defaultOpen` for the initial disclosure policy; hosts that must
+preserve a person's choice across a remount can control it with `open` and
+`onOpenChange`.
 
 An active response always uses the shared streaming state of `Chat.Message`,
 including before the first model block arrives. It renders the minimal

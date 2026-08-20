@@ -3,6 +3,7 @@ import { Button, MarkdownEditor, prompts, Slider } from "@k2b/ui";
 import { createSignal, createUniqueId, For, Show } from "solid-js";
 import { CLOUD_AI_TEXT_EDITOR_FEEDBACK_MAX_CHARS, CLOUD_AI_TEXT_EDITOR_MAX_CHARS } from "../default-tool-contracts";
 import { isRecord, jsonPreview } from "./message-utils";
+import { useAiToolDisclosure } from "./tool-disclosure";
 
 const toneClass = (tone: unknown) => {
   if (tone === "blue") return "border-blue-200 bg-blue-50/65 text-blue-950 dark:border-blue-900/70 dark:bg-blue-950/25 dark:text-blue-100";
@@ -269,7 +270,8 @@ const surveyAnswerLabel = (question: Record<string, unknown> | null, value: unkn
   return optionLabel(value);
 };
 
-export function CloudSurveyResultBlock(props: { args?: unknown; result: unknown; continuing?: boolean }) {
+export function CloudSurveyResultBlock(props: { blockId?: string; args?: unknown; result: unknown; continuing?: boolean }) {
+  const disclosure = useAiToolDisclosure(() => props.blockId);
   const survey = () => (isRecord(props.args) ? props.args : null);
   const result = () => (isRecord(props.result) ? props.result : null);
   const answers = () => (isRecord(result()?.answers) ? (result()!.answers as Record<string, unknown>) : {});
@@ -291,7 +293,11 @@ export function CloudSurveyResultBlock(props: { args?: unknown; result: unknown;
   };
 
   return (
-    <details class="group w-full min-w-0 text-xs">
+    <details
+      class="group w-full min-w-0 text-xs"
+      open={disclosure.open()}
+      onToggle={(event) => disclosure.onOpenChange(event.currentTarget.open)}
+    >
       <summary class="inline-flex min-h-7 max-w-full cursor-pointer list-none items-center gap-1.5 py-1 leading-none text-dimmed transition-colors hover:text-primary">
         <i class="ti ti-forms shrink-0 text-base leading-none" aria-hidden="true" />
         <span class="shrink-0 font-medium">survey</span>
@@ -409,7 +415,8 @@ export function CloudTextEditorBlock(props: {
   );
 }
 
-export function CloudTextEditorResultBlock(props: { args?: unknown; result: unknown; continuing?: boolean }) {
+export function CloudTextEditorResultBlock(props: { blockId?: string; args?: unknown; result: unknown; continuing?: boolean }) {
+  const disclosure = useAiToolDisclosure(() => props.blockId);
   const editor = () => (isRecord(props.args) ? props.args : null);
   const result = () => (isRecord(props.result) ? props.result : null);
   const content = () => (typeof result()?.content === "string" ? String(result()!.content) : "");
@@ -417,7 +424,11 @@ export function CloudTextEditorResultBlock(props: { args?: unknown; result: unkn
   const format = () => (result()?.format === "markdown" ? "Markdown" : "Plain text");
   const state = () => (feedback() ? (props.continuing ? "revising" : "changes requested") : props.continuing ? "waiting" : "submitted");
   return (
-    <details class="group w-full min-w-0 text-xs">
+    <details
+      class="group w-full min-w-0 text-xs"
+      open={disclosure.open()}
+      onToggle={(event) => disclosure.onOpenChange(event.currentTarget.open)}
+    >
       <summary class="inline-flex min-h-7 max-w-full cursor-pointer list-none items-center gap-1.5 py-1 leading-none text-dimmed transition-colors hover:text-primary">
         <i class="ti ti-edit shrink-0 text-base leading-none" aria-hidden="true" />
         <span class="shrink-0 font-medium">text editor</span>

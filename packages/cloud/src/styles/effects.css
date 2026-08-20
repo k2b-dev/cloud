@@ -27,6 +27,13 @@
   max-width: 100%;
 }
 
+/* Result links sit inside an already padded activity row. Keep them inline so
+   they do not make linked capability results taller than neighboring rows. */
+.k2b-ui .k2b-button.ai-chat-result-link[data-size="xs"] {
+  min-height: 1.25rem;
+  padding-block: 0;
+}
+
 .assistant-markdown-block :where(*) {
   margin-block: 0;
 }
