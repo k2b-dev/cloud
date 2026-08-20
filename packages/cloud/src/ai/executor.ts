@@ -17,6 +17,8 @@ import { createCloudAiMemoryTool } from "./memory-tool";
 import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
 import { createCloudAiReadProjectKnowledgeTool, createCloudAiSearchProjectTool } from "./project-tool";
 import { aiProjects } from "./projects";
+import { createCloudAiLoadSkillTool } from "./skill-tool";
+import { aiSkills, type AiSkillSummary } from "./skills";
 import {
   type AiTurnBlock,
   type AiWireEvent,
@@ -59,6 +61,7 @@ const AI_COALESCE_MS = 25;
 const AI_COALESCE_MAX_CHARS = 512;
 const AI_SNAPSHOT_INTERVAL_MS = 1_000;
 const AI_ACTION_BUDGET_MS = 24 * 60 * 60_000;
+const AI_SKILL_CATALOG_MAX_CHARS = 8_000;
 const AI_FINAL_TOOL_ROUND_PROMPT = `# Final response
 The configured tool-round budget has been reached, so no more tools are available in this turn. Answer the user's request now with the best result supported by the evidence already gathered. State any material uncertainty or incomplete part clearly.`;
 
@@ -195,6 +198,31 @@ const accessSubjectForActor = (actor: RequestActor | undefined): AccessSubject |
     return { type: "user", userId: actor.delegatedUser.id, delegatedByServiceAccountId: actor.serviceAccount.id };
   }
   return { type: "service_account", serviceAccountId: actor.serviceAccount.id };
+};
+
+const boundedSkillCatalog = (
+  skills: readonly AiSkillSummary[],
+  contextWindow: number,
+): { name: string; description: string }[] => {
+  if (!skills.length) return [];
+  const minimumDescriptionChars = 64;
+  const budget = Math.max(
+    skills.reduce((total, skill) => total + skill.name.length + minimumDescriptionChars + 5, 0),
+    contextWindow > 0
+      ? Math.min(AI_SKILL_CATALOG_MAX_CHARS, Math.floor(contextWindow * 0.02 * 4))
+      : AI_SKILL_CATALOG_MAX_CHARS,
+  );
+  const baseChars = skills.reduce((total, skill) => total + skill.name.length + 5, 0);
+  const descriptionChars = Math.max(0, Math.floor((budget - baseChars) / skills.length));
+  return skills.map((skill) => ({
+    name: skill.name,
+    description:
+      skill.description.length <= descriptionChars
+        ? skill.description
+        : descriptionChars > 1
+          ? `${skill.description.slice(0, descriptionChars - 1).trimEnd()}…`
+          : "",
+  }));
 };
 
 export type ExecutorConfig = {
@@ -644,6 +672,12 @@ export class AiTurnExecutor {
     const timeZone = String((await coreSettings.get<string>("app.timezone")) || "").trim() || "UTC";
     const project = config.project;
     const projectSubject = project ? accessSubjectForActor(material.actor) : null;
+    // Skills are an Assistant/default-tool capability. Custom and structured
+    // executions must not gain an implicit database dependency or extra tools.
+    const skillSubject = defaultToolSource && resolved.profile.capabilities.includes("tools")
+      ? accessSubjectForActor(material.actor)
+      : null;
+    const availableSkills = skillSubject ? await aiSkills.list(skillSubject) : [];
     const projectFiles =
       project && resolvedProjectId && projectSubject
         ? {
@@ -662,9 +696,16 @@ export class AiTurnExecutor {
             },
           }
         : undefined;
+    const skillFiles = skillSubject
+      ? {
+          list: () => aiSkills.listTurnFiles(turnId, skillSubject),
+          read: (path: string) => aiSkills.readTurnFile(turnId, path, skillSubject),
+        }
+      : undefined;
     const runtimeTools = [
       ...material.tools,
       ...(memoryActive ? [createCloudAiMemoryTool(memoryQueryFromInput(config.input))] : []),
+      ...(skillSubject && availableSkills.length ? [createCloudAiLoadSkillTool(skillSubject)] : []),
       ...(config.project && resolvedProjectId && projectSubject
         ? [
             createCloudAiSearchProjectTool(resolvedProjectId, projectSubject),
@@ -690,6 +731,7 @@ export class AiTurnExecutor {
       attachedFilePaths: new Set(config.files?.attached.map((file) => file.path) ?? []),
       allowedDataBoundaries: material.modelPolicy?.allowedDataBoundaries,
       projectFiles,
+      skillFiles,
       selectedModel: resolved,
     };
     const prepared = prepareAiTools({
@@ -832,6 +874,9 @@ export class AiTurnExecutor {
       project: config.project,
       files: config.files,
       projectToolEnabled,
+      skills: activeTools.some((tool) => tool.def.name === "load_skill")
+        ? boundedSkillCatalog(availableSkills, resolved.provider.contextWindow ?? 0)
+        : undefined,
       user,
       memoryEnabled: memoryActive,
       memoryToolEnabled,

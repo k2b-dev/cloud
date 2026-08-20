@@ -423,6 +423,21 @@ export type AiProjectFileToolSource = {
   read: (path: string) => Promise<AiProjectFileToolContent | null>;
 };
 
+export type AiSkillFileToolStat = {
+  path: string;
+  mediaType: string;
+  size: number;
+  updatedAt: string;
+};
+
+export type AiSkillFileToolContent = AiSkillFileToolStat & { bytes: Uint8Array };
+
+/** Permission-checked, immutable loaded-skill snapshots mounted below /skills. */
+export type AiSkillFileToolSource = {
+  list: () => Promise<AiSkillFileToolStat[]>;
+  read: (path: string) => Promise<AiSkillFileToolContent | null>;
+};
+
 export type AiConversationResourceRef = {
   ref: CloudResourceRef;
   title: string | null;
@@ -888,6 +903,7 @@ export type AiToolRuntime<TInput extends z.ZodType = z.ZodType, TOutput extends 
           attachedFilePaths?: ReadonlySet<string>;
           allowedDataBoundaries?: AiDataBoundary[];
           projectFiles?: AiProjectFileToolSource;
+          skillFiles?: AiSkillFileToolSource;
           selectedModel?: AiResolvedModel;
         },
       ): Promise<z.infer<TOutput>>;

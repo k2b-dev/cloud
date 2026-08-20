@@ -14,7 +14,7 @@ Cloud provides a shared runtime for model-backed features.
 
 Cloud owns one personal conversation model for every user. Core supplies the
 global `/api/ai` runtime, storage, streaming, approvals, files, Projects,
-personalization, and recovery. Assistant is the standard GUI for those chats;
+Skills, personalization, and recovery. Assistant is the standard GUI for those chats;
 applications attach Cloud resources and publish Capabilities instead of owning
 another chat silo.
 
@@ -37,7 +37,7 @@ knows which domain data may be disclosed and which operation is allowed now.
 | One validated background result | [`runAiStructured()`](/en/docs/ai/structured-and-background-ai) |
 | A reusable application query or action | [Capabilities](/en/docs/platform/capabilities) |
 | A local runtime-only model tool | [`defineAiTool()`](/en/docs/ai/tools-and-approvals) |
-| Conversation files, Projects, or user memory | [Files, Projects, and personalization](/en/docs/ai/files-projects-and-personalization) |
+| Conversation files, Projects, Skills, or user memory | [Files, Projects, Skills, and personalization](/en/docs/ai/files-projects-and-personalization) |
 | Shared chat components | [Chat interface](/en/docs/ai/chat-interface) |
 
 Do not create a chat when one structured call is enough. Do not create a custom

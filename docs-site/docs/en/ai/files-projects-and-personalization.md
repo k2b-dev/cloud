@@ -1,14 +1,14 @@
 ---
-title: Files, Projects, and personalization
-navTitle: Files, Projects, and personalization
+title: Files, Projects, Skills, and personalization
+navTitle: Files, Projects, Skills, and personalization
 section: AI
 order: 1050
-description: Give AI controlled access to chat files, shared Project context, and durable personal preferences.
-tags: [ai, files, projects, memory]
-updated: 2026-08-18
+description: Give AI controlled access to chat files, shared Project context and Skills, and durable personal preferences.
+tags: [ai, files, projects, skills, memory]
+updated: 2026-08-20
 ---
 
-# Files, Projects, and personalization
+# Files, Projects, Skills, and personalization
 
 These features have separate ownership and lifetimes.
 
@@ -16,6 +16,7 @@ These features have separate ownership and lifetimes.
 | --- | --- | --- |
 | Conversation files | One private chat | Inputs and generated artifacts |
 | Projects | Shared through Cloud permissions | Instructions, knowledge, files, references, and defaults |
+| Skills | Shared through Cloud permissions | Reusable agent instructions with optional Markdown references |
 | Personalization | One user | Small durable preferences and facts |
 
 ## Use readable resource IDs
@@ -122,6 +123,37 @@ instructions and the default model change trusted agent behavior, only
 Universal Search and can be filtered by application. The HTTP API and
 `cld assistant projects` expose the same metadata, context, and access model.
 
+## Reuse shared Skills
+
+A Skill gives Assistant a reusable workflow without attaching it to one person
+or Project. Open **Assistant settings > Skills** to create one, import a
+`SKILL.md` or Skill ZIP, edit its Markdown instructions, add Markdown files
+below `references/`, export it, or manage its Cloud access. `read` access can
+view and use a Skill, `write` can edit it, and `admin` can also share or delete
+it. The final admin grant cannot be removed.
+
+`SKILL.md` is the portable source of truth. It starts with YAML frontmatter
+containing a lowercase, hyphenated `name` and a `description`, followed by the
+Markdown instructions. Cloud currently accepts optional `license`,
+`compatibility`, `metadata`, and `allowed-tools` frontmatter. A ZIP may wrap the
+files in one Skill folder and may contain Markdown files directly below
+`references/`. Scripts, assets, nested references, and other files are rejected.
+A Skill without references can also be imported or downloaded as one bare
+`SKILL.md`.
+
+At the start of a tool-capable Assistant turn, the model sees the names and
+bounded descriptions of every Skill it can currently read. It must call
+`load_skill` with the exact name before following a Skill. The call rechecks
+access, returns the instructions, and mounts that revision read-only at
+`/skills/<name>/SKILL.md`; references appear below
+`/skills/<name>/references/`. Assistant reads reference files with `read_file`
+only when the workflow needs them. References remain untrusted data.
+
+The first successful load pins one Skill revision for that turn, including
+retries, so an edit cannot change an in-progress result. A later turn sees the
+new revision. Reading a mounted file still checks current Cloud access; revoked
+access takes effect immediately.
+
 ## Use personalization for durable user context
 
 Personalization stores `fact` or `preference` records for one user. Each entry
@@ -150,11 +182,12 @@ Cloud composes the system prompt in this order:
 1. platform rules;
 2. organization instructions;
 3. code-owned personal-agent instructions;
-4. Project instructions;
-5. the Project context manifest as untrusted data;
-6. the bounded conversation file manifest as untrusted data;
-7. relevant personal facts and preferences;
-8. the final execution reminder.
+4. the readable Skill catalog;
+5. Project instructions;
+6. the Project context manifest as untrusted data;
+7. the bounded conversation file manifest as untrusted data;
+8. relevant personal facts and preferences;
+9. the final execution reminder.
 
 See [AI resources and access](/en/docs/ai/resources-and-access) for authorized
 domain context and [Tools and approvals](/en/docs/ai/tools-and-approvals) for

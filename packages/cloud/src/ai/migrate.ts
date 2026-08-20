@@ -986,23 +986,109 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`ALTER TABLE ai.turn_files ADD COLUMN IF NOT EXISTS version BIGINT NOT NULL DEFAULT 1`.simple();
   await sql`ALTER TABLE ai.turn_files ALTER COLUMN bytes SET STORAGE EXTERNAL`.simple();
 
-  // Projects are the single unreleased abstraction for shared instructions and
-  // context. There is intentionally no migration path from the alpha Skills
-  // experiments: they were never released and carried incompatible semantics.
+  // Skills were previously alpha-only and used personal/workspace ownership.
+  // Make the one-time model cut to permission-owned Agent Skills, then keep the
+  // new schema intact on later migrations.
   await sql`
     DO $$
     BEGIN
-      IF to_regclass('ai.skill_access') IS NOT NULL THEN
-        DELETE FROM auth.access
-        WHERE id IN (SELECT access_id FROM ai.skill_access);
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'ai' AND table_name = 'skills' AND column_name IN ('scope', 'owner_user_id')
+      ) THEN
+        IF to_regclass('ai.skill_access') IS NOT NULL THEN
+          DELETE FROM auth.access WHERE id IN (SELECT access_id FROM ai.skill_access);
+        END IF;
+        DROP TABLE IF EXISTS ai.skill_access CASCADE;
+        DROP TABLE IF EXISTS ai.skill_user_state CASCADE;
+        DROP TABLE IF EXISTS ai.skill_files CASCADE;
+        DROP TABLE IF EXISTS ai.skill_events CASCADE;
+        DROP TABLE IF EXISTS ai.skills CASCADE;
       END IF;
     END $$
   `.simple();
-  await sql`DROP TABLE IF EXISTS ai.skill_access CASCADE`.simple();
   await sql`DROP TABLE IF EXISTS ai.skill_user_state CASCADE`.simple();
   await sql`DROP TABLE IF EXISTS ai.skill_files CASCADE`.simple();
   await sql`DROP TABLE IF EXISTS ai.skill_events CASCADE`.simple();
-  await sql`DROP TABLE IF EXISTS ai.skills CASCADE`.simple();
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS ai.skills (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      short_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      instructions TEXT NOT NULL,
+      extra_frontmatter JSONB NOT NULL DEFAULT '{}'::jsonb,
+      revision INTEGER NOT NULL DEFAULT 1,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT ai_skills_name_check CHECK (name ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND length(name) <= 64),
+      CONSTRAINT ai_skills_description_check CHECK (length(btrim(description)) BETWEEN 1 AND 1024),
+      CONSTRAINT ai_skills_instructions_check CHECK (length(btrim(instructions)) BETWEEN 1 AND 100000),
+      CONSTRAINT ai_skills_extra_frontmatter_check CHECK (jsonb_typeof(extra_frontmatter) = 'object')
+    )
+  `.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_skills_short_id ON ai.skills(short_id)`.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_skills_name ON ai.skills(name)`.simple();
+  await backfillAiShortIds(
+    "idx_ai_skills_short_id",
+    await sql<{ id: string }[]>`SELECT id FROM ai.skills WHERE short_id IS NULL`,
+    (id, shortId) => sql`UPDATE ai.skills SET short_id = ${shortId} WHERE id = ${id}::uuid`,
+  );
+  await sql`ALTER TABLE ai.skills ALTER COLUMN short_id SET NOT NULL`.simple();
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS ai.skill_access (
+      skill_id UUID NOT NULL REFERENCES ai.skills(id) ON DELETE CASCADE,
+      access_id UUID NOT NULL REFERENCES auth.access(id) ON DELETE CASCADE,
+      short_id TEXT NOT NULL,
+      PRIMARY KEY (skill_id, access_id)
+    )
+  `.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_skill_access_short_id ON ai.skill_access(skill_id, short_id)`.simple();
+  for (const row of await sql<
+    { skill_id: string; access_id: string }[]
+  >`SELECT skill_id, access_id FROM ai.skill_access WHERE short_id IS NULL`) {
+    await withAiShortId(
+      "idx_ai_skill_access_short_id",
+      (shortId) => sql`
+        UPDATE ai.skill_access SET short_id = ${shortId}
+        WHERE skill_id = ${row.skill_id}::uuid AND access_id = ${row.access_id}::uuid
+      `,
+    );
+  }
+  await sql`ALTER TABLE ai.skill_access ALTER COLUMN short_id SET NOT NULL`.simple();
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS ai.skill_references (
+      skill_id UUID NOT NULL REFERENCES ai.skills(id) ON DELETE CASCADE,
+      path TEXT NOT NULL,
+      content TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (skill_id, path),
+      CONSTRAINT ai_skill_references_path_check CHECK (
+        path ~ '^references/[a-z0-9][a-z0-9._-]*\\.md$' AND length(path) <= 200
+      ),
+      CONSTRAINT ai_skill_references_content_check CHECK (length(content) <= 100000)
+    )
+  `.simple();
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS ai.turn_skill_snapshots (
+      turn_id UUID NOT NULL REFERENCES ai.turns(id) ON DELETE CASCADE,
+      skill_id UUID NOT NULL REFERENCES ai.skills(id) ON DELETE CASCADE,
+      skill_name TEXT NOT NULL,
+      description TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      instructions TEXT NOT NULL,
+      files JSONB NOT NULL,
+      loaded_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (turn_id, skill_id),
+      UNIQUE (turn_id, skill_name),
+      CONSTRAINT ai_turn_skill_snapshots_files_check CHECK (jsonb_typeof(files) = 'array')
+    )
+  `.simple();
 
   await sql`
     CREATE TABLE IF NOT EXISTS ai.projects (

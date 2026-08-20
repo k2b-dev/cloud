@@ -165,4 +165,24 @@ describe("Assistant frontend contracts", () => {
     expect(client).toContain("deleteMemory");
     expect(client).not.toContain("memory?: string");
   });
+
+  test("keeps shared Skills in Personalization with one replaceable editor frame", async () => {
+    const [preferences, skills, files, client] = await Promise.all([
+      read("./AssistantPrefsModals.tsx"),
+      read("./AssistantSkillsSettings.tsx"),
+      read("./assistant-skill-files.ts"),
+      read("../api/client.ts"),
+    ]);
+
+    expect(preferences).toContain('id="skills"');
+    expect(preferences).not.toContain("<SettingsModal.Group");
+    expect(preferences).toContain("skillEditor()");
+    expect(preferences).toContain("<AssistantSkillEditor");
+    expect(skills).toContain("<MarkdownEditor");
+    expect(skills).toContain("/skills/{fields().name || \"<name>\"}/SKILL.md");
+    expect(skills).toContain("<PermissionEditor");
+    expect(files).toContain('file.name.toLowerCase() === "skill.md"');
+    expect(files).toContain("parseAiSkillArchive");
+    expect(client).toContain("listSkillAccess");
+  });
 });

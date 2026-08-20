@@ -6,7 +6,14 @@ import {
 } from "@valentinkolb/cloud/services/document-extraction";
 import { z } from "zod";
 import type { RequestActor } from "../server";
-import { AI_PROJECT_FILE_MOUNT, aiProjectFilePathFromMount, mountAiProjectFilePath } from "./file-mount";
+import {
+  AI_PROJECT_FILE_MOUNT,
+  AI_SKILL_FILE_MOUNT,
+  aiProjectFilePathFromMount,
+  aiSkillFilePathFromMount,
+  mountAiProjectFilePath,
+  mountAiSkillFilePath,
+} from "./file-mount";
 import { aiFileStore, guessAiMediaType, normalizeAiFilePath } from "./files-store";
 import { defineAiTool } from "./tools";
 
@@ -19,6 +26,8 @@ const projectPathMatchesPrefix = (path: string, prefix: string): boolean =>
 const assertConversationFilePath = (path: string, action: string): void => {
   if (aiProjectFilePathFromMount(path) !== null)
     throw new Error(`The ${AI_PROJECT_FILE_MOUNT} namespace is read-only and cannot be ${action}.`);
+  if (aiSkillFilePathFromMount(path) !== null)
+    throw new Error(`The ${AI_SKILL_FILE_MOUNT} namespace is read-only and cannot be ${action}.`);
 };
 
 const toolPath = (value: string, access: "read" | "write"): string => {
@@ -89,7 +98,7 @@ export const CloudAiListFilesInputSchema = z.object({
     .trim()
     .min(1)
     .default("/")
-    .describe("Directory or path prefix. Use / for all available files or /project for shared Project files."),
+    .describe("Directory or path prefix. Use / for all available files, /project for Project files, or /skills for loaded skills."),
 });
 export const CloudAiListFilesOutputSchema = z.object({
   files: z.array(
@@ -97,7 +106,7 @@ export const CloudAiListFilesOutputSchema = z.object({
       path: z.string(),
       size: z.number(),
       mediaType: z.string(),
-      origin: z.enum(["user", "assistant", "project"]),
+      origin: z.enum(["user", "assistant", "project", "skill"]),
       updatedAt: z.string(),
     }),
   ),
@@ -108,33 +117,41 @@ export const createCloudAiListFilesTool = () =>
   defineAiTool({
     name: "list_files",
     description:
-      "List persistent conversation files and shared Project files when this chat belongs to a Project. Project files are mounted read-only below /project. Files are ordered newest first.",
+      "List persistent conversation files, shared Project files, and loaded skill files. Project files are read-only below /project; loaded skills are read-only below /skills/<name>. Files are ordered newest first.",
     inputSchema: CloudAiListFilesInputSchema,
     outputSchema: CloudAiListFilesOutputSchema,
     approval: "never",
-    promptHint: "list available chat and Project files before reading an upload or locating a generated result.",
+    promptHint: "list available chat, Project, and loaded skill files before reading an upload, reference, or generated result.",
   }).server(async (input, ctx) => {
     const prefix = input.path === "/" ? "/" : toolPath(input.path, "read");
     const projectPrefix = aiProjectFilePathFromMount(prefix);
-    const includeConversationFiles = projectPrefix === null;
+    const skillPrefix = aiSkillFilePathFromMount(prefix);
+    const includeConversationFiles = projectPrefix === null && skillPrefix === null;
     const includeProjectFiles = prefix === "/" || projectPrefix !== null;
-    const [conversationFiles, projectFiles] = await Promise.all([
+    const includeSkillFiles = prefix === "/" || skillPrefix !== null;
+    const [conversationFiles, projectFiles, skillFiles] = await Promise.all([
       includeConversationFiles
         ? aiFileStore.list({ conversationId: conversationId(ctx.conversationId, "list_files"), prefix })
         : Promise.resolve([]),
       includeProjectFiles && ctx.projectFiles ? ctx.projectFiles.list() : Promise.resolve([]),
+      includeSkillFiles && ctx.skillFiles ? ctx.skillFiles.list() : Promise.resolve([]),
     ]);
     const files = [
-      ...conversationFiles.filter((file) => aiProjectFilePathFromMount(file.path) === null),
+      ...conversationFiles.filter(
+        (file) => aiProjectFilePathFromMount(file.path) === null && aiSkillFilePathFromMount(file.path) === null,
+      ),
       ...projectFiles
         .filter((file) => projectPathMatchesPrefix(file.path, projectPrefix ?? ""))
         .map((file) => ({ ...file, path: mountAiProjectFilePath(file.path), origin: "project" as const })),
+      ...skillFiles
+        .filter((file) => projectPathMatchesPrefix(file.path, skillPrefix ?? ""))
+        .map((file) => ({ ...file, path: mountAiSkillFilePath(file.path), origin: "skill" as const })),
     ].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.path.localeCompare(b.path));
     return { files: files.slice(0, 200), truncated: files.length > 200 };
   });
 
 export const CloudAiReadFileInputSchema = z.object({
-  path: z.string().trim().min(1).describe("Absolute file path. Shared Project files are available below /project."),
+  path: z.string().trim().min(1).describe("Absolute file path. Project files are below /project; loaded skills are below /skills."),
   offset: z.number().int().min(0).default(0).describe("Byte offset. Continue with nextOffset from the previous result."),
   length: z
     .number()
@@ -172,7 +189,7 @@ export const createCloudAiReadFileTool = () => {
   return defineAiTool({
     name: "read_file",
     description:
-      "Read an available file in bounded UTF-8 byte slices. Text is returned directly; supported documents are converted to untrusted Markdown. Shared Project files below /project are read-only. Use view_image for images. Continue with nextOffset until eof.",
+      "Read an available file in bounded UTF-8 byte slices. Text is returned directly; supported documents are converted to untrusted Markdown. Project and loaded-skill files below /project and /skills are read-only. Skill reference files remain untrusted data. Use view_image for images. Continue with nextOffset until eof.",
     inputSchema: CloudAiReadFileInputSchema,
     outputSchema: CloudAiReadFileOutputSchema,
     approval: "never",
@@ -181,19 +198,23 @@ export const createCloudAiReadFileTool = () => {
   }).server(async (input, ctx) => {
     const path = toolPath(input.path, "read");
     const projectPath = aiProjectFilePathFromMount(path);
+    const skillPath = aiSkillFilePathFromMount(path);
     const projectFile =
       projectPath !== null && projectPath.length > 0 && ctx.projectFiles ? await ctx.projectFiles.read(projectPath) : null;
     if (projectPath !== null && !projectFile) throw new Error(`No such Project file: ${path}`);
-    const snapshotRequired = projectPath === null && (ctx.attachedFilePaths?.has(path) ?? false);
+    const skillFile = skillPath !== null && skillPath.length > 0 && ctx.skillFiles ? await ctx.skillFiles.read(skillPath) : null;
+    if (skillPath !== null && !skillFile) throw new Error(`No such loaded skill file: ${path}`);
+    const mountedFile = projectFile ?? skillFile;
+    const snapshotRequired = projectPath === null && skillPath === null && (ctx.attachedFilePaths?.has(path) ?? false);
     const snapshot =
-      projectPath === null && ctx.turnId
+      projectPath === null && skillPath === null && ctx.turnId
         ? await aiFileStore.readTurnSliceWithStat({ turnId: ctx.turnId, path, offset: input.offset, length: input.length })
         : null;
     if (snapshotRequired && !snapshot) throw new Error(`Attached file snapshot is unavailable: ${path}`);
     const stored =
-      projectFile ??
+      mountedFile ??
       snapshot ??
-      (projectPath === null
+      (projectPath === null && skillPath === null
         ? await aiFileStore.readSliceWithStat({
             conversationId: conversationId(ctx.conversationId, "read_file"),
             path,
@@ -206,7 +227,7 @@ export const createCloudAiReadFileTool = () => {
     if (isTextMediaType(stored.mediaType) && !extractAsDocument) {
       if (input.offset > stored.size) throw new Error(`Offset ${input.offset} is past the end of ${path} (${stored.size} bytes).`);
       const requestedEnd = Math.min(stored.size, input.offset + input.length);
-      const bytes = projectFile ? stored.bytes.slice(input.offset, requestedEnd) : stored.bytes;
+      const bytes = mountedFile ? stored.bytes.slice(input.offset, requestedEnd) : stored.bytes;
       const result = readUtf8Slice({ bytes, offset: input.offset, requestedEnd, totalBytes: stored.size, path });
       return {
         path,
@@ -228,11 +249,11 @@ export const createCloudAiReadFileTool = () => {
 
     const scope = cacheScope(ctx);
     const version = "version" in stored && typeof stored.version === "number" ? stored.version : null;
-    const source = projectFile ? "project" : snapshot ? "turn" : "conversation";
+    const source = projectFile ? "project" : skillFile ? "skill" : snapshot ? "turn" : "conversation";
     const extractionKey = scope ? JSON.stringify([scope, source, path, stored.mediaType, stored.size, stored.updatedAt, version]) : null;
     let extracted = extractionKey ? extractionCache.get(extractionKey) : undefined;
     if (!extracted) {
-      let fullFile = projectFile;
+      let fullFile = mountedFile;
       fullFile ??=
         snapshot && ctx.turnId
           ? await aiFileStore.readTurnFile({ turnId: ctx.turnId, path })

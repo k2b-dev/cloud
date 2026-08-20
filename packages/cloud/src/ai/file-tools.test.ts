@@ -40,6 +40,57 @@ const toolContext = {
 };
 
 describe("AI Project file mount", () => {
+  test("lists and reads loaded skills below their reserved read-only namespace", async () => {
+    const list = createCloudAiListFilesTool();
+    const read = createCloudAiReadFileTool();
+    const write = createCloudAiWriteFileTool();
+    if (list.location !== "server" || read.location !== "server" || write.location !== "server") throw new Error("Expected server tools");
+    const content = bytes("# Weekly status");
+    const context = {
+      ...toolContext,
+      skillFiles: {
+        list: async () => [
+          {
+            path: "weekly-status/SKILL.md",
+            mediaType: "text/markdown",
+            size: content.byteLength,
+            updatedAt: "2026-08-20T12:00:00.000Z",
+          },
+        ],
+        read: async (path: string) =>
+          path === "weekly-status/SKILL.md"
+            ? {
+                path,
+                mediaType: "text/markdown",
+                size: content.byteLength,
+                updatedAt: "2026-08-20T12:00:00.000Z",
+                bytes: content,
+              }
+            : null,
+      },
+    } as never;
+
+    expect(await list.run({ path: "/skills" }, context)).toEqual({
+      files: [
+        {
+          path: "/skills/weekly-status/SKILL.md",
+          mediaType: "text/markdown",
+          size: content.byteLength,
+          origin: "skill",
+          updatedAt: "2026-08-20T12:00:00.000Z",
+        },
+      ],
+      truncated: false,
+    });
+    expect(await read.run({ path: "/skills/weekly-status/SKILL.md", offset: 0, length: 16_384 }, context)).toMatchObject({
+      content: "# Weekly status",
+      eof: true,
+    });
+    await expect(
+      write.run({ path: "/skills/weekly-status/output.md", content: "No", mode: "overwrite" }, context),
+    ).rejects.toThrow("/skills namespace is read-only");
+  });
+
   test("lists and reads Project files below the reserved read-only namespace", async () => {
     const list = createCloudAiListFilesTool();
     const read = createCloudAiReadFileTool();

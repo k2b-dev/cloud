@@ -20,11 +20,16 @@ import { coreClient } from "@valentinkolb/cloud/clients/core";
 import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { assistantConversationHref } from "./assistant-navigation";
+import {
+  AssistantSkillEditor,
+  type AssistantSkillEditorRequest,
+  AssistantSkillsSettings,
+} from "./AssistantSkillsSettings";
 
 // Kept in sync with the server limits; browser code does not import server-only constants.
 const MEMORY_MAX_CHARS = 500;
 
-type AssistantPrefsTab = "personalization" | "system-prompt" | "approvals";
+type AssistantPrefsTab = "personalization" | "skills" | "system-prompt" | "approvals";
 
 const readApiError = async (response: Response, fallback: string): Promise<string> => {
   const body = (await response.json().catch(() => null)) as { message?: unknown } | null;
@@ -438,53 +443,77 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
 function PrefsDialog(props: { prefs: AiUserPrefs; initialTab: AssistantPrefsTab; close: () => void }) {
   const [activeTab, setActiveTab] = createSignal<AssistantPrefsTab>(props.initialTab);
   const [personalizationDirty, setPersonalizationDirty] = createSignal(false);
+  const [skillEditor, setSkillEditor] = createSignal<AssistantSkillEditorRequest>();
+  const [skillsRefreshKey, setSkillsRefreshKey] = createSignal(0);
   const requestClose = async () => {
     if (await confirmDiscardIfDirty(personalizationDirty)) props.close();
   };
   return (
     <div class="dialog-fixed-frame flex min-h-0 flex-col overflow-hidden">
-      <SettingsModal
-        title="Assistant settings"
-        activeTab={activeTab()}
-        onTabChange={(tab) => setActiveTab(tab as AssistantPrefsTab)}
-        onClose={() => void requestClose()}
-        closeLabel="Close Assistant settings"
+      <Show
+        when={skillEditor()}
+        fallback={
+          <SettingsModal
+            title="Assistant settings"
+            activeTab={activeTab()}
+            onTabChange={(tab) => setActiveTab(tab as AssistantPrefsTab)}
+            onClose={() => void requestClose()}
+            closeLabel="Close Assistant settings"
+          >
+            <SettingsModal.Tab
+              id="personalization"
+              title="Personalization"
+              icon="ti ti-user-cog"
+              description="Facts and preferences Assistant may carry into future conversations."
+            >
+              <MemorySettings prefs={props.prefs} onDirtyChange={setPersonalizationDirty} />
+            </SettingsModal.Tab>
+
+            <SettingsModal.Tab
+              id="skills"
+              title="Skills"
+              icon="ti ti-sparkles"
+              description="Create, import, and share reusable Assistant workflows."
+            >
+              <Show when={activeTab() === "skills"}>
+                <AssistantSkillsSettings refreshKey={skillsRefreshKey()} onOpenEditor={setSkillEditor} />
+              </Show>
+            </SettingsModal.Tab>
+
+            <SettingsModal.Tab
+              id="system-prompt"
+              title="System prompt"
+              icon="ti ti-code"
+              description="Inspect the complete instructions and context applied to new chats."
+            >
+              <Show when={activeTab() === "system-prompt"}>
+                <SystemPromptPanel />
+              </Show>
+            </SettingsModal.Tab>
+
+            <SettingsModal.Tab
+              id="approvals"
+              title="Approvals"
+              icon="ti ti-shield-check"
+              description="Manage actions Assistant may run without asking each time."
+            >
+              <ApprovalPreferences />
+            </SettingsModal.Tab>
+          </SettingsModal>
+        }
       >
-        <SettingsModal.Group title="Personal">
-          <SettingsModal.Tab
-            id="personalization"
-            title="Personalization"
-            icon="ti ti-user-cog"
-            description="Facts and preferences Assistant may carry into future conversations."
-          >
-            <MemorySettings prefs={props.prefs} onDirtyChange={setPersonalizationDirty} />
-          </SettingsModal.Tab>
-        </SettingsModal.Group>
-
-        <SettingsModal.Group title="Transparency">
-          <SettingsModal.Tab
-            id="system-prompt"
-            title="System prompt"
-            icon="ti ti-code"
-            description="Inspect the complete instructions and context applied to new chats."
-          >
-            <Show when={activeTab() === "system-prompt"}>
-              <SystemPromptPanel />
-            </Show>
-          </SettingsModal.Tab>
-        </SettingsModal.Group>
-
-        <SettingsModal.Group title="Permissions">
-          <SettingsModal.Tab
-            id="approvals"
-            title="Approvals"
-            icon="ti ti-shield-check"
-            description="Manage actions Assistant may run without asking each time."
-          >
-            <ApprovalPreferences />
-          </SettingsModal.Tab>
-        </SettingsModal.Group>
-      </SettingsModal>
+        {(request) => (
+          <AssistantSkillEditor
+            request={request()}
+            onBack={(changed) => {
+              setSkillEditor(undefined);
+              setActiveTab("skills");
+              if (changed) setSkillsRefreshKey((value) => value + 1);
+            }}
+            onClose={props.close}
+          />
+        )}
+      </Show>
     </div>
   );
 }
@@ -500,6 +529,6 @@ export const openAssistantPrefsModal = async (initialTab: AssistantPrefsTab = "p
   await prompts.dialog<void>((close) => <PrefsDialog prefs={prefs} initialTab={initialTab} close={() => close()} />, {
     surface: "bare",
     header: false,
-    size: "large",
+    size: "wide",
   });
 };

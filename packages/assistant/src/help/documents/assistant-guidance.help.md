@@ -33,6 +33,15 @@ Assistant works best when the request states the outcome, the relevant context, 
 - **Approvals** lists Actions you accepted with **Always approve**. Revoke an entry there whenever Assistant should ask again.
 - **Chat context** is still the best place for project-specific facts, source material, and one-off constraints.
 
+## Shared Skills {icon="sparkles"}
+
+Open **Assistant settings > Skills** to create, import, edit, export, or share reusable Assistant workflows. A Skill keeps its instructions in `SKILL.md` and may include Markdown reference files.
+
+- Import a bare `SKILL.md`, or use a ZIP when the Skill has references. Scripts and assets are not supported.
+- Use Cloud access to share a Skill. Readers can use and export it, writers can edit it, and admins can also manage access or delete it.
+- Assistant sees the names and descriptions of Skills you can read. It loads a relevant Skill before applying its instructions and reads references only when needed.
+- A Skill loaded for an in-progress turn stays on that revision. New turns use later edits, while revoked access takes effect immediately.
+
 :::warning Review consequential output
 Treat generated facts, calculations, external actions, and changes to important data as proposals until you have checked them. Approval prompts exist so you can review an action before the turn continues.
 :::

@@ -9,6 +9,7 @@ import type {
   AiProjectFileToolSource,
   AiResolvedModel,
   AiRuntimeTool,
+  AiSkillFileToolSource,
   AiToolApprovalPolicy,
   AiToolDefinition,
   AiToolRuntime,
@@ -50,6 +51,7 @@ export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType
           attachedFilePaths?: ReadonlySet<string>;
           allowedDataBoundaries?: AiDataBoundary[];
           projectFiles?: AiProjectFileToolSource;
+          skillFiles?: AiSkillFileToolSource;
           selectedModel?: AiResolvedModel;
         },
       ) => Promise<z.infer<TOutput>>,
@@ -90,6 +92,7 @@ export type AiToolPreparationContext = {
   attachedFilePaths?: ReadonlySet<string>;
   allowedDataBoundaries?: AiDataBoundary[];
   projectFiles?: AiProjectFileToolSource;
+  skillFiles?: AiSkillFileToolSource;
   selectedModel?: AiResolvedModel;
 };
 
@@ -123,6 +126,7 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
           attachedFilePaths: input.attachedFilePaths,
           allowedDataBoundaries: input.allowedDataBoundaries,
           projectFiles: input.projectFiles,
+          skillFiles: input.skillFiles,
           selectedModel: input.selectedModel,
         });
       });

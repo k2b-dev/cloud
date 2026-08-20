@@ -11,6 +11,12 @@ import type {
   AiMemory,
   AiMemoryKind,
   AiMemoryPriority,
+  AiSkill,
+  AiSkillAccess,
+  AiSkillExtraFrontmatter,
+  AiSkillReferenceInput,
+  AiSkillSummary,
+  AiSkillsRoutes,
   AiStoredMessage,
   AiUserPrefs,
   AiRoutes,
@@ -24,6 +30,15 @@ import type { ApiType } from ".";
 
 const client = api.create<AiRoutes>({ baseUrl: "/api/ai" });
 const assistantClient = api.create<ApiType>({ baseUrl: "/api/assistant" });
+const skillsClient = api.create<AiSkillsRoutes>({ baseUrl: "/api/ai/skills" });
+
+export type AssistantSkillFields = {
+  name: string;
+  description: string;
+  instructions: string;
+  extraFrontmatter?: AiSkillExtraFrontmatter;
+  references?: AiSkillReferenceInput[];
+};
 
 const readError = async (response: Response, fallback: string): Promise<string> => {
   const body = await response.json().catch(() => null);
@@ -32,6 +47,69 @@ const readError = async (response: Response, fallback: string): Promise<string> 
 
 /** Typed conversation-management facade used by the Assistant UI. */
 export const assistantApi = {
+  listSkills: async (): Promise<AiSkillSummary[]> => {
+    const response = await skillsClient.index.$get();
+    if (!response.ok) throw new Error(await readError(response, "Failed to load skills"));
+    return (await response.json()).skills;
+  },
+
+  getSkill: async (skillId: string): Promise<AiSkill> => {
+    const response = await skillsClient[":skillId"].$get({ param: { skillId } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to load skill"));
+    return (await response.json()).skill;
+  },
+
+  createSkill: async (input: AssistantSkillFields): Promise<AiSkill> => {
+    const response = await skillsClient.index.$post({
+      json: { ...input, extraFrontmatter: input.extraFrontmatter ?? {}, references: input.references ?? [] },
+    });
+    if (!response.ok) throw new Error(await readError(response, "Failed to create skill"));
+    return (await response.json()).skill;
+  },
+
+  updateSkill: async (skillId: string, expectedRevision: number, input: AssistantSkillFields): Promise<AiSkill> => {
+    const response = await skillsClient[":skillId"].$put({
+      param: { skillId },
+      json: { ...input, expectedRevision, extraFrontmatter: input.extraFrontmatter ?? {}, references: input.references ?? [] },
+    });
+    if (!response.ok) throw new Error(await readError(response, "Failed to save skill"));
+    return (await response.json()).skill;
+  },
+
+  deleteSkill: async (skillId: string): Promise<void> => {
+    const response = await skillsClient[":skillId"].$delete({ param: { skillId } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to delete skill"));
+  },
+
+  listSkillAccess: async (skillId: string): Promise<AiSkillAccess[]> => {
+    const response = await skillsClient[":skillId"].access.$get({ param: { skillId } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to load skill access"));
+    return (await response.json()).access;
+  },
+
+  grantSkillAccess: async (
+    skillId: string,
+    principal: AiSkillAccess["principal"],
+    permission: AiSkillAccess["permission"],
+  ): Promise<AiSkillAccess> => {
+    const response = await skillsClient[":skillId"].access.$post({ param: { skillId }, json: { principal, permission } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to share skill"));
+    return (await response.json()).access;
+  },
+
+  updateSkillAccess: async (skillId: string, accessId: string, permission: AiSkillAccess["permission"]): Promise<void> => {
+    const response = await skillsClient[":skillId"].access[":accessId"].$patch({
+      param: { skillId, accessId },
+      json: { permission },
+    });
+    if (!response.ok) throw new Error(await readError(response, "Failed to update skill access"));
+  },
+
+  revokeSkillAccess: async (skillId: string, accessId: string): Promise<void> => {
+    const response = await skillsClient[":skillId"].access[":accessId"].$delete({ param: { skillId, accessId } });
+    if (!response.ok) throw new Error(await readError(response, "Failed to revoke skill access"));
+  },
+
   loadSidebar: async (signal?: AbortSignal): Promise<AssistantSidebarSnapshot> => {
     const response = await assistantClient.workspace.sidebar.$get({}, { init: { signal } });
     if (!response.ok) throw new Error(await readError(response, "Failed to load Assistant navigation"));

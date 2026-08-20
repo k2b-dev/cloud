@@ -17,5 +17,6 @@ describe("assistantHelp", () => {
     expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("Resource links open their owning app in a new tab");
     expect(assistantHelp.getMarkdown("assistant-workflow")).toContain("Always approve");
     expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Assistant works best when the request states");
+    expect(assistantHelp.getMarkdown("assistant-guidance")).toContain("Assistant settings > Skills");
   });
 });

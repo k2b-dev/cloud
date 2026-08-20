@@ -1,6 +1,16 @@
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
 import type { AiConversation, AiDraftContentPart } from "./types";
 
+export {
+  AI_SKILL_REFERENCE_MAX_ITEMS,
+  AI_SKILL_REFERENCES_MAX_CHARS,
+  type AiSkillDocument,
+  type AiSkillReferenceInput,
+  parseAiSkillMarkdown,
+  serializeAiSkillMarkdown,
+  validateAiSkillReferences,
+} from "./skill-format";
+
 export type LaunchAssistantInput = {
   title?: string;
   projectId?: string;

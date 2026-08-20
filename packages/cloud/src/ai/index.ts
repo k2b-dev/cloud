@@ -177,6 +177,39 @@ export {
   aiProjectsRoutes,
 } from "./projects-routes";
 export {
+  AI_SKILL_DESCRIPTION_MAX_CHARS,
+  AI_SKILL_EXTRA_FRONTMATTER_MAX_CHARS,
+  AI_SKILL_INSTRUCTIONS_MAX_CHARS,
+  AI_SKILL_INSTRUCTIONS_MAX_LINES,
+  AI_SKILL_NAME_MAX_CHARS,
+  AI_SKILL_NAME_PATTERN,
+  AI_SKILL_REFERENCE_MAX_CHARS,
+  AI_SKILL_REFERENCE_MAX_ITEMS,
+  AI_SKILL_REFERENCES_MAX_CHARS,
+  type AiSkillDocument,
+  type AiSkillExtraFrontmatter,
+  type AiSkillReferenceInput,
+  parseAiSkillMarkdown,
+  serializeAiSkillMarkdown,
+  validateAiSkillDescription,
+  validateAiSkillExtraFrontmatter,
+  validateAiSkillInstructions,
+  validateAiSkillName,
+  validateAiSkillReferences,
+} from "./skill-format";
+export {
+  type AiLoadedSkillSnapshot,
+  type AiSkill,
+  type AiSkillAccess,
+  AiSkillLastAdminError,
+  type AiSkillPermission,
+  type AiSkillReference,
+  AiSkillRevisionConflictError,
+  type AiSkillSummary,
+  aiSkills,
+} from "./skills";
+export { type AiSkillsRoutes, aiSkillsRoutes } from "./skills-routes";
+export {
   AI_WIRE_VERSION,
   type AiStreamSseEvent,
   type AiStreamState,
