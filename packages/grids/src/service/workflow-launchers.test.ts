@@ -105,6 +105,15 @@ describe("workflow launcher validation", () => {
     duplicate.plan.bindings["steps.0.createCorrectionDraft.copyFields.0"] = "40000000-0000-4000-8000-000000000001";
     duplicate.plan.bindings["steps.0.createCorrectionDraft.copyFields.1"] = "40000000-0000-4000-8000-000000000001";
     expect(validateLauncherConfig(duplicate, config)).toEqual([expect.objectContaining({ code: "launcher.profile.plan" })]);
+    const cancellation = correctionWorkflow();
+    const cancellationAction = cancellation.plan.steps[0];
+    if (cancellationAction?.kind !== "action") throw new Error("invalid fixture");
+    cancellationAction.config.intent = "cancellation";
+    expect(validateLauncherConfig(cancellation, { ...config, intent: "cancellation" })).toEqual([]);
+    expect(validateLauncherConfig(cancellation, config)).toEqual([expect.objectContaining({ code: "launcher.profile.intent" })]);
+    expect(validateLauncherConfig(correctionWorkflow(), { ...config, intent: "cancellation" })).toEqual([
+      expect.objectContaining({ code: "launcher.profile.intent" }),
+    ]);
     const extended = correctionWorkflow();
     extended.plan.steps.push({ kind: "action", action: "succeed", config: { message: "extra" }, sourcePath: ["steps", 1] });
     expect(validateLauncherConfig(extended, config)).toEqual([expect.objectContaining({ code: "launcher.profile.plan" })]);

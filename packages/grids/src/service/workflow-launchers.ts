@@ -9,9 +9,10 @@ import type {
   UpdateGridsWorkflowLauncherInput,
 } from "../workflows/contracts";
 import {
+  correctionDraftIntent,
+  correctionDraftPlanIntent,
   GridsWorkflowLauncherConfigSchema,
   isCanonicalCloseSelectionPlan,
-  isCanonicalCorrectionDraftPlan,
   scannerLauncherInputSources,
 } from "../workflows/contracts";
 import { logAudit, type SqlClient } from "./audit";
@@ -79,11 +80,16 @@ export const validateLauncherConfig = (workflow: GridsWorkflow, config: GridsWor
     const input = inputByName(workflow, config.input);
     if (!input) add("launcher.input.unknown", `Unknown workflow input "${config.input}"`, ["config", "input"]);
     else if (input.type !== "record") add("launcher.input.type", "record actions require a record input", ["config", "input"]);
-    if (config.profile === "correctionDraft" && !isCanonicalCorrectionDraftPlan(workflow.plan, config.input)) {
-      add("launcher.profile.plan", "The linked-Draft Record action requires its canonical finalized-Record workflow plan", [
-        "config",
-        "profile",
-      ]);
+    if (config.profile === "correctionDraft") {
+      const planIntent = correctionDraftPlanIntent(workflow.plan, config.input);
+      if (!planIntent) {
+        add("launcher.profile.plan", "The linked-Draft Record action requires its canonical finalized-Record workflow plan", [
+          "config",
+          "profile",
+        ]);
+      } else if (correctionDraftIntent(config) !== planIntent) {
+        add("launcher.profile.intent", "The run option action must match the linked-Draft workflow action", ["config", "intent"]);
+      }
     }
   }
   if (config.kind === "scanner") {

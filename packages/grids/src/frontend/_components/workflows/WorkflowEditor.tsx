@@ -152,6 +152,7 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
   const [diagnostics, setDiagnostics] = createSignal<WorkflowDiagnostic[]>([]);
   const [validating, setValidating] = createSignal(false);
   const [confirmingTriggers, setConfirmingTriggers] = createSignal(false);
+  let disposed = false;
   let validationTimer: ReturnType<typeof setTimeout> | undefined;
   let validationAbort: AbortController | undefined;
 
@@ -162,10 +163,6 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
     source: source(),
     revision: revision(),
   });
-  const closeIfClean = async () => {
-    if (await confirmDiscardIfDirty(() => workflowEditorDraftDirty(currentDraft(), cleanDraft))) props.onClose();
-  };
-
   const fetchAutocomplete = async (request: { source: string; caret: number }, signal: AbortSignal) => {
     const response = await workflowEditorApi["by-base"][":baseId"].autocomplete.$post(
       { param: { baseId: props.baseId }, json: request },
@@ -280,14 +277,15 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
       return saved;
     },
     onSuccess: (saved) => {
+      if (disposed) return;
       toast.success(`Saved "${saved.name}"`);
       props.onChanged(saved);
       props.onClose();
     },
-    onError: (error) => void handleSaveError(error),
+    onError: (error) => {
+      if (!disposed) void handleSaveError(error);
+    },
   });
-
-  onCleanup(() => saveMut.abort());
 
   const triggerValidationMut = mutations.create<
     { plan: WorkflowBoundPlan; source: string; enabled: boolean },
@@ -301,12 +299,13 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
       if (!response.ok) throw new Error(await errorMessage(response, "Could not validate workflow triggers."));
       const validation = PublicWorkflowValidateResponseSchema.parse(await response.json());
       if (!validation.ok) {
-        setDiagnostics(validation.diagnostics);
+        if (!disposed) setDiagnostics(validation.diagnostics);
         throw new WorkflowDiagnosticsError();
       }
       return { plan: validation.plan, source, enabled };
     },
     onSuccess: async ({ plan, source: validatedSource, enabled: validatedEnabled }) => {
+      if (disposed) return;
       setConfirmingTriggers(true);
       try {
         const summary = automaticTriggerSummary(plan);
@@ -321,8 +320,9 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
               confirmText: "Activate triggers",
             },
           );
-          if (!confirmed) return;
+          if (!confirmed || disposed) return;
         }
+        if (disposed) return;
         if (source() !== validatedSource || enabled() !== validatedEnabled) {
           await prompts.error("The workflow changed during validation. Review it and save again.");
           return;
@@ -333,7 +333,7 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
       }
     },
     onError: (error) => {
-      if (!(error instanceof WorkflowDiagnosticsError)) void prompts.error(error.message);
+      if (!disposed && !(error instanceof WorkflowDiagnosticsError)) void prompts.error(error.message);
     },
   });
 
@@ -356,8 +356,22 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
       props.onChanged();
       props.onClose();
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => {
+      if (!disposed) void prompts.error(error.message);
+    },
   });
+
+  onCleanup(() => {
+    disposed = true;
+    saveMut.abort();
+    triggerValidationMut.abort();
+    deleteMut.abort();
+  });
+
+  const closeIfClean = async () => {
+    if (triggerValidationMut.loading() || confirmingTriggers() || saveMut.loading() || deleteMut.loading()) return;
+    if (await confirmDiscardIfDirty(() => workflowEditorDraftDirty(currentDraft(), cleanDraft))) props.onClose();
+  };
 
   const canSave = () =>
     workflowEditorDraftDirty(currentDraft(), cleanDraft) &&
@@ -446,7 +460,13 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
           </Show>
         </div>
         <div class="flex items-center gap-2">
-          <Button variant="secondary" size="sm" type="button" onClick={() => void closeIfClean()}>
+          <Button
+            variant="secondary"
+            size="sm"
+            type="button"
+            disabled={triggerValidationMut.loading() || confirmingTriggers() || saveMut.loading() || deleteMut.loading()}
+            onClick={() => void closeIfClean()}
+          >
             Cancel
           </Button>
           <Button variant="primary" size="sm" type="button" disabled={!canSave()} onClick={() => void saveWorkflow()}>

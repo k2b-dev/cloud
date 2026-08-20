@@ -14,7 +14,7 @@ import {
 } from "../service/workflow-launcher-invocations";
 import { invokeGridsWorkflow } from "../service/workflow-runtime";
 import { GridsWorkflowInvocationRequestSchema } from "../workflows/contracts";
-import { resolvePublicIdParam } from "./route-params";
+import { publicIdParam, resolvePublicIdParam } from "./route-params";
 import {
   BulkLauncherRequestSchema,
   CustomAppLauncherRequestSchema,
@@ -193,8 +193,9 @@ export const createWorkflowTriggerRoutes = () =>
       }),
       v("json", RecordLauncherRequestSchema),
       async (c) => {
+        if (!publicIdParam(c, "launcherId")) return c.json({ message: "Invalid workflow launcher id" }, 400);
         const launcherId = await resolvePublicIdParam(c, "launcherId", "workflowLauncher");
-        if (!launcherId) return c.json({ message: "Invalid workflow launcher id" }, 400);
+        if (!launcherId) return c.json({ message: "Workflow launcher not found" }, 404);
         const body = c.req.valid("json");
         const principal = workflowPrincipal(c);
         const admission = await admitRecordLauncher({ launcherId, expectedRevision: body.expectedRevision, principal });

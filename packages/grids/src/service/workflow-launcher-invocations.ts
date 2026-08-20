@@ -426,6 +426,22 @@ const loadLauncherContext = async (
   return ok({ launcher, workflow, config: config.data, tableId });
 };
 
+const admitLauncherVisibility = async (
+  launcherId: string,
+  principal: GridsWorkflowPrincipal,
+  deps: WorkflowLauncherInvocationDeps,
+): Promise<Result<void>> => {
+  const launcher = await deps.getLauncher(launcherId);
+  if (!launcher) return fail(err.notFound("Workflow launcher"));
+  const workflow = await deps.getWorkflow(launcher.workflowId);
+  if (!workflow || workflow.baseId !== launcher.baseId) return fail(err.notFound("Workflow launcher"));
+  const authorized = await deps.authorize({ launcherId: launcher.id, workflow, principal, tableId: null });
+  if (!authorized.ok) {
+    return authorized.error.status === 403 ? fail(err.notFound("Workflow launcher")) : authorized;
+  }
+  return ok();
+};
+
 const idempotencyKey = (launcherId: string, operationId: string): string => `launcher:${launcherId}:${operationId}`;
 
 const mergeInputs = (
@@ -598,6 +614,8 @@ export const invokeRecordLauncher = async (
 ): Promise<Result<WorkflowInvocationReceipt>> => {
   const input = RecordLauncherInvocationSchema.safeParse(rawInput);
   if (!input.success) return fail(err.badInput(`invalid record launcher invocation: ${formatZodError(input.error)}`));
+  const visible = await admitLauncherVisibility(input.data.launcherId, input.data.principal, deps);
+  if (!visible.ok) return visible;
   const loaded = await loadLauncherContext(input.data.launcherId, "record", input.data.expectedRevision, deps);
   if (!loaded.ok) return loaded;
   const ctx = loaded.data;
@@ -629,6 +647,8 @@ export const admitRecordLauncher = async (
   input: { launcherId: string; expectedRevision?: number; principal: GridsWorkflowPrincipal },
   deps: WorkflowLauncherInvocationDeps = defaultDeps,
 ): Promise<Result<void>> => {
+  const visible = await admitLauncherVisibility(input.launcherId, input.principal, deps);
+  if (!visible.ok) return visible;
   const loaded = await loadLauncherContext(input.launcherId, "record", input.expectedRevision, deps);
   if (!loaded.ok) return loaded;
   const ctx = loaded.data;

@@ -505,6 +505,41 @@ describe("workflow kernel Record launchers", () => {
     if (!missing.ok) expect(missing.error.status).toBe(404);
     expect(item.invokeWorkflow).not.toHaveBeenCalled();
   });
+
+  test("hides inaccessible Record launchers before status and revision diagnostics", async () => {
+    const variants = [
+      launcher({ kind: "record", input: "record", profile: "correctionDraft" }),
+      launcher({ kind: "record", input: "record", profile: "correctionDraft" }, { enabled: false }),
+      launcher({ kind: "record", input: "record", profile: "correctionDraft" }, { validatedRevision: 2 }),
+    ];
+
+    for (const configuredLauncher of variants) {
+      const item = setup(configuredLauncher, workflow(), {
+        authorize: mock(async () => fail(err.forbidden("denied"))),
+      });
+      const result = await invokeRecordLauncher(recordInput({ expectedRevision: 99 }), item.deps);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.status).toBe(404);
+        expect(result.error.message).toBe("Workflow launcher not found");
+      }
+      expect(item.resolveExplicitRecordIds).not.toHaveBeenCalled();
+      expect(item.invokeWorkflow).not.toHaveBeenCalled();
+    }
+
+    const unknown = setup(launcher({ kind: "record", input: "record", profile: "correctionDraft" }), workflow(), {
+      getLauncher: mock(async () => null),
+    });
+    const missing = await invokeRecordLauncher(recordInput({ expectedRevision: 99 }), unknown.deps);
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) {
+      expect(missing.error.status).toBe(404);
+      expect(missing.error.message).toBe("Workflow launcher not found");
+    }
+    expect(unknown.authorize).not.toHaveBeenCalled();
+    expect(unknown.resolveExplicitRecordIds).not.toHaveBeenCalled();
+    expect(unknown.invokeWorkflow).not.toHaveBeenCalled();
+  });
 });
 
 describe("workflow kernel Grids App launchers", () => {

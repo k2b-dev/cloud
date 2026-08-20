@@ -413,12 +413,24 @@ export default function RecordDetailPanel(props: Props) {
         confirmText: intent === "cancellation" ? "Create cancellation Draft" : "Create correction Draft",
       },
     );
-    if (confirmed) {
-      const key = `${launcher.id}:${rec.id}`;
-      if (correctionOperation?.key !== key) correctionOperation = { key, id: crypto.randomUUID() };
-      correctionRecordId = rec.id;
-      createCorrectionMut.mutate({ rec, launcher, operationId: correctionOperation.id });
+    if (!confirmed || disposed) return;
+    const current = record();
+    const currentLauncher = props.recordActionLaunchers.find((candidate) => candidate.id === launcher.id);
+    if (
+      !current ||
+      current.id !== rec.id ||
+      mode() !== "live" ||
+      !current.finalizedAt ||
+      !currentLauncher ||
+      currentLauncher.updatedAt !== launcher.updatedAt ||
+      currentLauncher.workflowRevision !== launcher.workflowRevision
+    ) {
+      return;
     }
+    const key = `${launcher.id}:${rec.id}`;
+    if (correctionOperation?.key !== key) correctionOperation = { key, id: crypto.randomUUID() };
+    correctionRecordId = rec.id;
+    createCorrectionMut.mutate({ rec, launcher: currentLauncher, operationId: correctionOperation.id });
   };
 
   const handleFinalize = async (rec: GridRecord) => {

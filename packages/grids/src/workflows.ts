@@ -607,15 +607,21 @@ export const GRIDS_WORKFLOW_ACTIONS = {
   }),
 
   createCorrectionDraft: workflowAction.transactional({
-    label: "Create correction draft",
-    description: "Creates one Draft linked to an unchanged finalized Record in the same Table.",
+    label: "Create linked follow-up Draft",
+    description: "Creates one follow-up Draft linked to an unchanged finalized Record in the same Table.",
     outputType: "grids.record",
     config: {
       kind: "object",
       properties: {
         original: { kind: "string", minLength: 1, maxLength: 500, description: "Finalized original Record reference." },
-        typeField: { kind: "string", minLength: 1, maxLength: 200, description: "Single-select field used for the correction type." },
-        typeValue: { kind: "string", minLength: 1, maxLength: 200, description: "Existing select-option ID for a correction." },
+        intent: {
+          kind: "string",
+          enum: ["correction", "cancellation"],
+          optional: true,
+          description: "Follow-up intent. Older workflows without it remain corrections.",
+        },
+        typeField: { kind: "string", minLength: 1, maxLength: 200, description: "Single-select field used for the follow-up type." },
+        typeValue: { kind: "string", minLength: 1, maxLength: 200, description: "Existing select-option ID for the follow-up Draft." },
         originalField: {
           kind: "string",
           minLength: 1,
@@ -681,7 +687,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         return {
           state: "succeeded",
           output: { kind: "record", tableId: created.record.tableId, recordId: created.record.id } as WorkflowJsonValue,
-          message: "Correction Draft created",
+          message: "Linked follow-up Draft created",
         };
       }),
 
@@ -712,7 +718,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           correctionCopyFieldIds(ctx, config.copyFields),
         );
         return {
-          summary: "Create one correction Draft linked to the finalized original Record",
+          summary: "Create one linked follow-up Draft from the finalized original Record",
           output: { kind: "record", tableId: original.tableId, recordId: `dry-run:${ctx.stepKey}`, planned: true },
         };
       }),

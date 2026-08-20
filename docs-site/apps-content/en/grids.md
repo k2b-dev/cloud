@@ -74,7 +74,9 @@ documents, and workflows without splitting the domain across unrelated tools.
 - Create the linked follow-up Draft workflow starter when a finalized Record
   needs a correction or cancellation without changing the original. Choose the
   intent shown to users, an existing single-select type value, and an existing
-  single self-relation for the original. You can also choose up to 100 stored
+  single self-relation for the original. The protected run option must match
+  the workflow intent, so cancellation wording cannot front a correction
+  workflow. You can also choose up to 100 stored
   value fields to carry over. The action creates a normal editable Draft that
   follows the Table's numbering rules. Unique fields, generated IDs, Files,
   other Relations, calculated fields, and Documents are not copied. A

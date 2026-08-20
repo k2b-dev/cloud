@@ -67,6 +67,7 @@ export const correctionDraftWorkflowStarter = (params: {
 steps:
   - createCorrectionDraft:
       original: inputs.original
+      intent: ${params.intent}
       typeField: ${JSON.stringify(params.typeField.id)}
       typeValue: ${JSON.stringify(params.typeValue)}
       originalField: ${JSON.stringify(params.originalField.id)}

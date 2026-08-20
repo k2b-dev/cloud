@@ -20,12 +20,14 @@ import { gridsWorkflows } from "../workflows/module";
 import { enable as enableDurableHistory, listRecordRevisions } from "./durable-history";
 import { update as updateMutationPolicy } from "./mutation-policy";
 import { provisionFieldNumberSeries } from "./number-series";
+import { ALL_RECORD_ACCESS } from "./record-access";
 import {
   disable as disableFinalization,
   enable as enableFinalization,
   finalize as finalizeRecord,
   setPolicy as setFinalizationPolicy,
 } from "./record-finalization";
+import { listReferencedBy } from "./referenced-by";
 import { invokeRecordLauncher } from "./workflow-launcher-invocations";
 import { createLauncher } from "./workflow-launchers";
 import { getWorkflow } from "./workflow-read";
@@ -90,6 +92,7 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
           options: [
             { id: "original", label: "Original" },
             { id: "correction", label: "Correction" },
+            { id: "cancellation", label: "Cancellation" },
           ],
         }}::jsonb, 4),
       (${fixture.originalRelationFieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Corrects', 'relation',
@@ -595,6 +598,52 @@ describe("declared Grids workflow actions", () => {
         WHERE from_record_id = ${result.recordId}::uuid AND from_field_id = ${fixture.originalRelationFieldId}::uuid
       `;
       expect(link?.target).toBe(fixture.recordId);
+      const createdRevisions = await listRecordRevisions({ tableId: fixture.tableId, recordId: result.recordId });
+      expect(createdRevisions.ok).toBe(true);
+      if (!createdRevisions.ok) throw createdRevisions.error;
+      expect(createdRevisions.data.items).toHaveLength(1);
+      expect(createdRevisions.data.items[0]).toMatchObject({
+        action: "created",
+        data: expect.objectContaining({
+          [fixture.correctionTypeFieldId]: ["correction"],
+          [fixture.nameFieldId]: "Draft task",
+          [fixture.jsonFieldId]: "123",
+        }),
+        relations: { [fixture.originalRelationFieldId]: [fixture.recordId] },
+      });
+      const referencedBy = await listReferencedBy({
+        targetTableId: fixture.tableId,
+        targetRecordId: fixture.recordId,
+        recordAccess: ALL_RECORD_ACCESS,
+        cursorSigningKey: "workflow-actions-correction-test",
+      });
+      expect(referencedBy.ok).toBe(true);
+      if (!referencedBy.ok) throw referencedBy.error;
+      expect(referencedBy.data.items).toEqual([
+        expect.objectContaining({ sourceRecordId: result.recordId, relationFieldId: fixture.originalRelationFieldId }),
+      ]);
+      const [documentsBeforeFinalization] = await sql<Array<{ count: number }>>`
+        SELECT count(*)::int AS count FROM grids.document_runs WHERE record_id = ${result.recordId}::uuid
+      `;
+      expect(documentsBeforeFinalization?.count).toBe(0);
+
+      const finalizedDraft = await finalizeRecord({
+        tableId: fixture.tableId,
+        recordId: result.recordId,
+        actorId: fixture.actorId,
+        origin: "direct",
+      });
+      if (!finalizedDraft.ok) throw finalizedDraft.error;
+      expect(finalizedDraft.data.finalizedAt).toBeTruthy();
+      expect(finalizedDraft.data.data[fixture.assetIdFieldId]).toBe("ITEM-0002");
+      const finalRevisions = await listRecordRevisions({ tableId: fixture.tableId, recordId: result.recordId });
+      expect(finalRevisions.ok).toBe(true);
+      if (!finalRevisions.ok) throw finalRevisions.error;
+      expect(finalRevisions.data.items.map((revision) => revision.action)).toEqual(["finalized", "created"]);
+      const [documentsAfterFinalization] = await sql<Array<{ count: number }>>`
+        SELECT count(*)::int AS count FROM grids.document_runs WHERE record_id = ${result.recordId}::uuid
+      `;
+      expect(documentsAfterFinalization?.count).toBe(0);
 
       await reopenForReplay(runId);
       expect(await drive(runId)).toBe("succeeded");
@@ -608,7 +657,7 @@ describe("declared Grids workflow actions", () => {
     }
   });
 
-  postgresTest("Record launcher carries its scoped Record into the correction workflow runtime", async () => {
+  postgresTest("Record launcher carries its scoped Record and cancellation intent into the linked-Draft workflow", async () => {
     const fixture = createFixture();
     try {
       await insertFixture(fixture);
@@ -628,8 +677,9 @@ describe("declared Grids workflow actions", () => {
         [
           actionStep(0, "createCorrectionDraft", {
             original: "inputs.original",
+            intent: "cancellation",
             typeField: "Document type",
-            typeValue: "correction",
+            typeValue: "cancellation",
             originalField: "Corrects",
           }),
         ],
@@ -640,12 +690,26 @@ describe("declared Grids workflow actions", () => {
         },
       );
       plan.inputs = [{ name: "original", type: "record", config: { table: "Tasks", required: true } }];
-      await publishTestWorkflowVersion(fixture.workflowId, "steps: [] # correction launcher", plan);
+      const dryRunId = await queueRun(fixture, {
+        mode: "dryRun",
+        plan,
+        inputs: { original: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+      });
+      expect(await drive(dryRunId, "dryRun")).toBe("succeeded");
+      const [plannedStep] = await stepRuns(dryRunId);
+      expect(JSON.stringify(plannedStep?.outcome)).toContain("Create one linked follow-up Draft");
+      expect(JSON.stringify(plannedStep?.outcome)).not.toContain("Create one correction Draft");
+
+      await publishTestWorkflowVersion(fixture.workflowId, "steps: [] # cancellation launcher", plan);
       const workflow = await getWorkflow(fixture.workflowId);
       if (!workflow) throw new Error("Correction launcher workflow is missing");
       const launcher = await createLauncher(
         workflow,
-        { name: "Create correction", config: { kind: "record", input: "original", profile: "correctionDraft" }, enabled: true },
+        {
+          name: "Create cancellation",
+          config: { kind: "record", input: "original", profile: "correctionDraft", intent: "cancellation" },
+          enabled: true,
+        },
         fixture.actorId,
       );
       if (!launcher.ok) throw launcher.error;
@@ -672,6 +736,8 @@ describe("declared Grids workflow actions", () => {
         SELECT count(*)::int AS count FROM grids.records WHERE table_id = ${fixture.tableId}::uuid
       `;
       expect(count?.count).toBe(2);
+      const result = (await runRow(invoked.data.runId)).result as { recordId: string };
+      expect((await recordData(result.recordId))[fixture.correctionTypeFieldId]).toEqual(["cancellation"]);
     } finally {
       await cleanupFixture(fixture);
     }

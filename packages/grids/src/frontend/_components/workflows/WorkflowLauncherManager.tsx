@@ -14,7 +14,7 @@ import {
   TextInput,
   Tooltip,
 } from "@k2b/ui";
-import { createMemo, createSignal, For, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicTable } from "../../../api/public-dto";
 import { PublicGridsWorkflowLauncherListSchema, PublicGridsWorkflowLauncherSchema } from "../../../api/workflow-public-contracts";
@@ -26,6 +26,7 @@ import type {
 } from "../../../workflows/contracts";
 import {
   correctionDraftIntent,
+  correctionDraftPlanIntent,
   isCanonicalCloseSelectionPlan,
   isCanonicalCorrectionDraftPlan,
   scannerLauncherInputSources,
@@ -125,8 +126,11 @@ function LauncherEditor(props: {
   const [enabled, setEnabled] = createSignal(initial.enabled ?? true);
   const [kind, setKind] = createSignal<GridsWorkflowLauncherKind>(initial.config.kind);
   const [input, setInput] = createSignal("input" in initial.config ? initial.config.input : "");
-  const [recordIntent, setRecordIntent] = createSignal<CorrectionDraftIntent>(
-    initial.config.kind === "record" ? correctionDraftIntent(initial.config) : "correction",
+  const recordIntent = createMemo<CorrectionDraftIntent>(() =>
+    kind() === "record"
+      ? (correctionDraftPlanIntent(props.workflow.plan, input()) ??
+        (initial.config.kind === "record" ? correctionDraftIntent(initial.config) : "correction"))
+      : "correction",
   );
   const initialScannerSources =
     initial.config.kind === "scanner" ? scannerLauncherInputSources(initial.config) : ({} as Record<string, GridsScannerInputSource>);
@@ -312,7 +316,7 @@ function LauncherEditor(props: {
             <Show when={correctionDraftProfile()}>
               <Select
                 label="Action"
-                description="Controls the action wording. The workflow's configured type value remains authoritative."
+                description="Defined by the workflow so the wording and stored follow-up type cannot disagree."
                 options={[
                   {
                     id: "correction",
@@ -328,12 +332,7 @@ function LauncherEditor(props: {
                   },
                 ]}
                 value={recordIntent}
-                onValueChange={(value) => {
-                  if (value !== "correction" && value !== "cancellation") return;
-                  const currentDefaultName = recordIntent() === "cancellation" ? "Create cancellation" : "Create correction";
-                  if (name().trim() === currentDefaultName) setName(value === "cancellation" ? "Create cancellation" : "Create correction");
-                  setRecordIntent(value);
-                }}
+                disabled
                 required
               />
               <NoticeCard tone="info" icon={recordIntent() === "cancellation" ? "ti ti-file-off" : "ti ti-file-pencil"}>
@@ -486,6 +485,7 @@ export function WorkflowLauncherManager(props: {
   onChanged: () => void;
   onClose: () => void;
 }) {
+  let disposed = false;
   const [launchers, setLaunchers] = createSignal<PublicWorkflowLauncher[]>([]);
   const [loaded, setLoaded] = createSignal(false);
 
@@ -497,9 +497,12 @@ export function WorkflowLauncherManager(props: {
         { init: { signal: abortSignal } },
       );
       if (!res.ok) throw new Error(await errorMessage(res, "Could not load run options."));
-      setLaunchers(PublicGridsWorkflowLauncherListSchema.parse(await res.json()).items);
+      const items = PublicGridsWorkflowLauncherListSchema.parse(await res.json()).items;
+      if (!disposed) setLaunchers(items);
     },
-    onSuccess: () => setLoaded(true),
+    onSuccess: () => {
+      if (!disposed) setLoaded(true);
+    },
   });
 
   const saveMut = mutations.create<PublicWorkflowLauncher, { launcher?: PublicWorkflowLauncher; draft: LauncherDraft }>({
@@ -517,10 +520,13 @@ export function WorkflowLauncherManager(props: {
       return PublicGridsWorkflowLauncherSchema.parse(await res.json());
     },
     onSuccess: () => {
+      if (disposed) return;
       loadMut.mutate();
       props.onChanged();
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => {
+      if (!disposed) void prompts.error(error.message);
+    },
   });
 
   const removeMut = mutations.create<boolean, PublicWorkflowLauncher>({
@@ -539,11 +545,13 @@ export function WorkflowLauncherManager(props: {
       return true;
     },
     onSuccess: (deleted) => {
-      if (!deleted) return;
+      if (!deleted || disposed) return;
       loadMut.mutate();
       props.onChanged();
     },
-    onError: (error) => prompts.error(error.message),
+    onError: (error) => {
+      if (!disposed) void prompts.error(error.message);
+    },
   });
 
   const edit = async (launcher?: PublicWorkflowLauncher) => {
@@ -553,12 +561,22 @@ export function WorkflowLauncherManager(props: {
   };
 
   const mutationsBlocked = () => !loaded() || loadMut.loading() || saveMut.loading() || removeMut.loading();
+  const writing = () => saveMut.loading() || removeMut.loading();
+  const close = () => {
+    if (!writing()) props.onClose();
+  };
 
   onMount(() => loadMut.mutate());
+  onCleanup(() => {
+    disposed = true;
+    loadMut.abort();
+    saveMut.abort();
+    removeMut.abort();
+  });
 
   return (
     <PanelDialog>
-      <PanelDialog.Header title="Run options" subtitle={props.workflow.name} icon="ti ti-rocket" close={props.onClose} />
+      <PanelDialog.Header title="Run options" subtitle={props.workflow.name} icon="ti ti-rocket" close={close} />
       <PanelDialog.Body>
         <div class="flex flex-col gap-2">
           <div class="flex items-center justify-between gap-2">
@@ -651,7 +669,7 @@ export function WorkflowLauncherManager(props: {
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <span />
-        <Button variant="secondary" size="sm" type="button" onClick={props.onClose}>
+        <Button variant="secondary" size="sm" type="button" disabled={writing()} onClick={close}>
           Done
         </Button>
       </PanelDialog.Footer>

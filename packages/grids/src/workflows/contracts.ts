@@ -218,6 +218,7 @@ export const isCanonicalCorrectionDraftPlan = (plan: WorkflowBoundPlan, recordIn
   const action = plan.steps[0];
   if (action?.kind !== "action" || action.action !== "createCorrectionDraft") return false;
   const copyFields = action.config.copyFields;
+  const intent = action.config.intent;
   const configKeys = Object.keys(action.config).sort().join(",");
   const copyFieldsValid =
     copyFields === undefined ||
@@ -231,7 +232,10 @@ export const isCanonicalCorrectionDraftPlan = (plan: WorkflowBoundPlan, recordIn
       new Set(copyFields.map((_, index) => plan.bindings[`steps.0.createCorrectionDraft.copyFields.${index}`])).size === copyFields.length);
   return (
     (configKeys === "original,originalField,typeField,typeValue" ||
-      configKeys === "copyFields,original,originalField,typeField,typeValue") &&
+      configKeys === "copyFields,original,originalField,typeField,typeValue" ||
+      configKeys === "intent,original,originalField,typeField,typeValue" ||
+      configKeys === "copyFields,intent,original,originalField,typeField,typeValue") &&
+    (intent === undefined || (CORRECTION_DRAFT_INTENTS as readonly unknown[]).includes(intent)) &&
     action.config.original === `inputs.${recordInput}` &&
     typeof action.config.typeField === "string" &&
     typeof action.config.typeValue === "string" &&
@@ -242,13 +246,20 @@ export const isCanonicalCorrectionDraftPlan = (plan: WorkflowBoundPlan, recordIn
   );
 };
 
+export const correctionDraftPlanIntent = (plan: WorkflowBoundPlan, recordInput: string): CorrectionDraftIntent | null => {
+  if (!isCanonicalCorrectionDraftPlan(plan, recordInput)) return null;
+  const action = plan.steps[0];
+  if (action?.kind !== "action") return null;
+  return action.config.intent === "cancellation" ? "cancellation" : "correction";
+};
+
 export type GridsBulkLauncherConfig = { kind: "bulk"; input: string } | { kind: "bulk"; input: string; profile: "closeSelection" };
 
 export type GridsRecordLauncherConfig = {
   kind: "record";
   input: string;
   profile: "correctionDraft";
-  /** Presentation intent only. Existing launchers without it remain corrections. */
+  /** Must match the canonical action intent. Existing launchers without it remain corrections. */
   intent?: CorrectionDraftIntent;
 };
 
