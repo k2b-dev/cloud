@@ -206,8 +206,21 @@ describe("@k2b/ui complete advanced input migrations", () => {
     expect(image).toContain("ti ti-pencil");
     expect(cropper).toContain("k2b-image-cropper");
     expect(icon).toContain('role="combobox"');
+    expect(icon).toContain('role="radiogroup"');
+    expect(icon).toContain('aria-label="Filter icons"');
+    expect(icon).toContain("Recommended");
     expect(icon).toContain("Home");
+    expect(icon).toContain("A home page or physical home");
     expect(icon).toContain("ti ti-home");
+
+    const customIcon = renderToString(() =>
+      createComponent(IconInput, {
+        label: "Custom icon",
+        value: null,
+        options: [{ value: "ti ti-star", label: "Star", icon: "ti ti-star" }],
+      }),
+    );
+    expect(customIcon).not.toContain('role="radiogroup"');
   });
 
   test("renders template editor, sandboxed preview and sample data", () => {

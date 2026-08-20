@@ -155,6 +155,36 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(cssRule(".k2b-ui .k2b-choice-popover")).toContain("transition: none");
   });
 
+  test("renders overlapping Select groups with an initial group filter", () => {
+    const html = renderToString(() =>
+      createComponent(Select, {
+        label: "Icon",
+        value: "briefcase",
+        searchable: true,
+        groups: [
+          { value: "recommended", label: "Recommended" },
+          { value: "food", label: "Food" },
+          { value: "work", label: "Work" },
+        ],
+        defaultGroup: "recommended",
+        options: [
+          { value: "coffee", label: "Coffee", groups: ["recommended", "food"] },
+          { value: "briefcase", label: "Briefcase", groups: ["recommended", "work"] },
+          { value: "pizza", label: "Pizza", groups: ["food"] },
+        ],
+      }),
+    );
+
+    expect(html).toContain('role="radiogroup"');
+    expect(html).toContain('aria-label="Filter options"');
+    expect(html).toContain('role="radio" aria-checked="true"');
+    expect(html).toContain(">Recommended</button>");
+    expect(html).toContain(">Coffee</strong>");
+    expect(html).toContain(">Briefcase</strong>");
+    expect(html).not.toContain(">Pizza</strong>");
+    expect(cssRule(".k2b-ui .k2b-choice-groups")).toContain("overflow-x: auto");
+  });
+
   test("does not render a stale selectedOption for a different controlled value", () => {
     const html = renderToString(() =>
       createComponent(Select, {

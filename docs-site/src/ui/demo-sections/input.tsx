@@ -63,6 +63,58 @@ const options = [
   },
 ];
 
+const groupedOptions = [
+  {
+    value: "coffee",
+    label: "Coffee",
+    description: "Drinks and breaks",
+    icon: "ti ti-coffee",
+    groups: ["recommended", "food"],
+  },
+  {
+    value: "pizza",
+    label: "Pizza",
+    description: "Meals and restaurants",
+    icon: "ti ti-pizza",
+    groups: ["food"],
+  },
+  {
+    value: "briefcase",
+    label: "Briefcase",
+    description: "Projects and business",
+    icon: "ti ti-briefcase",
+    groups: ["recommended", "work"],
+  },
+  {
+    value: "building",
+    label: "Building",
+    description: "Companies and offices",
+    icon: "ti ti-building",
+    groups: ["work"],
+  },
+  {
+    value: "camera",
+    label: "Camera",
+    description: "Photos and visual media",
+    icon: "ti ti-camera",
+    groups: ["recommended", "media"],
+  },
+  {
+    value: "music",
+    label: "Music",
+    description: "Audio and playlists",
+    icon: "ti ti-music",
+    groups: ["media"],
+  },
+];
+
+const selectGroups = [
+  { value: "recommended", label: "Recommended" },
+  { value: "food", label: "Food" },
+  { value: "work", label: "Work" },
+  { value: "media", label: "Media" },
+];
+
 const people = [
   {
     id: "design",
@@ -432,6 +484,42 @@ const SelectDemo = () => {
   );
 };
 
+const GroupedSelectDemo = () => {
+  const [value, setValue] = createSignal("briefcase");
+  return (
+    <DemoCard
+      id="select-groups"
+      chip={{ kind: "component", name: "Select", from: "@k2b/ui" }}
+      description="Optional group chips narrow one option list without partitioning it. Options may belong to several groups; text search stays inside the active group, and All removes the group filter."
+      code={`<Select
+  label="Icon"
+  value={icon}
+  onValueChange={setIcon}
+  options={options}
+  groups={[
+    { value: "recommended", label: "Recommended" },
+    { value: "food", label: "Food" },
+    { value: "work", label: "Work" },
+  ]}
+  defaultGroup="recommended"
+  searchable
+/>`}
+    >
+      <Select
+        label="Icon"
+        description="Search the active group or switch groups to narrow the catalogue."
+        value={value}
+        onValueChange={setValue}
+        options={groupedOptions}
+        groups={selectGroups}
+        defaultGroup="recommended"
+        searchable
+        clearable
+      />
+    </DemoCard>
+  );
+};
+
 const ComboboxDemo = () => (
   <DemoCard
     id="combobox"
@@ -572,6 +660,7 @@ const SmallChoicesDemo = (props: { kind: "color" | "tags" | "pin" | "icon" | "sl
       return (
         <IconInput
           label="Icon"
+          description="Browse recommendations or narrow the catalogue by topic. Search also matches common synonyms."
           value={icon()}
           onValueChange={setIcon}
         />
@@ -607,7 +696,12 @@ const SmallChoicesDemo = (props: { kind: "color" | "tags" | "pin" | "icon" | "sl
 />`,
     tags: `<TagsInput label="Tags" value={tags} onValueChange={setTags} maxTags={5} />`,
     pin: `<PinInput label="Verification code" value={pin} onValueChange={setPin} length={6} stretch />`,
-    icon: `<IconInput label="Icon" value={icon()} onValueChange={setIcon} />`,
+    icon: `<IconInput
+  label="Icon"
+  description="Browse recommendations or narrow the catalogue by topic."
+  value={icon()}
+  onValueChange={setIcon}
+/>`,
     slider: `<Slider
   label="Capacity"
   value={slider}
@@ -622,7 +716,7 @@ const SmallChoicesDemo = (props: { kind: "color" | "tags" | "pin" | "icon" | "sl
     color: "A native color well plus an optional transparent toggle the parent owns as a separate boolean.",
     tags: "One native text field holding a comma-separated list. Typing reports live values; blur or Enter commits once, trims entries, drops duplicates, applies maxTags, and announces the diff to assistive technology.",
     pin: "Grouped one-time-code entry with per-cell arrow-key navigation, backspace stepping, and paste distribution across the cells.",
-    icon: "Searchable icon selection over the package's DEFAULT_ICON_OPTIONS, controlled through a nullable value.",
+    icon: "Searchable icon selection over the grouped default catalogue. Each option explains its intended use, and one icon may appear in several topics.",
     slider: "A native range input with a filled track, a formatted value output, and a double-click reset to defaultValue.",
   };
   return (
@@ -792,6 +886,7 @@ const demos: DemoSection = {
   select: () => (
     <DemoGrid columns="one">
       <SelectDemo />
+      <GroupedSelectDemo />
     </DemoGrid>
   ),
   combobox: () => (

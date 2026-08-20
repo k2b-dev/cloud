@@ -7,6 +7,8 @@ export type ChoiceOption<T extends string = string> = {
   icon?: string;
   color?: string;
   disabled?: boolean;
+  /** Optional overlapping groups used by choice controls that expose group filtering. */
+  groups?: readonly string[];
 };
 
 export type ChoiceOptionsLoader<T extends string = string> = (query: string, signal: AbortSignal) => Promise<readonly ChoiceOption<T>[]>;

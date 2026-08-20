@@ -41,19 +41,60 @@ clearing are atomic actions, so both `onValueChange` and `onValueCommit`
 receive the complete next value. Clearing emits `null`.
 
 Static options may be strings, `{ id, label?, description?, icon?, color? }`,
-or normalized `{ value, label, description?, icon?, color?, disabled? }` objects.
+or normalized `{ value, label, description?, icon?, color?, disabled?, groups? }`
+objects.
 
-`fetchData(query, signal)` accepts the convenient source shapes.
-`loadOptions(query, signal)` accepts normalized options. Both run with an empty
-query when the dropdown opens, debounce later input, and abort stale requests.
-Pass `selectedOption` when the current value needs display metadata before the
-first result arrives.
+`fetchData(query, signal, group)` accepts the convenient source shapes.
+`loadOptions(query, signal, group)` accepts normalized options. Both run with
+an empty query when the dropdown opens, debounce later input, and abort stale
+requests. `group` is the active group value or `null` for all options. Pass
+`selectedOption` when the current value needs display metadata before the first
+result arrives.
 
 Remote sources always show the search field. Set `searchable` to add it to a
 static option list, where it filters labels, descriptions, and values in the
 browser. In `Select`, an option `color` replaces the icon with a color dot on the
 trigger and in the list. `MultiSelectInput` tints the option icon and the
 selected pill with it instead.
+
+### Filter one list by group
+
+Pass `groups` when a long option list benefits from a short set of filters.
+Each option lists its group values through `option.groups`; one option may
+belong to several groups. `defaultGroup` selects the initial group. The built-in
+**All** choice removes the group filter, and `allGroupLabel` can rename it.
+
+For static options, the active group and text search are combined. For remote
+options, apply the third `group` argument in the data source and return the
+matching page. The component does not filter a partial remote result page in
+the browser.
+
+```tsx
+<Select
+  label="Icon"
+  value={icon()}
+  onValueChange={setIcon}
+  options={[
+    {
+      value: "ti ti-briefcase",
+      label: "Briefcase",
+      groups: ["recommended", "work"],
+    },
+    {
+      value: "ti ti-coffee",
+      label: "Coffee",
+      groups: ["recommended", "food"],
+    },
+  ]}
+  groups={[
+    { value: "recommended", label: "Recommended" },
+    { value: "food", label: "Food" },
+    { value: "work", label: "Work" },
+  ]}
+  defaultGroup="recommended"
+  searchable
+/>;
+```
 
 ## MultiSelectInput
 
@@ -100,7 +141,7 @@ const [permission, setPermission] = createSignal("read");
 
 ## Accessibility
 
-Use visible labels on `Select` and `MultiSelectInput`. Their triggers expose combobox, listbox, expanded, selected, required, disabled, description, and error state.
+Use visible labels on `Select` and `MultiSelectInput`. Their triggers expose combobox, listbox, expanded, selected, required, disabled, description, and error state. Select groups use a labelled radio group; arrow keys, Home, and End change the active group.
 
 Option labels must remain clear without icons or colors. If the surrounding
 toolbar already names a `SelectChip`, use the native `"aria-label"` property

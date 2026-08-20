@@ -5,6 +5,10 @@ import type { ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
 
 export type SelectOption = ChoiceOption<string>;
+export type SelectGroup = {
+  value: string;
+  label: string;
+};
 export type SelectSourceOption =
   | string
   | {
@@ -13,6 +17,7 @@ export type SelectSourceOption =
       description?: string;
       icon?: string;
       color?: string;
+      groups?: readonly string[];
     }
   | SelectOption;
 
@@ -21,8 +26,8 @@ export type SelectProps = ValueFieldProps<string | null> & {
   icon?: string;
   activeIcon?: string;
   options?: SelectSourceOption[];
-  fetchData?: (query: string, signal: AbortSignal) => Promise<SelectSourceOption[]>;
-  loadOptions?: (query: string, signal: AbortSignal) => Promise<readonly ChoiceOption<string>[]>;
+  fetchData?: (query: string, signal: AbortSignal, group: string | null) => Promise<SelectSourceOption[]>;
+  loadOptions?: (query: string, signal: AbortSignal, group: string | null) => Promise<readonly ChoiceOption<string>[]>;
   selectedOption?: ChoiceOption<string>;
   selectedLabel?: () => string | undefined;
   fetchDebounceMs?: number;
@@ -30,6 +35,12 @@ export type SelectProps = ValueFieldProps<string | null> & {
   searchable?: boolean;
   /** Optional synchronous filter for static options. */
   filterOptions?: (options: readonly SelectOption[], query: string) => readonly SelectOption[];
+  /** Optional filters. An option may belong to more than one group. */
+  groups?: readonly SelectGroup[];
+  /** Group selected when the component is created. Omit to start with all options. */
+  defaultGroup?: string;
+  groupsAriaLabel?: string;
+  allGroupLabel?: string;
   searchPlaceholder?: string;
   clearable?: boolean;
   name?: string;
@@ -49,26 +60,45 @@ export function Select(props: SelectProps): JSX.Element {
   const [query, setQuery] = createSignal("");
   const [focusedIndex, setFocusedIndex] = createSignal(-1);
   const [cache, setCache] = createSignal<Record<string, NormalizedOption>>({});
+  const [selectedGroup, setSelectedGroup] = createSignal<string | null>(props.defaultGroup ?? null);
   let searchRef: HTMLInputElement | undefined;
   let optionRefs: HTMLButtonElement[] = [];
+  let groupRefs: HTMLButtonElement[] = [];
   const value = () => resolveMaybeAccessor(props.value) ?? null;
   const error = () => resolveMaybeAccessor(props.error);
+  const activeGroup = createMemo(() => {
+    const current = selectedGroup();
+    return current && props.groups?.some((group) => group.value === current) ? current : null;
+  });
+  const groupChoices = createMemo(() => [
+    { value: null, label: props.allGroupLabel ?? "All" },
+    ...(props.groups ?? []),
+  ]);
 
   const loader = createChoiceLoader(
-    () => (props.fetchData ? async (value, signal) => (await props.fetchData!(value, signal)).map(normalize) : props.loadOptions),
+    () =>
+      props.fetchData
+        ? async (value, signal) => (await props.fetchData!(value, signal, activeGroup())).map(normalize)
+        : props.loadOptions
+          ? (value, signal) => props.loadOptions!(value, signal, activeGroup())
+          : undefined,
     () => props.fetchDebounceMs ?? props.debounceMs ?? 200,
   );
   const isAsync = () => Boolean(props.fetchData || props.loadOptions);
   const isSearchable = () => isAsync() || Boolean(props.searchable);
   const sourceOptions = createMemo(() => (isAsync() ? loader.options() : (props.options ?? []).map(normalize)));
+  const groupedOptions = createMemo(() => {
+    const group = activeGroup();
+    return !isAsync() && group ? sourceOptions().filter((option) => option.groups?.includes(group)) : sourceOptions();
+  });
   // Remote loaders filter server-side; a static list has to be filtered here or
   // the search field would render but do nothing.
   const options = createMemo(() =>
     isAsync() || !props.searchable
-      ? sourceOptions()
+      ? groupedOptions()
       : props.filterOptions
-        ? [...props.filterOptions(sourceOptions(), query())]
-        : filterChoiceOptions(sourceOptions(), query()),
+        ? [...props.filterOptions(groupedOptions(), query())]
+        : filterChoiceOptions(groupedOptions(), query()),
   );
   const selected = createMemo(() => {
     const current = value();
@@ -94,6 +124,23 @@ export function Select(props: SelectProps): JSX.Element {
     optionRefs[index]?.scrollIntoView({ block: "nearest" });
   };
   const move = (direction: 1 | -1) => focus(nextEnabledChoiceIndex(options(), focusedIndex(), direction));
+  const chooseGroup = (group: string | null) => {
+    if (group === activeGroup()) return;
+    setSelectedGroup(group);
+    setFocusedIndex(nextEnabledChoiceIndex(options(), -1, 1));
+    if (isAsync()) loader.load(query(), true);
+  };
+  const moveGroupFocus = (index: number, direction: 1 | -1) => {
+    const choices = groupChoices();
+    const next = (index + direction + choices.length) % choices.length;
+    chooseGroup(choices[next]?.value ?? null);
+    queueMicrotask(() => groupRefs[next]?.focus());
+  };
+  const focusGroupEdge = (last: boolean) => {
+    const index = last ? groupChoices().length - 1 : 0;
+    chooseGroup(groupChoices()[index]?.value ?? null);
+    queueMicrotask(() => groupRefs[index]?.focus());
+  };
   const open = () => {
     if (props.disabled) return;
     setQuery("");
@@ -119,6 +166,7 @@ export function Select(props: SelectProps): JSX.Element {
     commitFieldValue(props, option.value);
   };
   const onKeyDown = (event: KeyboardEvent) => {
+    if ((event.target as HTMLElement | null)?.closest?.(".k2b-choice-groups")) return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       if (!popover.open()) open();
@@ -219,6 +267,37 @@ export function Select(props: SelectProps): JSX.Element {
                   focus(isAsync() ? -1 : nextEnabledChoiceIndex(options(), -1, 1));
                 }}
               />
+            </div>
+          </Show>
+          <Show when={(props.groups?.length ?? 0) > 0}>
+            <div class="k2b-choice-groups" role="radiogroup" aria-label={props.groupsAriaLabel ?? "Filter options"}>
+              <For each={groupChoices()}>
+                {(group, index) => (
+                  <button
+                    ref={(element) => (groupRefs[index()] = element)}
+                    type="button"
+                    role="radio"
+                    aria-checked={activeGroup() === group.value}
+                    aria-controls={listboxId}
+                    tabIndex={activeGroup() === group.value ? 0 : -1}
+                    onClick={() => chooseGroup(group.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                        event.preventDefault();
+                        moveGroupFocus(index(), 1);
+                      } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                        event.preventDefault();
+                        moveGroupFocus(index(), -1);
+                      } else if (event.key === "Home" || event.key === "End") {
+                        event.preventDefault();
+                        focusGroupEdge(event.key === "End");
+                      }
+                    }}
+                  >
+                    {group.label}
+                  </button>
+                )}
+              </For>
             </div>
           </Show>
           <div id={listboxId} class="k2b-choice-options" role="listbox">

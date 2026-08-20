@@ -194,7 +194,7 @@ describe("@k2b/ui choice and date browser behavior", () => {
 
     dom.root.querySelector<HTMLInputElement>('[role="combobox"]')?.focus();
     await Bun.sleep(0);
-    expect([...dom.root.querySelectorAll('[role="option"] i')].map((icon) => icon.className)).toEqual(["ti ti-server", "ti ti-palette"]);
+    expect(Array.from(dom.root.querySelectorAll('[role="option"] i'), (icon) => icon.className)).toEqual(["ti ti-server", "ti ti-palette"]);
     dom.root.querySelector<HTMLButtonElement>('[role="option"]')?.click();
 
     expect(openDuringSelect).toBe(false);
@@ -233,6 +233,128 @@ describe("@k2b/ui choice and date browser behavior", () => {
 
     expect(openDuringChange).toBe(false);
     expect(dom.root.querySelector(".k2b-choice-trigger")?.getAttribute("aria-expanded")).toBe("false");
+
+    dispose();
+    popover.restore();
+    dom.cleanup();
+  });
+
+  test("combines overlapping Select groups with local search and keyboard navigation", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { Select } = await import("../src/inputs/Select");
+    const dispose = render(
+      () =>
+        createComponent(Select, {
+          label: "Icon",
+          value: null,
+          searchable: true,
+          groups: [
+            { value: "recommended", label: "Recommended" },
+            { value: "food", label: "Food" },
+            { value: "work", label: "Work" },
+          ],
+          defaultGroup: "recommended",
+          filterOptions: (source, query) => source.filter((option) => option.label.toLowerCase().includes(query.trim().toLowerCase())),
+          options: [
+            { value: "coffee", label: "Coffee", groups: ["recommended", "food"] },
+            { value: "pizza", label: "Pizza", groups: ["food"] },
+            { value: "briefcase", label: "Briefcase", groups: ["recommended", "work"] },
+          ],
+        }),
+      dom.root,
+    );
+
+    dom.root.querySelector<HTMLButtonElement>(".k2b-choice-trigger")?.click();
+    const optionLabels = () => Array.from(dom.root.querySelectorAll<HTMLElement>("[role='option'] strong"), (option) => option.textContent);
+    expect(optionLabels()).toEqual(["Coffee", "Briefcase"]);
+
+    const radios = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role='radio']"));
+    radios.find((radio) => radio.textContent === "Food")?.click();
+    expect(optionLabels()).toEqual(["Coffee", "Pizza"]);
+
+    const search = dom.root.querySelector<HTMLInputElement>(".k2b-choice-search input")!;
+    setSolidInputValue(search, "cof");
+    expect(optionLabels()).toEqual(["Coffee"]);
+
+    const food = radios.find((radio) => radio.textContent === "Food")!;
+    food.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true }));
+    await Bun.sleep(0);
+    expect(radios.find((radio) => radio.textContent === "Work")?.getAttribute("aria-checked")).toBe("true");
+    expect(optionLabels()).toEqual([]);
+    expect(dom.root.textContent).toContain("No results");
+
+    dispose();
+    popover.restore();
+    dom.cleanup();
+  });
+
+  test("passes the active Select group to remote loaders", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { Select } = await import("../src/inputs/Select");
+    const calls: Array<{ query: string; group: string | null }> = [];
+    const dispose = render(
+      () =>
+        createComponent(Select, {
+          label: "Principal",
+          value: null,
+          debounceMs: 0,
+          groups: [
+            { value: "user", label: "Users" },
+            { value: "group", label: "Groups" },
+          ],
+          defaultGroup: "user",
+          fetchData: async (query, _signal, group) => {
+            calls.push({ query, group });
+            return [{ id: `${group}:${query}`, label: `${group}:${query}` }];
+          },
+        }),
+      dom.root,
+    );
+
+    dom.root.querySelector<HTMLButtonElement>(".k2b-choice-trigger")?.click();
+    await Bun.sleep(0);
+    expect(calls).toEqual([{ query: "", group: "user" }]);
+
+    Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role='radio']"))
+      .find((radio) => radio.textContent === "Groups")
+      ?.click();
+    await Bun.sleep(0);
+    expect(calls.at(-1)).toEqual({ query: "", group: "group" });
+
+    const search = dom.root.querySelector<HTMLInputElement>(".k2b-choice-search input")!;
+    setSolidInputValue(search, "ops");
+    await Bun.sleep(0);
+    expect(calls.at(-1)).toEqual({ query: "ops", group: "group" });
+
+    dispose();
+    popover.restore();
+    dom.cleanup();
+  });
+
+  test("keeps IconInput fuzzy search inside the active default group", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { IconInput } = await import("../src/inputs/SpecialInputs");
+    const dispose = render(
+      () =>
+        createComponent(IconInput, {
+          label: "Icon",
+          value: null,
+        }),
+      dom.root,
+    );
+
+    dom.root.querySelector<HTMLButtonElement>(".k2b-choice-trigger")?.click();
+    Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role='radio']"))
+      .find((radio) => radio.textContent === "Food")
+      ?.click();
+
+    const search = dom.root.querySelector<HTMLInputElement>(".k2b-choice-search input")!;
+    setSolidInputValue(search, "piz");
+    const optionLabels = Array.from(dom.root.querySelectorAll<HTMLElement>("[role='option'] strong"), (option) => option.textContent);
+    expect(optionLabels).toEqual(["Pizza"]);
 
     dispose();
     popover.restore();
