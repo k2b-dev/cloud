@@ -71,13 +71,15 @@ documents, and workflows without splitting the domain across unrelated tools.
   the configured approver. The preview also pins the complete Finalization
   policy revision, so a mode or approver change stops later steps instead of
   mixing policies. It does not close a period or capture Records added later.
-- Create the **Create correction Draft** workflow starter when a finalized
-  Record needs a linked follow-up without changing the original. Choose an
-  existing single-select value for the correction type and an existing single
-  self-relation for the original. You can also choose up to 100 stored value
-  fields to carry over. The action creates a normal editable Draft that follows
-  the Table's numbering rules. Unique fields, generated IDs, Files, other Relations, calculated fields, and
-  Documents are not copied, and Grids does not calculate a cancellation.
+- Create the linked follow-up Draft workflow starter when a finalized Record
+  needs a correction or cancellation without changing the original. Choose the
+  intent shown to users, an existing single-select type value, and an existing
+  single self-relation for the original. You can also choose up to 100 stored
+  value fields to carry over. The action creates a normal editable Draft that
+  follows the Table's numbering rules. Unique fields, generated IDs, Files,
+  other Relations, calculated fields, and Documents are not copied. A
+  cancellation is named clearly, but Grids does not calculate amounts, taxes,
+  or counter-bookings or generate a Document for it.
 - Keep the default open mutation policy, or let a Base admin limit record,
   Relation, and File changes to direct editing and APIs, Forms, or Workflows
   and actions. Every client follows the same server-enforced policy.

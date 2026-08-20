@@ -18,8 +18,18 @@ import { createMemo, createSignal, For, onMount, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicTable } from "../../../api/public-dto";
 import { PublicGridsWorkflowLauncherListSchema, PublicGridsWorkflowLauncherSchema } from "../../../api/workflow-public-contracts";
-import type { CreateGridsWorkflowLauncherInput, GridsScannerInputSource, GridsWorkflowLauncherKind } from "../../../workflows/contracts";
-import { isCanonicalCloseSelectionPlan, isCanonicalCorrectionDraftPlan, scannerLauncherInputSources } from "../../../workflows/contracts";
+import type {
+  CorrectionDraftIntent,
+  CreateGridsWorkflowLauncherInput,
+  GridsScannerInputSource,
+  GridsWorkflowLauncherKind,
+} from "../../../workflows/contracts";
+import {
+  correctionDraftIntent,
+  isCanonicalCloseSelectionPlan,
+  isCanonicalCorrectionDraftPlan,
+  scannerLauncherInputSources,
+} from "../../../workflows/contracts";
 import { errorMessage } from "../utils/api-helpers";
 import type { PublicWorkflow, PublicWorkflowLauncher } from "../workspace/workspace-public-state-model";
 import { WorkflowInputFields } from "./WorkflowInputFields";
@@ -71,7 +81,9 @@ const launcherConfigurationSummary = (launcher: PublicWorkflowLauncher): string 
   if (launcher.config.kind === "bulk") {
     return "profile" in launcher.config ? "Exact Close selection" : `Supplies ${launcher.config.input}`;
   }
-  if (launcher.config.kind === "record") return "Create correction Draft";
+  if (launcher.config.kind === "record") {
+    return correctionDraftIntent(launcher.config) === "cancellation" ? "Create cancellation Draft" : "Create correction Draft";
+  }
   return launcher.config.inputMode === "prompt" ? "Asks for input when run" : "Uses fixed input values";
 };
 
@@ -113,6 +125,9 @@ function LauncherEditor(props: {
   const [enabled, setEnabled] = createSignal(initial.enabled ?? true);
   const [kind, setKind] = createSignal<GridsWorkflowLauncherKind>(initial.config.kind);
   const [input, setInput] = createSignal("input" in initial.config ? initial.config.input : "");
+  const [recordIntent, setRecordIntent] = createSignal<CorrectionDraftIntent>(
+    initial.config.kind === "record" ? correctionDraftIntent(initial.config) : "correction",
+  );
   const initialScannerSources =
     initial.config.kind === "scanner" ? scannerLauncherInputSources(initial.config) : ({} as Record<string, GridsScannerInputSource>);
   const [scannerSources, setScannerSources] = createSignal<Record<string, ScannerSourceDraft>>(
@@ -247,7 +262,7 @@ function LauncherEditor(props: {
               ...(closeSelectionProfile() ? { profile: "closeSelection" as const } : {}),
             }
           : kind() === "record"
-            ? { kind: "record", input: input(), profile: "correctionDraft" }
+            ? { kind: "record", input: input(), profile: "correctionDraft", intent: recordIntent() }
             : { kind: "scanner", inputSources: scannerInputSources() };
     props.close({ name: name().trim(), enabled: enabled(), config });
   };
@@ -295,8 +310,35 @@ function LauncherEditor(props: {
               </NoticeCard>
             </Show>
             <Show when={correctionDraftProfile()}>
-              <NoticeCard tone="info" icon="ti ti-file-pencil">
-                This action creates one correction Draft from the finalized Record a person opens.
+              <Select
+                label="Action"
+                description="Controls the action wording. The workflow's configured type value remains authoritative."
+                options={[
+                  {
+                    id: "correction",
+                    label: "Correction",
+                    description: "Create a linked Draft for revised values.",
+                    icon: "ti ti-file-pencil",
+                  },
+                  {
+                    id: "cancellation",
+                    label: "Cancellation",
+                    description: "Create a linked Draft for a cancellation completed by the user.",
+                    icon: "ti ti-file-off",
+                  },
+                ]}
+                value={recordIntent}
+                onValueChange={(value) => {
+                  if (value !== "correction" && value !== "cancellation") return;
+                  const currentDefaultName = recordIntent() === "cancellation" ? "Create cancellation" : "Create correction";
+                  if (name().trim() === currentDefaultName) setName(value === "cancellation" ? "Create cancellation" : "Create correction");
+                  setRecordIntent(value);
+                }}
+                required
+              />
+              <NoticeCard tone="info" icon={recordIntent() === "cancellation" ? "ti ti-file-off" : "ti ti-file-pencil"}>
+                This action creates one {recordIntent()} Draft from the finalized Record a person opens. Grids does not calculate amounts,
+                taxes, or counter-bookings, and it does not generate a Document.
               </NoticeCard>
             </Show>
             <Show when={!closeSelectionProfile() && !correctionDraftProfile() && missingRequiredInputs().length > 0}>

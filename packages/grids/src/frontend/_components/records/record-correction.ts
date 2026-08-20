@@ -56,16 +56,16 @@ export const createCorrectionDraft = async (params: {
     });
   } catch (error) {
     if (params.signal.aborted) throw error;
-    throw new CorrectionDraftInvocationError(error instanceof Error ? error.message : "Could not start correction workflow", true);
+    throw new CorrectionDraftInvocationError(error instanceof Error ? error.message : "Could not start linked-Draft workflow", true);
   }
   if (!response.ok) {
-    throw new CorrectionDraftInvocationError(await errorMessage(response, "Could not create correction Draft"), response.status >= 500);
+    throw new CorrectionDraftInvocationError(await errorMessage(response, "Could not create linked Draft"), response.status >= 500);
   }
   let receipt: z.infer<typeof PublicWorkflowInvocationReceiptSchema>;
   try {
     receipt = PublicWorkflowInvocationReceiptSchema.parse(await response.json());
   } catch (error) {
-    throw new CorrectionDraftInvocationError(error instanceof Error ? error.message : "Invalid correction workflow response", true);
+    throw new CorrectionDraftInvocationError(error instanceof Error ? error.message : "Invalid linked-Draft workflow response", true);
   }
   const deadline = Date.now() + (params.timeoutMs ?? 30_000);
   while (true) {
@@ -78,31 +78,31 @@ export const createCorrectionDraft = async (params: {
       });
     } catch (error) {
       if (params.signal.aborted) throw error;
-      throw new CorrectionDraftInvocationError(error instanceof Error ? error.message : "Could not refresh correction workflow", true);
+      throw new CorrectionDraftInvocationError(error instanceof Error ? error.message : "Could not refresh linked-Draft workflow", true);
     }
     if (!runResponse.ok) {
-      throw new CorrectionDraftInvocationError(await errorMessage(runResponse, "Could not refresh correction workflow"), true);
+      throw new CorrectionDraftInvocationError(await errorMessage(runResponse, "Could not refresh linked-Draft workflow"), true);
     }
     let run: z.infer<typeof PublicGridsWorkflowRunSchema>;
     try {
       run = PublicGridsWorkflowRunSchema.parse(await runResponse.json());
     } catch (error) {
-      throw new CorrectionDraftInvocationError(error instanceof Error ? error.message : "Invalid correction workflow response", true);
+      throw new CorrectionDraftInvocationError(error instanceof Error ? error.message : "Invalid linked-Draft workflow response", true);
     }
     if (run.status === "succeeded") {
       try {
         const result = CorrectionDraftResultSchema.parse(run.result);
         return { recordId: result.recordId, tableId: result.tableId };
       } catch (error) {
-        throw new CorrectionDraftInvocationError(error instanceof Error ? error.message : "Invalid correction workflow result", false);
+        throw new CorrectionDraftInvocationError(error instanceof Error ? error.message : "Invalid linked-Draft workflow result", false);
       }
     }
     if (run.status === "failed" || run.status === "canceled" || run.status === "needs_attention") {
-      throw new CorrectionDraftInvocationError(run.error?.message ?? "The correction workflow did not complete.", false);
+      throw new CorrectionDraftInvocationError(run.error?.message ?? "The linked-Draft workflow did not complete.", false);
     }
     if (Date.now() >= deadline) {
       throw new CorrectionDraftInvocationError(
-        `The correction workflow is still running. Open run ${receipt.runId} to follow progress.`,
+        `The linked-Draft workflow is still running. Open run ${receipt.runId} to follow progress.`,
         true,
       );
     }

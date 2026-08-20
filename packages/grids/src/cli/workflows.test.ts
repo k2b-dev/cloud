@@ -119,6 +119,8 @@ const resolutionResponses = () => [jsonResponse(basePage), jsonResponse([workflo
 describe("Grids workflow CLI", () => {
   test("keeps the reference invocation aligned with a compilable and bindable YAML example", async () => {
     expect(WORKFLOW_REFERENCE.invocation.direct.inputs).toEqual({ item: "00000000-0000-4000-8000-000000000001" });
+    expect(WORKFLOW_REFERENCE.launchers.correctionDraft.config.intent).toBe("correction");
+    expect(WORKFLOW_REFERENCE.launchers.cancellationDraft.config.intent).toBe("cancellation");
 
     const compiled = await compileWorkflow(WORKFLOW_REFERENCE.example, gridsWorkflows);
     expect(compiled.ok).toBe(true);

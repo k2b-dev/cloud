@@ -7,6 +7,7 @@ import type { PublicField as Field, PublicGridRecord as GridRecord } from "../..
 import type { PublicRecordFinalizationReadiness, PublicRecordFinalizationRequest } from "../../../api/record-finalization";
 import type { ColumnSpec, RecordMutationAudit, TableAuditPolicy } from "../../../contracts";
 import { recordAuditRequirementFor } from "../../../record-audit-policy";
+import { type CorrectionDraftIntent, correctionDraftIntent } from "../../../workflows/contracts";
 import type { PublicDocumentTemplateSummary } from "../documents/public-document-types";
 import { isUserEditable } from "../fields/field-prompt-schema";
 import { errorMessage } from "../utils/api-helpers";
@@ -64,12 +65,21 @@ type Props = {
   onOpenRecord: (recordId: string) => void;
 };
 
+const recordLauncherIntent = (launcher: WorkspaceRecordLauncher): CorrectionDraftIntent =>
+  launcher.config.kind === "record" ? correctionDraftIntent(launcher.config) : "correction";
+
+const intentLabel = (intent: CorrectionDraftIntent): string => (intent === "cancellation" ? "cancellation" : "correction");
+
 export default function RecordDetailPanel(props: Props) {
   let disposed = false;
   let correctionOperation: { key: string; id: string } | null = null;
   let correctionRecordId: string | null = null;
   const record = () => props.record();
   const mode = () => props.mode();
+  const sharedRecordActionIntent = (): CorrectionDraftIntent | null => {
+    const intents = new Set(props.recordActionLaunchers.map(recordLauncherIntent));
+    return intents.size === 1 ? (intents.values().next().value ?? null) : null;
+  };
   const finalizationQueryEnabled = () => {
     const rec = record();
     return Boolean(rec && props.canWrite && mode() === "live" && !rec.finalizedAt);
@@ -167,7 +177,7 @@ export default function RecordDetailPanel(props: Props) {
   });
 
   const createCorrectionMut = mutations.create<
-    { recordId: string; tableId: string; originalRecordId: string },
+    { recordId: string; tableId: string; originalRecordId: string; intent: CorrectionDraftIntent },
     { rec: GridRecord; launcher: WorkspaceRecordLauncher; operationId: string }
   >({
     mutation: async ({ rec, launcher, operationId }, { abortSignal }) => {
@@ -179,15 +189,18 @@ export default function RecordDetailPanel(props: Props) {
         signal: abortSignal,
       });
       if (result.tableId !== props.tableId) {
-        throw new CorrectionDraftInvocationError("The correction workflow returned a Record from another Table.", false);
+        throw new CorrectionDraftInvocationError("The linked-Draft workflow returned a Record from another Table.", false);
       }
-      return { ...result, originalRecordId: rec.id };
+      return { ...result, originalRecordId: rec.id, intent: recordLauncherIntent(launcher) };
     },
     onSuccess: (result) => {
       correctionOperation = null;
       correctionRecordId = null;
       if (!disposed && record()?.id === result.originalRecordId) props.onOpenRecord(result.recordId);
-      toast.success("The linked correction Draft is ready.", { title: "Correction created" });
+      const label = intentLabel(result.intent);
+      toast.success(`The linked ${label} Draft is ready.`, {
+        title: result.intent === "cancellation" ? "Cancellation created" : "Correction created",
+      });
     },
     onError: (error) => {
       correctionRecordId = null;
@@ -382,16 +395,22 @@ export default function RecordDetailPanel(props: Props) {
 
   const handleCreateCorrection = async (rec: GridRecord, launcher: WorkspaceRecordLauncher) => {
     if (createCorrectionMut.loading()) return;
+    const intent = recordLauncherIntent(launcher);
+    const label = intentLabel(intent);
     const copySummary =
       launcher.correctionPrefillFieldCount === 0
         ? "No values are carried over automatically."
         : `${launcher.correctionPrefillFieldCount} configured field${launcher.correctionPrefillFieldCount === 1 ? "" : "s"} will be carried over.`;
     const confirmed = await prompts.confirm(
-      `Create a new editable Draft linked to this finalized Record?\n\n${copySummary} The original remains unchanged and locked. The new Draft follows the Table's normal numbering rules; Files, other relations, calculated fields, and Documents are not copied.`,
+      `Create a new editable ${label} Draft linked to this finalized Record?\n\n${copySummary} The original remains unchanged and locked. The new Draft follows the Table's normal numbering rules; Files, other relations, calculated fields, and Documents are not copied.${
+        intent === "cancellation"
+          ? " Grids does not calculate amounts, taxes, or counter-bookings, and it does not generate a Document."
+          : ""
+      }`,
       {
         title: launcher.name,
-        icon: "ti ti-file-pencil",
-        confirmText: "Create correction Draft",
+        icon: intent === "cancellation" ? "ti ti-file-off" : "ti ti-file-pencil",
+        confirmText: intent === "cancellation" ? "Create cancellation Draft" : "Create correction Draft",
       },
     );
     if (confirmed) {
@@ -566,11 +585,11 @@ export default function RecordDetailPanel(props: Props) {
                     {
                       items: props.recordActionLaunchers.map((launcher) => ({
                         label: launcher.name,
-                        icon: "ti ti-file-pencil",
+                        icon: recordLauncherIntent(launcher) === "cancellation" ? "ti ti-file-off" : "ti ti-file-pencil",
                         description:
                           launcher.correctionPrefillFieldCount === 0
-                            ? "Create a linked empty Draft without changing this final Record."
-                            : `Create a linked Draft and carry over ${launcher.correctionPrefillFieldCount} configured field${launcher.correctionPrefillFieldCount === 1 ? "" : "s"}.`,
+                            ? `Create a linked empty ${intentLabel(recordLauncherIntent(launcher))} Draft without changing this final Record.`
+                            : `Create a linked ${intentLabel(recordLauncherIntent(launcher))} Draft and carry over ${launcher.correctionPrefillFieldCount} configured field${launcher.correctionPrefillFieldCount === 1 ? "" : "s"}.`,
                         action: () => void handleCreateCorrection(rec, launcher),
                       })),
                     },
@@ -582,9 +601,20 @@ export default function RecordDetailPanel(props: Props) {
                     type="button"
                     disabled={createCorrectionMut.loading()}
                     loading={createCorrectionMut.loading()}
-                    loadingLabel="Creating correction Draft"
+                    loadingLabel={
+                      sharedRecordActionIntent() === "cancellation"
+                        ? "Creating cancellation Draft"
+                        : sharedRecordActionIntent() === "correction"
+                          ? "Creating correction Draft"
+                          : "Creating linked Draft"
+                    }
                   >
-                    <i class="ti ti-file-pencil" /> Create correction
+                    <i class={sharedRecordActionIntent() === "cancellation" ? "ti ti-file-off" : "ti ti-file-pencil"} />
+                    {sharedRecordActionIntent() === "cancellation"
+                      ? "Create cancellation"
+                      : sharedRecordActionIntent() === "correction"
+                        ? "Create correction"
+                        : "Create follow-up"}
                   </Dropdown.Trigger>
                 </Dropdown.Root>
               </Show>

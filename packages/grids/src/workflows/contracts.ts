@@ -25,6 +25,10 @@ export const CORRECTION_PREFILL_FIELD_TYPES = [
 
 export const MAX_CORRECTION_PREFILL_FIELDS = 100;
 
+export const CORRECTION_DRAFT_INTENTS = ["correction", "cancellation"] as const;
+
+export type CorrectionDraftIntent = (typeof CORRECTION_DRAFT_INTENTS)[number];
+
 export const isCorrectionPrefillFieldType = (type: string): boolean => (CORRECTION_PREFILL_FIELD_TYPES as readonly string[]).includes(type);
 
 export type GridsWorkflowChannel = (typeof GRIDS_WORKFLOW_CHANNELS)[number];
@@ -240,7 +244,15 @@ export const isCanonicalCorrectionDraftPlan = (plan: WorkflowBoundPlan, recordIn
 
 export type GridsBulkLauncherConfig = { kind: "bulk"; input: string } | { kind: "bulk"; input: string; profile: "closeSelection" };
 
-export type GridsRecordLauncherConfig = { kind: "record"; input: string; profile: "correctionDraft" };
+export type GridsRecordLauncherConfig = {
+  kind: "record";
+  input: string;
+  profile: "correctionDraft";
+  /** Presentation intent only. Existing launchers without it remain corrections. */
+  intent?: CorrectionDraftIntent;
+};
+
+export const correctionDraftIntent = (config: GridsRecordLauncherConfig): CorrectionDraftIntent => config.intent ?? "correction";
 
 export type GridsWorkflowLauncherConfig =
   | GridsScannerLauncherConfig
@@ -507,6 +519,7 @@ const CorrectionDraftRecordLauncherConfigSchema = z
     kind: z.literal("record"),
     input: z.string().trim().min(1).max(120),
     profile: z.literal("correctionDraft"),
+    intent: z.enum(CORRECTION_DRAFT_INTENTS).optional(),
   })
   .strict();
 

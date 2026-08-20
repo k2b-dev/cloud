@@ -13,7 +13,7 @@ import {
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicField as Field, PublicTable as Table } from "../../../api/public-dto";
-import { isCorrectionPrefillFieldType, MAX_CORRECTION_PREFILL_FIELDS } from "../../../workflows/contracts";
+import { type CorrectionDraftIntent, isCorrectionPrefillFieldType, MAX_CORRECTION_PREFILL_FIELDS } from "../../../workflows/contracts";
 import { errorMessage } from "../utils/api-helpers";
 import { WorkflowEditor } from "../workflows/WorkflowEditor";
 import { closeSelectionWorkflowStarter, correctionDraftWorkflowStarter, type WorkflowStarter } from "../workflows/workflow-starters";
@@ -25,6 +25,7 @@ type StarterChoice =
   | {
       kind: "correctionDraft";
       tableId: string;
+      intent: CorrectionDraftIntent;
       typeFieldId: string;
       typeValue: string;
       originalFieldId: string;
@@ -55,6 +56,7 @@ function WorkflowStarterDialog(props: {
         field.type === "relation" && field.config.targetTableId === tableId() && (field.config.cardinality ?? "multiple") === "single",
     );
   const [typeFieldId, setTypeFieldId] = createSignal("");
+  const [correctionIntent, setCorrectionIntent] = createSignal<CorrectionDraftIntent>("correction");
   const [typeValue, setTypeValue] = createSignal("");
   const [originalFieldId, setOriginalFieldId] = createSignal("");
   const [copyFieldIds, setCopyFieldIds] = createSignal<string[]>([]);
@@ -111,9 +113,40 @@ function WorkflowStarterDialog(props: {
           </section>
           <section class="paper flex flex-col gap-3 p-4">
             <div>
-              <h3 class="font-semibold">Create correction Draft</h3>
-              <p class="text-sm text-dimmed">Adds a finalized-Record action that creates one linked Draft without changing the original.</p>
+              <h3 class="font-semibold">Create linked follow-up Draft</h3>
+              <p class="text-sm text-dimmed">
+                Adds a finalized-Record action for a correction or cancellation without changing the original.
+              </p>
             </div>
+            <Select
+              label="Action"
+              description="Controls how the action is named. Your selected type value remains the stored business meaning."
+              options={[
+                {
+                  id: "correction",
+                  label: "Correction",
+                  description: "Create a linked Draft for revised values.",
+                  icon: "ti ti-file-pencil",
+                },
+                {
+                  id: "cancellation",
+                  label: "Cancellation",
+                  description: "Create a linked Draft for a cancellation you complete yourself.",
+                  icon: "ti ti-file-off",
+                },
+              ]}
+              value={correctionIntent}
+              onValueChange={(value) => {
+                if (value === "correction" || value === "cancellation") setCorrectionIntent(value);
+              }}
+              required
+            />
+            <Show when={correctionIntent() === "cancellation"}>
+              <NoticeCard tone="info" icon="ti ti-info-circle">
+                Grids creates and links the Draft. It does not calculate amounts, taxes, or counter-bookings, and it does not generate a
+                Document.
+              </NoticeCard>
+            </Show>
             <Select
               label="Table"
               options={storedTables().map((table) => ({ id: table.id, label: table.name }))}
@@ -122,7 +155,7 @@ function WorkflowStarterDialog(props: {
               required
             />
             <Select
-              label="Correction type field"
+              label="Type field"
               description="Choose an existing single-select field."
               options={typeFields().map((field) => ({ id: field.id, label: field.name }))}
               value={typeFieldId}
@@ -134,7 +167,7 @@ function WorkflowStarterDialog(props: {
               required
             />
             <Select
-              label="Correction value"
+              label={correctionIntent() === "cancellation" ? "Cancellation value" : "Correction value"}
               options={typeValues()}
               value={typeValue}
               onValueChange={(value) => setTypeValue(value ?? "")}
@@ -171,7 +204,7 @@ function WorkflowStarterDialog(props: {
             />
             <Show when={tableId() && (typeFields().length === 0 || relationFields().length === 0)}>
               <NoticeCard tone="warning" icon="ti ti-alert-triangle">
-                This Table needs a single-select correction type and a single self-relation before this starter can be installed.
+                This Table needs a single-select type and a single self-relation before this starter can be installed.
               </NoticeCard>
             </Show>
             <div class="flex justify-end">
@@ -183,6 +216,7 @@ function WorkflowStarterDialog(props: {
                   props.close({
                     kind: "correctionDraft",
                     tableId: tableId(),
+                    intent: correctionIntent(),
                     typeFieldId: typeFieldId(),
                     typeValue: typeValue(),
                     originalFieldId: originalFieldId(),
@@ -190,7 +224,7 @@ function WorkflowStarterDialog(props: {
                   })
                 }
               >
-                <i class="ti ti-file-delta" /> Use starter
+                <i class={correctionIntent() === "cancellation" ? "ti ti-file-off" : "ti ti-file-delta"} /> Use starter
               </Button>
             </div>
           </section>
@@ -266,6 +300,7 @@ export default function CreateWorkflowButton(props: { baseId: string; tables: Ta
         : choice.kind === "correctionDraft" && table
           ? correctionDraftWorkflowStarter({
               table,
+              intent: choice.intent,
               typeField: { id: choice.typeFieldId },
               typeValue: choice.typeValue,
               originalField: { id: choice.originalFieldId },

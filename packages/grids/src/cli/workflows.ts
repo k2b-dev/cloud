@@ -566,7 +566,7 @@ export const workflowCommands = [
   command("workflow-launchers create", {
     summary: "Create and validate a workflow launcher",
     description:
-      'Pass one JSON object: scanner {"name":"Scan","config":{"kind":"scanner","input":"item","resolve":{"by":"scanCode"}},"enabled":true}; bulk {"name":"Bulk","config":{"kind":"bulk","input":"items"}}; correction {"name":"Create correction","config":{"kind":"record","input":"original","profile":"correctionDraft"}}; fixed customApp {"name":"Refresh","config":{"kind":"customApp","inputMode":"fixed","inputBindings":{"range":"30d"}}}; prompt customApp {"name":"Run","config":{"kind":"customApp","inputMode":"prompt"}}. Run `cld grids workflows reference` for all shapes.',
+      'Pass one JSON object: scanner {"name":"Scan","config":{"kind":"scanner","input":"item","resolve":{"by":"scanCode"}},"enabled":true}; bulk {"name":"Bulk","config":{"kind":"bulk","input":"items"}}; correction {"name":"Create correction","config":{"kind":"record","input":"original","profile":"correctionDraft","intent":"correction"}}; cancellation uses the same Record profile with "intent":"cancellation"; fixed customApp {"name":"Refresh","config":{"kind":"customApp","inputMode":"fixed","inputBindings":{"range":"30d"}}}; prompt customApp {"name":"Run","config":{"kind":"customApp","inputMode":"prompt"}}. Run `cld grids workflows reference` for all shapes.',
     args: baseArgs,
     flags: { ...baseFlag, ...workflowFlag, body: WORKFLOW_LAUNCHER_BODY_INPUT },
     examples: ["cld grids workflow-launchers create Bookshop 'Check in' --body-file launcher.json"],

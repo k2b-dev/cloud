@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { type GridsWorkflow, GridsWorkflowLauncherConfigSchema } from "../workflows/contracts";
+import { correctionDraftIntent, type GridsWorkflow, GridsWorkflowLauncherConfigSchema } from "../workflows/contracts";
 import { validateLauncherConfig } from "./workflow-launchers";
 
 const workflow = {
@@ -86,6 +86,10 @@ describe("workflow launcher validation", () => {
   test("accepts only the canonical correction Draft plan", () => {
     const config = { kind: "record", input: "original", profile: "correctionDraft" } as const;
     expect(validateLauncherConfig(correctionWorkflow(), config)).toEqual([]);
+    expect(GridsWorkflowLauncherConfigSchema.safeParse(config).success).toBe(true);
+    expect(correctionDraftIntent(config)).toBe("correction");
+    expect(GridsWorkflowLauncherConfigSchema.safeParse({ ...config, intent: "cancellation" }).success).toBe(true);
+    expect(GridsWorkflowLauncherConfigSchema.safeParse({ ...config, intent: "refund" }).success).toBe(false);
     const prefilled = correctionWorkflow();
     const action = prefilled.plan.steps[0];
     if (action?.kind !== "action") throw new Error("invalid fixture");

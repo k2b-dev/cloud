@@ -18,6 +18,7 @@ describe("workflow starters", () => {
   test("pins a correction Draft to one Record, its profile fields, and explicit prefill fields", () => {
     const starter = correctionDraftWorkflowStarter({
       table: { id: "TmZCsi", name: "Loan Items" },
+      intent: "correction",
       typeField: { id: "TyPe01" },
       typeValue: "correction",
       originalField: { id: "OrIg01" },
@@ -30,7 +31,25 @@ describe("workflow starters", () => {
     expect(starter.source).toContain('originalField: "OrIg01"');
     expect(starter.source).toContain('        - "NaMe01"');
     expect(starter.source).toContain('        - "DaTe01"');
-    expect(starter.launcher.config).toEqual({ kind: "record", input: "original", profile: "correctionDraft" });
+    expect(starter.name).toBe("Create Loan Items correction Draft");
+    expect(starter.launcher.config).toEqual({ kind: "record", input: "original", profile: "correctionDraft", intent: "correction" });
+  });
+
+  test("names a cancellation without changing the linked-Draft workflow plan", () => {
+    const starter = correctionDraftWorkflowStarter({
+      table: { id: "TmZCsi", name: "Loan Items" },
+      intent: "cancellation",
+      typeField: { id: "TyPe01" },
+      typeValue: "cancelled",
+      originalField: { id: "OrIg01" },
+      copyFields: [],
+    });
+
+    expect(starter.name).toBe("Create Loan Items cancellation Draft");
+    expect(starter.launcher.name).toBe("Create cancellation");
+    expect(starter.launcher.config).toEqual({ kind: "record", input: "original", profile: "correctionDraft", intent: "cancellation" });
+    expect(starter.source).toContain("- createCorrectionDraft:");
+    expect(starter.source).toContain('typeValue: "cancelled"');
   });
 
   test("keeps starter launcher installation inside the editor save lifecycle", async () => {
@@ -43,5 +62,17 @@ describe("workflow starters", () => {
       "beforeClose={starter ? (workflow, context) => installLauncher(workflow, starter, context.abortSignal) : undefined}",
     );
     expect(starterSource).not.toContain("void (async () =>");
+  });
+
+  test("lets an admin choose correction or cancellation without promising cancellation calculations", async () => {
+    const starterSource = await Bun.file(new URL("../sidebar/CreateWorkflowButton.island.tsx", import.meta.url)).text();
+    const launcherSource = await Bun.file(new URL("./WorkflowLauncherManager.tsx", import.meta.url)).text();
+
+    expect(starterSource).toContain('label="Action"');
+    expect(starterSource).toContain('id: "cancellation"');
+    expect(starterSource).toContain("Grids creates and links the Draft");
+    expect(starterSource).toContain("It does not calculate amounts, taxes, or counter-bookings");
+    expect(launcherSource).toContain('label="Action"');
+    expect(launcherSource).toContain('setName(value === "cancellation" ? "Create cancellation" : "Create correction")');
   });
 });

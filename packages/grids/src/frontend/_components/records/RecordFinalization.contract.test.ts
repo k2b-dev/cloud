@@ -26,6 +26,9 @@ describe("record finalization UI contract", () => {
     expect(source).toContain("showFinalizationStatus={Boolean(rec.finalizedAt || finalization()?.enabled)}");
     expect(source).toContain("record()?.id === result.originalRecordId");
     expect(source).toContain("createCorrectionMut.abort()");
+    expect(source).toContain('intent === "cancellation" ? "Create cancellation Draft" : "Create correction Draft"');
+    expect(source).toContain('sharedRecordActionIntent() === "cancellation"');
+    expect(source).toContain("Grids does not calculate amounts, taxes, or counter-bookings, and it does not generate a Document.");
     expect(source).toContain("onCleanup(() =>");
   });
 

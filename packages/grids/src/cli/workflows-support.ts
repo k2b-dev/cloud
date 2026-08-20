@@ -176,7 +176,12 @@ export const WORKFLOW_REFERENCE = {
     },
     correctionDraft: {
       name: "Create correction",
-      config: { kind: "record", input: "original", profile: "correctionDraft" },
+      config: { kind: "record", input: "original", profile: "correctionDraft", intent: "correction" },
+      enabled: true,
+    },
+    cancellationDraft: {
+      name: "Create cancellation",
+      config: { kind: "record", input: "original", profile: "correctionDraft", intent: "cancellation" },
       enabled: true,
     },
     customApp: {

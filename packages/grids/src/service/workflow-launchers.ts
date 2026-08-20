@@ -80,7 +80,10 @@ export const validateLauncherConfig = (workflow: GridsWorkflow, config: GridsWor
     if (!input) add("launcher.input.unknown", `Unknown workflow input "${config.input}"`, ["config", "input"]);
     else if (input.type !== "record") add("launcher.input.type", "record actions require a record input", ["config", "input"]);
     if (config.profile === "correctionDraft" && !isCanonicalCorrectionDraftPlan(workflow.plan, config.input)) {
-      add("launcher.profile.plan", "Create correction requires its canonical finalized-Record workflow plan", ["config", "profile"]);
+      add("launcher.profile.plan", "The linked-Draft Record action requires its canonical finalized-Record workflow plan", [
+        "config",
+        "profile",
+      ]);
     }
   }
   if (config.kind === "scanner") {
