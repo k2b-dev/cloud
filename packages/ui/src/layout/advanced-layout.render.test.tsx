@@ -703,14 +703,14 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(rule(".k2b-data-panel__toolbar")).not.toContain("margin-top");
       expect(rule(".k2b-data-panel__controls")).toContain("flex-direction:column");
       expect(rule(".k2b-data-panel__controls")).toContain("padding:0 .75rem .5rem");
-      expect(rule(".k2b-data-panel>.k2b-table-wrap[data-surface=paper]")).toContain("border:0");
-      expect(rule(".k2b-data-panel>.k2b-table-wrap[data-surface=paper]")).toContain("border-radius:0");
-      expect(rule(".k2b-data-panel>.k2b-table-wrap[data-surface=paper]")).toContain("box-shadow:none");
+      expect(rule(".k2b-data-panel>.k2b-table-shell[data-surface=paper]")).toContain("border:0");
+      expect(rule(".k2b-data-panel>.k2b-table-shell[data-surface=paper]")).toContain("border-radius:0");
+      expect(rule(".k2b-data-panel>.k2b-table-shell[data-surface=paper]")).toContain("box-shadow:none");
       // Cloud's footer is a bare `px-3 py-2` box — no muted colour, no shrink.
       expect(rule(".k2b-data-panel__footer")).toContain("padding:.5rem .75rem");
       expect(rule(".k2b-data-panel__footer")).toContain("border-top:1px solid var(--k2b-border)");
       expect(rule(".k2b-data-panel__footer>.k2b-pagination")).toBe("padding-top:0");
-      expect(rule(".k2b-data-panel>.k2b-table-wrap[data-has-footer=true]+.k2b-data-panel__footer")).toBe("border-top:0");
+      expect(rule(".k2b-data-panel>.k2b-table-shell[data-has-footer=true]+.k2b-data-panel__footer")).toBe("border-top:0");
       // The compact Placeholder carries its own px-3 py-6.
       expect(css).not.toContain(".k2b-data-panel>.k2b-placeholder");
     });

@@ -163,11 +163,30 @@ const rowInteractiveSelector = [
 const isNestedRowControl = (event: Event): boolean =>
   event.target instanceof Element && event.target.closest(rowInteractiveSelector) !== event.currentTarget;
 
+type DataTableScrollbarAxis = "x" | "y";
+type DataTableScrollbarMetrics = { overflow: boolean; offset: number; size: number };
+
+const scrollbarMetrics = (viewportSize: number, contentSize: number, scrollOffset: number): DataTableScrollbarMetrics => {
+  if (viewportSize <= 0 || contentSize <= viewportSize + 1) return { overflow: false, offset: 0, size: 0 };
+  const size = Math.min(viewportSize, Math.max(24, (viewportSize * viewportSize) / contentSize));
+  const offset = (scrollOffset / (contentSize - viewportSize)) * (viewportSize - size);
+  return { overflow: true, offset, size };
+};
+
 function DataTableRoot<T>(props: DataTableProps<T>) {
   const [hoveredColumn, setHoveredColumn] = createSignal<number | null>(null);
+  const [scrollbars, setScrollbars] = createSignal<Record<DataTableScrollbarAxis, DataTableScrollbarMetrics>>({
+    x: { overflow: false, offset: 0, size: 0 },
+    y: { overflow: false, offset: 0, size: 0 },
+  });
+  const [scrollbarEnhanced, setScrollbarEnhanced] = createSignal(false);
+  const [scrolling, setScrolling] = createSignal(false);
   const panel = useContext(DataTablePanelContext);
+  let tableRef: HTMLTableElement | undefined;
   let scrollRef: HTMLDivElement | undefined;
   let loadMoreRef: HTMLDivElement | undefined;
+  let scrollingTimeout: ReturnType<typeof setTimeout> | undefined;
+  let scrollbarDragOffset = 0;
   let hasMore = false;
   let loadingMore = false;
   let onLoadMore: (() => void) | undefined;
@@ -204,6 +223,56 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
       loadMoreRequested = false;
       throw error;
     }
+  };
+
+  const syncScrollbars = () => {
+    if (!scrollRef) return;
+    setScrollbars({
+      x: scrollbarMetrics(scrollRef.clientWidth, scrollRef.scrollWidth, scrollRef.scrollLeft),
+      y: scrollbarMetrics(scrollRef.clientHeight, scrollRef.scrollHeight, scrollRef.scrollTop),
+    });
+  };
+
+  const revealScrollbars = () => {
+    setScrolling(true);
+    if (scrollingTimeout !== undefined) clearTimeout(scrollingTimeout);
+    scrollingTimeout = setTimeout(() => {
+      setScrolling(false);
+      scrollingTimeout = undefined;
+    }, 700);
+  };
+
+  const onScroll = () => {
+    syncScrollbars();
+    revealScrollbars();
+    maybeLoadMore();
+  };
+
+  const scrollFromPointer = (event: PointerEvent & { currentTarget: HTMLDivElement }, axis: DataTableScrollbarAxis) => {
+    if (!scrollRef) return;
+    const track = event.currentTarget;
+    const metrics = scrollbars()[axis];
+    const rect = track.getBoundingClientRect();
+    const trackSize = axis === "y" ? rect.height : rect.width;
+    const pointerOffset = axis === "y" ? event.clientY - rect.top : event.clientX - rect.left;
+    const available = Math.max(1, trackSize - metrics.size);
+    const thumbOffset = Math.min(available, Math.max(0, pointerOffset - scrollbarDragOffset));
+    const maxScroll = axis === "y" ? scrollRef.scrollHeight - scrollRef.clientHeight : scrollRef.scrollWidth - scrollRef.clientWidth;
+    if (axis === "y") scrollRef.scrollTop = (thumbOffset / available) * maxScroll;
+    else scrollRef.scrollLeft = (thumbOffset / available) * maxScroll;
+    syncScrollbars();
+    revealScrollbars();
+  };
+
+  const startScrollbarDrag = (event: PointerEvent & { currentTarget: HTMLDivElement }, axis: DataTableScrollbarAxis) => {
+    event.preventDefault();
+    const metrics = scrollbars()[axis];
+    const rect = event.currentTarget.getBoundingClientRect();
+    const pointerOffset = axis === "y" ? event.clientY - rect.top : event.clientX - rect.left;
+    scrollbarDragOffset =
+      event.target === event.currentTarget ? metrics.size / 2 : Math.min(metrics.size, Math.max(0, pointerOffset - metrics.offset));
+    event.currentTarget.setPointerCapture(event.pointerId);
+    scrollFromPointer(event, axis);
   };
 
   const valueOf = (row: T, col: DataTableColumn<T>) => {
@@ -330,6 +399,18 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     onCleanup(() => observer.disconnect());
   });
 
+  onMount(() => {
+    setScrollbarEnhanced(true);
+    syncScrollbars();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(syncScrollbars);
+    if (scrollRef) observer?.observe(scrollRef);
+    if (tableRef) observer?.observe(tableRef);
+    onCleanup(() => {
+      observer?.disconnect();
+      if (scrollingTimeout !== undefined) clearTimeout(scrollingTimeout);
+    });
+  });
+
   createEffect(() => {
     const rowsLength = props.rows.length;
     const nextHasMore = !!props.hasMore;
@@ -344,135 +425,169 @@ function DataTableRoot<T>(props: DataTableProps<T>) {
     loadingMore = nextLoadingMore;
     onLoadMore = props.onLoadMore;
     maybeLoadMore();
+    queueMicrotask(syncScrollbars);
   });
 
   return (
     <Show when={props.columns.length > 0} fallback={<Placeholder surface="paper" description={<>No columns.</>} />}>
       <Dynamic
         component={surface() === "paper" ? Paper : "div"}
-        ref={scrollRef}
-        role="region"
-        aria-label={labelledBy() ? undefined : (props.ariaLabel ?? "Data table")}
-        aria-labelledby={labelledBy()}
-        tabIndex={0}
-        class={`k2b-table-wrap ${props.class ?? ""}`}
-        data-density={props.density === "compact" ? "compact" : undefined}
-        data-has-footer={props.footer ? "true" : undefined}
+        class={`k2b-table-shell ${props.class ?? ""}`}
         data-surface={surface()}
-        data-scroll-preserve={props.scrollPreserveKey || undefined}
-        onScroll={maybeLoadMore}
+        data-has-footer={props.footer ? "true" : undefined}
+        data-overflow-x={scrollbars().x.overflow ? "true" : undefined}
+        data-overflow-y={scrollbars().y.overflow ? "true" : undefined}
+        data-scrollbar-enhanced={scrollbarEnhanced() ? "true" : undefined}
+        data-scrolling={scrolling() ? "true" : undefined}
         onMouseLeave={() => setHoveredColumn(null)}
       >
-        <table class={tableClass()} data-fill={props.fillHeight ? "true" : undefined}>
-          <thead class="k2b-data-table__head" data-sticky={props.stickyHeader === false ? undefined : "true"}>
-            <tr class="k2b-data-table__head-row">
-              <For each={props.columns}>
-                {(col, index) => (
-                  <th
-                    scope="col"
-                    class={`${col.headerClass ?? ""} ${col.class ?? ""}`}
-                    data-align={alignAttr(col)}
-                    data-highlighted={columnHighlighted(index())}
-                    aria-sort={ariaSortFor(col)}
-                    onMouseEnter={() => setHoveredColumnIfEnabled(index())}
-                  >
-                    {props.renderHeader ? props.renderHeader({ col, render: () => renderHeaderDefault(col) }) : renderHeaderDefault(col)}
-                  </th>
-                )}
-              </For>
-            </tr>
-          </thead>
-          <tbody>
-            <Show
-              when={props.rows.length > 0}
-              fallback={
-                <tr>
-                  <td class="k2b-data-table__empty" colspan={props.columns.length}>
-                    <Placeholder description={<>{props.empty ?? "No records"}</>} />
-                  </td>
-                </tr>
-              }
-            >
-              <For each={props.rows}>
-                {(row) => {
-                  const id = () => rowId(row);
-                  const isSelected = () => props.selectedRowId && id() === props.selectedRowId;
-                  return (
-                    <tr
-                      class={`k2b-data-table__row ${rowClass(row)}`}
-                      data-hover={shouldHoverRows() ? "true" : undefined}
-                      data-clickable={shouldHoverRows() && isInteractive() ? "true" : undefined}
-                      data-selected={isSelected() ? "true" : undefined}
-                      tabIndex={isInteractive() ? 0 : undefined}
-                      onClick={(event) => onRowClick(event, row)}
-                      onDblClick={(event) => onRowDoubleClick(event, row)}
-                      onKeyDown={(e) => onRowKeyDown(e, row)}
+        <div
+          ref={scrollRef}
+          role="region"
+          aria-label={labelledBy() ? undefined : (props.ariaLabel ?? "Data table")}
+          aria-labelledby={labelledBy()}
+          tabIndex={0}
+          class="k2b-table-wrap"
+          data-density={props.density === "compact" ? "compact" : undefined}
+          data-has-footer={props.footer ? "true" : undefined}
+          data-surface={surface()}
+          data-scroll-preserve={props.scrollPreserveKey || undefined}
+          onScroll={onScroll}
+        >
+          <table ref={tableRef} class={tableClass()} data-fill={props.fillHeight ? "true" : undefined}>
+            <thead class="k2b-data-table__head" data-sticky={props.stickyHeader === false ? undefined : "true"}>
+              <tr class="k2b-data-table__head-row">
+                <For each={props.columns}>
+                  {(col, index) => (
+                    <th
+                      scope="col"
+                      class={`${col.headerClass ?? ""} ${col.class ?? ""}`}
+                      data-align={alignAttr(col)}
+                      data-highlighted={columnHighlighted(index())}
+                      aria-sort={ariaSortFor(col)}
+                      onMouseEnter={() => setHoveredColumnIfEnabled(index())}
                     >
-                      <For each={props.columns}>
-                        {(col, index) => {
-                          const value = () => valueOf(row, col);
-                          return (
-                            <td
-                              class={`${col.cellClass ?? ""} ${col.class ?? ""}`}
-                              data-align={alignAttr(col)}
-                              data-valign={props.verticalAlign && props.verticalAlign !== "middle" ? props.verticalAlign : undefined}
-                              data-highlighted={columnHighlighted(index())}
-                              onMouseEnter={() => setHoveredColumnIfEnabled(index())}
-                            >
-                              <div class={cellContentClass()}>
-                                {props.renderCell
-                                  ? props.renderCell({
-                                      row,
-                                      col,
-                                      value: value(),
-                                      render: (v) => renderCellDefault(row, { ...col, value: () => v }),
-                                    })
-                                  : defaultRender(value())}
-                              </div>
-                            </td>
-                          );
-                        }}
-                      </For>
-                    </tr>
-                  );
-                }}
-              </For>
-              <Show when={props.fillHeight}>
-                <tr aria-hidden="true">
-                  <td class="k2b-data-table__fill" colspan={props.columns.length} />
-                </tr>
+                      {props.renderHeader ? props.renderHeader({ col, render: () => renderHeaderDefault(col) }) : renderHeaderDefault(col)}
+                    </th>
+                  )}
+                </For>
+              </tr>
+            </thead>
+            <tbody>
+              <Show
+                when={props.rows.length > 0}
+                fallback={
+                  <tr>
+                    <td class="k2b-data-table__empty" colspan={props.columns.length}>
+                      <Placeholder description={<>{props.empty ?? "No records"}</>} />
+                    </td>
+                  </tr>
+                }
+              >
+                <For each={props.rows}>
+                  {(row) => {
+                    const id = () => rowId(row);
+                    const isSelected = () => props.selectedRowId && id() === props.selectedRowId;
+                    return (
+                      <tr
+                        class={`k2b-data-table__row ${rowClass(row)}`}
+                        data-hover={shouldHoverRows() ? "true" : undefined}
+                        data-clickable={shouldHoverRows() && isInteractive() ? "true" : undefined}
+                        data-selected={isSelected() ? "true" : undefined}
+                        tabIndex={isInteractive() ? 0 : undefined}
+                        onClick={(event) => onRowClick(event, row)}
+                        onDblClick={(event) => onRowDoubleClick(event, row)}
+                        onKeyDown={(e) => onRowKeyDown(e, row)}
+                      >
+                        <For each={props.columns}>
+                          {(col, index) => {
+                            const value = () => valueOf(row, col);
+                            return (
+                              <td
+                                class={`${col.cellClass ?? ""} ${col.class ?? ""}`}
+                                data-align={alignAttr(col)}
+                                data-valign={props.verticalAlign && props.verticalAlign !== "middle" ? props.verticalAlign : undefined}
+                                data-highlighted={columnHighlighted(index())}
+                                onMouseEnter={() => setHoveredColumnIfEnabled(index())}
+                              >
+                                <div class={cellContentClass()}>
+                                  {props.renderCell
+                                    ? props.renderCell({
+                                        row,
+                                        col,
+                                        value: value(),
+                                        render: (v) => renderCellDefault(row, { ...col, value: () => v }),
+                                      })
+                                    : defaultRender(value())}
+                                </div>
+                              </td>
+                            );
+                          }}
+                        </For>
+                      </tr>
+                    );
+                  }}
+                </For>
+                <Show when={props.fillHeight}>
+                  <tr aria-hidden="true">
+                    <td class="k2b-data-table__fill" colspan={props.columns.length} />
+                  </tr>
+                </Show>
               </Show>
+            </tbody>
+            <Show when={props.footer}>
+              {(footer) => (
+                <tfoot class="k2b-data-table__foot" data-sticky="true">
+                  <tr class="k2b-data-table__foot-row">
+                    <For each={props.columns}>
+                      {(col, index) => {
+                        const value = () => footer().values?.[col.id];
+                        return (
+                          <td
+                            class="k2b-data-table__footer-cell"
+                            data-align={alignAttr(col)}
+                            data-highlighted={columnHighlighted(index())}
+                            onMouseEnter={() => setHoveredColumnIfEnabled(index())}
+                          >
+                            {footer().renderCell
+                              ? footer().renderCell!({ col, value: value(), render: defaultRender })
+                              : defaultRender(value())}
+                          </td>
+                        );
+                      }}
+                    </For>
+                  </tr>
+                </tfoot>
+              )}
             </Show>
-          </tbody>
-          <Show when={props.footer}>
-            {(footer) => (
-              <tfoot class="k2b-data-table__foot" data-sticky="true">
-                <tr class="k2b-data-table__foot-row">
-                  <For each={props.columns}>
-                    {(col, index) => {
-                      const value = () => footer().values?.[col.id];
-                      return (
-                        <td
-                          class="k2b-data-table__footer-cell"
-                          data-align={alignAttr(col)}
-                          data-highlighted={columnHighlighted(index())}
-                          onMouseEnter={() => setHoveredColumnIfEnabled(index())}
-                        >
-                          {footer().renderCell
-                            ? footer().renderCell!({ col, value: value(), render: defaultRender })
-                            : defaultRender(value())}
-                        </td>
-                      );
-                    }}
-                  </For>
-                </tr>
-              </tfoot>
-            )}
+          </table>
+          <Show when={shouldRenderLoadMoreSentinel()}>
+            <div ref={loadMoreRef} class="k2b-data-table__sentinel" aria-hidden="true" />
           </Show>
-        </table>
-        <Show when={shouldRenderLoadMoreSentinel()}>
-          <div ref={loadMoreRef} class="k2b-data-table__sentinel" aria-hidden="true" />
-        </Show>
+        </div>
+        <For each={["y", "x"] as const}>
+          {(axis) => (
+            <div
+              class="k2b-data-table__scrollbar"
+              data-axis={axis}
+              data-overflow={scrollbars()[axis].overflow ? "true" : undefined}
+              aria-hidden="true"
+              onPointerDown={(event) => startScrollbarDrag(event, axis)}
+              onPointerMove={(event) => {
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) scrollFromPointer(event, axis);
+              }}
+              onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)}
+              onPointerCancel={(event) => event.currentTarget.releasePointerCapture(event.pointerId)}
+            >
+              <span
+                style={{
+                  "--k2b-data-table-scroll-offset": `${scrollbars()[axis].offset}px`,
+                  "--k2b-data-table-scroll-size": `${scrollbars()[axis].size}px`,
+                }}
+              />
+            </div>
+          )}
+        </For>
       </Dynamic>
     </Show>
   );

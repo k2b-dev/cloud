@@ -1694,7 +1694,7 @@
 }
 
 /* A table summary footer already separates the data from panel controls. */
-.k2b-ui .k2b-data-panel > .k2b-table-wrap[data-has-footer="true"] + .k2b-data-panel__footer {
+.k2b-ui .k2b-data-panel > .k2b-table-shell[data-has-footer="true"] + .k2b-data-panel__footer {
   border-top: 0;
 }
 
@@ -5074,23 +5074,110 @@
  * `@apply` so the computed geometry matches Cloud without asking consumers
  * to run a Tailwind scan over `node_modules`. */
 
-/* Structural only: when the caller passes its own `class`, Cloud's element
- * carries nothing else either, so scrolling stays caller-owned. */
-.k2b-ui .k2b-table-wrap {
-  @apply min-w-0;
+/* The shell owns sizing and the visual surface; its inner viewport is the one
+ * scroll owner. Keeping the overlay outside that viewport lets its thumb sit
+ * above sticky headers and rows without reducing the table's width. */
+.k2b-ui .k2b-table-shell {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
 }
 
 /* Cloud's default container class is `paper overflow-auto flex-1 min-h-0`. */
-.k2b-ui .k2b-table-wrap[data-surface="paper"] {
-  @apply min-h-0 flex-1 overflow-auto;
+.k2b-ui .k2b-table-shell[data-surface="paper"] {
+  @apply min-h-0 flex-1;
+}
+
+.k2b-ui .k2b-table-wrap {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
 }
 
 /* The panel already owns the enclosing surface. A directly nested table only
    contributes its header and row separators, avoiding a doubled frame. */
-.k2b-ui .k2b-data-panel > .k2b-table-wrap[data-surface="paper"] {
+.k2b-ui .k2b-data-panel > .k2b-table-shell[data-surface="paper"] {
   border: 0;
   border-radius: 0;
   box-shadow: none;
+}
+
+.k2b-ui .k2b-data-table__scrollbar {
+  position: absolute;
+  z-index: 20;
+  display: none;
+  border-radius: 9999px;
+  opacity: 0;
+  pointer-events: none;
+  touch-action: none;
+  transition: opacity 120ms ease;
+}
+
+.k2b-ui .k2b-data-table__scrollbar[data-axis="y"] {
+  top: 0.125rem;
+  right: 0.125rem;
+  bottom: 0.125rem;
+  width: 0.625rem;
+}
+
+.k2b-ui .k2b-data-table__scrollbar[data-axis="x"] {
+  right: 0.125rem;
+  bottom: 0.125rem;
+  left: 0.125rem;
+  height: 0.625rem;
+}
+
+.k2b-ui .k2b-data-table__scrollbar > span {
+  position: absolute;
+  display: block;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  background: var(--k2b-scrollbar-thumb);
+  background-clip: padding-box;
+}
+
+.k2b-ui .k2b-data-table__scrollbar[data-axis="y"] > span {
+  top: var(--k2b-data-table-scroll-offset);
+  right: 0;
+  width: 100%;
+  height: var(--k2b-data-table-scroll-size);
+}
+
+.k2b-ui .k2b-data-table__scrollbar[data-axis="x"] > span {
+  bottom: 0;
+  left: var(--k2b-data-table-scroll-offset);
+  width: var(--k2b-data-table-scroll-size);
+  height: 100%;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-table-wrap {
+    scrollbar-width: none;
+  }
+
+  .k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-table-wrap::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  .k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-data-table__scrollbar[data-overflow="true"] {
+    display: block;
+  }
+
+  .k2b-ui
+    .k2b-table-shell:is(:hover, :focus-within, [data-scrolling="true"])
+    > .k2b-data-table__scrollbar[data-overflow="true"] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .k2b-ui .k2b-data-table__scrollbar:hover > span {
+    background: var(--k2b-scrollbar-thumb-hover);
+  }
 }
 
 .k2b-ui .k2b-data-table {
@@ -5565,6 +5652,29 @@
   scrollbar-gutter: stable;
 }
 
+.k2b-ui {
+  --k2b-scrollbar-thumb: rgb(82 82 91 / 0.55);
+  --k2b-scrollbar-thumb-hover: rgb(82 82 91 / 0.75);
+  scrollbar-color: var(--k2b-scrollbar-thumb) transparent;
+}
+
+.k2b-ui:is([data-theme="dark"], .k2b-dark),
+.dark .k2b-ui {
+  --k2b-scrollbar-thumb: rgb(113 113 122 / 0.55);
+  --k2b-scrollbar-thumb-hover: rgb(113 113 122 / 0.75);
+}
+
+.k2b-ui::-webkit-scrollbar-track,
+.k2b-ui *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.k2b-ui::-webkit-scrollbar-thumb,
+.k2b-ui *::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background: var(--k2b-scrollbar-thumb);
+}
+
 /* Large workspace scrollers stay visually quiet until the pointer or keyboard
    enters their region. The scrollbar geometry never changes, and touch or
    coarse-pointer devices keep their normal always-visible treatment. */
@@ -5583,20 +5693,20 @@
 
   .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within),
   .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within) {
-    scrollbar-color: color-mix(in srgb, var(--k2b-text-muted) 55%, transparent) transparent;
+    scrollbar-color: var(--k2b-scrollbar-thumb) transparent;
   }
 
   .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within)::-webkit-scrollbar-thumb,
   .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar-thumb {
     border: 1px solid transparent;
     border-radius: 9999px;
-    background: color-mix(in srgb, var(--k2b-text-muted) 55%, transparent);
+    background: var(--k2b-scrollbar-thumb);
     background-clip: padding-box;
   }
 
   .k2b-ui .k2b-app-workspace__sidebar-body:is(:hover, :focus-within)::-webkit-scrollbar-thumb:hover,
   .k2b-ui .k2b-chat-timeline__viewport:is(:hover, :focus-within)::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--k2b-text-muted) 75%, transparent);
+    background: var(--k2b-scrollbar-thumb-hover);
     background-clip: padding-box;
   }
 }
@@ -6607,17 +6717,32 @@
 }
 
 @media (forced-colors: active) {
+  .k2b-ui,
   .k2b-ui .k2b-app-workspace__sidebar-body,
-  .k2b-ui .k2b-chat-timeline__viewport {
+  .k2b-ui .k2b-chat-timeline__viewport,
+  .k2b-ui .k2b-table-wrap {
     scrollbar-color: auto;
   }
 
+  .k2b-ui::-webkit-scrollbar-track,
+  .k2b-ui *::-webkit-scrollbar-track,
+  .k2b-ui::-webkit-scrollbar-thumb,
+  .k2b-ui *::-webkit-scrollbar-thumb,
   .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-track,
   .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-track,
   .k2b-ui .k2b-app-workspace__sidebar-body::-webkit-scrollbar-thumb,
   .k2b-ui .k2b-chat-timeline__viewport::-webkit-scrollbar-thumb {
     border: revert;
     background: revert;
+  }
+
+  .k2b-ui .k2b-table-wrap::-webkit-scrollbar {
+    width: auto;
+    height: auto;
+  }
+
+  .k2b-ui .k2b-data-table__scrollbar {
+    display: none !important;
   }
 
   .k2b-ui .k2b-number-input__step:focus-visible,

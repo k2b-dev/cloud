@@ -63,6 +63,32 @@ describe("@k2b/ui stylesheet hygiene", () => {
     }
   });
 
+  test("overlays DataTable scrollbars and keeps dark scrollbars quieter", () => {
+    const rules = readShippedCssRules(stylesDir);
+    const finePointer = "@media (hover: hover) and (pointer: fine)";
+    const forcedColors = "@media (forced-colors: active)";
+    const declarations = (selector: string, context = "") => {
+      const rule = rules.find((candidate) => candidate.selector === selector && candidate.context === context);
+      expect(rule, `${context} ${selector}`).toBeDefined();
+      return cssDeclarations(rule!.body);
+    };
+
+    expect(declarations(".k2b-ui .k2b-table-shell").get("overflow")).toEqual(["hidden"]);
+    expect(declarations(".k2b-ui .k2b-table-wrap").get("overflow")).toEqual(["auto"]);
+    expect(
+      declarations('.k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-table-wrap', finePointer).get("scrollbar-width"),
+    ).toEqual(["none"]);
+    expect(
+      declarations(
+        '.k2b-ui .k2b-table-shell[data-scrollbar-enhanced="true"] > .k2b-data-table__scrollbar[data-overflow="true"]',
+        finePointer,
+      ).get("display"),
+    ).toEqual(["block"]);
+    expect(declarations(".k2b-ui .k2b-data-table__scrollbar", forcedColors).get("display")).toEqual(["none !important"]);
+    expect(shippedCss).toContain("--k2b-scrollbar-thumb: rgb(113 113 122 / 0.55)");
+    expect(shippedCss).toContain("background: var(--k2b-scrollbar-thumb-hover)");
+  });
+
   test("does not restore selectors and tokens proven dead during migration", () => {
     const removed = [
       "k2b-button--secondary",

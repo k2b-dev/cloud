@@ -259,6 +259,7 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(html).toContain("direction=desc");
     expect(html).toContain('data-scroll-preserve="people"');
     expect(html).toContain('tabindex="0"');
+    expect(html).not.toContain('data-scrollbar-enhanced="true"');
     expect(html).toContain('data-selected="true"');
     expect(html).toContain('data-has-footer="true"');
     expect(html).toContain("Total");
@@ -323,7 +324,8 @@ describe("@k2b/ui Cloud content contract", () => {
     );
 
     expect(paper).toContain('data-surface="paper"');
-    expect(paper).toContain('class="k2b-paper k2b-table-wrap overflow-x-auto');
+    expect(paper).toContain('class="k2b-paper k2b-table-shell overflow-x-auto');
+    expect(paper).toContain('class="k2b-table-wrap"');
     expect(paper).toContain("overflow-x-auto");
     expect(plain).toContain('data-surface="plain"');
     expect(plain).not.toContain("k2b-paper");

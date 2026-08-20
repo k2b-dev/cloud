@@ -147,6 +147,47 @@ describe("@k2b/ui content and chat behavior", () => {
     dom.cleanup();
   });
 
+  test("tracks DataTable overflow without exposing a second scroll owner", async () => {
+    const dom = createDomTestHarness();
+    const { default: DataTable } = await import("../src/content/DataTable");
+    const dispose = render(
+      () =>
+        createComponent(DataTable<{ id: string }>, {
+          rows: [{ id: "one" }],
+          columns: [{ id: "id", header: "ID", value: "id" }],
+        }),
+      dom.root,
+    );
+    const shell = dom.root.querySelector<HTMLElement>(".k2b-table-shell")!;
+    const viewport = dom.root.querySelector<HTMLElement>(".k2b-table-wrap")!;
+    const vertical = dom.root.querySelector<HTMLElement>('.k2b-data-table__scrollbar[data-axis="y"]')!;
+    const horizontal = dom.root.querySelector<HTMLElement>('.k2b-data-table__scrollbar[data-axis="x"]')!;
+
+    Object.defineProperties(viewport, {
+      clientHeight: { configurable: true, value: 100 },
+      scrollHeight: { configurable: true, value: 400 },
+      clientWidth: { configurable: true, value: 240 },
+      scrollWidth: { configurable: true, value: 240 },
+      scrollTop: { configurable: true, writable: true, value: 100 },
+    });
+    viewport.dispatchEvent(new Event("scroll"));
+    await Promise.resolve();
+
+    expect(shell.dataset.scrollbarEnhanced).toBe("true");
+    expect(shell.dataset.overflowY).toBe("true");
+    expect(shell.dataset.overflowX).toBeUndefined();
+    expect(shell.dataset.scrolling).toBe("true");
+    expect(vertical.dataset.overflow).toBe("true");
+    expect(horizontal.dataset.overflow).toBeUndefined();
+    expect((vertical.firstElementChild as HTMLElement | null)?.style.getPropertyValue("--k2b-data-table-scroll-size")).toBe("25px");
+    expect(vertical.getAttribute("aria-hidden")).toBe("true");
+    expect(viewport.getAttribute("role")).toBe("region");
+    expect(viewport.getAttribute("tabindex")).toBe("0");
+
+    dispose();
+    dom.cleanup();
+  });
+
   test("reacts when pagination grows beyond one page", async () => {
     const dom = createDomTestHarness();
     const { Pagination } = await import("../src/content/Pagination");
