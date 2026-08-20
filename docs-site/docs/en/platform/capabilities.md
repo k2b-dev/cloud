@@ -759,12 +759,17 @@ The authenticated `/api/mcp/v1` endpoint projects the live catalog as MCP
 tools:
 
 ```text
+cloud__resource__read
 inventory__query__item.read
 inventory__action__item.rename
 ```
 
 Queries become read-only tools. Query and Action `openWorld` values become
 `openWorldHint`; Action metadata also becomes destructive and idempotent hints.
+A generic client passes any returned typed ref unchanged to
+`cloud__resource__read`; Cloud resolves the Type's current canonical reader
+from the live manifest instead of requiring the client to discover or guess
+the Query name.
 A required idempotency key is a separate `idempotencyKey` tool argument. MCP
 uses the same Core dispatcher and has no broader authorization or approval
 contract.

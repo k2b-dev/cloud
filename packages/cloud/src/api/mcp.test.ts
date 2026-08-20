@@ -16,7 +16,7 @@ const compiled = compileCapabilities(
   "demo",
   defineCapabilities({
     protocolVersion: 1,
-    types: { item: { title: "Item", description: "One demo item." } },
+    types: { item: { title: "Item", description: "One demo item.", reader: "get" } },
     queries: {
       get: {
         title: "Get item",
@@ -32,7 +32,14 @@ const compiled = compileCapabilities(
         title: "Create item",
         description: "Create one demo item.",
         input: z.object({ title: z.string().describe("Item title.") }).strict(),
-        data: z.object({ id: z.string() }).strict(),
+        data: z
+          .object({
+            id: z.string(),
+            links: z
+              .array(z.object({ rel: z.enum(["open", "edit"]), href: z.string(), title: z.string().optional() }).strict())
+              .optional(),
+          })
+          .strict(),
         destructive: false,
         openWorld: false,
         idempotency: "required",
@@ -156,6 +163,7 @@ describe("capability MCP projection", () => {
     await client.connect(transport);
     try {
       expect((await client.listTools()).tools.map((tool) => tool.name)).toContain("demo__query__get");
+      expect((await client.listTools()).tools.map((tool) => tool.name)).toContain("cloud__resource__read");
       expect((await client.listResources()).resources).toMatchObject([{ uri: "cloud://help/demo/getting-started" }]);
       expect((await client.readResource({ uri: "cloud://help/demo/getting-started" })).contents[0]).toMatchObject({
         mimeType: "text/markdown",
@@ -222,6 +230,7 @@ describe("capability MCP projection", () => {
       }
     ).result;
     expect(result.tools.map((tool) => tool.name)).toEqual([
+      "cloud__resource__read",
       "cloud__help__search",
       "cloud__help__read",
       "demo__action__create",
@@ -399,7 +408,7 @@ describe("capability MCP projection", () => {
     ).result;
     expect(first.tools).toHaveLength(100);
     expect(first.nextCursor).toBe(first.tools.at(-1)?.name);
-    expect(lookups).toBe(99);
+    expect(lookups).toBe(98);
 
     lookups = 0;
     const secondResponse = await rpc(routes, {
@@ -413,9 +422,9 @@ describe("capability MCP projection", () => {
         result: { tools: Tool[]; nextCursor?: string };
       }
     ).result;
-    expect(second.tools).toHaveLength(52);
+    expect(second.tools).toHaveLength(53);
     expect(second.nextCursor).toBeUndefined();
-    expect(lookups).toBe(53);
+    expect(lookups).toBe(54);
 
     const afterHelpResponse = await rpc(routes, {
       jsonrpc: "2.0",
@@ -718,7 +727,10 @@ describe("capability MCP projection", () => {
       fetch: async (_input, init) => {
         forwarded = new Headers(init?.headers);
         return Response.json({
-          data: { id: "created" },
+          data: {
+            id: "created",
+            links: [{ rel: "open", href: "/app/demo/created", title: "Open item" }],
+          },
           refs: [{ type: "demo.item", id: "created" }],
           links: [{ rel: "edit", href: "/app/demo/created", title: "Edit item" }],
         });
@@ -749,8 +761,65 @@ describe("capability MCP projection", () => {
         name: "Edit item",
       }),
     );
+    expect(result.content).toContainEqual(
+      expect.objectContaining({
+        type: "resource_link",
+        uri: "https://cloud.example/app/demo/created",
+        name: "Open item",
+      }),
+    );
     expect(forwarded?.get("authorization")).toBe("Bearer caller");
     expect(forwarded?.get("idempotency-key")).toBe("create-1");
+  });
+
+  test("reads a typed resource ref through its current canonical reader", async () => {
+    let requestedUrl = "";
+    let requestedBody: unknown;
+    const routes = createMcpRoutes({
+      getCapability: async () => app,
+      authenticate: async (_c, next) => next(),
+      fetch: async (input, init) => {
+        requestedUrl = String(input);
+        requestedBody = JSON.parse(String(init?.body));
+        return Response.json({ data: { id: "one" }, refs: [{ type: "demo.item", id: "one" }] });
+      },
+    });
+    const response = await rpc(routes, {
+      jsonrpc: "2.0",
+      id: 70,
+      method: "tools/call",
+      params: { name: "cloud__resource__read", arguments: { type: "demo.item", id: "one" } },
+    });
+
+    expect(await response.json()).toMatchObject({ result: { structuredContent: { data: { id: "one" } } } });
+    expect(requestedUrl).toContain("/queries/get");
+    expect(requestedBody).toEqual({ input: { id: "one" } });
+  });
+
+  test("returns actionable resource-ref validation and reader errors", async () => {
+    const routes = createMcpRoutes({ getCapability: async () => app, authenticate: async (_c, next) => next() });
+    const invalid = await rpc(routes, {
+      jsonrpc: "2.0",
+      id: 71,
+      method: "tools/call",
+      params: { name: "cloud__resource__read", arguments: { type: "demo.item" } },
+    });
+    expect(await invalid.json()).toMatchObject({
+      result: { isError: true, structuredContent: { code: "VALIDATION_FAILED", message: expect.stringContaining("id") } },
+    });
+
+    const unknown = await rpc(routes, {
+      jsonrpc: "2.0",
+      id: 72,
+      method: "tools/call",
+      params: { name: "cloud__resource__read", arguments: { type: "demo.missing", id: "one" } },
+    });
+    expect(await unknown.json()).toMatchObject({
+      result: {
+        isError: true,
+        structuredContent: { code: "CAPABILITY_NOT_FOUND", message: expect.stringContaining("demo.missing") },
+      },
+    });
   });
 
   test("does not accept an MCP idempotency key outside the validated tool arguments", async () => {

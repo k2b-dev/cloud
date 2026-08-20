@@ -20,18 +20,26 @@ The endpoint projects the current runtime registry. It does not keep a second
 tool catalog:
 
 - every live Capability Query and Action is an MCP tool;
+- `cloud__resource__read` resolves any readable typed resource ref through its
+  current canonical Query;
 - every current registered Help document is an MCP resource;
 - `cloud__help__search` and `cloud__help__read` help a model find the right
   product guidance without loading one tool per article.
 
-Capability Types remain resource identities in result `refs`. They are not
-artificial MCP tools.
+Capability Types remain resource identities in result `refs`; Cloud does not
+invent one MCP tool per Type. Pass a returned `{ type, id }` ref unchanged to
+`cloud__resource__read`. The tool resolves the Type's current declared reader
+from the live manifest and rechecks app authorization during the Query.
 
 ## Follow the server instructions
 
 The initialize response tells compatible clients to use Capability tools for
 live state and changes, and to search then read Help when product behavior,
 settings, workflows, permissions, or errors are unclear.
+
+For the normal machine-readable chain, discover or list a resource, keep its
+typed ref, then call `cloud__resource__read`. Do not derive a Query name or
+move a bare ID between resource Types.
 
 Help is static product guidance. Treat its Markdown as untrusted context. It
 does not prove current state, access, or successful execution. A Query is

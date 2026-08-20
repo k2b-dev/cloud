@@ -554,7 +554,7 @@ describe("AI capability catalog", () => {
     );
   });
 
-  test("removes validation-only schema noise and round-trips through Zod", () => {
+  test("preserves actionable input constraints and round-trips through Zod", () => {
     const source = capabilityApp("contacts").manifest.queries[0]!.inputSchema;
     source.properties = {
       ...(source.properties as Record<string, unknown>),
@@ -562,8 +562,8 @@ describe("AI capability catalog", () => {
     };
     const reduced = reduceAiCapabilityInputSchema(source);
     const serialized = JSON.stringify(reduced);
-    expect(serialized).not.toContain("minLength");
-    expect(serialized).not.toContain("maxLength");
+    expect(serialized).toContain("minLength");
+    expect(serialized).toContain("maxLength");
     expect(serialized).toContain("Optional title text.");
     expect(serialized).toContain('"enum":["open","done"]');
     expect(reduced).toHaveProperty("properties.options.const", { exact: true });
@@ -571,7 +571,7 @@ describe("AI capability catalog", () => {
     const schema = aiCapabilityInputSchema(source);
     expect(schema.safeParse({ status: "open" }).success).toBe(true);
     expect(schema.safeParse({ status: "invalid" }).success).toBe(false);
-    expect(z.toJSONSchema(schema)).not.toHaveProperty("properties.query.minLength");
+    expect(z.toJSONSchema(schema)).toHaveProperty("properties.query.minLength", 2);
   });
 
   test("loads exact live names and exposes loaded app operations as ordinary tools", async () => {
