@@ -279,6 +279,21 @@ describe("@k2b/ui Cloud content contract", () => {
     );
   });
 
+  test("keeps the DataTable overlay scrollbar as quiet as shared panel scrollbars", () => {
+    expect(uiCss).toMatch(/\.k2b-data-table__scrollbar\[data-axis="y"\] \{[^}]*width: 0\.5rem/s);
+    expect(uiCss).toMatch(/\.k2b-data-table__scrollbar\[data-axis="x"\] \{[^}]*height: 0\.5rem/s);
+    expect(uiCss).toMatch(
+      /\.k2b-data-table__scrollbar > span \{[^}]*border: 1px solid transparent[^}]*var\(--k2b-scrollbar-thumb\) 45%, transparent/s,
+    );
+    expect(uiCss).toMatch(
+      /\.k2b-data-table__scrollbar:hover > span \{[^}]*background: var\(--k2b-scrollbar-thumb\)[^}]*background-clip: padding-box/s,
+    );
+  });
+
+  test("keeps the load-more sentinel observable without creating vertical overflow", () => {
+    expect(uiCss).toMatch(/\.k2b-data-table__sentinel \{[^}]*height: 1px[^}]*margin-top: -1px/s);
+  });
+
   test("composes a labelled professional DataTable panel without component-valued props", () => {
     type Row = { id: string; name: string };
     const html = renderToString(() =>

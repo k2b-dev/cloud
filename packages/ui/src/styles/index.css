@@ -5129,14 +5129,14 @@
   top: 0.125rem;
   right: 0.125rem;
   bottom: 0.125rem;
-  width: 0.625rem;
+  width: 0.5rem;
 }
 
 .k2b-ui .k2b-data-table__scrollbar[data-axis="x"] {
   right: 0.125rem;
   bottom: 0.125rem;
   left: 0.125rem;
-  height: 0.625rem;
+  height: 0.5rem;
 }
 
 .k2b-ui .k2b-data-table__scrollbar > span {
@@ -5144,7 +5144,7 @@
   display: block;
   border: 1px solid transparent;
   border-radius: 9999px;
-  background: var(--k2b-scrollbar-thumb);
+  background: color-mix(in srgb, var(--k2b-scrollbar-thumb) 45%, transparent);
   background-clip: padding-box;
 }
 
@@ -5184,7 +5184,8 @@
   }
 
   .k2b-ui .k2b-data-table__scrollbar:hover > span {
-    background: var(--k2b-scrollbar-thumb-hover);
+    background: var(--k2b-scrollbar-thumb);
+    background-clip: padding-box;
   }
 }
 
@@ -5340,7 +5341,9 @@
 }
 
 .k2b-ui .k2b-data-table__sentinel {
-  @apply h-1;
+  /* Keep the observer target measurable without extending a fill-height table. */
+  height: 1px;
+  margin-top: -1px;
 }
 
 /* -------------------------------------------------------------- log table */
