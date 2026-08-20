@@ -353,6 +353,7 @@ const runNotebookRead = async (input: z.infer<typeof NotebookReadInputSchema>, c
   if (!access.ok) return access;
   return ok({
     data: mapNotebook(access.data.notebook, access.data.permission as Exclude<PermissionLevel, "none">),
+    summary: `Read notebook “${access.data.notebook.name}”.`,
     refs: [{ type: "notebooks.notebook", id: access.data.notebook.shortId }],
     links: [{ rel: "open" as const, href: notebookHref(access.data.notebook) }],
   });
@@ -414,6 +415,7 @@ const runNoteRead = async (input: z.infer<typeof NoteReadInputSchema>, context: 
       blocks: blocks.slice(0, 500),
       blocksTruncated: blocks.length > 500,
     },
+    summary: `Read note “${note.title}”.`,
     refs: [
       { type: "notebooks.note", id: note.shortId },
       { type: "notebooks.notebook", id: resolved.data.notebook.shortId },
@@ -656,7 +658,8 @@ export const notebooksCapabilities = defineCapabilities({
   queries: {
     "notebook.search": {
       title: "Search notebooks",
-      description: "Find accessible notebooks by name or description.",
+      description:
+        "Find accessible notebooks by name or description when no notebook is known. Use returned notebooks.notebook refs with notebook.read or their IDs with note.tree and tag.list.",
       input: UniversalSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -667,7 +670,8 @@ export const notebooksCapabilities = defineCapabilities({
     },
     "note.search": {
       title: "Search notes",
-      description: "Find accessible Markdown notes by title or content.",
+      description:
+        "Direct cross-notebook entry for finding Markdown notes by title or content. Use returned notebooks.note refs with note.read; use note.tree to browse one known notebook without full-text search.",
       input: UniversalSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -678,7 +682,8 @@ export const notebooksCapabilities = defineCapabilities({
     },
     "notebook.list": {
       title: "List notebooks",
-      description: "List accessible notebooks with effective permission, bounded pagination, and item-local notebooks.notebook refs.",
+      description:
+        "Normal entry for notebook-scoped work. List accessible notebooks with effective permission; use returned notebooks.notebook refs or IDs with notebook.read, note.tree, tag.list, or note.create.",
       input: NotebookListInputSchema,
       data: NotebookListDataSchema,
       openWorld: false,
@@ -686,7 +691,7 @@ export const notebooksCapabilities = defineCapabilities({
     },
     "notebook.read": {
       title: "Read notebook",
-      description: "Read one accessible notebook from a notebooks.notebook ref or notebook ID, including its homepage note ID.",
+      description: "Read one notebooks.notebook ref returned by notebook.list or notebook.search, including its homepage note ID.",
       input: NotebookReadInputSchema,
       data: NotebookDataSchema,
       openWorld: false,
@@ -694,7 +699,8 @@ export const notebooksCapabilities = defineCapabilities({
     },
     "note.tree": {
       title: "List note tree",
-      description: "Traverse a large notebook as a compact flat adjacency index with notebooks.note refs, without loading Markdown.",
+      description:
+        "Browse the hierarchy of one known notebook without loading Markdown. Get notebookId from notebook.list or notebook.search; use returned notebooks.note refs with note.read.",
       input: NoteTreeInputSchema,
       data: NoteTreeDataSchema,
       openWorld: false,
@@ -702,7 +708,8 @@ export const notebooksCapabilities = defineCapabilities({
     },
     "note.read": {
       title: "Read note",
-      description: "Read a note from a notebooks.note ref or note ID as a bounded Markdown window plus hashes, tags, and named-block summaries.",
+      description:
+        "Read one notebooks.note ref returned by note.search, note.tree, note.links, or tag.notes as a bounded Markdown window with hashes, tags, and named-block summaries.",
       input: NoteReadInputSchema,
       data: NoteDetailDataSchema,
       openWorld: false,
@@ -710,7 +717,8 @@ export const notebooksCapabilities = defineCapabilities({
     },
     "note.links": {
       title: "List note links and backlinks",
-      description: "List bounded incoming links, outgoing links, and backlinks without revealing inaccessible targets.",
+      description:
+        "List incoming or outgoing links after one note is known. Get noteId from a notebooks.note ref; inaccessible targets are omitted and returned note refs can be opened with note.read.",
       input: NoteLinksInputSchema,
       data: NoteLinksDataSchema,
       openWorld: false,
@@ -718,7 +726,8 @@ export const notebooksCapabilities = defineCapabilities({
     },
     "tag.list": {
       title: "List notebook tags",
-      description: "List the bounded tag vocabulary and note counts of one readable notebook.",
+      description:
+        "List tags and note counts in one known notebook. Get notebookId from notebook.list or notebook.search; use a returned tag value with tag.notes.",
       input: TagListInputSchema,
       data: TagListDataSchema,
       openWorld: false,
@@ -726,7 +735,8 @@ export const notebooksCapabilities = defineCapabilities({
     },
     "tag.notes": {
       title: "List notes by tag",
-      description: "List a bounded page of notes carrying one dynamic notebook tag.",
+      description:
+        "List notes carrying one tag in a known notebook. Get notebookId from notebook.list and tag from tag.list; use returned notebooks.note refs with note.read.",
       input: TagNotesInputSchema,
       data: TagNotesDataSchema,
       openWorld: false,

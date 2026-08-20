@@ -170,6 +170,9 @@ describe("notebooks capabilities", () => {
         .map(([id]) => id)
         .sort(),
     ).toEqual(["note.search", "notebook.search"]);
+    expect(notebooksCapabilities.queries["notebook.list"].description).toContain("Normal entry for notebook-scoped work");
+    expect(notebooksCapabilities.queries["note.search"].description).toContain("Direct cross-notebook entry");
+    expect(notebooksCapabilities.queries["note.tree"].description).toContain("use returned notebooks.note refs with note.read");
   });
 
   test("keeps write schemas strict and bounded", () => {
@@ -272,6 +275,7 @@ describe("notebooks capabilities", () => {
     expect(result.data.data.nextContentOffset).toBe(12);
     expect(result.data.data.contentHash).toBe(noteContentHash(note.contentMd));
     expect(result.data.data.tags).toEqual(["docs"]);
+    expect(result.data.summary).toBe("Read note “Knowledge index”.");
     expect(result.data.data).not.toHaveProperty("yjsSnapshot");
     expect(NoteDetailDataSchema.safeParse(result.data.data).success).toBeTrue();
   });
@@ -318,6 +322,7 @@ describe("notebooks capabilities", () => {
     expect(read.ok).toBeTrue();
     expect(getByShortId).toHaveBeenCalledWith({ shortId: ref.id });
     if (!read.ok) return;
+    expect(read.data.summary).toBe("Read notebook “Knowledge”.");
     expect(read.data.refs).toEqual([ref]);
     expect(read.data.links).toEqual([{ rel: "open", href: `/app/notebooks/${notebook.shortId}` }]);
   });
