@@ -72,6 +72,10 @@ options, apply the third `group` argument in the data source and return the
 matching page. The component does not filter a partial remote result page in
 the browser.
 
+Group chips stay on one horizontal row. When they exceed the dropdown width,
+the row scrolls by touch or trackpad and reveals an overlay scrollbar on hover
+or keyboard focus without changing the toolbar height.
+
 ```tsx
 <Select
   label="Icon"

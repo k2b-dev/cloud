@@ -289,6 +289,40 @@ describe("@k2b/ui choice and date browser behavior", () => {
     dom.cleanup();
   });
 
+  test("overlays the group scrollbar without changing the toolbar geometry", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { Select } = await import("../src/inputs/Select");
+    const dispose = render(
+      () =>
+        createComponent(Select, {
+          label: "Field",
+          value: null,
+          groups: Array.from({ length: 8 }, (_, index) => ({ value: `group-${index}`, label: `Group ${index}` })),
+          options: [{ value: "one", label: "One" }],
+        }),
+      dom.root,
+    );
+
+    const groups = dom.root.querySelector<HTMLDivElement>(".k2b-choice-groups")!;
+    Object.defineProperties(groups, {
+      clientWidth: { configurable: true, value: 200 },
+      scrollWidth: { configurable: true, value: 500 },
+      scrollLeft: { configurable: true, writable: true, value: 100 },
+    });
+    groups.dispatchEvent(new Event("scroll"));
+    await Promise.resolve();
+
+    const scrollbar = dom.root.querySelector<HTMLElement>(".k2b-choice-groups-scrollbar");
+    expect(scrollbar?.getAttribute("aria-hidden")).toBe("true");
+    expect(scrollbar?.querySelector("span")?.getAttribute("style")).toContain("--k2b-choice-scroll-left: 40px");
+    expect(scrollbar?.querySelector("span")?.getAttribute("style")).toContain("--k2b-choice-scroll-width: 80px");
+
+    dispose();
+    popover.restore();
+    dom.cleanup();
+  });
+
   test("passes the active Select group to remote loaders", async () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);

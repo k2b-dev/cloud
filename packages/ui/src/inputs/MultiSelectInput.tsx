@@ -1,6 +1,7 @@
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { colorTintStyle, normalizeHexColor } from "../internal/color";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { ChoiceGroups } from "./ChoiceGroups";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, filterChoiceOptions, nextEnabledChoiceIndex } from "./choice";
 import type { ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
@@ -61,7 +62,6 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
   const [cache, setCache] = createSignal<Record<string, NormalizedOption>>({});
   const [selectedGroup, setSelectedGroup] = createSignal<string | null>(props.defaultGroup ?? null);
   let searchRef: HTMLInputElement | undefined;
-  let groupRefs: HTMLButtonElement[] = [];
 
   const values = () => resolveMaybeAccessor(props.value) ?? [];
   const error = () => resolveMaybeAccessor(props.error);
@@ -115,17 +115,6 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
     setSelectedGroup(group);
     focusFirst();
     if (isAsync()) asyncOptions.load(query(), true);
-  };
-  const moveGroupFocus = (index: number, direction: 1 | -1) => {
-    const choices = groupChoices();
-    const next = (index + direction + choices.length) % choices.length;
-    chooseGroup(choices[next]?.value ?? null);
-    queueMicrotask(() => groupRefs[next]?.focus());
-  };
-  const focusGroupEdge = (last: boolean) => {
-    const index = last ? groupChoices().length - 1 : 0;
-    chooseGroup(groupChoices()[index]?.value ?? null);
-    queueMicrotask(() => groupRefs[index]?.focus());
   };
   const open = () => {
     if (props.disabled) return;
@@ -306,35 +295,13 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
           </Show>
           <Show when={(props.groups?.length ?? 0) > 0}>
             <div class="k2b-choice-toolbar">
-              <div class="k2b-choice-groups" role="radiogroup" aria-label={props.groupsAriaLabel ?? "Filter options"}>
-                <For each={groupChoices()}>
-                  {(group, index) => (
-                    <button
-                      ref={(element) => (groupRefs[index()] = element)}
-                      type="button"
-                      role="radio"
-                      aria-checked={activeGroup() === group.value}
-                      aria-controls={listboxId}
-                      tabIndex={activeGroup() === group.value ? 0 : -1}
-                      onClick={() => chooseGroup(group.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-                          event.preventDefault();
-                          moveGroupFocus(index(), 1);
-                        } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-                          event.preventDefault();
-                          moveGroupFocus(index(), -1);
-                        } else if (event.key === "Home" || event.key === "End") {
-                          event.preventDefault();
-                          focusGroupEdge(event.key === "End");
-                        }
-                      }}
-                    >
-                      {group.label}
-                    </button>
-                  )}
-                </For>
-              </div>
+              <ChoiceGroups
+                choices={groupChoices()}
+                value={activeGroup()}
+                onValueChange={chooseGroup}
+                ariaLabel={props.groupsAriaLabel ?? "Filter options"}
+                controls={listboxId}
+              />
             </div>
           </Show>
           <div id={listboxId} class="k2b-choice-options" role="listbox" aria-multiselectable="true">

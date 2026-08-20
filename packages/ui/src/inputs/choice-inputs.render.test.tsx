@@ -183,6 +183,10 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(html).toContain(">Briefcase</strong>");
     expect(html).not.toContain(">Pizza</strong>");
     expect(cssRule(".k2b-ui .k2b-choice-groups")).toContain("overflow-x: auto");
+    expect(cssRule(".k2b-ui .k2b-choice-groups")).toContain("scrollbar-width: none");
+    expect(cssRule(".k2b-ui .k2b-choice-groups-scrollbar")).toContain("position: absolute");
+    expect(cssRule(".k2b-ui .k2b-choice-groups-scrollbar")).toContain("pointer-events: none");
+    expect(cssRule(".k2b-ui .k2b-choice-groups-scrollbar > span")).toContain("width: var(--k2b-choice-scroll-width)");
   });
 
   test("renders an optional grid view toggle with a configurable default and tile size", () => {

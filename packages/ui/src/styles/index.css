@@ -3797,18 +3797,57 @@
   padding: 0.125rem 0.25rem 0.375rem;
 }
 
-.k2b-ui .k2b-choice-groups {
-  display: flex;
+.k2b-ui .k2b-choice-groups-shell {
+  position: relative;
   min-width: 0;
   flex: 1;
+}
+
+.k2b-ui .k2b-choice-groups {
+  display: flex;
+  width: 100%;
+  min-width: 0;
   gap: 0.25rem;
   overflow-x: auto;
+  overflow-y: hidden;
   padding: 0;
   scrollbar-width: none;
 }
 
 .k2b-ui .k2b-choice-groups::-webkit-scrollbar {
   display: none;
+}
+
+.k2b-ui .k2b-choice-groups-scrollbar {
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  bottom: -0.3125rem;
+  left: 0;
+  height: 0.375rem;
+  border-radius: 999px;
+  cursor: ew-resize;
+  opacity: 0;
+  pointer-events: none;
+  touch-action: none;
+  transition: opacity 120ms ease;
+}
+
+.k2b-ui .k2b-choice-groups-shell:is(:hover, :focus-within) .k2b-choice-groups-scrollbar,
+.k2b-ui .k2b-choice-groups-scrollbar:hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.k2b-ui .k2b-choice-groups-scrollbar > span {
+  display: block;
+  width: var(--k2b-choice-scroll-width);
+  height: 100%;
+  border: 0.125rem solid transparent;
+  border-radius: 999px;
+  background: var(--k2b-border-strong);
+  background-clip: padding-box;
+  transform: translateX(var(--k2b-choice-scroll-left));
 }
 
 .k2b-ui .k2b-choice-groups > button {
