@@ -239,10 +239,13 @@ describe("mail capabilities", () => {
     expect(manifest.queries).toHaveLength(Object.keys(mailCapabilities.queries).length);
     expect(manifest.actions).toHaveLength(Object.keys(mailCapabilities.actions).length);
     const mailboxReader = manifest.queries.find((query) => query.localId === "mailbox.read");
-    expect(mailboxReader?.inputSchema).toHaveProperty(
-      "properties.id.description",
-      expect.stringContaining("List mailboxes"),
-    );
+    expect(mailboxReader?.inputSchema).toHaveProperty("properties.id.description", expect.stringContaining("List mailboxes"));
+    expect(mailCapabilities.queries["mailbox.list"].description).toContain("Normal entry for mailbox-scoped Mail work");
+    expect(mailCapabilities.queries.search.description).toContain("direct cross-mailbox entry");
+    expect(mailCapabilities.queries["conversation.search"].description).toContain("use search instead when no mailbox is known");
+    expect(mailCapabilities.queries["conversation.read"].description).toContain("call message.read");
+    expect(mailCapabilities.queries["message.read"].description).toContain("attachment.read-content");
+    expect(mailCapabilities.queries["draft.send.review"].description).toContain("immediately before draft.send");
   });
 
   test("only exposes remembered approval for reversible internal mail changes", () => {
@@ -1317,15 +1320,15 @@ describe("mail capabilities", () => {
 
   test("reads the shared summary with the latest bounded message window", async () => {
     spyOn(resourceParents, "conversation").mockResolvedValue(internalMailboxId);
-    spyOn(conversationSummaries, "getConversationSummary").mockResolvedValue({
+    const getSummary = spyOn(conversationSummaries, "getConversationSummary").mockResolvedValue({
       ok: true,
       data: { summary: "Launch approved; waiting for the checklist.", summaryRevision: 3, conversationRevision: 7 },
     });
-    spyOn(collaboration, "getConversationCollaboration").mockResolvedValue({
+    const getCollaboration = spyOn(collaboration, "getConversationCollaboration").mockResolvedValue({
       ok: true,
       data: { conversationId: internalConversationId, assignee: null, workStatus: "waiting", snoozedUntil: null, revision: 7 },
     });
-    spyOn(localTags, "getConversationLocalTags").mockResolvedValue({
+    const getTags = spyOn(localTags, "getConversationLocalTags").mockResolvedValue({
       ok: true,
       data: {
         conversationId: internalConversationId,
@@ -1375,9 +1378,14 @@ describe("mail capabilities", () => {
       limit: 50,
       latest: true,
     });
+    expect(getSummary).toHaveBeenCalledTimes(1);
+    expect(getCollaboration).toHaveBeenCalledTimes(1);
+    expect(getTags).toHaveBeenCalledTimes(1);
+    expect(listMessages).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       ok: true,
       data: {
+        summary: "Read conversation “Final checklist”.",
         data: {
           conversationId,
           summary: "Launch approved; waiting for the checklist.",
@@ -1687,6 +1695,7 @@ describe("mail capabilities", () => {
       { type: "mail.attachment", id: attachmentId },
       { type: "mail.message", id: messageId },
     ]);
+    expect(result.data.summary).toBe("Read attachment text from “roadmap.pdf”.");
   });
 
   test("keeps the canonical attachment reader metadata-only", async () => {
@@ -1721,6 +1730,7 @@ describe("mail capabilities", () => {
     const result = await mailCapabilities.queries["attachment.read"].run({ id: attachmentId }, context);
 
     if (!result.ok) throw new Error("Expected attachment metadata result");
+    expect(result.data.summary).toBe("Read attachment “roadmap.pdf”.");
     expect(AttachmentReadDataSchema.parse(result.data.data).extraction).toMatchObject({
       status: "complete",
       available: true,
@@ -1761,6 +1771,7 @@ describe("mail capabilities", () => {
       trust: "untrusted",
       extraction: { status: "pending", available: false },
     });
+    expect(result.data.summary).toBe("Text extraction for “roadmap.pdf” is pending.");
     expect(enqueue).toHaveBeenCalledWith("blob-id");
   });
 
