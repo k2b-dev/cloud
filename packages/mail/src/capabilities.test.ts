@@ -5,6 +5,7 @@ import {
   type CapabilityActionDefinition,
   CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
+  capabilityResultSchema,
 } from "@valentinkolb/cloud/contracts";
 import { mailCapabilities } from "./capabilities";
 import {
@@ -31,10 +32,12 @@ import {
 import {
   attachmentExtraction,
   collaboration,
+  commands,
   composeSafety,
   conversationContext,
   conversationSummaries,
   drafts,
+  draftUploads,
   focus,
   listSubscriptions,
   localTags,
@@ -42,7 +45,9 @@ import {
   mailboxes,
   messages,
   publicResources,
+  reminders,
   resourceParents,
+  scheduledSends,
   search,
   triage,
 } from "./service";
@@ -68,6 +73,7 @@ const internalCommentId = "11111111-1111-4111-8111-111111111111";
 const internalDraftId = "22222222-2222-4222-8222-222222222222";
 const internalDraftAttachmentId = "33333333-3333-4333-8333-333333333333";
 const internalTagId = "44444444-4444-4444-8444-444444444444";
+const internalReminderId = "45454545-4545-4545-8545-454545454545";
 const internalMessageId = "55555555-5555-4555-8555-555555555555";
 const internalAttachmentId = "88888888-8888-4888-8888-888888888888";
 const missingResourceId = "66666666-6666-4666-8666-666666666666";
@@ -75,6 +81,7 @@ const technicalTargetId = "77777777-7777-4777-8777-777777777777";
 const commentId = "CmK012";
 const draftId = "DrG789";
 const draftAttachmentId = "DaL123";
+const reminderId = "RmN234";
 const messageId = "MsH890";
 const attachmentId = "AtJ901";
 const userId = "dc1fe87d-c60b-4f63-a83d-9db6320da31d";
@@ -104,6 +111,7 @@ const publicIdsByTable = {
   attachments: new Map([[internalAttachmentId, attachmentId]]),
   drafts: new Map([[internalDraftId, draftId]]),
   draftAttachments: new Map([[internalDraftAttachmentId, draftAttachmentId]]),
+  reminders: new Map([[internalReminderId, reminderId]]),
 } as const;
 const internalIdsByTable = {
   mailboxes: new Map([[mailboxId, internalMailboxId]]),
@@ -114,6 +122,7 @@ const internalIdsByTable = {
   deliveries: new Map([[deliveryId, internalConversationId]]),
   tags: new Map([[tagId, internalConversationId]]),
   comments: new Map([[commentId, internalCommentId]]),
+  draftAttachments: new Map([[draftAttachmentId, internalDraftAttachmentId]]),
   attachments: new Map([[attachmentId, internalAttachmentId]]),
 } as const;
 const context = {
@@ -123,6 +132,87 @@ const context = {
   signal: new AbortController().signal,
 } as CapabilityExecutionContext;
 
+const timestamp = "2026-08-20T10:00:00.000Z";
+const draftFixture = {
+  id: internalDraftId,
+  mailboxId: internalMailboxId,
+  conversationId: null,
+  intent: "new",
+  sourceMessageId: null,
+  derivedFromMessageId: null,
+  derivationKind: null,
+  senderIdentityId: internalConversationId,
+  to: [{ name: "Ada", address: "ada@example.test" }],
+  cc: [],
+  bcc: [],
+  subject: "Release follow-up",
+  body: "The release is ready.",
+  format: "markdown",
+  priority: "normal",
+  requestDeliveryReceipt: false,
+  requestReadReceipt: false,
+  attachments: [
+    {
+      id: internalDraftAttachmentId,
+      filename: "notes.pdf",
+      contentType: "application/pdf",
+      byteLength: 5,
+      contentHash: "a".repeat(64),
+      position: 0,
+      createdAt: timestamp,
+    },
+  ],
+  createdBy: { kind: "user", userId },
+  lastEditedBy: { kind: "user", userId },
+  lastEditedByDisplayName: "Ada",
+  recoveryCopyCount: 0,
+  revision: 2,
+  state: "draft",
+  deliveryClass: "normal",
+  createdAt: timestamp,
+  updatedAt: timestamp,
+} as const;
+const collaborationFixture = {
+  conversationId: internalConversationId,
+  assignee: { id: userId, uid: "ada", displayName: "Ada Lovelace", avatarHash: null },
+  workStatus: "done",
+  snoozedUntil: timestamp,
+  revision: 5,
+} as const;
+const reminderFixture = {
+  id: internalReminderId,
+  conversationId: internalConversationId,
+  userId,
+  dueAt: timestamp,
+  state: "pending",
+  revision: 2,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+} as const;
+const commentFixture = {
+  id: internalCommentId,
+  conversationId: internalConversationId,
+  body: "Internal context",
+  author: { kind: "user", id: userId, displayName: "Ada Lovelace", avatarHash: null },
+  referencedMessageId: null,
+  revision: 3,
+  canEdit: true,
+  canDelete: true,
+  editedAt: null,
+  deletedAt: null,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+} as const;
+const tagFixture = {
+  id: internalTagId,
+  mailboxId: internalMailboxId,
+  name: "customer",
+  color: "#336699",
+  revision: 2,
+  createdAt: timestamp,
+  updatedAt: timestamp,
+} as const;
+
 beforeEach(() => {
   spyOn(publicResources, "resolvePublicId").mockImplementation(
     async (table, id) => (internalIdsByTable as Record<string, Map<string, string>>)[table]?.get(id) ?? null,
@@ -130,6 +220,10 @@ beforeEach(() => {
   spyOn(publicResources, "resolveMailboxPublicId").mockImplementation(
     async (table, _mailboxId, id) => (internalIdsByTable as Record<string, Map<string, string>>)[table]?.get(id) ?? null,
   );
+  spyOn(publicResources, "resolveMailboxPublicIds").mockImplementation(async (table, _mailboxId, ids) => {
+    const resolved = ids.map((id) => (internalIdsByTable as Record<string, Map<string, string>>)[table]?.get(id));
+    return resolved.every((id): id is string => id !== undefined) ? resolved : null;
+  });
   spyOn(publicResources, "publicIds").mockImplementation(
     async (table) => new Map((publicIdsByTable as Record<string, Map<string, string>>)[table] ?? []),
   );
@@ -161,8 +255,10 @@ describe("mail capabilities", () => {
       "conversation.snooze",
       "conversation.status.update",
       "conversation.tag.update",
+      "draft.attachment.add",
       "draft.create",
       "draft.update",
+      "mailbox.tag.create",
     ]);
   });
 
@@ -253,11 +349,13 @@ describe("mail capabilities", () => {
       "conversation.status.update",
       "conversation.tag.update",
       "delivery.cancel",
+      "draft.attachment.add",
       "draft.attachment.remove",
       "draft.create",
       "draft.discard",
       "draft.send",
       "draft.update",
+      "mailbox.tag.create",
       "mailbox.tag.delete",
       "mailbox.tag.update",
       "mailing-list.unsubscribe",
@@ -551,6 +649,386 @@ describe("mail capabilities", () => {
           { label: "Replacement comment", value: "Replacement line\n\nNew context", display: "block" },
         ],
       },
+    });
+  });
+
+  test("returns a valid mailbox scope from every rememberable action review", async () => {
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+    spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: draftFixture } as never);
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: { items: [{ subject: "Planning session" }], nextCursor: null },
+    } as never);
+    spyOn(localTags, "listLocalTags").mockResolvedValue({
+      ok: true,
+      data: [{ ...tagFixture, id: internalConversationId }],
+    } as never);
+    spyOn(collaboration, "listCurrentUsers").mockResolvedValue([
+      { id: userId, uid: "ada", displayName: "Ada Lovelace", avatarHash: null },
+    ] as never);
+    spyOn(collaboration, "getConversationComment").mockResolvedValue({ ok: true, data: commentFixture } as never);
+    spyOn(reminders, "getConversationReminder").mockResolvedValue({ ok: true, data: reminderFixture } as never);
+
+    const results = [
+      await mailCapabilities.actions["draft.create"].review(
+        DraftCreateInputSchema.parse({ mailboxId, senderIdentityId, subject: "Release follow-up" }),
+        context,
+      ),
+      await mailCapabilities.actions["draft.update"].review(
+        DraftUpdateInputSchema.parse({
+          mailboxId,
+          draftId,
+          expectedRevision: 2,
+          draft: { senderIdentityId, subject: "Updated release follow-up" },
+        }),
+        context,
+      ),
+      await mailCapabilities.actions["draft.attachment.add"].review(
+        {
+          mailboxId,
+          draftId,
+          expectedRevision: 2,
+          attachment: { filename: "notes.pdf", contentType: "application/pdf", base64: "bm90ZXM=" },
+        },
+        context,
+      ),
+      await mailCapabilities.actions["conversation.mark"].review(
+        { mailboxId, target: { conversationId, sourceFolderId: folderId }, read: true },
+        context,
+      ),
+      await mailCapabilities.actions["conversation.tag.update"].review(
+        { mailboxId, conversationId, expectedRevision: 4, addTagIds: [tagId], removeTagIds: [] },
+        context,
+      ),
+      await mailCapabilities.actions["conversation.assign"].review(
+        { mailboxId, conversationId, expectedRevision: 4, assigneeUserId: userId },
+        context,
+      ),
+      await mailCapabilities.actions["conversation.status.update"].review(
+        { mailboxId, conversationId, expectedRevision: 4, status: "done" },
+        context,
+      ),
+      await mailCapabilities.actions["conversation.snooze"].review(
+        { mailboxId, conversationId, expectedRevision: 4, snoozedUntil: timestamp },
+        context,
+      ),
+      await mailCapabilities.actions["conversation.reminder.set"].review(
+        { mailboxId, conversationId, dueAt: timestamp, expectedRevision: null },
+        context,
+      ),
+      await mailCapabilities.actions["conversation.reminder.cancel"].review({ mailboxId, conversationId, expectedRevision: 2 }, context),
+      await mailCapabilities.actions["conversation.comment.create"].review(
+        { mailboxId, conversationId, body: "Internal context" },
+        context,
+      ),
+      await mailCapabilities.actions["conversation.comment.update"].review(
+        { mailboxId, conversationId, commentId, expectedRevision: 3, body: "Updated context" },
+        context,
+      ),
+      await mailCapabilities.actions["mailbox.tag.create"].review({ mailboxId, name: "customer", color: "#336699" }, context),
+    ];
+    const rememberableCount = (Object.values(mailCapabilities.actions) as CapabilityActionDefinition[]).filter(
+      (action) => action.approval === "rememberable",
+    ).length;
+
+    expect(results).toHaveLength(rememberableCount);
+    for (const result of results) {
+      expect(result.ok).toBeTrue();
+      if (!result.ok) continue;
+      const parsed = CapabilityActionReviewSchema.safeParse(result.data);
+      if (!parsed.success) throw new Error(parsed.error.message);
+      expect(parsed.data.approvalScope).toBe(`mailbox:${mailboxId}`);
+    }
+  });
+
+  test("returns a schema-valid user outcome from every Mail action", async () => {
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: { items: [{ subject: "Planning session" }], nextCursor: null },
+    } as never);
+    spyOn(drafts, "materializeDraftSeed").mockResolvedValue({ ok: true, data: draftFixture } as never);
+    spyOn(drafts, "updateDraft").mockResolvedValue({ ok: true, data: draftFixture } as never);
+    spyOn(drafts, "getDraft").mockResolvedValue({ ok: true, data: draftFixture } as never);
+    spyOn(drafts, "discardDraft").mockResolvedValue({ ok: true, data: undefined } as never);
+    spyOn(draftUploads, "uploadDraftAttachmentStream").mockResolvedValue({ ok: true, data: draftFixture } as never);
+    spyOn(drafts, "removeDraftAttachment").mockResolvedValue({
+      ok: true,
+      data: { ...draftFixture, attachments: [], revision: 3 },
+    } as never);
+    spyOn(commands, "createActorCommand").mockResolvedValue({
+      ok: true,
+      data: { id: "aaaaaaaa-0000-4000-8000-000000000001", state: "queued" },
+    } as never);
+    spyOn(scheduledSends, "getScheduledSend").mockResolvedValue({
+      ok: true,
+      data: { subject: "Release follow-up", scheduledAt: timestamp },
+    } as never);
+    spyOn(scheduledSends, "cancelScheduledSend").mockResolvedValue({
+      ok: true,
+      data: { disposition: "draft", draftId: internalDraftId },
+    } as never);
+    spyOn(triage, "createConversationTriageCommands").mockResolvedValue({
+      ok: true,
+      data: {
+        correlationId: "mail-summary-test",
+        commands: [{ id: "aaaaaaaa-0000-4000-8000-000000000002", state: "queued" }],
+      },
+    } as never);
+    spyOn(localTags, "getConversationLocalTags").mockResolvedValue({
+      ok: true,
+      data: { conversationId: internalConversationId, conversationRevision: 4, tags: [] },
+    } as never);
+    spyOn(localTags, "setConversationLocalTags").mockResolvedValue({
+      ok: true,
+      data: { conversationId: internalConversationId, conversationRevision: 5, tags: [{ ...tagFixture, id: internalConversationId }] },
+    } as never);
+    spyOn(collaboration, "updateConversationCollaboration").mockResolvedValue({ ok: true, data: collaborationFixture } as never);
+    spyOn(reminders, "setConversationReminder").mockResolvedValue({ ok: true, data: reminderFixture } as never);
+    spyOn(reminders, "cancelConversationReminder").mockResolvedValue({
+      ok: true,
+      data: { ...reminderFixture, state: "canceled", revision: 3 },
+    } as never);
+    spyOn(collaboration, "createConversationComment").mockResolvedValue({ ok: true, data: commentFixture } as never);
+    spyOn(collaboration, "getConversationComment").mockResolvedValue({ ok: true, data: commentFixture } as never);
+    spyOn(collaboration, "updateConversationComment").mockResolvedValue({ ok: true, data: commentFixture } as never);
+    spyOn(collaboration, "deleteConversationComment").mockResolvedValue({
+      ok: true,
+      data: { ...commentFixture, body: null, deletedAt: timestamp, revision: 4 },
+    } as never);
+    spyOn(localTags, "createLocalTag").mockResolvedValue({ ok: true, data: tagFixture } as never);
+    spyOn(localTags, "updateLocalTag").mockResolvedValue({ ok: true, data: tagFixture } as never);
+    spyOn(localTags, "listLocalTags").mockResolvedValue({
+      ok: true,
+      data: [{ ...tagFixture, id: internalConversationId }],
+    } as never);
+    spyOn(localTags, "deleteLocalTag").mockResolvedValue({ ok: true, data: undefined } as never);
+    spyOn(listSubscriptions, "getSubscription").mockResolvedValue({
+      ok: true,
+      data: {
+        listKey: "example",
+        name: "Example Newsletter",
+        address: "newsletter@example.test",
+        unsubscribe: { kind: "one_click", href: "https://example.test/unsubscribe" },
+      },
+    } as never);
+    spyOn(listSubscriptions, "requestUnsubscribe").mockResolvedValue({
+      ok: true,
+      data: { listKey: "example", status: "unsubscribe_requested", requestedAt: timestamp },
+    } as never);
+
+    const idempotentContext = { ...context, idempotencyKey: "mail-summary-test" };
+    const results = [
+      {
+        localId: "draft.create",
+        action: mailCapabilities.actions["draft.create"],
+        run: () =>
+          mailCapabilities.actions["draft.create"].run(
+            DraftCreateInputSchema.parse({ mailboxId, senderIdentityId, subject: "Release follow-up" }),
+            idempotentContext,
+          ),
+      },
+      {
+        localId: "draft.update",
+        action: mailCapabilities.actions["draft.update"],
+        run: () =>
+          mailCapabilities.actions["draft.update"].run(
+            DraftUpdateInputSchema.parse({
+              mailboxId,
+              draftId,
+              expectedRevision: 2,
+              draft: { senderIdentityId, subject: "Release follow-up" },
+            }),
+            context,
+          ),
+      },
+      {
+        localId: "draft.discard",
+        action: mailCapabilities.actions["draft.discard"],
+        run: () => mailCapabilities.actions["draft.discard"].run({ mailboxId, draftId, expectedRevision: 2 }, context),
+      },
+      {
+        localId: "draft.attachment.add",
+        action: mailCapabilities.actions["draft.attachment.add"],
+        run: () =>
+          mailCapabilities.actions["draft.attachment.add"].run(
+            {
+              mailboxId,
+              draftId,
+              expectedRevision: 2,
+              attachment: { filename: "notes.pdf", contentType: "application/pdf", base64: "bm90ZXM=" },
+            },
+            context,
+          ),
+      },
+      {
+        localId: "draft.attachment.remove",
+        action: mailCapabilities.actions["draft.attachment.remove"],
+        run: () =>
+          mailCapabilities.actions["draft.attachment.remove"].run(
+            { mailboxId, draftId, attachmentId: draftAttachmentId, expectedRevision: 2 },
+            context,
+          ),
+      },
+      {
+        localId: "draft.send",
+        action: mailCapabilities.actions["draft.send"],
+        run: () =>
+          mailCapabilities.actions["draft.send"].run(
+            DraftSendInputSchema.parse({ mailboxId, draftId, senderIdentityId, expectedRevision: 2 }),
+            idempotentContext,
+          ),
+      },
+      {
+        localId: "delivery.cancel",
+        action: mailCapabilities.actions["delivery.cancel"],
+        run: () => mailCapabilities.actions["delivery.cancel"].run({ mailboxId, deliveryId, disposition: "draft" }, context),
+      },
+      {
+        localId: "conversation.mark",
+        action: mailCapabilities.actions["conversation.mark"],
+        run: () =>
+          mailCapabilities.actions["conversation.mark"].run(
+            { mailboxId, target: { conversationId, sourceFolderId: folderId }, read: true, flagged: true },
+            idempotentContext,
+          ),
+      },
+      {
+        localId: "conversation.move",
+        action: mailCapabilities.actions["conversation.move"],
+        run: () =>
+          mailCapabilities.actions["conversation.move"].run(
+            { mailboxId, target: { conversationId, sourceFolderId: folderId }, destination: { kind: "role", role: "archive" } },
+            idempotentContext,
+          ),
+      },
+      {
+        localId: "conversation.tag.update",
+        action: mailCapabilities.actions["conversation.tag.update"],
+        run: () =>
+          mailCapabilities.actions["conversation.tag.update"].run(
+            { mailboxId, conversationId, expectedRevision: 4, addTagIds: [tagId], removeTagIds: [] },
+            context,
+          ),
+      },
+      {
+        localId: "conversation.assign",
+        action: mailCapabilities.actions["conversation.assign"],
+        run: () =>
+          mailCapabilities.actions["conversation.assign"].run(
+            { mailboxId, conversationId, expectedRevision: 4, assigneeUserId: userId },
+            context,
+          ),
+      },
+      {
+        localId: "conversation.status.update",
+        action: mailCapabilities.actions["conversation.status.update"],
+        run: () =>
+          mailCapabilities.actions["conversation.status.update"].run(
+            { mailboxId, conversationId, expectedRevision: 4, status: "done" },
+            context,
+          ),
+      },
+      {
+        localId: "conversation.snooze",
+        action: mailCapabilities.actions["conversation.snooze"],
+        run: () =>
+          mailCapabilities.actions["conversation.snooze"].run(
+            { mailboxId, conversationId, expectedRevision: 4, snoozedUntil: timestamp },
+            context,
+          ),
+      },
+      {
+        localId: "conversation.reminder.set",
+        action: mailCapabilities.actions["conversation.reminder.set"],
+        run: () =>
+          mailCapabilities.actions["conversation.reminder.set"].run(
+            { mailboxId, conversationId, dueAt: timestamp, expectedRevision: null },
+            context,
+          ),
+      },
+      {
+        localId: "conversation.reminder.cancel",
+        action: mailCapabilities.actions["conversation.reminder.cancel"],
+        run: () =>
+          mailCapabilities.actions["conversation.reminder.cancel"].run({ mailboxId, conversationId, expectedRevision: 2 }, context),
+      },
+      {
+        localId: "conversation.comment.create",
+        action: mailCapabilities.actions["conversation.comment.create"],
+        run: () =>
+          mailCapabilities.actions["conversation.comment.create"].run(
+            { mailboxId, conversationId, body: "Internal context", referencedMessageId: null },
+            context,
+          ),
+      },
+      {
+        localId: "conversation.comment.update",
+        action: mailCapabilities.actions["conversation.comment.update"],
+        run: () =>
+          mailCapabilities.actions["conversation.comment.update"].run(
+            { mailboxId, conversationId, commentId, expectedRevision: 3, body: "Updated context" },
+            context,
+          ),
+      },
+      {
+        localId: "conversation.comment.delete",
+        action: mailCapabilities.actions["conversation.comment.delete"],
+        run: () =>
+          mailCapabilities.actions["conversation.comment.delete"].run(
+            { mailboxId, conversationId, commentId, expectedRevision: 3 },
+            context,
+          ),
+      },
+      {
+        localId: "mailbox.tag.create",
+        action: mailCapabilities.actions["mailbox.tag.create"],
+        run: () => mailCapabilities.actions["mailbox.tag.create"].run({ mailboxId, name: "customer", color: "#336699" }, context),
+      },
+      {
+        localId: "mailbox.tag.update",
+        action: mailCapabilities.actions["mailbox.tag.update"],
+        run: () => mailCapabilities.actions["mailbox.tag.update"].run({ mailboxId, tagId, expectedRevision: 2, name: "customer" }, context),
+      },
+      {
+        localId: "mailbox.tag.delete",
+        action: mailCapabilities.actions["mailbox.tag.delete"],
+        run: () => mailCapabilities.actions["mailbox.tag.delete"].run({ mailboxId, tagId, expectedRevision: 2 }, context),
+      },
+      {
+        localId: "mailing-list.unsubscribe",
+        action: mailCapabilities.actions["mailing-list.unsubscribe"],
+        run: () =>
+          mailCapabilities.actions["mailing-list.unsubscribe"].run(
+            { mailboxId, listKey: "example", href: "https://example.test/unsubscribe" },
+            context,
+          ),
+      },
+    ];
+
+    expect(results).toHaveLength(Object.keys(mailCapabilities.actions).length);
+    expect(new Set(results.map((item) => item.localId)).size).toBe(results.length);
+    const summaries = new Map<string, string>();
+    for (const { localId, action, run } of results) {
+      const result = await run().catch((error) => {
+        throw new Error(`Mail action ${localId} threw`, { cause: error });
+      });
+      expect(result.ok).toBeTrue();
+      if (!result.ok) continue;
+      expect(result.data.summary?.length).toBeGreaterThan(0);
+      summaries.set(localId, result.data.summary ?? "");
+      const parsed = capabilityResultSchema(action.data).safeParse(result.data);
+      if (!parsed.success) throw new Error(`Invalid Mail result for ${localId}: ${parsed.error.message}`);
+    }
+    expect(Object.fromEntries(summaries)).toMatchObject({
+      "draft.create": "Created draft “Release follow-up”.",
+      "draft.attachment.add": "Added notes.pdf to draft “Release follow-up”.",
+      "draft.send": "Queued “Release follow-up” for delivery.",
+      "delivery.cancel": "Cancelled delivery of “Release follow-up” and restored it as a draft.",
+      "conversation.mark": "Marked “Planning session” as read and flagged.",
+      "conversation.assign": "Assigned “Planning session” to Ada Lovelace.",
+      "mailbox.tag.create": "Created mailbox tag #customer.",
+      "mailing-list.unsubscribe": "Requested unsubscribe from Example Newsletter.",
     });
   });
 
@@ -960,7 +1438,7 @@ describe("mail capabilities", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      data: { summary: "Set tags on “Planning session” to customer." },
+      data: { summary: "Added #customer to “Planning session”." },
     });
   });
 
