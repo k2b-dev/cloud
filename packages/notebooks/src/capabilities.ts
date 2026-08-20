@@ -338,6 +338,7 @@ const runNotebookList = async (input: z.infer<typeof NotebookListInputSchema>, c
   });
   const data = page.items.map((notebook: NotebookWithPermission) => ({
     ...mapNotebook(notebook, effectivePermission(notebook.permission, context) as Exclude<PermissionLevel, "none">),
+    ref: { type: "notebooks.notebook" as const, id: notebook.shortId },
     links: [{ rel: "open" as const, href: notebookHref(notebook) }],
   }));
   return ok({
@@ -374,6 +375,7 @@ const runNoteTree = async (input: z.infer<typeof NoteTreeInputSchema>, context: 
   });
   const data = pageRows.map((note) => ({
     id: note.shortId,
+    ref: { type: "notebooks.note" as const, id: note.shortId },
     parentId: note.parentId ? (shortIds.get(note.parentId) ?? null) : null,
     title: note.title,
     position: note.position,
@@ -437,6 +439,7 @@ const runNoteLinks = async (input: z.infer<typeof NoteLinksInputSchema>, context
   const hasMore = rows.length > input.limit;
   const data = rows.slice(0, input.limit).map((entry) => ({
     direction: entry.direction,
+    ref: { type: "notebooks.note" as const, id: entry.noteId },
     noteId: entry.noteId,
     title: entry.title,
     notebookId: entry.notebookId,
@@ -491,6 +494,7 @@ const runTagNotes = async (input: z.infer<typeof TagNotesInputSchema>, context: 
     const updatedAt = item.updatedAt as string | Date;
     return {
       id: item.shortId,
+      ref: { type: "notebooks.note" as const, id: item.shortId },
       title: item.title,
       preview: item.preview,
       updatedAt: updatedAt instanceof Date ? updatedAt.toISOString() : updatedAt,
@@ -674,7 +678,7 @@ export const notebooksCapabilities = defineCapabilities({
     },
     "notebook.list": {
       title: "List notebooks",
-      description: "List accessible notebooks with effective permission and bounded pagination.",
+      description: "List accessible notebooks with effective permission, bounded pagination, and item-local notebooks.notebook refs.",
       input: NotebookListInputSchema,
       data: NotebookListDataSchema,
       openWorld: false,
@@ -682,7 +686,7 @@ export const notebooksCapabilities = defineCapabilities({
     },
     "notebook.read": {
       title: "Read notebook",
-      description: "Read one accessible notebook and its homepage reference.",
+      description: "Read one accessible notebook from a notebooks.notebook ref or notebook ID, including its homepage note ID.",
       input: NotebookReadInputSchema,
       data: NotebookDataSchema,
       openWorld: false,
@@ -690,7 +694,7 @@ export const notebooksCapabilities = defineCapabilities({
     },
     "note.tree": {
       title: "List note tree",
-      description: "Traverse a large notebook as a compact flat adjacency index without loading Markdown.",
+      description: "Traverse a large notebook as a compact flat adjacency index with notebooks.note refs, without loading Markdown.",
       input: NoteTreeInputSchema,
       data: NoteTreeDataSchema,
       openWorld: false,
@@ -698,7 +702,7 @@ export const notebooksCapabilities = defineCapabilities({
     },
     "note.read": {
       title: "Read note",
-      description: "Read a bounded Markdown window plus hashes, tags, and named-block summaries.",
+      description: "Read a note from a notebooks.note ref or note ID as a bounded Markdown window plus hashes, tags, and named-block summaries.",
       input: NoteReadInputSchema,
       data: NoteDetailDataSchema,
       openWorld: false,

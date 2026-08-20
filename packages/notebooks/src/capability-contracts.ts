@@ -13,6 +13,8 @@ const ResourceShortIdSchema = z
   .describe("Stable 6-character resource ID.");
 const NamedBlockTypeSchema = z.enum(["table", "list", "data", "section", "script", "unknown"]);
 const ResourceLinksSchema = z.array(CapabilitySemanticLinkSchema).min(1).max(10).optional();
+const resourceRef = <Type extends string>(type: Type) =>
+  z.object({ type: z.literal(type), id: ResourceShortIdSchema }).strict();
 
 const NotebookDataShape = {
   id: ResourceShortIdSchema,
@@ -27,7 +29,8 @@ const NotebookDataShape = {
 };
 
 export const NotebookDataSchema = z.object(NotebookDataShape).strict();
-export const NotebookListDataSchema = z.array(NotebookDataSchema).max(100);
+const NotebookListItemDataSchema = NotebookDataSchema.extend({ ref: resourceRef("notebooks.notebook") }).strict();
+export const NotebookListDataSchema = z.array(NotebookListItemDataSchema).max(100);
 export const NotebookListInputSchema = z
   .object({
     query: QuerySchema,
@@ -36,7 +39,9 @@ export const NotebookListInputSchema = z
     limit: LimitSchema,
   })
   .strict();
-export const NotebookReadInputSchema = z.object({ id: ResourceShortIdSchema }).strict();
+export const NotebookReadInputSchema = z
+  .object({ id: ResourceShortIdSchema.describe("Notebook ID returned by notebook search/list or a notebooks.notebook ref.") })
+  .strict();
 
 export const NoteSummaryDataSchema = z
   .object({
@@ -54,7 +59,7 @@ export const NoteSummaryDataSchema = z
 
 export const NoteTreeInputSchema = z
   .object({
-    notebookId: ResourceShortIdSchema.describe("Readable notebook whose complete note index should be traversed."),
+    notebookId: ResourceShortIdSchema.describe("Notebook ID returned by notebook search/list/read or a notebooks.notebook ref."),
     cursor: CursorSchema,
     limit: z.number().int().min(1).max(2000).default(500).describe("Maximum lightweight tree entries to return."),
   })
@@ -64,6 +69,7 @@ export const NoteTreeDataSchema = z
     z
       .object({
         id: ResourceShortIdSchema,
+        ref: resourceRef("notebooks.note"),
         parentId: ResourceShortIdSchema.nullable(),
         title: z.string(),
         position: z.number().int().nonnegative(),
@@ -76,7 +82,7 @@ export const NoteTreeDataSchema = z
 
 export const NoteReadInputSchema = z
   .object({
-    id: ResourceShortIdSchema,
+    id: ResourceShortIdSchema.describe("Note ID returned by note search/tree/link/tag results or a notebooks.note ref."),
     contentOffset: z.number().int().nonnegative().default(0).describe("Zero-based character offset into the Markdown source."),
     contentLimit: z.number().int().min(1).max(50_000).default(20_000).describe("Maximum Markdown characters to return."),
   })
@@ -109,7 +115,7 @@ export const NoteDetailDataSchema = NoteSummaryDataSchema.extend({
 
 export const NoteLinksInputSchema = z
   .object({
-    noteId: ResourceShortIdSchema.describe("Stable note ID whose readable relations should be listed."),
+    noteId: ResourceShortIdSchema.describe("Note ID returned by note search/tree/read or a notebooks.note ref."),
     direction: z.enum(["incoming", "outgoing", "all"]).default("all").describe("Link direction relative to the selected note."),
     cursor: CursorSchema,
     limit: LimitSchema,
@@ -120,6 +126,7 @@ export const NoteLinksDataSchema = z
     z
       .object({
         direction: z.enum(["incoming", "outgoing"]),
+        ref: resourceRef("notebooks.note"),
         noteId: ResourceShortIdSchema,
         title: z.string(),
         notebookId: ResourceShortIdSchema,
@@ -133,7 +140,7 @@ export const NoteLinksDataSchema = z
 
 export const TagListInputSchema = z
   .object({
-    notebookId: ResourceShortIdSchema.describe("Readable notebook whose tag vocabulary should be listed."),
+    notebookId: ResourceShortIdSchema.describe("Notebook ID returned by notebook search/list/read or a notebooks.notebook ref."),
     cursor: CursorSchema,
     limit: LimitSchema,
   })
@@ -144,7 +151,7 @@ export const TagListDataSchema = z
 
 export const TagNotesInputSchema = z
   .object({
-    notebookId: ResourceShortIdSchema.describe("Readable notebook containing the selected tag."),
+    notebookId: ResourceShortIdSchema.describe("Notebook ID returned by notebook search/list/read or a notebooks.notebook ref."),
     tag: z
       .string()
       .trim()
@@ -162,6 +169,7 @@ export const TagNotesDataSchema = z
     z
       .object({
         id: ResourceShortIdSchema,
+        ref: resourceRef("notebooks.note"),
         title: z.string(),
         preview: z.string().nullable(),
         updatedAt: TimestampSchema,
