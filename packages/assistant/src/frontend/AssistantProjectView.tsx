@@ -1,6 +1,17 @@
 import { Link, type LinkNavigateEvent, navigate } from "@k2b/ssr/nav";
 import { query as solidQuery } from "@k2b/stdlib/solid";
-import { Button, type DropdownItem, FileDropzone, IconButton, Lightbox, openSpotlightSearch, Placeholder, prompts, toast } from "@k2b/ui";
+import {
+  Button,
+  type DropdownItem,
+  FileDropzone,
+  IconButton,
+  Lightbox,
+  openSpotlightSearch,
+  Placeholder,
+  prompts,
+  ScrollArea,
+  toast,
+} from "@k2b/ui";
 import type { AiConversation, AiConversationPage, AiProject, AiProjectKnowledge } from "@valentinkolb/cloud/ai";
 import { openCloudResourcePicker } from "@valentinkolb/cloud/browser/resource-picker";
 import { coreClient } from "@valentinkolb/cloud/clients/core";
@@ -390,11 +401,11 @@ export default function AssistantProjectView(props: Props) {
                 </IconButton>
               </header>
               <Show when={chats.error()}>{(error) => <p class="px-2 text-xs text-danger">{error().message}</p>}</Show>
-              <div
+              <ScrollArea
                 ref={chatListViewport}
-                class="max-h-40 min-h-0 overflow-auto"
+                class="max-h-40"
                 aria-busy={chats.loading() || chats.refreshing() || chats.loadingMore()}
-                data-scroll-preserve="assistant-project-chats"
+                scrollPreserveKey="assistant-project-chats"
               >
                 <div class="flex flex-col gap-0.5">
                   <For each={chatItems()}>
@@ -431,7 +442,7 @@ export default function AssistantProjectView(props: Props) {
                     <span class="text-xs text-dimmed">Loading chats…</span>
                   </Show>
                 </div>
-              </div>
+              </ScrollArea>
             </section>
 
             <div class="shrink-0">{props.composer}</div>

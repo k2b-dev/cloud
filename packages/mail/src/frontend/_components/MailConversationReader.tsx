@@ -11,6 +11,7 @@ import {
   NoticeCard,
   Placeholder,
   prompts,
+  ScrollArea,
   Select,
   Tooltip,
   toast,
@@ -1070,10 +1071,10 @@ export default function MailConversationReader(props: {
         </header>
 
         <div class="relative min-h-0 flex-1 overflow-hidden">
-          <div
+          <ScrollArea
             ref={historyScroller}
-            class="absolute inset-0 overflow-y-auto overscroll-y-contain px-3 py-2 sm:px-5"
-            data-scroll-preserve={`mail-reader-${props.selectionKey}`}
+            class="absolute inset-0 px-3 py-2 sm:px-5"
+            scrollPreserveKey={`mail-reader-${props.selectionKey}`}
             onScroll={handleReaderScroll}
           >
             <Show when={props.conversationSummary?.summary}>
@@ -1133,7 +1134,7 @@ export default function MailConversationReader(props: {
                 )}
               </For>
             </div>
-          </div>
+          </ScrollArea>
           <Show when={pendingNewMessages()}>
             {(count) => (
               <Button

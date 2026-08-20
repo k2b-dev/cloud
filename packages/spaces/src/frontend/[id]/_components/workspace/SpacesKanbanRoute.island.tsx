@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
-import { Button } from "@k2b/ui";
+import { Button, ScrollArea } from "@k2b/ui";
 import { createEffect, Show } from "solid-js";
 import type { SpaceColumn, SpaceTag, SpaceWormhole } from "@/contracts";
 import KanbanBoard from "../kanban/KanbanBoard";
@@ -45,7 +45,7 @@ export default function SpacesKanbanRoute(props: Props) {
   });
 
   return (
-    <div class="min-h-0 flex-1 overflow-y-auto" data-scroll-preserve={`spaces-main-${props.spaceId}`}>
+    <ScrollArea class="flex-1" scrollPreserveKey={`spaces-main-${props.spaceId}`}>
       <Show when={view.error()}>
         {(error) => (
           <div class="flex items-center justify-between gap-2 pb-1 text-xs text-red-600" role="alert">
@@ -72,6 +72,6 @@ export default function SpacesKanbanRoute(props: Props) {
           />
         )}
       </Show>
-    </div>
+    </ScrollArea>
   );
 }

@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
-import { Button, Pagination, Placeholder } from "@k2b/ui";
+import { Button, Pagination, Placeholder, ScrollArea } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { ItemListResult, SpaceColumn, SpaceTag } from "@/contracts";
 import { subscribeToDetailSelection } from "../../../lib/detail";
@@ -83,7 +83,7 @@ export default function SpacesListRoute(props: Props) {
       </Show>
       <div class="h-2" />
 
-      <div class="min-h-0 flex-1 overflow-y-auto" data-scroll-preserve={`spaces-main-${props.spaceId}`}>
+      <ScrollArea class="flex-1" scrollPreserveKey={`spaces-main-${props.spaceId}`}>
         {itemsResult().items.length === 0 ? (
           !hasActiveFilters(props.filter) ? (
             <Placeholder
@@ -150,7 +150,7 @@ export default function SpacesListRoute(props: Props) {
             <Pagination currentPage={itemsResult().page} totalPages={itemsResult().totalPages} baseUrl={props.paginationBaseUrl} />
           </div>
         )}
-      </div>
+      </ScrollArea>
     </>
   );
 }

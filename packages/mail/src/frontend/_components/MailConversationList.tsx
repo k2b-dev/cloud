@@ -1,7 +1,7 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { timed } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, Dropdown, FilterChip, IconButton, NoticeCard, Placeholder, TextInput, Tooltip } from "@k2b/ui";
+import { Button, ButtonLink, Dropdown, FilterChip, IconButton, NoticeCard, Placeholder, ScrollArea, TextInput, Tooltip } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { Mailbox } from "../../contracts";
 import {
@@ -392,12 +392,12 @@ export default function MailConversationList(props: {
         </Show>
       </header>
 
-      <div
+      <ScrollArea
         ref={(element) => {
           listScrollElement = element;
         }}
-        class="min-h-0 flex-1 overflow-y-auto px-2 pb-2"
-        data-scroll-preserve={`mail-list-${props.mailboxId}`}
+        class="flex-1 px-2 pb-2"
+        scrollPreserveKey={`mail-list-${props.mailboxId}`}
       >
         {props.error ? (
           <Placeholder
@@ -499,7 +499,7 @@ export default function MailConversationList(props: {
             </div>
           )}
         </Show>
-      </div>
+      </ScrollArea>
     </div>
   );
 }

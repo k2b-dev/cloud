@@ -1,4 +1,4 @@
-import { AppWorkspace, Placeholder } from "@k2b/ui";
+import { AppWorkspace, Placeholder, ScrollArea } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor } from "@valentinkolb/cloud/server";
 import { type WeatherData, weatherService } from "@valentinkolb/cloud/services";
@@ -209,11 +209,7 @@ export default ssr<AuthContext>(async (c) => {
 
           <AppWorkspace.Content>
             <AppWorkspace.Main>
-              <div
-                class="min-h-0 flex-1 overflow-y-auto"
-                data-scroll-preserve={`weather-main-${activeLocation.id}`}
-                style="scrollbar-gutter: stable"
-              >
+              <ScrollArea class="flex-1" scrollPreserveKey={`weather-main-${activeLocation.id}`}>
                 {activeWeather ? (
                   <WeatherDetail location={activeLocation} data={activeWeather} />
                 ) : (
@@ -227,7 +223,7 @@ export default ssr<AuthContext>(async (c) => {
                     action={<LocationActions id={activeLocation.id} lat={activeLocation.lat} lon={activeLocation.lon} />}
                   />
                 )}
-              </div>
+              </ScrollArea>
             </AppWorkspace.Main>
           </AppWorkspace.Content>
         </AppWorkspace>

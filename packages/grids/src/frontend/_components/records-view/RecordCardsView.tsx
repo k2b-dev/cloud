@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { Button, Placeholder } from "@k2b/ui";
+import { Button, Placeholder, ScrollArea } from "@k2b/ui";
 import { For, type JSX, Show } from "solid-js";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { RecordDisplayConfig } from "../../../contracts";
@@ -86,7 +86,7 @@ export function RecordCardsView(props: {
     `/api/grids/records/${props.tableId}/${preview.recordId}/files/${preview.fieldId}/${preview.fileId}/content?inline=true`;
 
   return (
-    <div class="flex min-h-0 flex-1 flex-col overflow-auto" data-scroll-preserve={`grids-cards-${props.tableId}`}>
+    <ScrollArea class="flex flex-1 flex-col" scrollPreserveKey={`grids-cards-${props.tableId}`}>
       <Show
         when={props.items.length > 0}
         fallback={<Placeholder icon="ti ti-table" class="min-h-48 justify-center" description={props.emptyText ?? <>No records</>} />}
@@ -188,6 +188,6 @@ export function RecordCardsView(props: {
           Load more
         </Button>
       </Show>
-    </div>
+    </ScrollArea>
   );
 }

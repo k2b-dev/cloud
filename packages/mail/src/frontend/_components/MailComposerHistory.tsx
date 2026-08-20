@@ -1,6 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
-import { Button, NoticeCard, Placeholder } from "@k2b/ui";
+import { Button, NoticeCard, Placeholder, ScrollArea } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { SenderIdentity } from "../../contracts";
@@ -157,7 +157,7 @@ export default function MailComposerHistory(props: {
 
   return (
     <section class="flex h-full min-h-72 flex-col overflow-hidden bg-[var(--ui-surface)]" aria-label="Conversation history">
-      <div class="min-h-0 flex-1 overflow-y-auto">
+      <ScrollArea class="flex-1">
         <Show when={!history.loading()} fallback={<Placeholder state="loading" variant="panel" title="Loading conversation history..." />}>
           <Show
             when={messages().length > 0}
@@ -255,7 +255,7 @@ export default function MailComposerHistory(props: {
             </Show>
           </Show>
         </Show>
-      </div>
+      </ScrollArea>
     </section>
   );
 }

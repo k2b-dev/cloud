@@ -1,5 +1,5 @@
 import { type DateContext, dates, searchParams } from "@k2b/stdlib";
-import { AppWorkspace, Dropdown, IconButton, Placeholder, prompts, SelectChip } from "@k2b/ui";
+import { AppWorkspace, Dropdown, IconButton, Placeholder, prompts, ScrollArea, SelectChip } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { type NavigatorQuery, parseNavigatorQuery, withNavigatorQuery } from "../../../../lib/navigator-url";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
@@ -349,7 +349,7 @@ export default function NotebookNavigator(props: Props) {
         </Show>
       </div>
 
-      <div class="min-h-0 flex-1 overflow-y-auto" data-scroll-preserve={`notebooks-navigator-list-${props.notebook.id}`}>
+      <ScrollArea class="flex-1" scrollPreserveKey={`notebooks-navigator-list-${props.notebook.id}`}>
         <Show
           when={visibleNotes().length > 0 || pinnedNote()}
           fallback={<Placeholder surface="paper" align="left" description={<>No notes here yet.</>} />}
@@ -472,7 +472,7 @@ export default function NotebookNavigator(props: Props) {
             </For>
           </div>
         </Show>
-      </div>
+      </ScrollArea>
     </div>
   );
 }

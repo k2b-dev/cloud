@@ -1,6 +1,6 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, Dropdown, type DropdownItem, IconButton, Placeholder, prompts } from "@k2b/ui";
+import { AppWorkspace, Button, Dropdown, type DropdownItem, IconButton, Placeholder, prompts, ScrollArea } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
@@ -433,7 +433,7 @@ export default function NoteTree(props: Props) {
         </div>
       </Show>
 
-      <div class="min-h-0 flex-1 overflow-y-auto" data-scroll-preserve={props.scrollPreserveKey}>
+      <ScrollArea class="flex-1" scrollPreserveKey={props.scrollPreserveKey}>
         <AppWorkspace.NavTree
           ariaLabel="Notes"
           selectedId={selectedNoteId()}
@@ -450,7 +450,7 @@ export default function NoteTree(props: Props) {
             onToggleFavorite={toggleFavorite}
           />
         </AppWorkspace.NavTree>
-      </div>
+      </ScrollArea>
 
       {props.tree.length === 0 && <Placeholder icon="ti ti-file-text" class="py-4" description={<>No notes yet</>} />}
     </div>

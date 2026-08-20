@@ -1,7 +1,7 @@
+import { AppWorkspace, Placeholder, ScrollArea } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
-import { AppWorkspace, Placeholder } from "@k2b/ui";
 import type { Context } from "hono";
 import type { DirectoryListing, FileBaseInfo, FileInfo } from "@/contracts";
 import { filesService } from "@/service";
@@ -263,7 +263,7 @@ export const renderFilesBasePage = async <E extends AuthContext>(
             />
 
             {/* File list */}
-            <div class="flex-1 min-h-0 overflow-y-auto" data-scroll-preserve={listScrollKey}>
+            <ScrollArea class="flex-1" scrollPreserveKey={listScrollKey}>
               <FileList
                 items={sortedItems}
                 baseType={baseType}
@@ -276,7 +276,7 @@ export const renderFilesBasePage = async <E extends AuthContext>(
                 isFiltered={!!filterQuery?.trim()}
                 selectedFilePath={detailFilePath}
               />
-            </div>
+            </ScrollArea>
           </AppWorkspace.Main>
 
           <AppWorkspace.Detail

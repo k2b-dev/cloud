@@ -1,7 +1,7 @@
 import { type LinkNavigateEvent, navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, Placeholder, prompts, toast } from "@k2b/ui";
+import { Button, ButtonLink, Placeholder, prompts, ScrollArea, toast } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { CancelScheduledSendInput, CancelScheduledSendResult, ScheduledSendPage } from "../../contracts";
@@ -111,7 +111,7 @@ export default function MailScheduledView(props: {
           </p>
         </div>
       </header>
-      <div class="min-h-0 flex-1 overflow-y-auto p-3">
+      <ScrollArea class="flex-1 p-3">
         <Show
           when={!props.error}
           fallback={<Placeholder icon="ti ti-alert-circle" title="Scheduled messages unavailable" description={props.error!} />}
@@ -199,7 +199,7 @@ export default function MailScheduledView(props: {
             </div>
           </Show>
         </Show>
-      </div>
+      </ScrollArea>
     </section>
   );
 }

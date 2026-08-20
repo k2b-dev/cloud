@@ -1,5 +1,15 @@
 import { gradients } from "@k2b/stdlib";
-import { Placeholder, Widget, WidgetHero, WidgetList, WidgetPills, WidgetStat, WidgetStatus, type WidgetStatusTone } from "@k2b/ui";
+import {
+  Placeholder,
+  ScrollArea,
+  Widget,
+  WidgetHero,
+  WidgetList,
+  WidgetPills,
+  WidgetStat,
+  WidgetStatus,
+  type WidgetStatusTone,
+} from "@k2b/ui";
 import { type DashboardWidget, listApps, listLegalLinks, listWidgets } from "@valentinkolb/cloud";
 import type { WidgetBlock, WidgetResponse } from "@valentinkolb/cloud/contracts";
 import { type AppRegistryEntry, hasRole, type Role, type User } from "@valentinkolb/cloud/contracts";
@@ -318,7 +328,7 @@ export default ssr<AuthContext>(async (c) => {
 
   return () => (
     <Layout c={c} title="Dashboard">
-      <div class="flex-1 min-h-0 overflow-y-auto" style="scrollbar-gutter: stable">
+      <ScrollArea class="flex-1">
         <div class="dashboard-page">
           <div class="dashboard-intro">
             <header class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between" style="view-transition-name: page-title">
@@ -398,7 +408,7 @@ export default ssr<AuthContext>(async (c) => {
             </div>
           )}
         </div>
-      </div>
+      </ScrollArea>
     </Layout>
   );
 });
