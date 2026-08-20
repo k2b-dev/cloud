@@ -238,6 +238,11 @@ describe("mail capabilities", () => {
     expect(mailCapabilities.types.conversation.icon).toBe("ti ti-mail");
     expect(manifest.queries).toHaveLength(Object.keys(mailCapabilities.queries).length);
     expect(manifest.actions).toHaveLength(Object.keys(mailCapabilities.actions).length);
+    const mailboxReader = manifest.queries.find((query) => query.localId === "mailbox.read");
+    expect(mailboxReader?.inputSchema).toHaveProperty(
+      "properties.id.description",
+      expect.stringContaining("List mailboxes"),
+    );
   });
 
   test("only exposes remembered approval for reversible internal mail changes", () => {
@@ -1116,6 +1121,7 @@ describe("mail capabilities", () => {
       data: {
         data: [
           {
+            ref: { type: "mail.conversation", id: conversationId },
             id: conversationId,
             subject: "Release update",
             links: [{ rel: "open", href: `/app/mail/${mailboxId}?conversation=${conversationId}` }],
@@ -1162,6 +1168,7 @@ describe("mail capabilities", () => {
       data: {
         data: [
           {
+            ref: { type: "mail.conversation", id: conversationId },
             id: conversationId,
             mailboxId,
             mailboxName: "Support",
@@ -1175,6 +1182,31 @@ describe("mail capabilities", () => {
     expect(ConversationFocusListDataSchema.safeParse(result.data.data).success).toBeTrue();
     expect(JSON.stringify(result)).not.toContain(internalConversationId);
     expect(JSON.stringify(result)).not.toContain(internalMailboxId);
+  });
+
+  test("returns a typed ref and pagination envelope for draft lists", async () => {
+    const listDrafts = spyOn(drafts, "listDrafts").mockResolvedValue({ ok: true, data: [draftFixture] } as never);
+    const result = await mailCapabilities.queries["draft.list"].run({ mailboxId, limit: 25 }, context);
+
+    expect(listDrafts.mock.calls[0]?.[2]).toBe(200);
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        data: [{ ref: { type: "mail.draft", id: draftId }, id: draftId }],
+        page: { hasMore: false },
+      },
+    });
+    if (!result.ok) throw new Error("Expected draft list success");
+    expect(DraftListDataSchema.safeParse(result.data.data).success).toBeTrue();
+  });
+
+  test("names the missing resource type in reader errors", async () => {
+    const missing = "XyZ123";
+    const mailbox = await mailCapabilities.queries["mailbox.read"].run({ id: missing }, context);
+    const conversation = await mailCapabilities.queries["conversation.read"].run({ id: missing }, context);
+
+    expect(mailbox).toMatchObject({ ok: false, error: { code: "NOT_FOUND", message: "Mailbox not found" } });
+    expect(conversation).toMatchObject({ ok: false, error: { code: "NOT_FOUND", message: "Conversation not found" } });
   });
 
   test("explains attachment-content conversation matches with public links", async () => {
@@ -1264,6 +1296,7 @@ describe("mail capabilities", () => {
       data: {
         data: [
           {
+            ref: { type: "mail.conversation", id: relatedConversationId },
             id: relatedConversationId,
             subject: "Re: Release update",
             participantSummary: "Ada",
@@ -1783,6 +1816,7 @@ describe("mail capabilities", () => {
     const id = "RsA123";
     const timestamp = "2026-08-02T10:00:00.000Z";
     const drafts = Array.from({ length: 100 }, () => ({
+      ref: { type: "mail.draft" as const, id },
       id,
       mailboxId: id,
       conversationId: id,
@@ -1801,6 +1835,7 @@ describe("mail capabilities", () => {
       updatedAt: timestamp,
     }));
     const comments = Array.from({ length: 100 }, () => ({
+      ref: { type: "mail.comment" as const, id },
       id,
       conversationId: id,
       body: "c".repeat(1000),

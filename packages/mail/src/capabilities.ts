@@ -52,14 +52,33 @@ const requestContext = (context: CapabilityExecutionContext): MailRequestContext
 type PublicTable = Parameters<typeof publicResources.resolvePublicId>[0];
 type MailboxPublicTable = Parameters<typeof publicResources.resolveMailboxPublicId>[0];
 
+const RESOURCE_LABELS: Record<PublicTable, string> = {
+  mailboxes: "Mailbox",
+  folders: "Folder",
+  conversations: "Conversation",
+  messages: "Message",
+  attachments: "Attachment",
+  drafts: "Draft",
+  draftAttachments: "Draft attachment",
+  senderIdentities: "Sender identity",
+  tags: "Tag",
+  comments: "Comment",
+  reminders: "Reminder",
+  deliveries: "Scheduled delivery",
+  savedViews: "Saved view",
+  composeTemplates: "Compose template",
+  incomingAutomations: "Incoming automation",
+  automaticReplyConfigurations: "Automatic reply configuration",
+};
+
 const resolvePublicResource = async (table: PublicTable, shortId: string): Promise<Result<string>> => {
   const id = await publicResources.resolvePublicId(table, shortId);
-  return id ? ok(id) : fail(err.notFound("Mail resource"));
+  return id ? ok(id) : fail(err.notFound(RESOURCE_LABELS[table]));
 };
 
 const resolveMailboxResource = async (table: MailboxPublicTable, mailboxId: string, shortId: string): Promise<Result<string>> => {
   const id = await publicResources.resolveMailboxPublicId(table, mailboxId, shortId);
-  return id ? ok(id) : fail(err.notFound("Mail resource"));
+  return id ? ok(id) : fail(err.notFound(RESOURCE_LABELS[table]));
 };
 
 const resolveMailboxScope = async (shortId: string): Promise<Result<{ id: string; shortId: string }>> => {
@@ -280,6 +299,7 @@ const mapMailbox = (mailbox: Mailbox & { permission: "read" | "write" | "admin" 
 
 const mapMailboxListItem = (mailbox: Mailbox & { permission: "read" | "write" | "admin" }, id: string) => ({
   ...mapMailbox(mailbox, id),
+  ref: { type: "mail.mailbox" as const, id },
   links: [openLink(mailboxHref(id))],
 });
 
@@ -334,10 +354,12 @@ const mapDraft = (draft: MailDraft, ids: DraftPublicIds) => {
 };
 
 const mapDraftSummary = (draft: MailDraft, ids: DraftPublicIds) => {
+  const id = requirePublicId(ids.drafts, draft.id);
   const subject = truncateText(draft.subject, 500);
   const body = truncateText(draft.body, 1000);
   return {
-    id: requirePublicId(ids.drafts, draft.id),
+    ref: { type: "mail.draft" as const, id },
+    id,
     mailboxId: requirePublicId(ids.mailboxes, draft.mailboxId),
     conversationId: draft.conversationId ? requirePublicId(ids.conversations, draft.conversationId) : null,
     intent: draft.intent,
@@ -353,7 +375,7 @@ const mapDraftSummary = (draft: MailDraft, ids: DraftPublicIds) => {
     state: draft.state,
     createdAt: draft.createdAt,
     updatedAt: draft.updatedAt,
-    links: [editLink(draftHref(requirePublicId(ids.mailboxes, draft.mailboxId), requirePublicId(ids.drafts, draft.id)))],
+    links: [editLink(draftHref(requirePublicId(ids.mailboxes, draft.mailboxId), id))],
   };
 };
 
@@ -362,12 +384,14 @@ const mapConversation = (
   conversation: Omit<ConversationSummary, "folderId">,
   ids: { conversations: Map<string, string>; folders: Map<string, string> },
 ) => {
+  const id = requirePublicId(ids.conversations, conversation.id);
   const primaryReference = boundedText(conversation.primaryReference, 500);
   const subject = truncateText(conversation.subject, 500);
   const participantSummary = truncateText(conversation.participantSummary, 500);
   const preview = boundedText(conversation.preview, 1000);
   return {
-    id: requirePublicId(ids.conversations, conversation.id),
+    ref: { type: "mail.conversation" as const, id },
+    id,
     mailboxId,
     primaryReference: primaryReference.text,
     subject: subject.text,
@@ -391,7 +415,7 @@ const mapConversation = (
     messageCount: conversation.messageCount,
     preview: preview.text,
     previewTruncated: preview.truncated,
-    links: [openLink(conversationHref(mailboxId, requirePublicId(ids.conversations, conversation.id)))],
+    links: [openLink(conversationHref(mailboxId, id))],
   };
 };
 
@@ -431,6 +455,7 @@ const mapNavigableMessageSummary = (
   messageIds: Map<string, string>,
 ) => ({
   ...mapMessageSummary(mailboxId, conversationId, message, messageIds),
+  ref: { type: "mail.message" as const, id: requirePublicId(messageIds, message.id) },
   links: [openLink(messageHref(mailboxId, requirePublicId(messageIds, message.id)))],
 });
 
@@ -629,7 +654,8 @@ const runSearch = async (input: UniversalSearchInput, capabilityContext: Capabil
 const queryDefinitions = {
   search: {
     title: "Search mail",
-    description: "Search messages in up to the 20 most recently updated mailboxes the current actor can read.",
+    description:
+      "Normal cross-mailbox search entry: find messages in up to the 20 most recently updated mailboxes the current actor can read.",
     input: UniversalSearchInputSchema,
     data: UniversalSearchDataSchema,
     openWorld: true,
@@ -640,31 +666,36 @@ const queryDefinitions = {
   },
   "mailbox.list": {
     title: "List mailboxes",
-    description: "Start here to list accessible mailboxes and obtain a mailboxId for folder, conversation, message, or draft operations.",
+    description:
+      "Start here to page through up to 200 accessible mailboxes and obtain typed mailbox refs for folder, conversation, message, or draft operations.",
     input: c.MailboxListInputSchema,
     data: c.MailboxListDataSchema,
     openWorld: false,
     run: async (input: z.output<typeof c.MailboxListInputSchema>, context: CapabilityExecutionContext) => {
-      const result = await mailboxes.listMailboxes(requestContext(context), input.limit, undefined, input.query, input.minimumPermission);
+      const result = await mailboxes.listMailboxes(requestContext(context), 200, undefined, input.query, input.minimumPermission);
       if (!result.ok) return result;
       const ids = await publicResources.publicIds(
         "mailboxes",
         result.data.map((item) => item.id),
       );
-      return ok({
-        data: result.data.map((item) =>
+      return paginateSortedList({
+        result,
+        scope: `mailbox.list:${input.minimumPermission}:${input.query ?? ""}`,
+        cursor: input.cursor,
+        limit: input.limit,
+        id: (item) => item.id,
+        map: (item) =>
           mapMailboxListItem(item as Mailbox & { permission: "read" | "write" | "admin" }, requirePublicId(ids, item.id)),
-        ),
       });
     },
   },
   "mailbox.read": {
     title: "Read mailbox",
     description: "Read one accessible mailbox without exposing connector credentials.",
-    input: c.ResourceReadInputSchema,
+    input: c.MailboxReadInputSchema,
     data: c.MailboxDataSchema,
     openWorld: false,
-    run: async (input: z.output<typeof c.ResourceReadInputSchema>, context: CapabilityExecutionContext) => {
+    run: async (input: z.output<typeof c.MailboxReadInputSchema>, context: CapabilityExecutionContext) => {
       const mailContext = requestContext(context);
       const scope = await resolveMailboxScope(input.id);
       if (!scope.ok) return scope;
@@ -725,22 +756,27 @@ const queryDefinitions = {
   },
   "mailbox.member.list": {
     title: "List mailbox members",
-    description: "List people eligible for assignment in a mailbox.",
+    description: "Page through up to 200 current people eligible for assignment in one mailbox.",
     input: c.MailboxMemberListInputSchema,
     data: c.MailboxMemberListDataSchema,
     openWorld: false,
     run: async (input: z.output<typeof c.MailboxMemberListInputSchema>, context: CapabilityExecutionContext) => {
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
-      return mapResult(
-        await collaboration.listAssignableUsers({
-          context: requestContext(context),
-          mailboxId: scope.data.id,
-          search: input.query,
-          limit: input.limit,
-        }),
-        (items) => items,
-      );
+      const result = await collaboration.listAssignableUsers({
+        context: requestContext(context),
+        mailboxId: scope.data.id,
+        search: input.query,
+        limit: 200,
+      });
+      return paginateSortedList({
+        result,
+        scope: `mailbox.member.list:${scope.data.id}:${input.query ?? ""}`,
+        cursor: input.cursor,
+        limit: input.limit,
+        id: (item) => item.id,
+        map: (item) => item,
+      });
     },
   },
   "folder.list": {
@@ -852,6 +888,7 @@ const queryDefinitions = {
           const participantSummary = truncateText(item.participantSummary, 500);
           return {
             ...item,
+            ref: { type: "mail.conversation" as const, id: conversationId },
             id: conversationId,
             mailboxId,
             subject: subject.text,
@@ -866,8 +903,9 @@ const queryDefinitions = {
     },
   },
   "conversation.search": {
-    title: "Search conversations",
-    description: "Search a whole mailbox using structured sender, recipient, subject, body, date, flag, folder, or attachment expressions.",
+    title: "Search one mailbox with filters",
+    description:
+      "Specialized structured search within one mailbox using sender, recipient, subject, body, date, flag, folder, or attachment expressions.",
     input: c.ConversationSearchInputSchema,
     data: c.ConversationSearchDataSchema,
     openWorld: true,
@@ -955,6 +993,7 @@ const queryDefinitions = {
         const id = requirePublicId(ids, item.id);
         return {
           ...item,
+          ref: { type: "mail.conversation" as const, id },
           id,
           links: [openLink(conversationHref(scope.data.mailbox.shortId, id))],
         };
@@ -969,10 +1008,10 @@ const queryDefinitions = {
     title: "Read conversation",
     description:
       "Read the shared summary, collaboration state, tags, and latest message IDs for one conversation; call message.read for safe plain-text bodies.",
-    input: c.ResourceReadInputSchema,
+    input: c.ConversationReadInputSchema,
     data: c.ConversationGetDataSchema,
     openWorld: true,
-    run: async (input: z.output<typeof c.ResourceReadInputSchema>, context: CapabilityExecutionContext) => {
+    run: async (input: z.output<typeof c.ConversationReadInputSchema>, context: CapabilityExecutionContext) => {
       const mailContext = requestContext(context);
       const conversation = await resolvePublicResource("conversations", input.id);
       if (!conversation.ok) return conversation;
@@ -1065,10 +1104,10 @@ const queryDefinitions = {
   "message.read": {
     title: "Read message",
     description: "Read one email message body as safe plain text with bounded attachment metadata. Raw source and HTML are excluded.",
-    input: c.ResourceReadInputSchema,
+    input: c.MessageReadInputSchema,
     data: c.MessageDataSchema,
     openWorld: true,
-    run: async (input: z.output<typeof c.ResourceReadInputSchema>, context: CapabilityExecutionContext) => {
+    run: async (input: z.output<typeof c.MessageReadInputSchema>, context: CapabilityExecutionContext) => {
       const message = await resolvePublicResource("messages", input.id);
       if (!message.ok) return message;
       const mailboxId = await resourceParents.message(message.data);
@@ -1149,10 +1188,10 @@ const queryDefinitions = {
   "attachment.read": {
     title: "Read message attachment",
     description: "Read bounded metadata for one message attachment without loading its content.",
-    input: c.ResourceReadInputSchema,
+    input: c.AttachmentReadInputSchema,
     data: c.AttachmentReadDataSchema,
     openWorld: false,
-    run: async (input: z.output<typeof c.ResourceReadInputSchema>, context: CapabilityExecutionContext) => {
+    run: async (input: z.output<typeof c.AttachmentReadInputSchema>, context: CapabilityExecutionContext) => {
       const attachmentId = await resolvePublicResource("attachments", input.id);
       if (!attachmentId.ok) return attachmentId;
       const parent = await resourceParents.attachment(attachmentId.data);
@@ -1276,26 +1315,33 @@ const queryDefinitions = {
   },
   "draft.list": {
     title: "List drafts",
-    description: "List active user drafts for one mailbox.",
+    description: "Page through up to 200 active user drafts for one mailbox and return a typed ref with every draft.",
     input: c.DraftListInputSchema,
     data: c.DraftListDataSchema,
     openWorld: false,
     run: async (input: z.output<typeof c.DraftListInputSchema>, context: CapabilityExecutionContext) => {
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
-      const result = await drafts.listDrafts(requestContext(context), scope.data.id, input.limit);
+      const result = await drafts.listDrafts(requestContext(context), scope.data.id, 200);
       if (!result.ok) return result;
       const ids = await draftPublicIds(result.data);
-      return ok({ data: result.data.map((draft) => mapDraftSummary(draft, ids)) });
+      return paginateSortedList({
+        result,
+        scope: `draft.list:${scope.data.id}`,
+        cursor: input.cursor,
+        limit: input.limit,
+        id: (item) => item.id,
+        map: (item) => mapDraftSummary(item, ids),
+      });
     },
   },
   "draft.read": {
     title: "Read draft",
     description: "Read one editable or scheduled draft.",
-    input: c.ResourceReadInputSchema,
+    input: c.DraftReadInputSchema,
     data: c.DraftDataSchema,
     openWorld: false,
-    run: async (input: z.output<typeof c.ResourceReadInputSchema>, context: CapabilityExecutionContext) => {
+    run: async (input: z.output<typeof c.DraftReadInputSchema>, context: CapabilityExecutionContext) => {
       const draftId = await resolvePublicResource("drafts", input.id);
       if (!draftId.ok) return draftId;
       const mailboxId = await resourceParents.draft(draftId.data);
@@ -1308,8 +1354,9 @@ const queryDefinitions = {
     },
   },
   "draft.send.review": {
-    title: "Review draft before sending",
-    description: "Review safety warnings and obtain approval for draft.send; this does not send the draft email.",
+    title: "Check draft send safety",
+    description:
+      "Check one draft for send-safety warnings and return the domain safety approval token required by draft.send. This does not send email or run the Action.",
     input: c.DraftSendReviewInputSchema,
     data: c.DraftSendReviewDataSchema,
     openWorld: false,
@@ -1378,7 +1425,7 @@ const queryDefinitions = {
       const projected = await projectComments(serviceResult.data.items);
       const result = await mapPage(ok({ ...serviceResult.data, items: projected }), (item) => {
         const body = boundedText(item.body, 1000);
-        return { ...item, body: body.text, bodyTruncated: body.truncated };
+        return { ...item, ref: { type: "mail.comment" as const, id: item.id }, body: body.text, bodyTruncated: body.truncated };
       });
       return result.ok
         ? ok({
@@ -1391,10 +1438,10 @@ const queryDefinitions = {
   "comment.read": {
     title: "Read conversation comment",
     description: "Read one accessible internal conversation comment by stable ID.",
-    input: c.ResourceReadInputSchema,
+    input: c.CommentReadInputSchema,
     data: c.CommentDataSchema,
     openWorld: false,
-    run: async (input: z.output<typeof c.ResourceReadInputSchema>, context: CapabilityExecutionContext) => {
+    run: async (input: z.output<typeof c.CommentReadInputSchema>, context: CapabilityExecutionContext) => {
       const commentId = await resolvePublicResource("comments", input.id);
       if (!commentId.ok) return commentId;
       const parent = await resourceParents.comment(commentId.data);
@@ -1480,10 +1527,10 @@ const queryDefinitions = {
   "reminder.read": {
     title: "Read personal reminder",
     description: "Read one personal reminder owned by the current user-backed actor.",
-    input: c.ResourceReadInputSchema,
+    input: c.ReminderReadInputSchema,
     data: c.ReminderDataSchema,
     openWorld: false,
-    run: async (input: z.output<typeof c.ResourceReadInputSchema>, context: CapabilityExecutionContext) => {
+    run: async (input: z.output<typeof c.ReminderReadInputSchema>, context: CapabilityExecutionContext) => {
       const reminderId = await resolvePublicResource("reminders", input.id);
       if (!reminderId.ok) return reminderId;
       const parent = await resourceParents.reminder(reminderId.data);
@@ -1527,6 +1574,7 @@ const queryDefinitions = {
       const projected = await projectDeliveries(result.data.items);
       return ok({
         data: projected.map((item) => ({
+          ref: { type: "mail.delivery" as const, id: item.id },
           id: item.id,
           commandId: item.commandId,
           draftId: item.draftId,
@@ -1547,10 +1595,10 @@ const queryDefinitions = {
   "delivery.read": {
     title: "Read scheduled delivery",
     description: "Read one scheduled delivery by identifier.",
-    input: c.ResourceReadInputSchema,
+    input: c.DeliveryReadInputSchema,
     data: c.DeliveryDataSchema,
     openWorld: false,
-    run: async (input: z.output<typeof c.ResourceReadInputSchema>, context: CapabilityExecutionContext) => {
+    run: async (input: z.output<typeof c.DeliveryReadInputSchema>, context: CapabilityExecutionContext) => {
       const deliveryId = await resolvePublicResource("deliveries", input.id);
       if (!deliveryId.ok) return deliveryId;
       const mailboxId = await resourceParents.delivery(deliveryId.data);

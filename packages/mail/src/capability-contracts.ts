@@ -25,9 +25,13 @@ const TimestampSchema = z.string().datetime({ offset: true });
 const NullableTimestampSchema = TimestampSchema.nullable();
 const NullableTextSchema = z.string().nullable();
 const UuidSchema = z.uuid();
-const MailboxIdInputSchema = ResourceShortIdSchema.describe("Mailbox ID that scopes the operation.");
-const ConversationIdInputSchema = ResourceShortIdSchema.describe("Conversation ID.");
-const DraftIdInputSchema = ResourceShortIdSchema.describe("Draft ID.");
+const MailboxIdInputSchema = ResourceShortIdSchema.describe(
+  "Exact mail.mailbox ID returned by List mailboxes or a typed mailbox ref.",
+);
+const ConversationIdInputSchema = ResourceShortIdSchema.describe(
+  "Exact mail.conversation ID returned by a conversation list, search, focus result, or typed conversation ref.",
+);
+const DraftIdInputSchema = ResourceShortIdSchema.describe("Exact mail.draft ID returned by List drafts or a typed draft ref.");
 const ExpectedRevisionInputSchema = z.number().int().positive().describe("Current resource revision used for optimistic concurrency.");
 const CursorSchema = z.string().min(1).max(2048).optional().describe("Opaque cursor returned by the previous page.");
 const LimitSchema = z.number().int().min(1).max(100).default(25).describe("Maximum number of results to return.");
@@ -35,6 +39,14 @@ const PageInputShape = { cursor: CursorSchema, limit: LimitSchema };
 const VocabularyLimitSchema = z.number().int().min(1).max(50).default(25).describe("Maximum number of results to return.");
 const VocabularyPageInputShape = { cursor: CursorSchema, limit: VocabularyLimitSchema };
 const OptionalResourceLinksShape = { links: z.array(CapabilitySemanticLinkSchema).min(1).max(10).optional() };
+const resourceRefSchema = <Type extends string>(type: Type) =>
+  z.object({ type: z.literal(type), id: ResourceShortIdSchema }).strict();
+const MailboxRefSchema = resourceRefSchema("mail.mailbox");
+const ConversationRefSchema = resourceRefSchema("mail.conversation");
+const MessageRefSchema = resourceRefSchema("mail.message");
+const DraftRefSchema = resourceRefSchema("mail.draft");
+const DeliveryRefSchema = resourceRefSchema("mail.delivery");
+const CommentRefSchema = resourceRefSchema("mail.comment");
 const CapabilityMailSearchLeafSchema = z.discriminatedUnion("type", [
   mailSearchTermSchema,
   mailSearchDateSchema,
@@ -101,15 +113,30 @@ export const MailboxDataSchema = z
     updatedAt: TimestampSchema,
   })
   .strict();
-export const MailboxListDataSchema = z.array(MailboxDataSchema.extend(OptionalResourceLinksShape).strict()).max(100);
+export const MailboxListDataSchema = z
+  .array(MailboxDataSchema.extend({ ref: MailboxRefSchema, ...OptionalResourceLinksShape }).strict())
+  .max(100);
 export const MailboxListInputSchema = z
   .object({
     query: z.string().trim().max(500).optional().describe("Optional mailbox name or description search."),
     minimumPermission: z.enum(["read", "write", "admin"]).default("read").describe("Minimum mailbox permission to include."),
+    cursor: CursorSchema,
     limit: LimitSchema,
   })
   .strict();
-export const ResourceReadInputSchema = z.object({ id: ResourceShortIdSchema.describe("Stable resource ID.") }).strict();
+const resourceReadInputSchema = (type: string, source: string) =>
+  z.object({ id: ResourceShortIdSchema.describe(`Exact ${type} ID returned by ${source} or a typed resource ref.`) }).strict();
+export const MailboxReadInputSchema = resourceReadInputSchema("mail.mailbox", "List mailboxes");
+export const ConversationReadInputSchema = resourceReadInputSchema(
+  "mail.conversation",
+  "a conversation list, search, or focus result",
+);
+export const MessageReadInputSchema = resourceReadInputSchema("mail.message", "List conversation messages or Search mail");
+export const AttachmentReadInputSchema = resourceReadInputSchema("mail.attachment", "message attachment metadata");
+export const DraftReadInputSchema = resourceReadInputSchema("mail.draft", "List drafts");
+export const CommentReadInputSchema = resourceReadInputSchema("mail.comment", "List conversation comments");
+export const ReminderReadInputSchema = resourceReadInputSchema("mail.reminder", "Get personal reminder");
+export const DeliveryReadInputSchema = resourceReadInputSchema("mail.delivery", "List scheduled deliveries");
 
 export const SenderIdentityDataSchema = z
   .object({
@@ -150,6 +177,7 @@ export const MailboxMemberListInputSchema = z
   .object({
     mailboxId: MailboxIdInputSchema,
     query: z.string().trim().max(500).optional().describe("Optional member name or user identifier search."),
+    cursor: CursorSchema,
     limit: LimitSchema,
   })
   .strict();
@@ -173,6 +201,7 @@ export const FolderListInputSchema = z.object({ mailboxId: MailboxIdInputSchema,
 
 export const ConversationDataSchema = z
   .object({
+    ref: ConversationRefSchema,
     id: ResourceShortIdSchema,
     mailboxId: ResourceShortIdSchema,
     primaryReference: z.string().max(500).nullable(),
@@ -218,6 +247,7 @@ export const ConversationListInputSchema = z
 
 export const ConversationFocusDataSchema = z
   .object({
+    ref: ConversationRefSchema,
     id: ResourceShortIdSchema,
     mailboxId: ResourceShortIdSchema,
     mailboxName: z.string().min(1).max(160),
@@ -286,6 +316,7 @@ export const ConversationRelatedDataSchema = z
   .array(
     z
       .object({
+        ref: ConversationRefSchema,
         id: ResourceShortIdSchema,
         subject: z.string().max(2_000),
         participantSummary: z.string().max(2_000),
@@ -384,7 +415,10 @@ export const MessageSummaryDataSchema = z
     remoteAvailable: z.boolean(),
   })
   .strict();
-export const NavigableMessageSummaryDataSchema = MessageSummaryDataSchema.extend(OptionalResourceLinksShape).strict();
+export const NavigableMessageSummaryDataSchema = MessageSummaryDataSchema.extend({
+  ref: MessageRefSchema,
+  ...OptionalResourceLinksShape,
+}).strict();
 export const MessageListDataSchema = z.array(NavigableMessageSummaryDataSchema).max(100);
 export const MessageListInputSchema = z
   .object({
@@ -495,6 +529,7 @@ export const DraftDataSchema = z
   .strict();
 export const DraftSummaryDataSchema = z
   .object({
+    ref: DraftRefSchema,
     id: ResourceShortIdSchema,
     mailboxId: ResourceShortIdSchema,
     conversationId: ResourceShortIdSchema.nullable(),
@@ -515,7 +550,7 @@ export const DraftSummaryDataSchema = z
   })
   .strict();
 export const DraftListDataSchema = z.array(DraftSummaryDataSchema).max(100);
-export const DraftListInputSchema = z.object({ mailboxId: MailboxIdInputSchema, limit: LimitSchema }).strict();
+export const DraftListInputSchema = z.object({ mailboxId: MailboxIdInputSchema, ...PageInputShape }).strict();
 export const DraftSendReviewInputSchema = z
   .object({ mailboxId: MailboxIdInputSchema, draftId: DraftIdInputSchema, expectedRevision: ExpectedRevisionInputSchema })
   .strict();
@@ -618,7 +653,7 @@ export const DeliveryDataSchema = z
     createdAt: TimestampSchema,
   })
   .strict();
-export const DeliveryListDataSchema = z.array(DeliveryDataSchema).max(100);
+export const DeliveryListDataSchema = z.array(DeliveryDataSchema.extend({ ref: DeliveryRefSchema }).strict()).max(100);
 export const DeliveryListInputSchema = z.object({ mailboxId: MailboxIdInputSchema, ...PageInputShape }).strict();
 export const DeliveryCancelInputSchema = z
   .object({
@@ -828,6 +863,7 @@ export const CommentDataSchema = z
   })
   .strict();
 export const CommentSummaryDataSchema = CommentDataSchema.omit({ body: true }).extend({
+  ref: CommentRefSchema,
   body: z.string().max(1000).nullable(),
   bodyTruncated: z.boolean(),
 });
