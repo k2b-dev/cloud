@@ -70,12 +70,15 @@ const ChatTaskUpdateInputSchema = z
       context.addIssue({ code: "custom", path: ["timezone"], message: "Timezone is only used with a schedule" });
   });
 const ChatTaskIdInputSchema = z.object({ taskId: ChatTaskIdSchema }).strict();
-const ChatTaskReadInputSchema = z.object({ id: ChatTaskIdSchema.describe("Readable ID of the scheduled task to read.") }).strict();
+const ChatTaskReadInputSchema = z
+  .object({ id: ChatTaskIdSchema.describe("Scheduled-task ID returned by List scheduled AI tasks or a core.task ref.") })
+  .strict();
 const ChatTasksListInputSchema = z
   .object({
-    chatId: ChatIdSchema.optional().describe("Optional readable chat ID to limit the task list."),
+    chatId: ChatIdSchema.optional().describe("Optional AI conversation ID returned by chat search/read or a core.chat ref."),
     state: z.enum(["active", "paused", "completed", "needs_attention"]).optional().describe("Optional task lifecycle state."),
     limit: z.number().int().min(1).max(50).default(20).describe("Maximum number of tasks to return."),
+    cursor: z.string().regex(/^\d+$/).optional().describe("Opaque cursor returned by the previous task page."),
   })
   .strict();
 const ChatTaskDataSchema = z
@@ -108,6 +111,9 @@ const ChatTaskDetailDataSchema = z
     ),
   })
   .strict();
+const ChatTaskListItemDataSchema = ChatTaskDataSchema.extend({
+  ref: z.object({ type: z.literal("core.task"), id: ChatTaskIdSchema }).strict(),
+}).strict();
 
 const taskData = (task: AiChatTask): z.infer<typeof ChatTaskDataSchema> => ({
   id: task.shortId,
@@ -336,19 +342,26 @@ export const aiCapabilities = defineCapabilities({
   queries: {
     "tasks.list": {
       title: "List scheduled AI tasks",
-      description: "List the current user's chat-bound scheduled tasks, optionally for one chat or state.",
+      description:
+        "List the current user's chat-bound scheduled tasks, optionally for one chat or state. Each item includes a core.task ref for Read a scheduled AI task.",
       input: ChatTasksListInputSchema,
-      data: z.array(ChatTaskDataSchema),
+      data: z.array(ChatTaskListItemDataSchema),
       openWorld: false,
       async run(input, context) {
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        const tasks = await aiChatTasks.list({ userId: context.user.id, ...input });
-        return ok({ data: tasks.map(taskData), refs: tasks.map((task) => ({ type: "core.task", id: task.shortId })) });
+        const offset = Number(input.cursor ?? "0");
+        const tasks = await aiChatTasks.list({ userId: context.user.id, ...input, offset, limit: input.limit + 1 });
+        const items = tasks.slice(0, input.limit);
+        return ok({
+          data: items.map((task) => ({ ...taskData(task), ref: { type: "core.task" as const, id: task.shortId } })),
+          refs: items.map((task) => ({ type: "core.task", id: task.shortId })),
+          page: capabilityPage(tasks.length > input.limit ? String(offset + input.limit) : undefined),
+        });
       },
     },
     "task.read": {
       title: "Read a scheduled AI task",
-      description: "Read one owned scheduled task and its recent occurrence history.",
+      description: "Read one owned scheduled task from a core.task ref or task ID, including its recent occurrence history.",
       input: ChatTaskReadInputSchema,
       data: ChatTaskDetailDataSchema,
       openWorld: false,

@@ -176,6 +176,21 @@ describe("Core AI capabilities", () => {
     }
   });
 
+  test("returns item-local task refs and an unambiguous next page", async () => {
+    spyOn(aiChatTasks, "list").mockResolvedValue([scheduledTask, { ...scheduledTask, shortId: "tSk999" }]);
+
+    const result = await aiCapabilities.queries["tasks.list"].run({ limit: 1 }, context);
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        data: [{ id: scheduledTask.shortId, ref: { type: "core.task", id: scheduledTask.shortId } }],
+        page: { nextCursor: "1", hasMore: true },
+      },
+    });
+    expect(aiChatTasks.list).toHaveBeenCalledWith(expect.objectContaining({ limit: 2, offset: 0 }));
+  });
+
   test("returns a schema-valid user outcome from every Core action", async () => {
     spyOn(taskRuntime, "reconcileAiChatTasks").mockResolvedValue();
     spyOn(taskRuntime.aiChatTaskRuntime, "recover").mockResolvedValue({ queued: 0 });

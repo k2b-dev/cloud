@@ -132,6 +132,7 @@ export const aiChatTasks = {
     chatId?: string;
     state?: AiChatTaskState;
     limit?: number;
+    offset?: number;
   }): Promise<AiChatTask[]> => {
     const rows = await sql<TaskRow[]>`
       ${taskSelect}
@@ -140,6 +141,7 @@ export const aiChatTasks = {
         AND (${input.state ?? null}::text IS NULL OR task.state = ${input.state ?? null})
       ORDER BY task.created_at DESC, task.id DESC
       LIMIT ${Math.min(Math.max(input.limit ?? 50, 1), 100)}
+      OFFSET ${Math.max(input.offset ?? 0, 0)}
     `;
     return rows.map(toTask);
   },
