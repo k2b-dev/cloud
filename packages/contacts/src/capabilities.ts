@@ -617,6 +617,7 @@ const runContactRead = async (input: z.infer<typeof ContactReadInputSchema>, con
   if (!contact) return fail(err.notFound("Contact"));
   return ok({
     data: mapContactDetail(contact),
+    summary: boundedCapabilitySummary(`Read contact “${resolveContactName(contact)}”.`),
     refs: [{ type: "contacts.contact", id: contact.id }],
     links: [{ rel: "open" as const, href: contactHref(contact) }],
   });
@@ -637,6 +638,7 @@ const runBookRead = async (input: z.infer<typeof ContactBookReadInputSchema>, co
       createdAt: book.createdAt,
       updatedAt: book.updatedAt,
     },
+    summary: boundedCapabilitySummary(`Read address book “${book.name}”.`),
     refs: [{ type: "contacts.book", id: book.id }],
     links: [{ rel: "open" as const, href: `/app/contacts/${book.id}` }],
   });
@@ -652,7 +654,12 @@ const runTagRead = async (input: z.infer<typeof ContactTagReadInputSchema>, cont
   const [publicTag] = await projectTags([tag]);
   if (!publicTag) return fail(err.notFound("Tag"));
   const data = mapTag(publicTag);
-  return ok({ data, refs: [{ type: "contacts.tag", id: publicTag.id }], links: data.links });
+  return ok({
+    data,
+    summary: boundedCapabilitySummary(`Read contact tag “${publicTag.name}”.`),
+    refs: [{ type: "contacts.tag", id: publicTag.id }],
+    links: data.links,
+  });
 };
 
 const runNoteRead = async (input: z.infer<typeof ContactNoteReadInputSchema>, context: CapabilityExecutionContext) => {
@@ -671,6 +678,7 @@ const runNoteRead = async (input: z.infer<typeof ContactNoteReadInputSchema>, co
   if (!publicNote || !publicContact) return fail(err.notFound("Note"));
   return ok({
     data: mapNote(publicNote),
+    summary: boundedCapabilitySummary(`Read a contact note on “${resolveContactName(publicContact)}”.`),
     refs: [
       { type: "contacts.note", id: publicNote.id },
       { type: "contacts.contact", id: publicNote.contactId },
@@ -1027,7 +1035,7 @@ export const contactsCapabilities = defineCapabilities({
     "contact.search": {
       title: "Search contacts",
       description:
-        "Find, show, or open permission-filtered contacts by name, email, phone, or address-book facet. Returns navigable contact cards.",
+        "Normal cross-book discovery entry when no address book is known. Find contacts by name, email, phone, or book facet and use returned contacts.contact refs with contact.read.",
       input: UniversalSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -1043,7 +1051,7 @@ export const contactsCapabilities = defineCapabilities({
     "contact.suggest": {
       title: "Suggest contacts",
       description:
-        "Specialized recipient autocomplete for composing mail. Matches readable contacts by name, organization, email address, phone number, or address and returns contacts.contact refs.",
+        "Specialized recipient picker for composing mail. Returns email-capable contacts and contacts.contact refs; use contact.search for general discovery or contact.resolve when exact email addresses are already known.",
       input: ContactSuggestInputSchema,
       data: ContactSuggestDataSchema,
       openWorld: false,
@@ -1052,7 +1060,7 @@ export const contactsCapabilities = defineCapabilities({
     "contact.resolve": {
       title: "Resolve contacts by email",
       description:
-        "Specialized exact-email lookup. Resolve up to 100 known exact email addresses to every readable matching contact and contacts.contact ref.",
+        "Specialized lookup for known exact email addresses or contact IDs. Returns canonical contacts.contact refs; use contact.search when the contact is not known and contact.suggest for recipient suggestions.",
       input: ContactResolveInputSchema,
       data: ContactResolveDataSchema,
       openWorld: false,
@@ -1061,7 +1069,7 @@ export const contactsCapabilities = defineCapabilities({
     "contact.list": {
       title: "List contacts",
       description:
-        "List contacts in one already selected readable address book with bounded filters, opaque pagination, and navigable contact cards.",
+        "Browse and filter contacts inside one known address book. Get bookId from book.list; use returned contacts.contact refs with contact.read. Use contact.search instead when no book is known.",
       input: ContactListInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -1069,7 +1077,8 @@ export const contactsCapabilities = defineCapabilities({
     },
     "contact.read": {
       title: "Read contact",
-      description: "Read one contact from a contacts.contact ref or contact ID after checking its owning address book.",
+      description:
+        "Read one contacts.contact ref returned by contact.search, contact.list, contact.suggest, or contact.resolve after checking its owning address book.",
       input: ContactReadInputSchema,
       data: ContactDetailDataSchema,
       openWorld: false,
@@ -1077,7 +1086,7 @@ export const contactsCapabilities = defineCapabilities({
     },
     "book.read": {
       title: "Read address book",
-      description: "Read one accessible address book from a contacts.book ref or address-book ID.",
+      description: "Read one contacts.book ref or address-book ID returned by book.list.",
       input: ContactBookReadInputSchema,
       data: ContactBookDataSchema,
       openWorld: false,
@@ -1085,7 +1094,7 @@ export const contactsCapabilities = defineCapabilities({
     },
     "tag.read": {
       title: "Read contact tag",
-      description: "Read one contact tag from a contacts.tag ref or tag ID after checking its owning address book.",
+      description: "Read one contacts.tag ref returned by tag.list after checking its owning address book.",
       input: ContactTagReadInputSchema,
       data: ContactTagDataSchema,
       openWorld: false,
@@ -1093,7 +1102,7 @@ export const contactsCapabilities = defineCapabilities({
     },
     "note.read": {
       title: "Read contact note",
-      description: "Read one contact note from a contacts.note ref or note ID after checking its parent contact and address book.",
+      description: "Read one contacts.note ref returned by note.list after checking its parent contact and address book.",
       input: ContactNoteReadInputSchema,
       data: ContactNoteDataSchema,
       openWorld: false,
@@ -1101,7 +1110,8 @@ export const contactsCapabilities = defineCapabilities({
     },
     "book.list": {
       title: "List address books",
-      description: "List address books the current actor may read, including effective permissions for choosing action targets.",
+      description:
+        "Normal entry for book-scoped Contacts work. List readable address books with effective permissions; use returned contacts.book refs or IDs with contact.list, tag.list, or contact.create.",
       input: ContactBookListInputSchema,
       data: ContactBookListDataSchema,
       openWorld: false,
@@ -1109,7 +1119,8 @@ export const contactsCapabilities = defineCapabilities({
     },
     "tag.list": {
       title: "List contact tags",
-      description: "List the bounded tag vocabulary for one readable address book.",
+      description:
+        "List tags in one known address book. Get bookId from book.list; use returned contacts.tag refs with tag.read or their IDs with contact.list and tag.change.",
       input: ContactTagListInputSchema,
       data: ContactTagListDataSchema,
       openWorld: false,
@@ -1117,7 +1128,8 @@ export const contactsCapabilities = defineCapabilities({
     },
     "note.list": {
       title: "List contact notes",
-      description: "List notes for one readable contact, newest first.",
+      description:
+        "List notes for one known contact, newest first. Get contactId from a contacts.contact ref; use returned contacts.note refs with note.read.",
       input: ContactNoteListInputSchema,
       data: ContactNoteListDataSchema,
       openWorld: false,

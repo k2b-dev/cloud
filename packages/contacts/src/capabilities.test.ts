@@ -190,12 +190,12 @@ describe("contacts capabilities", () => {
   });
 
   test("separates general contact discovery from mail-specific lookup", () => {
-    expect(contactsCapabilities.queries["contact.search"].description).toContain("Find, show, or open");
-    expect(contactsCapabilities.queries["contact.search"].description).toContain("navigable contact cards");
+    expect(contactsCapabilities.queries["contact.search"].description).toContain("Normal cross-book discovery entry");
+    expect(contactsCapabilities.queries["contact.search"].description).toContain("contact.read");
     expect(contactsCapabilities.queries["contact.suggest"].description).toContain("composing mail");
     expect(contactsCapabilities.queries["contact.resolve"].description).toContain("known exact email addresses");
-    expect(contactsCapabilities.queries["contact.list"].description).toContain("navigable contact cards");
-    expect(contactsCapabilities.queries["contact.list"].description).toContain("opaque pagination");
+    expect(contactsCapabilities.queries["contact.list"].description).toContain("Get bookId from book.list");
+    expect(contactsCapabilities.queries["book.list"].description).toContain("Normal entry for book-scoped Contacts work");
     expect(contactsCapabilities.queries["book.list"].title).toBe("List address books");
   });
 
@@ -262,6 +262,7 @@ describe("contacts capabilities", () => {
     expect(result.data.links).toEqual([
       { rel: "open", href: `/app/contacts/${publicBookId}?contact=${publicContactId}&contactBook=${publicBookId}` },
     ]);
+    expect(result.data.summary).toBe("Read contact “Ada Example”.");
   });
 
   test("rejects ambiguous or empty contact writes", () => {
