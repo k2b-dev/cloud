@@ -4,13 +4,14 @@ import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, filterChoiceOptions, nextEnabledChoiceIndex } from "./choice";
 import type { ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
+import type { SelectGroup } from "./Select";
 
 export type MultiSelectOption =
   | string
-  | { id: string; label?: string; description?: string; icon?: string; color?: string }
+  | { id: string; label?: string; description?: string; icon?: string; color?: string; groups?: readonly string[] }
   | ChoiceOption<string>;
 type NormalizedOption = ChoiceOption<string>;
-export type MultiSelectFetchDataFn = (query: string, signal: AbortSignal) => Promise<MultiSelectOption[]>;
+export type MultiSelectFetchDataFn = (query: string, signal: AbortSignal, group: string | null) => Promise<MultiSelectOption[]>;
 
 export type MultiSelectInputProps = ValueFieldProps<string[]> & {
   options?: MultiSelectOption[];
@@ -21,7 +22,11 @@ export type MultiSelectInputProps = ValueFieldProps<string[]> & {
   activeIcon?: string;
   fetchDebounceMs?: number;
   debounceMs?: number;
-  loadOptions?: (query: string, signal: AbortSignal) => Promise<readonly ChoiceOption<string>[]>;
+  loadOptions?: (query: string, signal: AbortSignal, group: string | null) => Promise<readonly ChoiceOption<string>[]>;
+  groups?: readonly SelectGroup[];
+  defaultGroup?: string;
+  groupsAriaLabel?: string;
+  allGroupLabel?: string;
   searchable?: boolean;
   clearable?: boolean;
   name?: string;
@@ -54,21 +59,37 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
   const [query, setQuery] = createSignal("");
   const [focusedIndex, setFocusedIndex] = createSignal(-1);
   const [cache, setCache] = createSignal<Record<string, NormalizedOption>>({});
+  const [selectedGroup, setSelectedGroup] = createSignal<string | null>(props.defaultGroup ?? null);
   let searchRef: HTMLInputElement | undefined;
+  let groupRefs: HTMLButtonElement[] = [];
 
   const values = () => resolveMaybeAccessor(props.value) ?? [];
   const error = () => resolveMaybeAccessor(props.error);
+  const activeGroup = createMemo(() => {
+    const current = selectedGroup();
+    return current && props.groups?.some((group) => group.value === current) ? current : null;
+  });
+  const groupChoices = createMemo(() => [{ value: null, label: props.allGroupLabel ?? "All" }, ...(props.groups ?? [])]);
   const asyncOptions = createChoiceLoader(
-    () => (props.fetchData ? async (query, signal) => (await props.fetchData!(query, signal)).map(normalize) : props.loadOptions),
+    () =>
+      props.fetchData
+        ? async (query, signal) => (await props.fetchData!(query, signal, activeGroup())).map(normalize)
+        : props.loadOptions
+          ? (query, signal) => props.loadOptions!(query, signal, activeGroup())
+          : undefined,
     () => props.fetchDebounceMs ?? props.debounceMs ?? 200,
   );
   const isAsync = () => Boolean(props.fetchData || props.loadOptions);
   const sourceOptions = createMemo(() => (isAsync() ? asyncOptions.options() : (props.options ?? []).map(normalize)));
+  const groupedOptions = createMemo(() => {
+    const group = activeGroup();
+    return !isAsync() && group ? sourceOptions().filter((option) => option.groups?.includes(group)) : sourceOptions();
+  });
   // Cloud's multi-select always renders its search field, and filters a static
   // option list client-side while a remote loader filters server-side.
   const searchable = () => isAsync() || (props.searchable ?? true);
   const visibleOptions = createMemo(() =>
-    isAsync() ? sourceOptions() : filterChoiceOptions(sourceOptions(), searchable() ? query() : ""),
+    isAsync() ? groupedOptions() : filterChoiceOptions(groupedOptions(), searchable() ? query() : ""),
   );
   const optionByValue = createMemo(() => {
     const options = new Map<string, NormalizedOption>();
@@ -89,6 +110,23 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
   };
   const isSelected = (value: string) => selectedValues().has(value);
   const focusFirst = () => setFocusedIndex(nextEnabledChoiceIndex(visibleOptions(), -1, 1));
+  const chooseGroup = (group: string | null) => {
+    if (group === activeGroup()) return;
+    setSelectedGroup(group);
+    focusFirst();
+    if (isAsync()) asyncOptions.load(query(), true);
+  };
+  const moveGroupFocus = (index: number, direction: 1 | -1) => {
+    const choices = groupChoices();
+    const next = (index + direction + choices.length) % choices.length;
+    chooseGroup(choices[next]?.value ?? null);
+    queueMicrotask(() => groupRefs[next]?.focus());
+  };
+  const focusGroupEdge = (last: boolean) => {
+    const index = last ? groupChoices().length - 1 : 0;
+    chooseGroup(groupChoices()[index]?.value ?? null);
+    queueMicrotask(() => groupRefs[index]?.focus());
+  };
   const open = () => {
     if (props.disabled) return;
     setQuery("");
@@ -113,6 +151,8 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
     setFocusedIndex(nextEnabledChoiceIndex(visibleOptions(), focusedIndex(), direction));
   };
   const handleKeyDown = (event: KeyboardEvent) => {
+    const inToolbar = Boolean((event.target as HTMLElement | null)?.closest?.(".k2b-choice-toolbar"));
+    if (inToolbar && event.key !== "Escape" && event.key !== "Tab") return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       if (!popover.open()) open();
@@ -262,6 +302,39 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
                   focusFirst();
                 }}
               />
+            </div>
+          </Show>
+          <Show when={(props.groups?.length ?? 0) > 0}>
+            <div class="k2b-choice-toolbar">
+              <div class="k2b-choice-groups" role="radiogroup" aria-label={props.groupsAriaLabel ?? "Filter options"}>
+                <For each={groupChoices()}>
+                  {(group, index) => (
+                    <button
+                      ref={(element) => (groupRefs[index()] = element)}
+                      type="button"
+                      role="radio"
+                      aria-checked={activeGroup() === group.value}
+                      aria-controls={listboxId}
+                      tabIndex={activeGroup() === group.value ? 0 : -1}
+                      onClick={() => chooseGroup(group.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                          event.preventDefault();
+                          moveGroupFocus(index(), 1);
+                        } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                          event.preventDefault();
+                          moveGroupFocus(index(), -1);
+                        } else if (event.key === "Home" || event.key === "End") {
+                          event.preventDefault();
+                          focusGroupEdge(event.key === "End");
+                        }
+                      }}
+                    >
+                      {group.label}
+                    </button>
+                  )}
+                </For>
+              </div>
             </div>
           </Show>
           <div id={listboxId} class="k2b-choice-options" role="listbox" aria-multiselectable="true">

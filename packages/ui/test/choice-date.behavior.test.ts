@@ -333,6 +333,52 @@ describe("@k2b/ui choice and date browser behavior", () => {
     dom.cleanup();
   });
 
+  test("combines MultiSelectInput groups with remote search and keeps selected values", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { MultiSelectInput } = await import("../src/inputs/MultiSelectInput");
+    const calls: Array<{ query: string; group: string | null }> = [];
+    const dispose = render(
+      () =>
+        createComponent(MultiSelectInput, {
+          label: "Principals",
+          value: ["user:1"],
+          selectedOptions: () => [{ id: "user:1", label: "Ada" }],
+          debounceMs: 0,
+          groups: [
+            { value: "user", label: "Users" },
+            { value: "group", label: "Groups" },
+          ],
+          fetchData: async (query, _signal, group) => {
+            calls.push({ query, group });
+            return [{ id: `${group}:${query}`, label: `${group}:${query}` }];
+          },
+        }),
+      dom.root,
+    );
+
+    dom.root.querySelector<HTMLElement>(".k2b-multi-select-trigger")?.click();
+    await Bun.sleep(0);
+    expect(calls).toEqual([{ query: "", group: null }]);
+    expect(dom.root.textContent).toContain("Ada");
+
+    Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role='radio']"))
+      .find((radio) => radio.textContent === "Groups")
+      ?.click();
+    await Bun.sleep(0);
+    expect(calls.at(-1)).toEqual({ query: "", group: "group" });
+
+    const search = dom.root.querySelector<HTMLInputElement>(".k2b-choice-search input")!;
+    setSolidInputValue(search, "ops");
+    await Bun.sleep(0);
+    expect(calls.at(-1)).toEqual({ query: "ops", group: "group" });
+    expect(dom.root.textContent).toContain("Ada");
+
+    dispose();
+    popover.restore();
+    dom.cleanup();
+  });
+
   test("toggles Select option layout without changing groups, search, or selection", async () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);

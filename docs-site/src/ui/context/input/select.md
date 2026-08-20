@@ -44,12 +44,14 @@ Static options may be strings, `{ id, label?, description?, icon?, color? }`,
 or normalized `{ value, label, description?, icon?, color?, disabled?, groups? }`
 objects.
 
-`fetchData(query, signal, group)` accepts the convenient source shapes.
-`loadOptions(query, signal, group)` accepts normalized options. Both run with
+`Select.fetchData(query, signal, group)` and
+`MultiSelectInput.fetchData(query, signal, group)` accept their convenient
+source shapes. Their `loadOptions(query, signal, group)` variants accept
+normalized options. They run with
 an empty query when the dropdown opens, debounce later input, and abort stale
 requests. `group` is the active group value or `null` for all options. Pass
 `selectedOption` when the current value needs display metadata before the first
-result arrives.
+result arrives, or `selectedOptions` for `MultiSelectInput`.
 
 Remote sources always show the search field. Set `searchable` to add it to a
 static option list, where it filters labels, descriptions, and values in the
@@ -59,7 +61,8 @@ selected pill with it instead.
 
 ### Filter one list by group
 
-Pass `groups` when a long option list benefits from a short set of filters.
+Pass `groups` to `Select` or `MultiSelectInput` when a long option list benefits
+from a short set of filters.
 Each option lists its group values through `option.groups`; one option may
 belong to several groups. `defaultGroup` selects the initial group. The built-in
 **All** choice removes the group filter, and `allGroupLabel` can rename it.

@@ -486,11 +486,12 @@ const SelectDemo = () => {
 
 const GroupedSelectDemo = () => {
   const [value, setValue] = createSignal("briefcase");
+  const [values, setValues] = createSignal(["coffee", "briefcase"]);
   return (
     <DemoCard
       id="select-groups"
       chip={{ kind: "component", name: "Select", from: "@k2b/ui" }}
-      description="Optional group chips narrow one option list without partitioning it. Options may belong to several groups; text search stays inside the active group, and All removes the group filter."
+      description="Select and MultiSelectInput can narrow one option list with the same optional group chips. Options may belong to several groups; text search stays inside the active group, and All removes the group filter."
       code={`<Select
   label="Icon"
   value={icon}
@@ -503,19 +504,39 @@ const GroupedSelectDemo = () => {
   ]}
   defaultGroup="recommended"
   searchable
+/>;
+
+<MultiSelectInput
+  label="Icons"
+  value={icons}
+  onValueChange={setIcons}
+  options={options}
+  groups={groups}
+  defaultGroup="recommended"
 />`}
     >
-      <Select
-        label="Icon"
-        description="Search the active group or switch groups to narrow the catalogue."
-        value={value}
-        onValueChange={setValue}
-        options={groupedOptions}
-        groups={selectGroups}
-        defaultGroup="recommended"
-        searchable
-        clearable
-      />
+      <div class="ui-demo-stack">
+        <Select
+          label="Icon"
+          description="Search the active group or switch groups to narrow the catalogue."
+          value={value}
+          onValueChange={setValue}
+          options={groupedOptions}
+          groups={selectGroups}
+          defaultGroup="recommended"
+          searchable
+          clearable
+        />
+        <MultiSelectInput
+          label="Icons"
+          value={values}
+          onValueChange={setValues}
+          options={groupedOptions}
+          groups={selectGroups}
+          defaultGroup="recommended"
+          clearable
+        />
+      </div>
     </DemoCard>
   );
 };

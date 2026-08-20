@@ -206,9 +206,7 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(html).not.toContain("ti ti-category-2");
     expect(html).toContain('data-view="grid" data-grid-size="sm"');
     expect(cssRule('.k2b-ui .k2b-choice-options[data-view="grid"]')).toContain("grid-template-columns");
-    expect(cssRule('.k2b-ui .k2b-choice-options[data-view="grid"] > .k2b-choice-option strong')).toContain(
-      "color: var(--k2b-text-muted)",
-    );
+    expect(cssRule('.k2b-ui .k2b-choice-options[data-view="grid"] > .k2b-choice-option strong')).toContain("color: var(--k2b-text-muted)");
     expect(cssRule('.k2b-ui .k2b-choice-options[data-view="grid"] > .k2b-choice-option strong')).toContain("font-weight: 400");
     expect(cssRule(".k2b-ui .k2b-choice-view-toggle")).toContain("margin-left: auto");
     expect(cssRule(".k2b-ui .k2b-choice-view-toggle")).toContain("background: transparent");
@@ -291,6 +289,33 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(html).not.toContain("k2b-multi-select-trigger__chevron");
     expect(html).toContain("<strong>Platform</strong><small>Runtime and infrastructure</small>");
     expect(html).not.toContain("<span><strong>Platform</strong><small>Runtime and infrastructure</small></span>");
+  });
+
+  test("renders overlapping MultiSelectInput groups with an initial filter", () => {
+    const html = renderToString(() =>
+      createComponent(MultiSelectInput, {
+        label: "Icons",
+        value: ["briefcase"],
+        groups: [
+          { value: "recommended", label: "Recommended" },
+          { value: "food", label: "Food" },
+          { value: "work", label: "Work" },
+        ],
+        defaultGroup: "recommended",
+        options: [
+          { id: "coffee", label: "Coffee", groups: ["recommended", "food"] },
+          { id: "briefcase", label: "Briefcase", groups: ["recommended", "work"] },
+          { id: "pizza", label: "Pizza", groups: ["food"] },
+        ],
+      }),
+    );
+
+    expect(html).toContain('role="radiogroup"');
+    expect(html).toContain('role="radio" aria-checked="true"');
+    expect(html).toContain(">Recommended</button>");
+    expect(html).toContain(">Coffee</strong>");
+    expect(html).toContain(">Briefcase</strong>");
+    expect(html).not.toContain(">Pizza</strong>");
   });
 
   test("keeps composite field labels out of invalid HTML for targets", () => {
