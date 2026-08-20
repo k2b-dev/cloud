@@ -33,6 +33,9 @@ export const showWormholeTransferToast = (result: WormholeTransferResult) => {
   if (result.removedAssigneeCount > 0) {
     removed.push(`${result.removedAssigneeCount} ${result.removedAssigneeCount === 1 ? "assignee" : "assignees"}`);
   }
+  if (result.removedDependencyCount > 0) {
+    removed.push(`${result.removedDependencyCount} task ${result.removedDependencyCount === 1 ? "dependency" : "dependencies"}`);
+  }
 
   const query = new URLSearchParams({ view: "kanban", item: result.item.id });
   const cleanup = removed.length > 0 ? ` Removed ${removed.join(" and ")}.` : "";

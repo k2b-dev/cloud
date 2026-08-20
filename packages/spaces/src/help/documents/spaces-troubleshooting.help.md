@@ -14,6 +14,7 @@ order: 140
 - **Kanban shows the wrong column:** Kanban grouping follows the selected grouping field, commonly status. Open the item and correct that field instead of moving unrelated filters.
 - **An assignee cannot update work:** Read access is not enough to edit items. The person or one of their groups needs write or admin access.
 - **A completed item still appears:** Check the active filters and grouping. Some views intentionally include completed work.
+- **A task cannot be completed:** Open **Blocked by** and complete or remove every active blocker first. Completed blockers remain listed for context until you unlink them.
 - **A calendar subscription is stale:** Calendar clients refresh subscriptions on their own schedule. Confirm the export URL is still enabled before replacing it.
 - **A Mail invitation cannot be imported:** Confirm that Spaces is running, the attachment contains one supported REQUEST, PUBLISH, or CANCEL event, and you have write access to the chosen Space. A default Space is only a suggestion.
 - **A response action is missing in Mail:** Confirm that the message contains a supported REQUEST, you can write to at least one Space, and Mail has a verified sender identity. The response action saves/updates the event and prepares an editable Mail draft; it does not bypass Mail delivery review.

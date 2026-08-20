@@ -33,6 +33,7 @@ export default function CreateItemButton(props: Props) {
           url: intent.url ?? undefined,
           priority: intent.priority ?? undefined,
           recurrence: intent.recurrence ?? undefined,
+          estimatedDurationMinutes: intent.estimatedDurationMinutes ?? undefined,
         },
       });
       if (!res.ok) throw new Error(await readResponseError(res, "Failed to create item"));

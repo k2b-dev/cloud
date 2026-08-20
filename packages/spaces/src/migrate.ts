@@ -111,6 +111,7 @@ export const migrate = async (): Promise<void> => {
       ends_at TIMESTAMPTZ,
       all_day BOOLEAN NOT NULL DEFAULT false,
       deadline TIMESTAMPTZ,
+      estimated_duration_minutes INTEGER,
       priority TEXT CHECK (priority IN ('low', 'medium', 'high', 'urgent')),
       recurrence_rrule TEXT,
       recurrence_dtstart TIMESTAMPTZ,
@@ -126,6 +127,13 @@ export const migrate = async (): Promise<void> => {
       CONSTRAINT item_time_range CHECK (
         (starts_at IS NULL AND ends_at IS NULL) OR
         (starts_at IS NOT NULL AND ends_at IS NOT NULL AND ends_at > starts_at)
+      ),
+      CONSTRAINT items_estimated_duration_check CHECK (
+        estimated_duration_minutes IS NULL OR (
+          estimated_duration_minutes > 0
+          AND starts_at IS NULL
+          AND ends_at IS NULL
+        )
       )
     )
   `.simple();
@@ -154,6 +162,29 @@ export const migrate = async (): Promise<void> => {
   await sql`
     ALTER TABLE spaces.items
     ADD COLUMN IF NOT EXISTS all_day BOOLEAN NOT NULL DEFAULT false
+  `.simple();
+  await sql`
+    ALTER TABLE spaces.items
+    ADD COLUMN IF NOT EXISTS estimated_duration_minutes INTEGER
+  `.simple();
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'items_estimated_duration_check'
+          AND conrelid = 'spaces.items'::regclass
+      ) THEN
+        ALTER TABLE spaces.items
+        ADD CONSTRAINT items_estimated_duration_check CHECK (
+          estimated_duration_minutes IS NULL OR (
+            estimated_duration_minutes > 0
+            AND starts_at IS NULL
+            AND ends_at IS NULL
+          )
+        );
+      END IF;
+    END $$
   `.simple();
   await sql`
     ALTER TABLE spaces.items
@@ -226,6 +257,21 @@ export const migrate = async (): Promise<void> => {
     WHERE starts_at IS NOT NULL AND ends_at IS NOT NULL AND completed_at IS NULL
   `.simple();
   console.log("  ✓ spaces.items table");
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS spaces.item_dependencies (
+      item_id UUID NOT NULL REFERENCES spaces.items(id) ON DELETE CASCADE,
+      blocker_item_id UUID NOT NULL REFERENCES spaces.items(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (item_id, blocker_item_id),
+      CONSTRAINT item_dependencies_no_self CHECK (item_id <> blocker_item_id)
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_item_dependencies_blocker
+    ON spaces.item_dependencies(blocker_item_id, item_id)
+  `.simple();
+  console.log("  ✓ spaces.item_dependencies table");
 
   await sql`
     CREATE TABLE IF NOT EXISTS spaces.calendar_invitation_sources (

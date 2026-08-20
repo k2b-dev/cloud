@@ -128,6 +128,8 @@ const task: SpaceItem = {
   endsAt: null,
   allDay: false,
   deadline: null,
+  estimatedDurationMinutes: null,
+  activeBlockerCount: 0,
   priority: "high",
   recurrence: null,
   recurringEventId: null,
@@ -295,6 +297,8 @@ describe("spaces capabilities", () => {
       "space.list",
       "space.read",
       "space.search",
+      "task.blocker.list",
+      "task.blocks.list",
       "task.list",
     ]);
     expect(Object.keys(spacesCapabilities.actions).sort()).toEqual([
@@ -310,6 +314,8 @@ describe("spaces capabilities", () => {
       "item.delete",
       "item.reference.add",
       "item.reference.remove",
+      "task.blocker.add",
+      "task.blocker.remove",
       "task.create",
       "task.set-completed",
       "task.update",
@@ -759,6 +765,8 @@ describe("spaces capabilities", () => {
       descriptionPreview: "d".repeat(1000),
       descriptionTruncated: true,
       deadline: null,
+      estimatedDurationMinutes: null,
+      activeBlockerCount: 0,
       priority: "urgent" as const,
       completedAt: null,
       assignees: Array.from({ length: 3 }, () => ({ id: userId, displayName: "a".repeat(100) })),
@@ -781,18 +789,27 @@ describe("spaces capabilities", () => {
       canEdit: true,
       canDelete: true,
     }));
-    const events = tasks.map(({ kind: _kind, deadline: _deadline, priority: _priority, ...task }) => ({
-      ...task,
-      kind: "event" as const,
-      location: "l".repeat(200),
-      locationTruncated: true,
-      url: `https://example.test/${"u".repeat(470)}`,
-      urlTruncated: true,
-      startsAt: createdAt,
-      endsAt: createdAt,
-      allDay: false,
-      hasRecurrence: true,
-    }));
+    const events = tasks.map(
+      ({
+        kind: _kind,
+        deadline: _deadline,
+        estimatedDurationMinutes: _estimatedDurationMinutes,
+        activeBlockerCount: _activeBlockerCount,
+        priority: _priority,
+        ...task
+      }) => ({
+        ...task,
+        kind: "event" as const,
+        location: "l".repeat(200),
+        locationTruncated: true,
+        url: `https://example.test/${"u".repeat(470)}`,
+        urlTruncated: true,
+        startsAt: createdAt,
+        endsAt: createdAt,
+        allDay: false,
+        hasRecurrence: true,
+      }),
+    );
     const parsedTasks = TaskListDataSchema.parse(tasks);
     const parsedEvents = EventListDataSchema.parse(events);
     const parsedComments = CommentListDataSchema.parse(comments);

@@ -7,6 +7,8 @@ import type {
   SpaceComment,
   SpaceItem,
   SpaceTag,
+  SpaceTaskDependency,
+  SpaceTaskDependent,
   SpaceWormhole,
   SpaceWormholeDestination,
   SpaceWormholeTarget,
@@ -216,6 +218,48 @@ export const projectItemReferences = async <T extends { id: string; spaceId: str
   }));
 };
 
+export const projectTaskDependencies = async <T extends SpaceTaskDependency>(items: T[]): Promise<T[]> => {
+  const [itemIds, spaceIds] = await Promise.all([
+    shortIds(
+      "items",
+      items.map((item) => item.blocker.id),
+    ),
+    shortIds(
+      "spaces",
+      items.map((item) => item.blocker.spaceId),
+    ),
+  ]);
+  return items.map((item) => ({
+    ...item,
+    blocker: {
+      ...item.blocker,
+      id: required(itemIds, item.blocker.id),
+      spaceId: required(spaceIds, item.blocker.spaceId),
+    },
+  }));
+};
+
+export const projectTaskDependents = async <T extends SpaceTaskDependent>(items: T[]): Promise<T[]> => {
+  const [itemIds, spaceIds] = await Promise.all([
+    shortIds(
+      "items",
+      items.map((item) => item.dependent.id),
+    ),
+    shortIds(
+      "spaces",
+      items.map((item) => item.dependent.spaceId),
+    ),
+  ]);
+  return items.map((item) => ({
+    ...item,
+    dependent: {
+      ...item.dependent,
+      id: required(itemIds, item.dependent.id),
+      spaceId: required(spaceIds, item.dependent.spaceId),
+    },
+  }));
+};
+
 export const projectComments = async <T extends SpaceComment>(items: T[]): Promise<T[]> => {
   const [ids, itemIds] = await Promise.all([
     shortIds(
@@ -355,6 +399,8 @@ export const spacesPublicResources = {
   projectTags,
   projectItems,
   projectItemReferences,
+  projectTaskDependencies,
+  projectTaskDependents,
   projectComments,
   projectWormholes,
   projectWormholeTargets,

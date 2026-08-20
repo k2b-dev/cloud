@@ -14,6 +14,8 @@ export type ComboboxProps = FieldProps & {
   debounceMs?: number;
 };
 
+const iconClass = (icon: string) => (icon.split(/\s+/).includes("ti") ? icon : `ti ${icon}`);
+
 export function Combobox(props: ComboboxProps): JSX.Element {
   const meta = createFieldMeta(props.id);
   const listboxId = `${meta.controlId}-listbox`;
@@ -151,7 +153,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
                 onPointerDown={(event) => event.preventDefault()}
                 onClick={() => select(option)}
               >
-                <Show when={option.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+                <Show when={option.icon}>{(icon) => <i class={iconClass(icon())} aria-hidden="true" />}</Show>
                 <span>
                   <strong>{option.label}</strong>
                   <Show when={option.description}>{(description) => <small>{description()}</small>}</Show>

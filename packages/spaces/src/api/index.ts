@@ -46,6 +46,9 @@ import {
   SpaceItemSchema,
   SpaceSchema,
   SpaceTagSchema,
+  SpaceTaskDependencyInputSchema,
+  SpaceTaskDependencySchema,
+  SpaceTaskDependentSchema,
   SpaceWormholeDestinationSchema,
   SpaceWormholeSchema,
   SplitRecurringItemSchema,
@@ -79,6 +82,8 @@ import {
   projectOverlapItems,
   projectSpaces,
   projectTags,
+  projectTaskDependencies,
+  projectTaskDependents,
   projectWormholeDestinations,
   projectWormholes,
   projectWormholeTargets,
@@ -96,6 +101,8 @@ const SpaceListSchema = z.array(SpaceSchema);
 const SpaceItemListSchema = z.array(SpaceItemSchema);
 const SpaceCommentListSchema = z.array(SpaceCommentSchema);
 const SpaceItemResourceReferenceListSchema = z.array(SpaceItemResourceReferenceSchema);
+const SpaceTaskDependencyListSchema = z.array(SpaceTaskDependencySchema);
+const SpaceTaskDependentListSchema = z.array(SpaceTaskDependentSchema);
 const ResourceReferenceDeleteSchema = z.object({ ref: SpaceItemResourceReferenceInputSchema.shape.ref }).strict();
 const ResourceReferenceDeleteResultSchema = z.object({ deleted: z.boolean() }).strict();
 const SpaceAssignableUserListSchema = z.array(SpaceAssignableUserSchema);
@@ -507,6 +514,103 @@ const app = new Hono<AuthContext>()
       if (result.kind === "accessDenied") return respond(c, fail(err.forbidden(result.message)));
       if (result.kind === "notFound") return respond(c, fail(err.notFound("Item")));
       return respond(c, ok(result.detail));
+    },
+  )
+  .get(
+    "/:id/items/:itemId/blockers",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "List task blockers",
+      description: "List the bounded tasks that block one task.",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(SpaceTaskDependencyListSchema, "Task blockers") },
+    }),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "read");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      if (item.data.startsAt || item.data.endsAt) return respond(c, fail(err.badInput("Item is not a task")));
+      return respond(c, ok(await projectTaskDependencies(await spacesService.item.dependencies.list({ itemId: item.data.id }))));
+    },
+  )
+  .get(
+    "/:id/items/:itemId/blocks",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "List tasks blocked by a task",
+      description: "List the bounded tasks for which this task is a blocker.",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(SpaceTaskDependentListSchema, "Blocked tasks") },
+    }),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "read");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      if (item.data.startsAt || item.data.endsAt) return respond(c, fail(err.badInput("Item is not a task")));
+      return respond(c, ok(await projectTaskDependents(await spacesService.item.dependencies.listBlocks({ blockerItemId: item.data.id }))));
+    },
+  )
+  .post(
+    "/:id/items/:itemId/blockers",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Add task blocker",
+      description: "Add one same-Space task as an informational blocker.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(SpaceTaskDependencySchema, "Task blocker"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid dependency"),
+        409: jsonResponse(ErrorResponseSchema, "Duplicate, cycle, or dependency limit"),
+      },
+    }),
+    v("json", SpaceTaskDependencyInputSchema),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      const blocker = await requireItemInSpace(access.internalId!, c.req.valid("json").blockerItemId);
+      if (!blocker.ok) return respond(c, blocker);
+      return respond(
+        c,
+        projectMutation(
+          spacesService.item.dependencies.add({
+            itemId: item.data.id,
+            blockerItemId: blocker.data.id,
+            spaceId: access.internalId!,
+          }),
+          projectTaskDependencies,
+        ),
+      );
+    },
+  )
+  .delete(
+    "/:id/items/:itemId/blockers",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Remove task blocker",
+      ...requiresAuth,
+      responses: { 200: jsonResponse(MessageResponseSchema, "Task blocker removed") },
+    }),
+    v("json", SpaceTaskDependencyInputSchema),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      const blocker = await requireItemInSpace(access.internalId!, c.req.valid("json").blockerItemId);
+      if (!blocker.ok) return respond(c, blocker);
+      return respondMessage(
+        c,
+        spacesService.item.dependencies.remove({
+          itemId: item.data.id,
+          blockerItemId: blocker.data.id,
+          spaceId: access.internalId!,
+        }),
+        "Task blocker removed",
+      );
     },
   )
   .get(
@@ -1563,12 +1667,13 @@ const app = new Hono<AuthContext>()
     describeRoute({
       tags: ["Spaces"],
       summary: "Set completed status",
-      description: "Mark an item as completed or reopen it and move it to the first matching workflow status when needed.",
+      description: "Mark an unblocked item as completed or reopen it and move it to the first matching workflow status when needed.",
       ...requiresAuth,
       responses: {
         200: jsonResponse(SpaceItemSchema, "Updated item"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Item not found"),
+        409: jsonResponse(ErrorResponseSchema, "Task has active blockers"),
       },
     }),
     v("json", SetCompletedSchema),

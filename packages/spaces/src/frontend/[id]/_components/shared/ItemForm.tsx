@@ -15,6 +15,17 @@ import {
 import { createSignal, For, Show } from "solid-js";
 import type { SpaceItemAssignee } from "@/contracts";
 import {
+  emptyRecurrenceState,
+  type RecurrenceEndMode,
+  type RecurrenceFrequency,
+  recurrenceEndOptions,
+  recurrenceFrequencyOptions,
+  recurrenceFromFormState,
+  recurrenceToFormState,
+  summarizeRecurrenceState,
+  weekdayOptions,
+} from "@/presentation/recurrence";
+import {
   allDayEnd,
   allDayStart,
   dateOnlyRange,
@@ -26,17 +37,6 @@ import {
 } from "./item-form/date";
 import { PRIORITY_OPTIONS } from "./item-form/options";
 import type { ItemFormProps, ItemType, Priority } from "./item-form/types";
-import {
-  emptyRecurrenceState,
-  type RecurrenceEndMode,
-  type RecurrenceFrequency,
-  recurrenceEndOptions,
-  recurrenceFrequencyOptions,
-  recurrenceFromFormState,
-  recurrenceToFormState,
-  summarizeRecurrenceState,
-  weekdayOptions,
-} from "@/presentation/recurrence";
 import SpaceAssigneePicker from "./SpaceAssigneePicker";
 
 export type { ItemFormData } from "./item-form/types";
@@ -61,6 +61,9 @@ export default function ItemForm(props: ItemFormProps) {
     initialIsEvent() ? "event" : isEditMode() ? "task" : (props.defaults?.type ?? "task"),
   );
   const [deadline, setDeadline] = createSignal(dateTimeInitial(props.item?.deadline ?? props.defaults?.deadline));
+  const [estimatedDurationMinutes, setEstimatedDurationMinutes] = createSignal<number | null>(
+    props.item?.estimatedDurationMinutes ?? props.defaults?.estimatedDurationMinutes ?? null,
+  );
   const [startsAt, setStartsAt] = createSignal(dateTimeInitial(props.item?.startsAt ?? props.defaults?.startsAt));
   const [endsAt, setEndsAt] = createSignal(dateTimeInitial(props.item?.endsAt ?? props.defaults?.endsAt));
   const [allDay, setAllDay] = createSignal(props.item?.allDay ?? props.defaults?.allDay ?? false);
@@ -168,6 +171,7 @@ export default function ItemForm(props: ItemFormProps) {
       setEndsAt("");
     } else {
       setDeadline("");
+      setEstimatedDurationMinutes(null);
     }
   };
 
@@ -260,6 +264,7 @@ export default function ItemForm(props: ItemFormProps) {
             )
           : null,
       deadline: !isEvent() && deadline() ? new Date(deadline()).toISOString() : undefined,
+      estimatedDurationMinutes: !isEvent() ? (estimatedDurationMinutes() ?? (isEditMode() ? null : undefined)) : undefined,
       priority: (priority() || (isEditMode() ? null : undefined)) as Priority | null | undefined,
       assigneeIds: isEditMode() || assignees().length > 0 ? assignees().map((assignee) => assignee.id) : undefined,
       tagIds: isEditMode() || selectedTags().length > 0 ? selectedTags() : undefined,
@@ -315,15 +320,29 @@ export default function ItemForm(props: ItemFormProps) {
                     markdown
                   />
                   <Show when={!isEvent()}>
-                    <DateTimePicker
-                      label="Deadline"
-                      description={!isEditMode() ? "When should this be completed?" : undefined}
-                      value={() => deadline() || null}
-                      onValueChange={(value) => setDeadline(value ?? "")}
-                      dateConfig={props.dateConfig}
-                      presets={deadlinePresets(props.dateConfig)}
-                      clearable
-                    />
+                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <DateTimePicker
+                        label="Deadline"
+                        description={!isEditMode() ? "When should this be completed?" : undefined}
+                        value={() => deadline() || null}
+                        onValueChange={(value) => setDeadline(value ?? "")}
+                        dateConfig={props.dateConfig}
+                        presets={deadlinePresets(props.dateConfig)}
+                        clearable
+                      />
+                      <NumberInput
+                        label="Estimated duration"
+                        description={!isEditMode() ? "Planning estimate in minutes" : undefined}
+                        value={estimatedDurationMinutes}
+                        onValueChange={setEstimatedDurationMinutes}
+                        min={1}
+                        max={2_147_483_647}
+                        step={15}
+                        suffix="min"
+                        allowNegative={false}
+                        clearable
+                      />
+                    </div>
                   </Show>
 
                   <Show when={isEvent()}>

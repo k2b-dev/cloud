@@ -181,7 +181,10 @@ describe("@k2b/ui choice and date browser behavior", () => {
         createComponent(Combobox, {
           label: "Add team",
           debounceMs: 0,
-          fetchData: async () => [{ id: "platform", label: "Platform", icon: "ti ti-server" }],
+          fetchData: async () => [
+            { id: "platform", label: "Platform", icon: "ti-server" },
+            { id: "design", label: "Design", icon: "ti ti-palette" },
+          ],
           onSelect: () => {
             openDuringSelect = dom.root.querySelector<HTMLElement>(".k2b-choice-popover")?.matches(":popover-open");
           },
@@ -191,7 +194,7 @@ describe("@k2b/ui choice and date browser behavior", () => {
 
     dom.root.querySelector<HTMLInputElement>('[role="combobox"]')?.focus();
     await Bun.sleep(0);
-    expect(dom.root.querySelector('[role="option"] i')?.className).toBe("ti ti-server");
+    expect([...dom.root.querySelectorAll('[role="option"] i')].map((icon) => icon.className)).toEqual(["ti ti-server", "ti ti-palette"]);
     dom.root.querySelector<HTMLButtonElement>('[role="option"]')?.click();
 
     expect(openDuringSelect).toBe(false);

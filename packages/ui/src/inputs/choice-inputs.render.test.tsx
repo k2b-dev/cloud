@@ -189,6 +189,8 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(controls).toMatch(/^k2b-field-\d+-listbox$/);
     expect(html).toContain(`id="${controls}"`);
     expect(html).toContain("Type to search...");
+    expect(cssRule(".k2b-ui .k2b-combobox__input > i:first-child")).toContain("margin-inline: 0.625rem 0");
+    expect(cssRule(".k2b-ui .k2b-combobox__input > i:last-child")).toContain("margin-inline: 0 0.625rem");
   });
 
   test("renders multi-select values and listbox state", () => {

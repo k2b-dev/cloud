@@ -15,6 +15,7 @@ export type ItemFormData = {
   allDay?: boolean;
   recurrence?: Recurrence | null;
   deadline?: string;
+  estimatedDurationMinutes?: number | null;
   priority?: Priority | null;
   assigneeIds?: string[];
   tagIds?: string[];

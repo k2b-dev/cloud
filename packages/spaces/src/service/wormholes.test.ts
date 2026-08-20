@@ -155,6 +155,15 @@ suite("Spaces wormholes", () => {
         VALUES (${item!.id}::uuid, ${fixture.keptUserId}::uuid), (${item!.id}::uuid, ${fixture.removedUserId}::uuid)
       `;
       await sql`INSERT INTO spaces.comments (short_id, item_id, user_id, content) VALUES (${newShortId()}, ${item!.id}::uuid, ${fixture.actorUserId}::uuid, 'Keep me')`;
+      const [blocker] = await sql<{ id: string }[]>`
+        INSERT INTO spaces.items (short_id, space_id, column_id, title, rank)
+        VALUES (${newShortId()}, ${fixture.sourceSpaceId}::uuid, ${fixture.sourceColumnId}::uuid, 'Source blocker', 512)
+        RETURNING id
+      `;
+      await sql`
+        INSERT INTO spaces.item_dependencies (item_id, blocker_item_id)
+        VALUES (${item!.id}::uuid, ${blocker!.id}::uuid)
+      `;
 
       const created = await create({
         sourceSpaceId: fixture.sourceSpaceId,
@@ -180,6 +189,14 @@ suite("Spaces wormholes", () => {
       expect(result.data.item.assignees?.map((assignee) => assignee.id)).toEqual([fixture.keptUserId]);
       expect(result.data.removedTagCount).toBe(1);
       expect(result.data.removedAssigneeCount).toBe(1);
+      expect(result.data.removedDependencyCount).toBe(1);
+
+      const [dependencyCount] = await sql<{ count: number }[]>`
+        SELECT COUNT(*)::int AS count
+        FROM spaces.item_dependencies
+        WHERE item_id = ${item!.id}::uuid OR blocker_item_id = ${item!.id}::uuid
+      `;
+      expect(dependencyCount?.count).toBe(0);
 
       const [commentCount] = await sql<{ count: number }[]>`
         SELECT COUNT(*)::int AS count FROM spaces.comments WHERE item_id = ${item!.id}::uuid

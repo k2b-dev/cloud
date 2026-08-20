@@ -66,6 +66,8 @@ export type SpaceWormholeDestination = z.infer<typeof SpaceWormholeDestinationSc
 export const PrioritySchema = z.enum(["low", "medium", "high", "urgent"]);
 export type Priority = z.infer<typeof PrioritySchema>;
 
+export const EstimatedDurationMinutesSchema = z.number().int().min(1).max(2_147_483_647);
+
 export const RecurrenceSchema = z.object({
   rrule: z.string().min(1).describe("RFC 5545 RRULE string"),
   dtstart: z.string().datetime().nullable().optional().describe("Recurrence series start timestamp (ISO)"),
@@ -97,6 +99,8 @@ export const SpaceItemSchema = z.object({
   endsAt: z.string().nullable().describe("Event end time (ISO)"),
   allDay: z.boolean().default(false).describe("Whether the item is an all-day event"),
   deadline: z.string().nullable().describe("Todo deadline (ISO)"),
+  estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable().describe("Estimated task duration in minutes"),
+  activeBlockerCount: z.number().int().nonnegative().describe("Number of incomplete tasks that currently block this task"),
   priority: PrioritySchema.nullable().describe("Item priority"),
   recurrence: RecurrenceSchema.nullable().describe("Recurring event series data"),
   recurringEventId: ResourceShortIdSchema.nullable().describe("Parent recurring event ID for overrides"),
@@ -111,6 +115,38 @@ export const SpaceItemSchema = z.object({
   tags: z.array(SpaceTagSchema).optional().describe("Attached tags"),
 });
 export type SpaceItem = z.infer<typeof SpaceItemSchema>;
+
+export const SpaceTaskDependencyItemSchema = z
+  .object({
+    id: ResourceShortIdSchema.describe("Blocker task ID"),
+    spaceId: ResourceShortIdSchema.describe("Parent Space ID"),
+    title: z.string().describe("Blocker task title"),
+    completedAt: z.string().nullable().describe("Completion timestamp (ISO)"),
+  })
+  .strict();
+export type SpaceTaskDependencyItem = z.infer<typeof SpaceTaskDependencyItemSchema>;
+
+export const SpaceTaskDependencySchema = z
+  .object({
+    blocker: SpaceTaskDependencyItemSchema,
+    createdAt: z.string().describe("Dependency creation timestamp (ISO)"),
+  })
+  .strict();
+export type SpaceTaskDependency = z.infer<typeof SpaceTaskDependencySchema>;
+
+export const SpaceTaskDependentSchema = z
+  .object({
+    dependent: SpaceTaskDependencyItemSchema.describe("Task blocked by this task"),
+    createdAt: z.string().describe("Dependency creation timestamp (ISO)"),
+  })
+  .strict();
+export type SpaceTaskDependent = z.infer<typeof SpaceTaskDependentSchema>;
+
+export const MAX_ITEM_DEPENDENCIES = 100;
+export const SpaceTaskDependencyInputSchema = z
+  .object({ blockerItemId: ResourceShortIdSchema.describe("Task that blocks this task") })
+  .strict();
+export type SpaceTaskDependencyInput = z.infer<typeof SpaceTaskDependencyInputSchema>;
 
 export const MAX_ITEM_RESOURCE_REFERENCES = 100;
 export const SpaceItemResourceReferenceInputSchema = z
@@ -265,6 +301,7 @@ export const CreateItemSchema = z
     endsAt: z.string().datetime().optional().describe("Event end time (ISO)"),
     allDay: z.boolean().optional().describe("Whether the item is an all-day event"),
     deadline: z.string().datetime().optional().describe("Todo deadline (ISO)"),
+    estimatedDurationMinutes: EstimatedDurationMinutesSchema.optional().describe("Estimated task duration in minutes"),
     priority: PrioritySchema.optional().describe("Item priority"),
     recurrence: RecurrenceSchema.optional().describe("Recurring event series data"),
     recurringEventId: ResourceShortIdSchema.optional().describe("Parent recurring event ID for overrides"),
@@ -280,6 +317,10 @@ export const CreateItemSchema = z
   .refine((data) => !data.startsAt || !data.endsAt || new Date(data.endsAt) > new Date(data.startsAt), {
     message: "End time must be after start time",
     path: ["endsAt"],
+  })
+  .refine((data) => data.estimatedDurationMinutes === undefined || (!data.startsAt && !data.endsAt), {
+    message: "Estimated duration is only available for tasks",
+    path: ["estimatedDurationMinutes"],
   });
 export type CreateItem = z.infer<typeof CreateItemSchema>;
 
@@ -294,6 +335,7 @@ export const UpdateItemSchema = z
     endsAt: z.string().datetime().nullable().optional().describe("Event end time (ISO)"),
     allDay: z.boolean().optional().describe("Whether the item is an all-day event"),
     deadline: z.string().datetime().nullable().optional().describe("Todo deadline (ISO)"),
+    estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable().optional().describe("Estimated task duration in minutes"),
     priority: PrioritySchema.nullable().optional().describe("Item priority"),
     recurrence: RecurrenceSchema.nullable().optional().describe("Recurring event series data"),
     recurringEventId: ResourceShortIdSchema.nullable().optional().describe("Parent recurring event ID for overrides"),
@@ -304,6 +346,10 @@ export const UpdateItemSchema = z
   .refine((data) => !data.startsAt || !data.endsAt || new Date(data.endsAt) > new Date(data.startsAt), {
     message: "End time must be after start time",
     path: ["endsAt"],
+  })
+  .refine((data) => data.estimatedDurationMinutes == null || (!data.startsAt && !data.endsAt), {
+    message: "Estimated duration is only available for tasks",
+    path: ["estimatedDurationMinutes"],
   });
 export type UpdateItem = z.infer<typeof UpdateItemSchema>;
 
@@ -364,6 +410,7 @@ export const WormholeTransferResultSchema = z.object({
   destination: SpaceWormholeTargetSchema.describe("Resolved destination"),
   removedTagCount: z.number().int().nonnegative().describe("Removed source-space tag count"),
   removedAssigneeCount: z.number().int().nonnegative().describe("Removed assignee count"),
+  removedDependencyCount: z.number().int().nonnegative().describe("Removed task dependency count"),
 });
 export type WormholeTransferResult = z.infer<typeof WormholeTransferResultSchema>;
 

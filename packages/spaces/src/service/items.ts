@@ -67,6 +67,7 @@ type DbItem = {
   ends_at: Date | null;
   all_day: boolean;
   deadline: Date | null;
+  estimated_duration_minutes: number | null;
   priority: string | null;
   recurrence_rrule: string | null;
   recurrence_dtstart: Date | null;
@@ -474,6 +475,8 @@ const mapToItem = (row: DbItem): SpaceItem => ({
   endsAt: row.ends_at?.toISOString() ?? null,
   allDay: row.all_day,
   deadline: row.deadline?.toISOString() ?? null,
+  estimatedDurationMinutes: row.estimated_duration_minutes,
+  activeBlockerCount: 0,
   priority: (row.priority as Priority) ?? null,
   recurrence: mapRecurrence(row),
   recurringEventId: row.recurring_event_id,
@@ -561,13 +564,31 @@ const getTagsByItemIds = async (itemIds: string[]): Promise<Map<string, SpaceTag
   return grouped;
 };
 
+const getActiveBlockerCountsByItemIds = async (itemIds: string[]): Promise<Map<string, number>> => {
+  if (itemIds.length === 0) return new Map();
+  const rows = await sql<{ item_id: string; count: number }[]>`
+    SELECT dependency.item_id, COUNT(*)::int AS count
+    FROM spaces.item_dependencies dependency
+    JOIN spaces.items blocker ON blocker.id = dependency.blocker_item_id
+    WHERE dependency.item_id = ANY(${toPgUuidArray(itemIds)}::uuid[])
+      AND blocker.completed_at IS NULL
+    GROUP BY dependency.item_id
+  `;
+  return new Map(rows.map((row) => [row.item_id, row.count]));
+};
+
 const hydrateRelations = async (items: SpaceItem[]): Promise<SpaceItem[]> => {
   if (items.length === 0) return items;
   const itemIds = items.map((item) => item.id);
-  const [assigneesByItemId, tagsByItemId] = await Promise.all([getAssigneesByItemIds(itemIds), getTagsByItemIds(itemIds)]);
+  const [assigneesByItemId, tagsByItemId, blockerCountsByItemId] = await Promise.all([
+    getAssigneesByItemIds(itemIds),
+    getTagsByItemIds(itemIds),
+    getActiveBlockerCountsByItemIds(itemIds),
+  ]);
   for (const item of items) {
     item.assignees = assigneesByItemId.get(item.id) ?? [];
     item.tags = tagsByItemId.get(item.id) ?? [];
+    item.activeBlockerCount = blockerCountsByItemId.get(item.id) ?? 0;
   }
   return items;
 };
@@ -719,7 +740,7 @@ export const list = async (params: { spaceId: string; includeCompleted?: boolean
     rows = await sql<DbItem[]>`
       SELECT
         i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at, i.all_day, i.deadline,
-        i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
+        i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
         i.rank::text AS rank,
         i.completed_at, i.created_by, i.created_at, i.updated_at
       FROM spaces.items i
@@ -731,7 +752,7 @@ export const list = async (params: { spaceId: string; includeCompleted?: boolean
     rows = await sql<DbItem[]>`
       SELECT
         i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at, i.all_day, i.deadline,
-        i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
+        i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
         i.rank::text AS rank,
         i.completed_at, i.created_by, i.created_at, i.updated_at
       FROM spaces.items i
@@ -882,7 +903,7 @@ export const listFiltered = async (params: {
   // Get items with pagination
   const rows = await sql<DbItem[]>`
     SELECT i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at,
-           i.all_day, i.deadline, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
+           i.all_day, i.deadline, i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
            i.rank::text AS rank,
            i.completed_at,
            i.created_by, i.created_at, i.updated_at
@@ -1058,7 +1079,7 @@ export const searchAcross = async (params: {
   const rows = await sql<DbItemAcross[]>`
     SELECT
       i.id, i.space_id, i.column_id, i.title, i.description, i.location, i.url, i.starts_at, i.ends_at,
-      i.all_day, i.deadline, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
+      i.all_day, i.deadline, i.estimated_duration_minutes, i.priority, i.recurrence_rrule, i.recurrence_dtstart, i.recurrence_exdate, i.recurring_event_id, i.recurrence_id,
       i.rank::text AS rank,
       i.completed_at,
       i.created_by, i.created_at, i.updated_at,
@@ -1084,8 +1105,10 @@ export const searchAcross = async (params: {
     LIMIT ${limit}
   `;
 
-  return rows.map((row) => ({
-    item: mapToItem(row),
+  const items = rows.map(mapToItem);
+  const blockerCountsByItemId = await getActiveBlockerCountsByItemIds(items.map((item) => item.id));
+  return rows.map((row, index) => ({
+    item: { ...items[index]!, activeBlockerCount: blockerCountsByItemId.get(row.id) ?? 0 },
     space: { id: row.space_id, name: row.space_name },
   }));
 };
@@ -1107,6 +1130,7 @@ export const get = async (params: { id: string }): Promise<SpaceItem | null> => 
       i.ends_at,
       i.all_day,
       i.deadline,
+      i.estimated_duration_minutes,
       i.priority,
       i.recurrence_rrule,
       i.recurrence_dtstart,
@@ -1125,8 +1149,14 @@ export const get = async (params: { id: string }): Promise<SpaceItem | null> => 
   if (!row) return null;
 
   const item = mapToItem(row);
-  item.assignees = await getAssignees(item.id);
-  item.tags = await getTags(item.id);
+  const [assignees, tags, blockerCounts] = await Promise.all([
+    getAssignees(item.id),
+    getTags(item.id),
+    getActiveBlockerCountsByItemIds([item.id]),
+  ]);
+  item.assignees = assignees;
+  item.tags = tags;
+  item.activeBlockerCount = blockerCounts.get(item.id) ?? 0;
 
   return item;
 };
@@ -1172,6 +1202,9 @@ export const create = async (params: {
     dateConfig: params.dateConfig,
   });
   if (!recurrenceCheck.ok) return recurrenceCheck;
+  if (data.estimatedDurationMinutes !== undefined && (data.startsAt || data.endsAt)) {
+    return { ok: false, error: "Estimated duration is only available for tasks", status: 400 };
+  }
   const tagCheck = await validateTagIdsInSpace(spaceId, data.tagIds);
   if (!tagCheck.ok) return tagCheck;
   const assigneeCheck = await validateAssigneeIdsInSpace(spaceId, data.assigneeIds);
@@ -1191,7 +1224,7 @@ export const create = async (params: {
       const [created] = await tx<{ id: string }[]>`
       INSERT INTO spaces.items (
         short_id, space_id, column_id, title, description, location, url, starts_at, ends_at, deadline,
-        all_day, priority, recurrence_rrule, recurrence_dtstart, recurrence_exdate,
+        estimated_duration_minutes, all_day, priority, recurrence_rrule, recurrence_dtstart, recurrence_exdate,
         recurring_event_id, recurrence_id, rank, completed_at, created_by
       )
       VALUES (
@@ -1205,6 +1238,7 @@ export const create = async (params: {
         ${data.startsAt ?? null},
         ${data.endsAt ?? null},
         ${data.deadline ?? null},
+        ${data.estimatedDurationMinutes ?? null},
         ${data.allDay ?? false},
         ${data.priority ?? null},
         ${recurrence.rrule},
@@ -1277,6 +1311,8 @@ export const update = async (params: { id: string; data: UpdateItem; dateConfig?
   const endsAt = data.endsAt === undefined ? existing.endsAt : data.endsAt;
   const allDay = data.allDay === undefined ? existing.allDay : data.allDay;
   const deadline = data.deadline === undefined ? existing.deadline : data.deadline;
+  const estimatedDurationMinutes =
+    data.estimatedDurationMinutes === undefined ? existing.estimatedDurationMinutes : data.estimatedDurationMinutes;
   const priority = data.priority === undefined ? existing.priority : data.priority;
   let recurrence = data.recurrence === undefined ? existing.recurrence : data.recurrence;
   const recurringEventId = data.recurringEventId === undefined ? existing.recurringEventId : data.recurringEventId;
@@ -1297,6 +1333,9 @@ export const update = async (params: { id: string; data: UpdateItem; dateConfig?
 
   if (startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) {
     return { ok: false, error: "End time must be after start time", status: 400 };
+  }
+  if (estimatedDurationMinutes !== null && (startsAt || endsAt)) {
+    return { ok: false, error: "Estimated duration is only available for tasks", status: 400 };
   }
 
   // If moving to a different column, prepend item to the top of the target column.
@@ -1349,6 +1388,7 @@ export const update = async (params: { id: string; data: UpdateItem; dateConfig?
               ends_at = ${endsAt},
               all_day = ${allDay},
               deadline = ${deadline},
+              estimated_duration_minutes = ${estimatedDurationMinutes},
               priority = ${priority},
               recurrence_rrule = ${recurrenceDb.rrule},
               recurrence_dtstart = ${recurrenceDb.dtstart},
@@ -1369,6 +1409,7 @@ export const update = async (params: { id: string; data: UpdateItem; dateConfig?
               ends_at = ${endsAt},
               all_day = ${allDay},
               deadline = ${deadline},
+              estimated_duration_minutes = ${estimatedDurationMinutes},
               priority = ${priority},
               recurrence_rrule = ${recurrenceDb.rrule},
               recurrence_dtstart = ${recurrenceDb.dtstart},
@@ -1438,7 +1479,7 @@ export const splitRecurring = async (params: {
     sql.begin(async (tx): Promise<MutationResult<{ id: string; spaceId: string; created: boolean }>> => {
       const [source] = await tx<DbItem[]>`
       SELECT
-        id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline, priority,
+        id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline, estimated_duration_minutes, priority,
         recurrence_rrule, recurrence_dtstart, recurrence_exdate, recurring_event_id, recurrence_id, rank::text AS rank,
         completed_at, created_by, created_at, updated_at
       FROM spaces.items
@@ -1515,7 +1556,7 @@ export const splitRecurring = async (params: {
 
       const [created] = await tx<{ id: string }[]>`
       INSERT INTO spaces.items (
-        short_id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline, priority,
+        short_id, space_id, column_id, title, description, location, url, starts_at, ends_at, all_day, deadline, estimated_duration_minutes, priority,
         recurrence_rrule, recurrence_dtstart, recurrence_exdate, recurring_event_id, recurrence_id, rank,
         completed_at, created_by
       )
@@ -1531,6 +1572,7 @@ export const splitRecurring = async (params: {
         ${params.data.endsAt}::timestamptz,
         ${params.data.allDay},
         deadline,
+        estimated_duration_minutes,
         priority,
         ${split.nextRrule},
         ${params.data.startsAt}::timestamptz,
@@ -1707,53 +1749,70 @@ export const move = async (params: {
  */
 export const setCompleted = async (params: { id: string; completed: boolean }): Promise<MutationResult<SpaceItem>> => {
   const { id, completed } = params;
-
   const completedAt = completed ? new Date() : null;
+  const result = await sql.begin(async (tx): Promise<MutationResult<{ id: string }>> => {
+    const [current] = await tx<{ id: string; space_id: string }[]>`
+      SELECT id, space_id FROM spaces.items WHERE id = ${id}::uuid
+    `;
+    if (!current) return { ok: false, error: "Item not found", status: 404 };
 
-  // Completion and workflow status are one concept: keep items in a column
-  // whose `is_done` value matches the requested state. If the current column
-  // already matches, preserve it; otherwise use the first matching column and
-  // append the item there.
-  const [row] = await sql<{ id: string }[]>`
-    WITH current_item AS (
-      SELECT i.id, i.space_id, i.column_id, c.is_done AS column_is_done
-      FROM spaces.items i
-      JOIN spaces.columns c ON c.id = i.column_id
-      WHERE i.id = ${id}
-    ), target_column AS (
-      SELECT COALESCE(
-        (SELECT column_id FROM current_item WHERE column_is_done = ${completed}),
-        (
-          SELECT c.id
-          FROM spaces.columns c
-          JOIN current_item current ON current.space_id = c.space_id
-          WHERE c.is_done = ${completed}
-          ORDER BY c.rank ASC
-          LIMIT 1
-        )
-      ) AS id
-    ), target_rank AS (
-      SELECT COALESCE(MAX(i.rank), 0) + 1024 AS value
-      FROM spaces.items i
-      JOIN target_column target ON target.id = i.column_id
-    )
-    UPDATE spaces.items item
-    SET completed_at = ${completedAt},
-        column_id = COALESCE((SELECT id FROM target_column), item.column_id),
-        rank = CASE
-          WHEN (SELECT id FROM target_column) IS DISTINCT FROM item.column_id THEN (SELECT value FROM target_rank)
-          ELSE item.rank
-        END,
-        updated_at = now()
-    WHERE item.id = ${id}
-    RETURNING item.id
-  `;
+    await tx`SELECT pg_advisory_xact_lock(hashtext('spaces.item-dependencies'), hashtext(${current.space_id}))`;
+    if (completed) {
+      const [blockers] = await tx<{ count: number }[]>`
+        SELECT COUNT(*)::int AS count
+        FROM spaces.item_dependencies dependency
+        JOIN spaces.items blocker ON blocker.id = dependency.blocker_item_id
+        WHERE dependency.item_id = ${id}::uuid
+          AND blocker.completed_at IS NULL
+      `;
+      if ((blockers?.count ?? 0) > 0) {
+        return { ok: false, error: "Complete all blocking tasks first", status: 409 };
+      }
+    }
 
-  if (!row) {
-    return { ok: false, error: "Item not found", status: 404 };
-  }
+    // Completion and workflow status are one concept: keep items in a column
+    // whose `is_done` value matches the requested state. If the current column
+    // already matches, preserve it; otherwise use the first matching column and
+    // append the item there.
+    const [row] = await tx<{ id: string }[]>`
+      WITH current_item AS (
+        SELECT i.id, i.space_id, i.column_id, c.is_done AS column_is_done
+        FROM spaces.items i
+        JOIN spaces.columns c ON c.id = i.column_id
+        WHERE i.id = ${id}::uuid
+      ), target_column AS (
+        SELECT COALESCE(
+          (SELECT column_id FROM current_item WHERE column_is_done = ${completed}),
+          (
+            SELECT c.id
+            FROM spaces.columns c
+            JOIN current_item current ON current.space_id = c.space_id
+            WHERE c.is_done = ${completed}
+            ORDER BY c.rank ASC
+            LIMIT 1
+          )
+        ) AS id
+      ), target_rank AS (
+        SELECT COALESCE(MAX(i.rank), 0) + 1024 AS value
+        FROM spaces.items i
+        JOIN target_column target ON target.id = i.column_id
+      )
+      UPDATE spaces.items item
+      SET completed_at = ${completedAt},
+          column_id = COALESCE((SELECT id FROM target_column), item.column_id),
+          rank = CASE
+            WHEN (SELECT id FROM target_column) IS DISTINCT FROM item.column_id THEN (SELECT value FROM target_rank)
+            ELSE item.rank
+          END,
+          updated_at = now()
+      WHERE item.id = ${id}::uuid
+      RETURNING item.id
+    `;
+    return row ? { ok: true, data: row } : { ok: false, error: "Item not found", status: 404 };
+  });
+  if (!result.ok) return result;
 
-  const item = await get({ id: row.id });
+  const item = await get({ id: result.data.id });
   if (!item) {
     return { ok: false, error: "Failed to load item", status: 500 };
   }

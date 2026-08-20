@@ -66,6 +66,12 @@ import {
   SpaceReadInputSchema,
   TaskCreateInputSchema,
   TaskDataSchema,
+  TaskDependencyDataSchema,
+  TaskDependencyInputSchema,
+  TaskDependencyListDataSchema,
+  TaskDependencyListInputSchema,
+  TaskDependencyRemoveDataSchema,
+  TaskDependentListDataSchema,
   TaskListDataSchema,
   TaskListInputSchema,
   TaskSetCompletedInputSchema,
@@ -269,6 +275,8 @@ const mapTask = (item: SpaceItem) => {
     description: description.text,
     descriptionTruncated: description.truncated,
     deadline: item.deadline,
+    estimatedDurationMinutes: item.estimatedDurationMinutes,
+    activeBlockerCount: item.activeBlockerCount,
     priority: item.priority,
     completedAt: item.completedAt,
     ...mapRelations(item),
@@ -322,6 +330,8 @@ const mapTaskSummary = (item: SpaceItem) => {
     descriptionPreview: description.text,
     descriptionTruncated: description.truncated,
     deadline: item.deadline,
+    estimatedDurationMinutes: item.estimatedDurationMinutes,
+    activeBlockerCount: item.activeBlockerCount,
     priority: item.priority,
     completedAt: item.completedAt,
     ...mapListRelations(item),
@@ -766,6 +776,83 @@ const runItemReferenceRemove = async (input: z.infer<typeof ItemResourceReferenc
     });
   });
 
+const runTaskDependencyList = async (input: z.infer<typeof TaskDependencyListInputSchema>, context: CapabilityExecutionContext) => {
+  const resolved = await requireItem(input.itemId, context, "read");
+  if (!resolved.ok) return resolved;
+  if (isEvent(resolved.data.item)) return fail(err.badInput("Item is not a task"));
+  return ok({
+    data: await spacesPublicResources.projectTaskDependencies(
+      await spacesService.item.dependencies.list({ itemId: resolved.data.internalId }),
+    ),
+    refs: [{ type: "spaces.item", id: input.itemId }],
+    links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+  });
+};
+
+const runTaskDependentList = async (input: z.infer<typeof TaskDependencyListInputSchema>, context: CapabilityExecutionContext) => {
+  const resolved = await requireItem(input.itemId, context, "read");
+  if (!resolved.ok) return resolved;
+  if (isEvent(resolved.data.item)) return fail(err.badInput("Item is not a task"));
+  return ok({
+    data: await spacesPublicResources.projectTaskDependents(
+      await spacesService.item.dependencies.listBlocks({ blockerItemId: resolved.data.internalId }),
+    ),
+    refs: [{ type: "spaces.item", id: input.itemId }],
+    links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+  });
+};
+
+const runTaskDependencyAdd = async (input: z.infer<typeof TaskDependencyInputSchema>, context: CapabilityExecutionContext) =>
+  audited(actionAudit(context, "task.blocker.add", "space_item", input.itemId), async () => {
+    const [resolved, blocker] = await Promise.all([
+      requireItem(input.itemId, context, "write"),
+      requireItem(input.blockerItemId, context, "read"),
+    ]);
+    if (!resolved.ok) return resolved;
+    if (!blocker.ok) return blocker;
+    if (isEvent(resolved.data.item) || isEvent(blocker.data.item)) return fail(err.badInput("Task dependencies can only connect tasks"));
+    const result = await spacesService.item.dependencies.add({
+      itemId: resolved.data.internalId,
+      blockerItemId: blocker.data.internalId,
+      spaceId: resolved.data.internalSpaceId,
+    });
+    if (!result.ok) return mutationError(result);
+    const [data] = await spacesPublicResources.projectTaskDependencies([result.data]);
+    if (!data) return fail(err.internal("Failed to project task dependency"));
+    return ok({
+      data,
+      refs: [
+        { type: "spaces.item", id: input.itemId },
+        { type: "spaces.item", id: input.blockerItemId },
+      ],
+      links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+    });
+  });
+
+const runTaskDependencyRemove = async (input: z.infer<typeof TaskDependencyInputSchema>, context: CapabilityExecutionContext) =>
+  audited(actionAudit(context, "task.blocker.remove", "space_item", input.itemId), async () => {
+    const [resolved, blocker] = await Promise.all([
+      requireItem(input.itemId, context, "write"),
+      requireItem(input.blockerItemId, context, "read"),
+    ]);
+    if (!resolved.ok) return resolved;
+    if (!blocker.ok) return blocker;
+    const result = await spacesService.item.dependencies.remove({
+      itemId: resolved.data.internalId,
+      blockerItemId: blocker.data.internalId,
+      spaceId: resolved.data.internalSpaceId,
+    });
+    if (!result.ok) return mutationError(result);
+    return ok({
+      data: { itemId: input.itemId, blockerItemId: input.blockerItemId, removed: true as const },
+      refs: [
+        { type: "spaces.item", id: input.itemId },
+        { type: "spaces.item", id: input.blockerItemId },
+      ],
+      links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+    });
+  });
+
 const commentMutationResult = async (result: MutationResult<SpaceComment>, item: SpaceItem) => {
   if (!result.ok) return mutationError(result);
   const [comment] = await spacesPublicResources.projectComments([result.data]);
@@ -1149,6 +1236,22 @@ export const spacesCapabilities = defineCapabilities({
       openWorld: false,
       run: runItemReferenceList,
     },
+    "task.blocker.list": {
+      title: "List task blockers",
+      description: "List the tasks that currently block one readable task.",
+      input: TaskDependencyListInputSchema,
+      data: TaskDependencyListDataSchema,
+      openWorld: false,
+      run: runTaskDependencyList,
+    },
+    "task.blocks.list": {
+      title: "List tasks blocked by a task",
+      description: "List the tasks for which one readable task is a blocker.",
+      input: TaskDependencyListInputSchema,
+      data: TaskDependentListDataSchema,
+      openWorld: false,
+      run: runTaskDependentList,
+    },
     "comment.list": {
       title: "List comments",
       description: "Read comments in one bounded item or recurring-occurrence discussion after checking parent Space access.",
@@ -1212,6 +1315,26 @@ export const spacesCapabilities = defineCapabilities({
       idempotency: "none",
       run: runItemReferenceRemove,
     },
+    "task.blocker.add": {
+      title: "Add task blocker",
+      description: "Mark one task in the same Space as a blocker of another task.",
+      input: TaskDependencyInputSchema,
+      data: TaskDependencyDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "none",
+      run: runTaskDependencyAdd,
+    },
+    "task.blocker.remove": {
+      title: "Remove task blocker",
+      description: "Remove one blocker relationship between two tasks.",
+      input: TaskDependencyInputSchema,
+      data: TaskDependencyRemoveDataSchema,
+      destructive: true,
+      openWorld: false,
+      idempotency: "none",
+      run: runTaskDependencyRemove,
+    },
     "task.create": {
       title: "Create task",
       description: "Create one task in an explicitly selected writable Space and column.",
@@ -1265,7 +1388,7 @@ export const spacesCapabilities = defineCapabilities({
     },
     "task.set-completed": {
       title: "Set task completion",
-      description: "Complete or reopen one task using the Space workflow columns.",
+      description: "Complete an unblocked task or reopen one task using the Space workflow columns.",
       input: TaskSetCompletedInputSchema,
       data: TaskDataSchema,
       destructive: true,
@@ -1276,6 +1399,9 @@ export const spacesCapabilities = defineCapabilities({
         const resolved = await requireItem(input.itemId, context, "write");
         if (!resolved.ok) return resolved;
         if (isEvent(resolved.data.item)) return fail(err.badInput("Item is not a task"));
+        if (input.completed && resolved.data.item.activeBlockerCount > 0) {
+          return fail(err.conflict("Complete all blocking tasks first"));
+        }
         return ok({
           message: `${input.completed ? "Complete" : "Reopen"} task ${resolved.data.item.title}.`,
           details: [{ label: "Task", value: resolved.data.item.title }],

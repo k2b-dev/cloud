@@ -317,7 +317,7 @@ export const transfer = async (params: {
   if (!wormhole) return { ok: false, error: "Wormhole not found", status: 404 };
   if (!(await canAccess(wormhole.target_space_id, params.actor, "write"))) return denied();
 
-  type TransferRow = { id: string; removed_tag_count: number; removed_assignee_count: number };
+  type TransferRow = { id: string; removed_tag_count: number; removed_assignee_count: number; removed_dependency_count: number };
   const transferred = await sql.begin(async (tx): Promise<TransferRow | "recurring" | "changed" | "denied" | null> => {
     const [locked] = await tx<
       {
@@ -421,6 +421,11 @@ export const transfer = async (params: {
       WHERE item_id = ${params.itemId}::uuid
         AND user_id <> ALL(${toPgUuidArray(validAssigneeIds)}::uuid[])
     `;
+    const removedDependencies = await tx`
+      DELETE FROM spaces.item_dependencies
+      WHERE item_id = ${params.itemId}::uuid
+         OR blocker_item_id = ${params.itemId}::uuid
+    `;
 
     const [minRow] = await tx<{ min: string | null }[]>`
       SELECT MIN(rank)::text AS min
@@ -447,6 +452,7 @@ export const transfer = async (params: {
       id: updated.id,
       removed_tag_count: tagCount?.count ?? 0,
       removed_assignee_count: removedAssignees.count,
+      removed_dependency_count: removedDependencies.count,
     };
   });
 
@@ -470,6 +476,7 @@ export const transfer = async (params: {
       destination: targetFromRow(wormhole),
       removedTagCount: transferred.removed_tag_count,
       removedAssigneeCount: transferred.removed_assignee_count,
+      removedDependencyCount: transferred.removed_dependency_count,
     },
   };
 };

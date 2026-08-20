@@ -13,7 +13,7 @@ Spaces is for shared work that needs tasks, events, lists, assignees, comments, 
 :::reference
 - **Space:** One work area for a team, project, household, class, or recurring process.
 - **Item:** The basic unit of work. An item is either a task with a deadline or an event with a schedule.
-- **Task:** Work with status, priority, assignees, deadline, tags, description, and comments.
+- **Task:** Work with status, priority, assignees, deadline, estimated duration, blockers, tags, description, and comments.
 - **Event:** A scheduled item shown in calendar views and optional calendar exports.
 - **View:** The current way to see the same items as list, table, Kanban, or calendar.
 - **Tags:** Lightweight labels for grouping work across assignees, deadlines, schedules, and views.
@@ -48,3 +48,5 @@ Spaces owns imported meeting state, recurrence, organizers, attendees, and invit
 A Space item can keep stable references to resources owned by other Cloud applications. In an editable item, use **Link Cloud resource** under **Linked resources** to find and attach any currently accessible resource supported by Cloud search. Mail also uses the same model to link a whole conversation to an existing task or event, or to create a linked item from the conversation details. Imported calendar invitations add the same conversation reference automatically.
 
 The reference belongs to the shared Space item, not to the person who created it. Space access controls who can see or remove the link, while the target application checks its own current permission whenever someone opens the resource. If the target is removed or access changes, the stored label remains visible to Space readers and a writer can unlink the unavailable reference.
+
+Links to other Space tasks appear separately as **Related tasks**. These links provide context only: they do not block either task and may point to a task in another Space when both items are accessible.

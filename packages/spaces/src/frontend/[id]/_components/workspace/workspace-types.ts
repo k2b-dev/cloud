@@ -9,6 +9,8 @@ import {
   SpaceDetailSchema,
   SpaceItemResourceReferenceSchema,
   SpaceItemSchema,
+  SpaceTaskDependencySchema,
+  SpaceTaskDependentSchema,
   SpaceWormholeSchema,
 } from "@/contracts";
 import { SpaceUserSettingsSchema } from "@/settings-context";
@@ -68,6 +70,8 @@ export const SpaceItemDetailSchema = z.object({
   }),
   recurringContext: SpaceItemRecurringContextSchema.nullable(),
   references: z.array(SpaceItemResourceReferenceSchema.extend({ resource: CloudResourceViewSchema.nullable() })).max(100),
+  blockedBy: z.array(SpaceTaskDependencySchema).max(100),
+  blocks: z.array(SpaceTaskDependentSchema).max(100),
 });
 export type SpaceItemDetail = z.infer<typeof SpaceItemDetailSchema>;
 

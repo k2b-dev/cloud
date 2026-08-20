@@ -113,11 +113,17 @@ const projectItemResult = async (result: ItemListResult): Promise<ItemListResult
 });
 
 const projectItemDetail = async (
-  detail: Omit<SpaceItemDetail, "references"> & { references?: SpaceItemDetail["references"] },
+  detail: Omit<SpaceItemDetail, "references" | "blockedBy" | "blocks"> & {
+    references?: SpaceItemDetail["references"];
+    blockedBy?: SpaceItemDetail["blockedBy"];
+    blocks?: SpaceItemDetail["blocks"];
+  },
 ): Promise<SpaceItemDetail> => {
-  const [[item], comments] = await Promise.all([
+  const [[item], comments, blockedBy, blocks] = await Promise.all([
     spacesPublicResources.projectItems([detail.item]),
     spacesPublicResources.projectComments(detail.comments.items),
+    spacesPublicResources.projectTaskDependencies(detail.blockedBy ?? []),
+    spacesPublicResources.projectTaskDependents(detail.blocks ?? []),
   ]);
   if (!item) throw new Error("Missing public ID for Space item");
   const seriesItemId = item.recurringEventId ?? item.id;
@@ -127,6 +133,8 @@ const projectItemDetail = async (
     commentTarget: { ...detail.commentTarget, itemId: seriesItemId },
     recurringContext: detail.recurringContext ? { ...detail.recurringContext, seriesItemId } : null,
     references: detail.references ?? [],
+    blockedBy,
+    blocks,
   };
 };
 
@@ -475,7 +483,11 @@ const loadSelectedItemState = async (params: {
     pagination: { page: 1, perPage: COMMENT_PAGE_SIZE },
   });
 
-  const references = await spacesService.item.references.list({ itemId: detailItem.id });
+  const [references, blockedBy, blocks] = await Promise.all([
+    spacesService.item.references.list({ itemId: detailItem.id }),
+    spacesService.item.dependencies.list({ itemId: detailItem.id }),
+    spacesService.item.dependencies.listBlocks({ blockerItemId: detailItem.id }),
+  ]);
   return projectItemDetail({
     item: detailItem,
     comments,
@@ -485,6 +497,8 @@ const loadSelectedItemState = async (params: {
       cookie: params.cookieHeader,
       authorization: params.authorizationHeader,
     }),
+    blockedBy,
+    blocks,
   });
 };
 
@@ -742,7 +756,11 @@ export const loadSpaceItemDetail = async (params: {
     viewerUserId: params.user.id,
     pagination: { page: 1, perPage: COMMENT_PAGE_SIZE },
   });
-  const references = await spacesService.item.references.list({ itemId: detailItem.id });
+  const [references, blockedBy, blocks] = await Promise.all([
+    spacesService.item.references.list({ itemId: detailItem.id }),
+    spacesService.item.dependencies.list({ itemId: detailItem.id }),
+    spacesService.item.dependencies.listBlocks({ blockerItemId: detailItem.id }),
+  ]);
   return {
     kind: "ok",
     detail: await projectItemDetail({
@@ -754,6 +772,8 @@ export const loadSpaceItemDetail = async (params: {
         cookie: params.cookieHeader,
         authorization: params.authorizationHeader,
       }),
+      blockedBy,
+      blocks,
     }),
   };
 };

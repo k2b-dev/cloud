@@ -22,6 +22,8 @@ import type {
   SpaceComment,
   SpaceDetail,
   SpaceItem,
+  SpaceTaskDependency,
+  SpaceTaskDependent,
 } from "./contracts";
 import type { EventInvitationContext, EventInvitationDraft } from "./integration";
 
@@ -44,6 +46,18 @@ const stringFlags = (flags: CloudCliFlags, name: string): string[] => {
 };
 
 const booleanFlag = (flags: CloudCliFlags, ...names: string[]): boolean => names.some((name) => flags[name] === true);
+
+const numberFlag = (flags: CloudCliFlags, ...names: string[]): number | undefined => {
+  for (const name of names) {
+    const value = flags[name];
+    if (typeof value === "number") return value;
+    if (typeof value === "string") {
+      const parsed = Number.parseInt(value, 10);
+      if (Number.isInteger(parsed)) return parsed;
+    }
+  }
+  return undefined;
+};
 
 const requireArg = (args: string[], index: number, label: string): string => {
   const value = args[index];
@@ -203,6 +217,8 @@ const itemRows = (items: SpaceItem[], space?: SpaceDetail) =>
     status: item.completedAt ? "completed" : "active",
     priority: item.priority ?? "",
     deadline: item.deadline ?? "",
+    estimateMinutes: item.estimatedDurationMinutes ?? "",
+    blockers: item.activeBlockerCount || "",
     updatedAt: item.updatedAt,
   }));
 
@@ -334,6 +350,12 @@ const itemMutationFlags = {
   file: flag.string({ aliases: ["f"], description: "Read description from file" }),
   stdin: flag.boolean({ description: "Read description from stdin" }),
   deadline: flag.string({ description: "Deadline as ISO datetime or YYYY-MM-DD" }),
+  estimateMinutes: flag.int({
+    name: "estimate-minutes",
+    aliases: ["estimateMinutes"],
+    min: 1,
+    description: "Estimated task duration in minutes",
+  }),
   startsAt: flag.string({ name: "starts-at", aliases: ["startsAt"], description: "Start time as ISO datetime or YYYY-MM-DD" }),
   endsAt: flag.string({ name: "ends-at", aliases: ["endsAt"], description: "End time as ISO datetime or YYYY-MM-DD" }),
   priority: flag.enum(["low", "medium", "high", "urgent"], { description: "Priority" }),
@@ -467,6 +489,8 @@ export default defineCliCommands({
           { key: "status", label: "STATUS" },
           { key: "priority", label: "PRIORITY" },
           { key: "deadline", label: "DEADLINE" },
+          { key: "estimateMinutes", label: "ESTIMATE" },
+          { key: "blockers", label: "BLOCKERS" },
           { key: "id", label: "ID" },
         ]);
       },
@@ -484,6 +508,8 @@ export default defineCliCommands({
           if (item.description) ctx.print(item.description);
           ctx.print(`column: ${space.columns.find((column) => column.id === item.columnId)?.name ?? item.columnId}`);
           ctx.print(`status: ${item.completedAt ? "completed" : "active"}`);
+          if (item.estimatedDurationMinutes) ctx.print(`estimate: ${item.estimatedDurationMinutes} minutes`);
+          if (item.activeBlockerCount > 0) ctx.print(`blocked by: ${item.activeBlockerCount} active task(s)`);
         }
       },
     }),
@@ -575,6 +601,7 @@ export default defineCliCommands({
             startsAt: normalizeDateTime(stringFlag(ctx.flags, "starts-at", "startsAt"), "--starts-at"),
             endsAt: normalizeDateTime(stringFlag(ctx.flags, "ends-at", "endsAt"), "--ends-at", true),
             deadline: normalizeDateTime(stringFlag(ctx.flags, "deadline"), "--deadline", true),
+            estimatedDurationMinutes: numberFlag(ctx.flags, "estimate-minutes", "estimateMinutes"),
             priority: priority(stringFlag(ctx.flags, "priority")),
             assigneeIds: stringFlags(ctx.flags, "assignee"),
             tagIds: resolveTagIds(space, stringFlags(ctx.flags, "tag")),
@@ -589,6 +616,7 @@ export default defineCliCommands({
       flags: {
         ...itemMutationFlags,
         title: flag.string({ description: "Item title" }),
+        clearEstimate: flag.boolean({ name: "clear-estimate", description: "Clear the estimated duration" }),
       },
       run: async ({ ctx, args }) => {
         const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 1);
@@ -601,6 +629,9 @@ export default defineCliCommands({
           startsAt: normalizeDateTime(stringFlag(ctx.flags, "starts-at", "startsAt"), "--starts-at"),
           endsAt: normalizeDateTime(stringFlag(ctx.flags, "ends-at", "endsAt"), "--ends-at", true),
           deadline: normalizeDateTime(stringFlag(ctx.flags, "deadline"), "--deadline", true),
+          estimatedDurationMinutes: booleanFlag(ctx.flags, "clear-estimate")
+            ? null
+            : numberFlag(ctx.flags, "estimate-minutes", "estimateMinutes"),
           priority: nextPriority,
         };
         const column = stringFlag(ctx.flags, "column");
@@ -615,6 +646,88 @@ export default defineCliCommands({
 
         const updated = await readApi<SpaceItem>(ctx, `/${space.id}/items/${item.id}`, jsonRequest("PATCH", json));
         if (!printStructured(ctx, updated)) ctx.print(`Updated ${updated.title} (${updated.id}).`);
+      },
+    }),
+    command("blockers", {
+      summary: "List tasks blocking one task",
+      args: optionalSpaceArgs,
+      flags: spaceFlag,
+      run: async ({ ctx, args }) => {
+        const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 1);
+        const space = await resolveSpaceRef(ctx, spaceRef);
+        const item = await resolveItemRef(ctx, space.id, requireArg(rest, 0, "task"));
+        const blockers = await readApi<SpaceTaskDependency[]>(ctx, `/${space.id}/items/${item.id}/blockers`);
+        printJsonOrTable(
+          ctx,
+          blockers,
+          blockers.map((dependency) => ({
+            title: dependency.blocker.title,
+            status: dependency.blocker.completedAt ? "completed" : "active",
+            id: dependency.blocker.id,
+          })),
+          [
+            { key: "title", label: "BLOCKER" },
+            { key: "status", label: "STATUS" },
+            { key: "id", label: "ID" },
+          ],
+        );
+      },
+    }),
+    command("blocks", {
+      summary: "List tasks blocked by one task",
+      args: optionalSpaceArgs,
+      flags: spaceFlag,
+      run: async ({ ctx, args }) => {
+        const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 1);
+        const space = await resolveSpaceRef(ctx, spaceRef);
+        const item = await resolveItemRef(ctx, space.id, requireArg(rest, 0, "task"));
+        const blockedTasks = await readApi<SpaceTaskDependent[]>(ctx, `/${space.id}/items/${item.id}/blocks`);
+        printJsonOrTable(
+          ctx,
+          blockedTasks,
+          blockedTasks.map((dependency) => ({
+            title: dependency.dependent.title,
+            status: dependency.dependent.completedAt ? "completed" : "blocked",
+            id: dependency.dependent.id,
+          })),
+          [
+            { key: "title", label: "TASK" },
+            { key: "status", label: "STATUS" },
+            { key: "id", label: "ID" },
+          ],
+        );
+      },
+    }),
+    command("block", {
+      summary: "Add a task blocker",
+      args: optionalSpaceArgs,
+      flags: spaceFlag,
+      run: async ({ ctx, args }) => {
+        const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 2);
+        const space = await resolveSpaceRef(ctx, spaceRef);
+        const item = await resolveItemRef(ctx, space.id, requireArg(rest, 0, "task"));
+        const blocker = await resolveItemRef(ctx, space.id, requireArg(rest, 1, "blocker task"));
+        const dependency = await readApi<SpaceTaskDependency>(
+          ctx,
+          `/${space.id}/items/${item.id}/blockers`,
+          jsonRequest("POST", { blockerItemId: blocker.id }),
+        );
+        if (!printStructured(ctx, dependency)) ctx.print(`${item.title} is blocked by ${dependency.blocker.title}.`);
+      },
+    }),
+    command("unblock", {
+      summary: "Remove a task blocker",
+      args: optionalSpaceArgs,
+      flags: spaceFlag,
+      run: async ({ ctx, args }) => {
+        const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 2);
+        const space = await resolveSpaceRef(ctx, spaceRef);
+        const item = await resolveItemRef(ctx, space.id, requireArg(rest, 0, "task"));
+        const blocker = await resolveItemRef(ctx, space.id, requireArg(rest, 1, "blocker task"));
+        await readApi<unknown>(ctx, `/${space.id}/items/${item.id}/blockers`, jsonRequest("DELETE", { blockerItemId: blocker.id }));
+        if (!printStructured(ctx, { itemId: item.id, blockerItemId: blocker.id, removed: true })) {
+          ctx.print(`Removed ${blocker.title} as a blocker of ${item.title}.`);
+        }
       },
     }),
     ...(["done", "reopen"] as const).map((action) =>

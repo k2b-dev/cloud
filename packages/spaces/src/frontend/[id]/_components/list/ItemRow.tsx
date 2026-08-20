@@ -29,6 +29,13 @@ const PRIORITY_STYLES: Record<string, { icon: string; color: string }> = {
   low: { icon: "ti-arrow-down", color: "text-blue-500" },
 };
 
+const formatEstimate = (minutes: number) => {
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return remainder === 0 ? `${hours} h` : `${hours} h ${remainder} min`;
+};
+
 /**
  * Item row - displays item info and links to detail view.
  * Only the completion toggle is interactive here.
@@ -66,6 +73,7 @@ export default function ItemRow(props: ItemRowProps) {
     onError: (err) => prompts.error(err.message),
   });
   const isCompleted = () => !!props.item.completedAt;
+  const completionBlocked = () => !isCompleted() && props.item.activeBlockerCount > 0;
   const isEvent = () => !!(props.item.startsAt && props.item.endsAt);
   const priority = () => (props.item.priority ? PRIORITY_STYLES[props.item.priority] : null);
   const status = () => props.columns.find((column) => column.id === props.item.columnId) ?? null;
@@ -77,7 +85,12 @@ export default function ItemRow(props: ItemRowProps) {
     return `${dates.formatTime(props.item.startsAt!, props.dateConfig)}–${dates.formatTime(props.item.endsAt!, props.dateConfig)}`;
   };
   const hasMetadata = () =>
-    !!status() || (!props.agenda && !!schedule()) || (!props.agenda && isEvent()) || (props.item.tags?.length ?? 0) > 0;
+    !!status() ||
+    (!props.agenda && !!schedule()) ||
+    (!props.agenda && isEvent()) ||
+    props.item.activeBlockerCount > 0 ||
+    props.item.estimatedDurationMinutes !== null ||
+    (props.item.tags?.length ?? 0) > 0;
   const titleTone = () => {
     if (isSelectedLocal()) return isCompleted() ? "app-accent-text line-through" : "app-accent-text";
     if (isCompleted()) return "line-through text-dimmed";
@@ -116,11 +129,14 @@ export default function ItemRow(props: ItemRowProps) {
             e.stopPropagation();
             completeMutation.mutate(!isCompleted());
           }}
-          disabled={completeMutation.loading()}
+          disabled={completeMutation.loading() || completionBlocked()}
+          title={completionBlocked() ? "Complete all blocking tasks first" : undefined}
           class={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
             isCompleted()
               ? "border-emerald-500 bg-emerald-500 text-white [box-shadow:inset_0_1px_0_0_rgb(255_255_255/0.35)]"
-              : `${isSelectedLocal() ? "app-accent-border" : "border-[var(--ui-field-border)]"} bg-[var(--ui-field)] hover:border-emerald-500`
+              : completionBlocked()
+                ? "cursor-not-allowed border-[var(--ui-field-border)] bg-[var(--ui-surface-muted)] opacity-50"
+                : `${isSelectedLocal() ? "app-accent-border" : "border-[var(--ui-field-border)]"} bg-[var(--ui-field)] hover:border-emerald-500`
           }`}
           aria-label={isCompleted() ? "Mark incomplete" : "Mark complete"}
         >
@@ -168,6 +184,18 @@ export default function ItemRow(props: ItemRowProps) {
               <Show when={!props.agenda && isEvent()}>
                 <span class="inline-flex items-center gap-1 text-[11px] text-purple-600 dark:text-purple-300">
                   <i class="ti ti-calendar-event" /> Event
+                </span>
+              </Show>
+              <Show when={props.item.estimatedDurationMinutes !== null}>
+                <span class="inline-flex shrink-0 items-center gap-1">
+                  <i class="ti ti-hourglass" aria-hidden="true" />
+                  {formatEstimate(props.item.estimatedDurationMinutes!)}
+                </span>
+              </Show>
+              <Show when={props.item.activeBlockerCount > 0}>
+                <span class="inline-flex shrink-0 items-center gap-1 text-amber-700 dark:text-amber-300">
+                  <i class="ti ti-lock" aria-hidden="true" />
+                  Blocked by {props.item.activeBlockerCount}
                 </span>
               </Show>
               <For each={props.item.tags?.slice(0, 2) ?? []}>

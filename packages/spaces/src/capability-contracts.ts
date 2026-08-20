@@ -1,10 +1,13 @@
 import { CapabilitySemanticLinkSchema, CloudResourceRefSchema, CloudResourceViewSchema } from "@valentinkolb/cloud/contracts";
 import { z } from "zod";
 import {
+  EstimatedDurationMinutesSchema,
   PrioritySchema,
   ResourceShortIdSchema,
   SpaceItemResourceReferenceInputSchema,
   SpaceItemResourceReferenceSchema,
+  SpaceTaskDependencySchema,
+  SpaceTaskDependentSchema,
 } from "./contracts";
 import {
   CalendarAddressSchema,
@@ -56,6 +59,21 @@ export const ItemResourceReferenceRemoveInputSchema = z
   .strict();
 export const ItemResourceReferenceRemoveDataSchema = z
   .object({ itemId: ResourceShortIdSchema, ref: CloudResourceRefSchema, deleted: z.boolean() })
+  .strict();
+
+export const TaskDependencyInputSchema = z
+  .object({
+    itemId: ResourceShortIdSchema.describe("Writable task ID."),
+    blockerItemId: ResourceShortIdSchema.describe("Same-Space task that blocks itemId."),
+  })
+  .strict();
+export const TaskDependencyDataSchema = SpaceTaskDependencySchema;
+export const TaskDependencyListInputSchema = z.object({ itemId: ResourceShortIdSchema.describe("Readable task ID.") }).strict();
+export const TaskDependencyListDataSchema = z.array(TaskDependencyDataSchema).max(100);
+export const TaskDependentDataSchema = SpaceTaskDependentSchema;
+export const TaskDependentListDataSchema = z.array(TaskDependentDataSchema).max(100);
+export const TaskDependencyRemoveDataSchema = z
+  .object({ itemId: ResourceShortIdSchema, blockerItemId: ResourceShortIdSchema, removed: z.literal(true) })
   .strict();
 
 const SpaceColumnDataSchema = z
@@ -135,6 +153,8 @@ export const TaskDataSchema = z
     kind: z.literal("task"),
     ...ItemBaseDataShape,
     deadline: TimestampSchema.nullable(),
+    estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable(),
+    activeBlockerCount: z.number().int().nonnegative(),
     priority: PrioritySchema.nullable(),
   })
   .strict();
@@ -181,7 +201,14 @@ const ItemListBaseDataShape = {
   links: ResourceLinksSchema,
 };
 export const TaskListItemDataSchema = z
-  .object({ kind: z.literal("task"), ...ItemListBaseDataShape, deadline: TimestampSchema.nullable(), priority: PrioritySchema.nullable() })
+  .object({
+    kind: z.literal("task"),
+    ...ItemListBaseDataShape,
+    deadline: TimestampSchema.nullable(),
+    estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable(),
+    activeBlockerCount: z.number().int().nonnegative(),
+    priority: PrioritySchema.nullable(),
+  })
   .strict();
 export const EventListItemDataSchema = z
   .object({
@@ -248,6 +275,7 @@ const TaskFieldsInputShape = {
   title: z.string().trim().min(1).max(200).optional().describe("Optional task title."),
   description: z.string().max(5000).nullable().optional().describe("Optional task description; null clears it."),
   deadline: TimestampSchema.nullable().optional().describe("Optional task deadline; null clears it."),
+  estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable().optional().describe("Optional estimate in minutes; null clears it."),
   priority: PrioritySchema.nullable().optional().describe("Optional task priority; null clears it."),
 };
 
@@ -258,6 +286,7 @@ export const TaskCreateInputSchema = z
     title: z.string().trim().min(1).max(200).describe("Task title."),
     description: z.string().max(5000).optional().describe("Optional task description."),
     deadline: TimestampSchema.optional().describe("Optional task deadline."),
+    estimatedDurationMinutes: EstimatedDurationMinutesSchema.optional().describe("Optional estimate in minutes."),
     priority: PrioritySchema.optional().describe("Optional task priority."),
     assigneeIds: UserIdListSchema.optional().describe("Optional assignee user UUIDs from this Space."),
     tagIds: ResourceIdListSchema.optional().describe("Optional tag IDs from this Space."),

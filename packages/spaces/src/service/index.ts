@@ -7,6 +7,7 @@ import * as calendarInvitations from "./calendar-invitations";
 import * as columns from "./columns";
 import * as comments from "./comments";
 import * as ical from "./ical";
+import * as itemDependencies from "./item-dependencies";
 import * as itemResourceReferences from "./item-resource-references";
 import * as items from "./items";
 import * as spaces from "./spaces";
@@ -174,6 +175,7 @@ export const spacesService = {
     },
     dashboardSnapshot: items.dashboardSnapshot,
     references: itemResourceReferences,
+    dependencies: itemDependencies,
   },
   comment: {
     list: async (config: {

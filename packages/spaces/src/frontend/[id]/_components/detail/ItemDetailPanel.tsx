@@ -3,6 +3,7 @@ import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import {
   Button,
   ButtonLink,
+  Combobox,
   DescriptionList,
   DetailPanel,
   Dropdown,
@@ -25,13 +26,15 @@ import type {
   SpaceItemAssignee,
   SpaceItemResourceReferenceInput,
   SpaceTag,
+  SpaceTaskDependency,
+  SpaceTaskDependent,
   SpaceWormhole,
   WormholeTransferResult,
 } from "@/contracts";
+import { summarizeRecurrence } from "@/presentation/recurrence";
 import { shouldHandleDetailClick } from "../../../lib/detail";
 import { readResponseError } from "../../../lib/response";
 import { openEditItemDialog, saveItemFormData } from "../shared/editItem";
-import { summarizeRecurrence } from "@/presentation/recurrence";
 import SpaceAssigneePicker from "../shared/SpaceAssigneePicker";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import type { SpaceItemDetail } from "../workspace/workspace-types";
@@ -54,6 +57,8 @@ type Props = {
   commentTarget: SpaceItemDetail["commentTarget"];
   recurringContext: SpaceItemDetail["recurringContext"];
   references?: SpaceItemDetail["references"];
+  blockedBy?: SpaceTaskDependency[];
+  blocks?: SpaceTaskDependent[];
   dateConfig?: DateContext;
   canWrite: boolean;
   mailIntegrationAvailable: boolean;
@@ -75,6 +80,14 @@ const PRIORITY_OPTIONS = [
   { value: "medium", label: "Medium", icon: "ti ti-minus", color: "#eab308" },
   { value: "low", label: "Low", icon: "ti ti-arrow-down", color: "#3b82f6" },
 ] as const;
+
+const formatEstimatedDuration = (minutes: number): string => {
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  if (hours === 0) return `${minutes} min`;
+  if (remainder === 0) return `${hours} h`;
+  return `${hours} h ${remainder} min`;
+};
 
 // =============================================================================
 // Helper Components
@@ -155,14 +168,67 @@ export default function ItemDetailPanel(props: Props) {
     onError: (error) => prompts.error(error.message),
   });
 
+  const addBlocker = mutations.create<void, string>({
+    mutation: async (blockerItemId, { abortSignal }) => {
+      const response = await apiClient[":id"].items[":itemId"].blockers.$post(
+        { param: { id: props.spaceId, itemId: props.item.id }, json: { blockerItemId } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw new Error(await readResponseError(response, "Failed to add blocker"));
+    },
+    onSuccess: () => reconcileAfterWrite(),
+    onError: (error) => prompts.error(error.message),
+  });
+
+  const removeBlocker = mutations.create<void, string>({
+    mutation: async (blockerItemId, { abortSignal }) => {
+      const response = await apiClient[":id"].items[":itemId"].blockers.$delete(
+        { param: { id: props.spaceId, itemId: props.item.id }, json: { blockerItemId } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw new Error(await readResponseError(response, "Failed to remove blocker"));
+    },
+    onSuccess: () => reconcileAfterWrite(),
+    onError: (error) => prompts.error(error.message),
+  });
+
   const linkCloudResource = async () => {
     const selected = await openCloudResourcePicker({
       title: "Link Cloud resource",
-      excludeRefs: props.references?.map((reference) => reference.ref),
+      excludeRefs: [{ type: "spaces.item", id: props.item.id }, ...(props.references?.map((reference) => reference.ref) ?? [])],
       requireReader: true,
     });
     if (!selected) return;
     await linkReference.mutate({ ref: selected.ref, label: selected.title });
+  };
+
+  const blockerOptions = async (search: string, signal: AbortSignal) => {
+    const response = await apiClient[":id"].items.filter.$post(
+      {
+        param: { id: props.spaceId },
+        json: {
+          type: "task",
+          status: "all",
+          search,
+          sort: "updated",
+          sortDesc: true,
+          groupBy: "none",
+          page: 1,
+          pageSize: 50,
+        },
+      },
+      { init: { signal } },
+    );
+    if (!response.ok) throw new Error(await readResponseError(response, "Failed to search tasks"));
+    const excluded = new Set([props.item.id, ...(props.blockedBy ?? []).map((dependency) => dependency.blocker.id)]);
+    return (await response.json()).items
+      .filter((item) => !excluded.has(item.id))
+      .map((item) => ({
+        id: item.id,
+        label: item.title,
+        description: item.completedAt ? "Completed" : "Active",
+        icon: item.completedAt ? "ti-circle-check" : "ti-checkbox",
+      }));
   };
 
   createEffect(() => {
@@ -329,6 +395,7 @@ export default function ItemDetailPanel(props: Props) {
     startsAt: props.item.startsAt ?? undefined,
     endsAt: props.item.endsAt ?? undefined,
     deadline: props.item.deadline ?? undefined,
+    estimatedDurationMinutes: props.item.estimatedDurationMinutes ?? undefined,
     priority: props.item.priority ?? undefined,
     assigneeIds: props.item.assignees?.map((a) => a.id),
     tagIds: props.item.tags?.map((t) => t.id),
@@ -435,10 +502,13 @@ export default function ItemDetailPanel(props: Props) {
     duplicateMutation.loading() ||
     deleteMutation.loading() ||
     transferMutation.loading() ||
-    editItemMutation.loading();
+    editItemMutation.loading() ||
+    addBlocker.loading() ||
+    removeBlocker.loading();
 
   const isEvent = () => Boolean(props.item.startsAt && props.item.endsAt);
   const isCompleted = () => !!props.item.completedAt;
+  const completionBlocked = () => !isCompleted() && activeBlockerCount() > 0;
   const recurrenceSummary = () =>
     summarizeRecurrence(props.item.recurrence, {
       startsAt: scheduleStart(),
@@ -495,6 +565,84 @@ export default function ItemDetailPanel(props: Props) {
   const canShowAssignees = () => canEditItem() || (props.item.assignees?.length ?? 0) > 0;
   const canShowInvitations = () => isEvent() && canEditItem() && props.mailIntegrationAvailable;
   const canShowEventContext = () => isEvent() && (Boolean(props.item.location || props.item.url) || canShowInvitations());
+  const activeBlockerCount = () => (props.blockedBy ?? []).filter((dependency) => !dependency.blocker.completedAt).length;
+  const relatedTasks = () => (props.references ?? []).filter((reference) => reference.ref.type === "spaces.item");
+  const linkedResources = () => (props.references ?? []).filter((reference) => reference.ref.type !== "spaces.item");
+  const itemHref = (itemId: string) => {
+    const url = new URL(props.baseUrl, "http://spaces.local");
+    url.searchParams.set("item", itemId);
+    return `${url.pathname}${url.search}`;
+  };
+  const linkedResourcesSection = () => (
+    <DetailPanel.Section title="Linked resources" icon="ti ti-link" tone="neutral">
+      <div class="flex flex-col gap-1">
+        <For each={linkedResources()}>
+          {(reference) => {
+            const href = () => reference.resource?.links?.find((link) => link.rel === "open")?.href;
+            const icon = () => reference.resource?.icon ?? (reference.ref.type === "mail.conversation" ? "ti ti-mail" : "ti ti-link");
+            const menu = () =>
+              canEditItem()
+                ? {
+                    menuLabel: `More actions for ${reference.label}`,
+                    menuItems: [
+                      {
+                        label: "Unlink",
+                        icon: "ti ti-unlink",
+                        disabled: unlinkReference.loading(),
+                        action: () => unlinkReference.mutate(reference.ref),
+                      },
+                    ],
+                  }
+                : {};
+            return (
+              <Show
+                when={href()}
+                fallback={
+                  <DetailPanel.Action
+                    type="button"
+                    disabled
+                    leading={<i class={icon()} aria-hidden="true" />}
+                    title={reference.label}
+                    description="Resource unavailable or no longer accessible"
+                    {...menu()}
+                  />
+                }
+              >
+                {(openHref) => (
+                  <DetailPanel.Action
+                    href={openHref()}
+                    leading={<i class={icon()} aria-hidden="true" />}
+                    title={reference.label}
+                    description={reference.resource?.title !== reference.label ? reference.resource?.title : undefined}
+                    trailing={!canEditItem() ? <i class="ti ti-chevron-right" aria-hidden="true" /> : undefined}
+                    {...menu()}
+                  />
+                )}
+              </Show>
+            );
+          }}
+        </For>
+        <Show when={canEditItem()}>
+          <DetailPanel.Action
+            type="button"
+            onClick={() => void linkCloudResource()}
+            disabled={linkReference.loading()}
+            leading={
+              <i
+                class={
+                  linkReference.loading()
+                    ? "ti ti-loader-2 animate-spin text-[var(--k2b-action)]"
+                    : "ti ti-link-plus text-[var(--k2b-action)]"
+                }
+                aria-hidden="true"
+              />
+            }
+            title="Link Cloud resource"
+          />
+        </Show>
+      </div>
+    </DetailPanel.Section>
+  );
 
   return (
     <div class="h-full min-h-0" style="view-transition-name: detail-panel">
@@ -556,18 +704,25 @@ export default function ItemDetailPanel(props: Props) {
                   <Button
                     type="button"
                     onClick={() => completeMutation.mutate(!isCompleted())}
-                    disabled={isLoading()}
-                    variant={isCompleted() ? "secondary" : "success"}
+                    disabled={isLoading() || completionBlocked()}
+                    title={completionBlocked() ? "Complete all blocking tasks first" : undefined}
+                    variant={isCompleted() || completionBlocked() ? "secondary" : "success"}
                     size="sm"
-                    class={isCompleted() ? "text-emerald-700 dark:text-emerald-300" : undefined}
+                    class={
+                      isCompleted()
+                        ? "text-emerald-700 dark:text-emerald-300"
+                        : completionBlocked()
+                          ? "!border-transparent !bg-[var(--k2b-warning-500)] !text-white disabled:!opacity-60"
+                          : undefined
+                    }
                   >
                     <Show when={isCompleted() || completeMutation.loading()}>
                       <i class={`ti ${completeMutation.loading() ? "ti-loader-2 animate-spin" : "ti-check"}`} aria-hidden="true" />
                     </Show>
                     <Show when={!isCompleted() && !completeMutation.loading()}>
-                      <i class="ti ti-circle-check" aria-hidden="true" />
+                      <i class={`ti ${completionBlocked() ? "ti-lock" : "ti-circle-check"}`} aria-hidden="true" />
                     </Show>
-                    {isCompleted() ? "Reopen" : "Mark complete"}
+                    {isCompleted() ? "Reopen" : completionBlocked() ? `Blocked by ${activeBlockerCount()}` : "Mark complete"}
                   </Button>
                   <Button type="button" variant="ghost" size="sm" onClick={() => void handleEdit()} disabled={isLoading()}>
                     <i class="ti ti-pencil" aria-hidden="true" /> Edit
@@ -593,7 +748,7 @@ export default function ItemDetailPanel(props: Props) {
         />
 
         <DetailPanel.Body scrollPreserveKey={props.scrollPreserveKey}>
-          <Show when={isEvent() || props.item.deadline}>
+          <Show when={isEvent() || props.item.deadline || props.item.estimatedDurationMinutes}>
             <DetailPanel.Summary
               title={scheduleTitle()}
               actions={
@@ -610,18 +765,21 @@ export default function ItemDetailPanel(props: Props) {
               <Show
                 when={isEvent()}
                 fallback={
-                  <div class="flex items-baseline gap-3 text-xs text-primary">
-                    <i
-                      class="ti ti-calendar-due w-4 shrink-0 self-center text-center text-base text-amber-600 dark:text-amber-400"
-                      aria-hidden="true"
-                    />
-                    <Show when={props.item.deadline}>
-                      <div class="min-w-0 flex-1">
-                        <div>{dates.formatDateTime(props.item.deadline!)}</div>
-                        <div class="mt-0.5 text-dimmed">{dates.formatTimeSpan(props.item.deadline!)}</div>
-                      </div>
-                    </Show>
-                  </div>
+                  <DescriptionList
+                    layout="rows"
+                    size="sm"
+                    items={[
+                      ...(props.item.deadline
+                        ? [
+                            { term: "Deadline", description: dates.formatDateTime(props.item.deadline) },
+                            { term: "Due", description: dates.formatTimeSpan(props.item.deadline) },
+                          ]
+                        : []),
+                      ...(props.item.estimatedDurationMinutes
+                        ? [{ term: "Estimate", description: formatEstimatedDuration(props.item.estimatedDurationMinutes) }]
+                        : []),
+                    ]}
+                  />
                 }
               >
                 <DescriptionList
@@ -718,78 +876,141 @@ export default function ItemDetailPanel(props: Props) {
             </DetailPanel.Group>
           </Show>
 
-          <Show when={canEditItem() || (props.references?.length ?? 0) > 0}>
-            <DetailPanel.Group label="Resource context">
-              <DetailPanel.Section title="Linked resources" icon="ti ti-link" tone="neutral">
+          <Show
+            when={
+              !isEvent() &&
+              (canEditItem() || (props.blockedBy?.length ?? 0) > 0 || (props.blocks?.length ?? 0) > 0 || linkedResources().length > 0)
+            }
+          >
+            <DetailPanel.Group label="Task context">
+              <DetailPanel.Section title="Blocked by" icon="ti ti-lock" tone={activeBlockerCount() > 0 ? "warning" : "neutral"}>
                 <div class="flex flex-col gap-1">
-                  <For each={props.references ?? []}>
-                    {(reference) => {
-                      const href = () => reference.resource?.links?.find((link) => link.rel === "open")?.href;
-                      const icon = () =>
-                        reference.resource?.icon ?? (reference.ref.type === "mail.conversation" ? "ti ti-mail" : "ti ti-link");
-                      const menu = () =>
-                        canEditItem()
-                          ? {
-                              menuLabel: `More actions for ${reference.label}`,
-                              menuItems: [
-                                {
-                                  label: "Unlink",
-                                  icon: "ti ti-unlink",
-                                  disabled: unlinkReference.loading(),
-                                  action: () => unlinkReference.mutate(reference.ref),
-                                },
-                              ],
-                            }
-                          : {};
-                      return (
-                        <Show
-                          when={href()}
-                          fallback={
-                            <DetailPanel.Action
-                              type="button"
-                              disabled
-                              leading={<i class={icon()} aria-hidden="true" />}
-                              title={reference.label}
-                              description="Resource unavailable or no longer accessible"
-                              {...menu()}
-                            />
-                          }
-                        >
-                          {(openHref) => (
-                            <DetailPanel.Action
-                              href={openHref()}
-                              leading={<i class={icon()} aria-hidden="true" />}
-                              title={reference.label}
-                              description={reference.resource?.title !== reference.label ? reference.resource?.title : undefined}
-                              trailing={!canEditItem() ? <i class="ti ti-chevron-right" aria-hidden="true" /> : undefined}
-                              {...menu()}
-                            />
-                          )}
-                        </Show>
+                  <For each={props.blockedBy ?? []}>
+                    {(dependency) => {
+                      const leading = (
+                        <i
+                          class={`ti ${dependency.blocker.completedAt ? "ti-circle-check text-[var(--k2b-success-text)]" : "ti-lock text-amber-600 dark:text-amber-400"}`}
+                          aria-hidden="true"
+                        />
+                      );
+                      return canEditItem() ? (
+                        <DetailPanel.Action
+                          href={itemHref(dependency.blocker.id)}
+                          leading={leading}
+                          title={dependency.blocker.title}
+                          description={dependency.blocker.completedAt ? "Completed" : "Active blocker"}
+                          menuLabel={`More actions for ${dependency.blocker.title}`}
+                          menuItems={[
+                            {
+                              label: "Remove blocker",
+                              icon: "ti ti-unlink",
+                              disabled: removeBlocker.loading(),
+                              action: () => removeBlocker.mutate(dependency.blocker.id),
+                            },
+                          ]}
+                        />
+                      ) : (
+                        <DetailPanel.Action
+                          href={itemHref(dependency.blocker.id)}
+                          leading={leading}
+                          title={dependency.blocker.title}
+                          description={dependency.blocker.completedAt ? "Completed" : "Active blocker"}
+                          trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
+                        />
                       );
                     }}
                   </For>
                   <Show when={canEditItem()}>
-                    <DetailPanel.Action
-                      type="button"
-                      onClick={() => void linkCloudResource()}
-                      disabled={linkReference.loading()}
-                      leading={
-                        <i
-                          class={
-                            linkReference.loading()
-                              ? "ti ti-loader-2 animate-spin text-[var(--k2b-action)]"
-                              : "ti ti-link-plus text-[var(--k2b-action)]"
-                          }
-                          aria-hidden="true"
-                        />
-                      }
-                      title="Link Cloud resource"
+                    <Combobox
+                      aria-label="Add task blocker"
+                      placeholder="Search tasks to add as blockers"
+                      fetchData={blockerOptions}
+                      onSelect={(option) => addBlocker.mutate(option.id)}
+                      disabled={addBlocker.loading() || removeBlocker.loading()}
                     />
                   </Show>
                 </div>
               </DetailPanel.Section>
+              <Show when={(props.blocks?.length ?? 0) > 0}>
+                <DetailPanel.Section title="Blocks" icon="ti ti-git-branch" tone="neutral" meta={props.blocks?.length}>
+                  <div class="flex flex-col gap-1">
+                    <For each={props.blocks ?? []}>
+                      {(dependency) => (
+                        <DetailPanel.Action
+                          href={itemHref(dependency.dependent.id)}
+                          leading={
+                            <i
+                              class={`ti ${dependency.dependent.completedAt ? "ti-circle-check text-[var(--k2b-success-text)]" : "ti-lock text-amber-600 dark:text-amber-400"}`}
+                              aria-hidden="true"
+                            />
+                          }
+                          title={dependency.dependent.title}
+                          description={dependency.dependent.completedAt ? "Completed" : "Blocked by this task"}
+                          trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
+                        />
+                      )}
+                    </For>
+                  </div>
+                </DetailPanel.Section>
+              </Show>
+              {linkedResourcesSection()}
             </DetailPanel.Group>
+          </Show>
+
+          <Show when={isEvent() && (canEditItem() || linkedResources().length > 0)}>
+            <DetailPanel.Group label="Resource context">{linkedResourcesSection()}</DetailPanel.Group>
+          </Show>
+
+          <Show when={relatedTasks().length > 0}>
+            <DetailPanel.Section title="Related tasks" icon="ti ti-list-details" tone="neutral">
+              <div class="flex flex-col gap-1">
+                <For each={relatedTasks()}>
+                  {(reference) => {
+                    const href = () => reference.resource?.links?.find((link) => link.rel === "open")?.href;
+                    const menu = () =>
+                      canEditItem()
+                        ? {
+                            menuLabel: `More actions for ${reference.label}`,
+                            menuItems: [
+                              {
+                                label: "Unlink",
+                                icon: "ti ti-unlink",
+                                disabled: unlinkReference.loading(),
+                                action: () => unlinkReference.mutate(reference.ref),
+                              },
+                            ],
+                          }
+                        : {};
+                    return (
+                      <Show
+                        when={href()}
+                        fallback={
+                          <DetailPanel.Action
+                            type="button"
+                            disabled
+                            leading={<i class="ti ti-checkbox" aria-hidden="true" />}
+                            title={reference.label}
+                            description="Task unavailable or no longer accessible"
+                            {...menu()}
+                          />
+                        }
+                      >
+                        {(openHref) => (
+                          <DetailPanel.Action
+                            href={openHref()}
+                            leading={<i class="ti ti-checkbox" aria-hidden="true" />}
+                            title={reference.label}
+                            description={reference.resource?.title !== reference.label ? reference.resource?.title : undefined}
+                            trailing={!canEditItem() ? <i class="ti ti-chevron-right" aria-hidden="true" /> : undefined}
+                            {...menu()}
+                          />
+                        )}
+                      </Show>
+                    );
+                  }}
+                </For>
+              </div>
+            </DetailPanel.Section>
           </Show>
 
           <Show when={canShowClassification() || canShowAssignees()}>

@@ -3700,8 +3700,15 @@
 
 .k2b-ui .k2b-combobox__input > i {
   flex: 0 0 auto;
-  margin-inline: 0.625rem 0;
   color: var(--k2b-text-muted);
+}
+
+.k2b-ui .k2b-combobox__input > i:first-child {
+  margin-inline: 0.625rem 0;
+}
+
+.k2b-ui .k2b-combobox__input > i:last-child {
+  margin-inline: 0 0.625rem;
 }
 
 .k2b-ui .k2b-combobox__input > input {

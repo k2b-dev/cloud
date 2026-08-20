@@ -22,6 +22,7 @@ export const saveItemFormData = async (params: { spaceId: string; itemId: string
       url: params.data.url ?? null,
       priority: params.data.priority ?? null,
       deadline: params.data.deadline ?? null,
+      estimatedDurationMinutes: params.data.estimatedDurationMinutes ?? null,
       startsAt: params.data.startsAt ?? null,
       endsAt: params.data.endsAt ?? null,
     },

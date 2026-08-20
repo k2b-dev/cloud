@@ -19,6 +19,8 @@ const item = (overrides: Partial<SpaceItem> = {}): SpaceItem => ({
   endsAt: null,
   allDay: false,
   deadline: null,
+  estimatedDurationMinutes: null,
+  activeBlockerCount: 0,
   priority: null,
   recurrence: null,
   recurringEventId: null,

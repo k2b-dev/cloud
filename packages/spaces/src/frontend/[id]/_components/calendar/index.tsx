@@ -113,6 +113,7 @@ const normalizeCreatePayload = <T extends ItemFormData>(data: T) => ({
   url: data.url ?? undefined,
   priority: data.priority ?? undefined,
   recurrence: data.recurrence ?? undefined,
+  estimatedDurationMinutes: data.estimatedDurationMinutes ?? undefined,
 });
 
 const createPayloadFromItem = (item: SpaceItem, overrides: Partial<ItemFormData> = {}): ItemFormData => ({

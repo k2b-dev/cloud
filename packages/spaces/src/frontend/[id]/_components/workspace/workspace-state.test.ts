@@ -43,6 +43,8 @@ const item: SpaceItem = {
   endsAt: null,
   allDay: false,
   deadline: null,
+  estimatedDurationMinutes: null,
+  activeBlockerCount: 0,
   priority: null,
   recurrence: null,
   recurringEventId: null,
@@ -108,6 +110,8 @@ mock.module("@/service/public-resources", () => ({
       })),
     projectComments: async (items: Array<{ id: string; itemId: string }>) =>
       items.map((value) => ({ ...value, id: COMMENT_SHORT_ID, itemId: ITEM_SHORT_ID })),
+    projectTaskDependencies: async (items: unknown[]) => items,
+    projectTaskDependents: async (items: unknown[]) => items,
     projectWormholes: async (items: unknown[]) => items,
     projectCalendarItems: async (items: unknown[]) => items,
   },
@@ -138,6 +142,7 @@ mock.module("@/service", () => ({
       },
       getRecurringOverride: async () => loadedOverride,
       references: { list: async () => [] },
+      dependencies: { list: async () => [], listBlocks: async () => [] },
       calendar: { list: async () => [] },
     },
     comment: {

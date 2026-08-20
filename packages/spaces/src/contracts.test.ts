@@ -34,6 +34,27 @@ describe("Spaces contract time ranges", () => {
   });
 });
 
+describe("Spaces task estimates", () => {
+  test("accepts positive whole-minute estimates for tasks", () => {
+    expect(CreateItemSchema.parse({ columnId, title: "Plan", estimatedDurationMinutes: 90 }).estimatedDurationMinutes).toBe(90);
+    expect(UpdateItemSchema.safeParse({ estimatedDurationMinutes: null }).success).toBe(true);
+  });
+
+  test("rejects invalid estimates and event estimates", () => {
+    expect(CreateItemSchema.safeParse({ columnId, title: "Plan", estimatedDurationMinutes: 0 }).success).toBe(false);
+    expect(CreateItemSchema.safeParse({ columnId, title: "Plan", estimatedDurationMinutes: 1.5 }).success).toBe(false);
+    expect(
+      CreateItemSchema.safeParse({
+        columnId,
+        title: "Meeting",
+        startsAt: START,
+        endsAt: END,
+        estimatedDurationMinutes: 30,
+      }).success,
+    ).toBe(false);
+  });
+});
+
 describe("Spaces starter contracts", () => {
   test("keeps starter selection optional and accepts the supported workflows", () => {
     expect(CreateSpaceSchema.safeParse({ name: "Legacy client" }).success).toBe(true);

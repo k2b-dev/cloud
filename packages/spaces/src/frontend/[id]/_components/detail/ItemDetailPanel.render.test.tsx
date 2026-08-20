@@ -31,6 +31,8 @@ const task: SpaceItem = {
   endsAt: null,
   allDay: false,
   deadline: null,
+  estimatedDurationMinutes: null,
+  activeBlockerCount: 0,
   priority: null,
   recurrence: null,
   recurringEventId: null,
@@ -157,6 +159,73 @@ describe("Spaces item detail panel", () => {
     expect(html).not.toContain('class="k2b-discussion');
     expect(html).not.toContain("Invitations");
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
+  });
+
+  test("shows task estimates, connections, and related tasks in their detail sections", () => {
+    const html = renderPanel({
+      item: { ...task, estimatedDurationMinutes: 90 },
+      blockedBy: [
+        {
+          blocker: { id: "Block1", spaceId, title: "Approve scope", completedAt: null },
+          createdAt: now,
+        },
+      ],
+      blocks: [
+        {
+          dependent: { id: "Next01", spaceId, title: "Publish release", completedAt: null },
+          createdAt: now,
+        },
+      ],
+      references: [
+        {
+          ref: { type: "spaces.item", id: "Rel001" },
+          label: "Prepare launch notes",
+          createdAt: now,
+          resource: {
+            ref: { type: "spaces.item", id: "Rel001" },
+            title: "Prepare launch notes",
+            icon: "ti ti-checkbox",
+            links: [{ rel: "open", href: `/app/spaces/${spaceId}?item=Rel001` }],
+          },
+        },
+      ],
+    });
+
+    expect(html).toContain("1 h 30 min");
+    expect(html).toContain('aria-label="Task context"');
+    expect(html).toContain("Blocked by");
+    expect(html).toContain("Approve scope");
+    expect(html).toContain("Active blocker");
+    expect(html).toContain("Blocks");
+    expect(html).toContain("Publish release");
+    expect(html).toContain("Complete all blocking tasks first");
+    expect(html).toContain('data-variant="secondary" disabled');
+    expect(html).toContain("!bg-[var(--k2b-warning-500)]");
+    expect(html).toContain('<i class="ti ti-lock" aria-hidden="true"></i>Blocked by 1');
+    expect(html).not.toContain("text-[0.6875rem] font-medium leading-4 text-amber-700");
+    expect(html).toMatch(/aria-label="Task context"[\s\S]*>Blocked by<\/[h]3>[\s\S]*>Blocks<\/[h]3>[\s\S]*>Linked resources<\/[h]3>/);
+    expect(html).toContain("Related tasks");
+    expect(html).toContain("Prepare launch notes");
+  });
+
+  test("omits the reverse Blocks section until the task blocks another task", () => {
+    const html = renderPanel({
+      item: task,
+      blockedBy: [
+        {
+          blocker: { id: "Block1", spaceId, title: "Approve scope", completedAt: null },
+          createdAt: now,
+        },
+      ],
+      blocks: [],
+      references: [],
+    });
+
+    expect(html).toContain('aria-label="Task context"');
+    expect(html).toContain(">Blocked by</h3>");
+    expect(html).toContain(">Linked resources</h3>");
+    expect(html).not.toContain(">Blocks</h3>");
+    expect(html).toContain("Blocked by 1");
   });
 
   test("uses the comment count as the empty state without duplicate copy", () => {
