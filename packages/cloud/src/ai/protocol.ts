@@ -12,8 +12,9 @@ import type { AiConversation, AiFrontendToolMode, AiStoredMessage, AiToolPresent
  * Ordering: every event carries (attempt, seq). The lease owner of a turn is
  * the single writer and allocates seq in-process; attempt increments on every
  * claim, so events of a re-claimed turn always supersede older ones. Each
- * attempt starts with `turn_started` followed by a full `block_set` prefix,
- * which makes attempt transitions self-healing for every subscriber.
+ * attempt starts with `turn_started`, whose ordered `blocks` snapshot makes
+ * the transition atomic. A full `block_set` prefix follows for compatibility
+ * with older clients and idempotent replay.
  */
 
 export const AI_WIRE_VERSION = 1;
@@ -54,7 +55,13 @@ type AiWireEventBase = {
 export type AiTurnFinishedStatus = "completed" | "failed" | "aborted";
 
 export type AiWireEvent =
-  | (AiWireEventBase & { type: "turn_started"; modelProfileId: string; providerModel: string })
+  | (AiWireEventBase & {
+      type: "turn_started";
+      modelProfileId: string;
+      providerModel: string;
+      /** Authoritative ordered baseline for this attempt. Optional for older senders. */
+      blocks?: AiTurnBlock[];
+    })
   | (AiWireEventBase & { type: "block_set"; block: AiTurnBlock })
   | (AiWireEventBase & { type: "block_delta"; blockId: string; blockKind: "text" | "thinking"; delta: string })
   | (AiWireEventBase & {

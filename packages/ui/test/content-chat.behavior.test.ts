@@ -234,6 +234,99 @@ describe("@k2b/ui content and chat behavior", () => {
     dom.cleanup();
   });
 
+  test("does not lose follow-latest when layout scrolling races a scheduled follow", async () => {
+    const dom = createDomTestHarness();
+    const { Chat } = await import("../src/chat");
+    const [items, setItems] = createSignal<ChatTimelineItem[]>([{ kind: "message", id: "one", role: "user", content: "One" }]);
+    let scrollHeight = 500;
+    let viewport: HTMLDivElement | undefined;
+    const dispose = render(
+      () =>
+        createComponent(Chat.Timeline, {
+          get items() {
+            return items();
+          },
+          viewportRef: (element) => {
+            viewport = element;
+            Object.defineProperty(element, "scrollHeight", { configurable: true, get: () => scrollHeight });
+            Object.defineProperty(element, "clientHeight", { configurable: true, value: 100 });
+          },
+        }),
+      dom.root,
+    );
+    await new Promise<void>((done) => requestAnimationFrame(() => done()));
+
+    viewport!.scrollTop = 400;
+    viewport!.dispatchEvent(new Event("scroll"));
+    scrollHeight = 700;
+    setItems((current) => [...current, { kind: "message", id: "editor", role: "assistant", content: "Growing editor" }]);
+    await Promise.resolve();
+    viewport!.dispatchEvent(new Event("scroll"));
+    await new Promise<void>((done) => requestAnimationFrame(() => done()));
+
+    expect(viewport!.scrollTop).toBe(700);
+
+    scrollHeight = 900;
+    setItems((current) => [...current, { kind: "message", id: "more", role: "assistant", content: "More" }]);
+    await Promise.resolve();
+    const wheel = new Event("wheel", { bubbles: true });
+    Object.defineProperty(wheel, "deltaY", { value: -20 });
+    viewport!.dispatchEvent(wheel);
+    viewport!.scrollTop = 450;
+    viewport!.dispatchEvent(new Event("scroll"));
+    await new Promise<void>((done) => requestAnimationFrame(() => done()));
+    expect(viewport!.scrollTop).toBe(450);
+    expect(dom.root.querySelector(".k2b-chat-timeline__latest")).not.toBeNull();
+
+    dispose();
+    dom.cleanup();
+  });
+
+  test("follows viewport size changes while pinned", async () => {
+    const dom = createDomTestHarness();
+    const observers: Array<{ targets: Element[]; trigger: () => void }> = [];
+    class TestResizeObserver {
+      readonly targets: Element[] = [];
+      constructor(private readonly callback: ResizeObserverCallback) {
+        observers.push({ targets: this.targets, trigger: () => this.callback([], this as unknown as ResizeObserver) });
+      }
+      observe(target: Element) {
+        this.targets.push(target);
+      }
+      disconnect() {}
+      unobserve() {}
+    }
+    Object.defineProperty(globalThis, "ResizeObserver", { configurable: true, value: TestResizeObserver });
+    const { Chat } = await import("../src/chat");
+    let scrollHeight = 500;
+    let viewport: HTMLDivElement | undefined;
+    const dispose = render(
+      () =>
+        createComponent(Chat.Timeline, {
+          items: [{ kind: "message", id: "one", role: "user", content: "One" }],
+          viewportRef: (element) => {
+            viewport = element;
+            Object.defineProperty(element, "scrollHeight", { configurable: true, get: () => scrollHeight });
+            Object.defineProperty(element, "clientHeight", { configurable: true, value: 100 });
+          },
+        }),
+      dom.root,
+    );
+    await new Promise<void>((done) => requestAnimationFrame(() => done()));
+
+    expect(observers).toHaveLength(1);
+    expect(observers[0]!.targets).toContain(viewport!);
+    expect(observers[0]!.targets).toContain(dom.root.querySelector(".k2b-chat-timeline__content")!);
+
+    scrollHeight = 650;
+    observers[0]!.trigger();
+    await new Promise<void>((done) => requestAnimationFrame(() => done()));
+    expect(viewport!.scrollTop).toBe(650);
+
+    dispose();
+    dom.cleanup();
+  });
+
   test("preserves the visible scroll position when older messages are prepended", async () => {
     const dom = createDomTestHarness();
     const { Chat } = await import("../src/chat");

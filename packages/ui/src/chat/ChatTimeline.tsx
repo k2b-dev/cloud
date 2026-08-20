@@ -65,6 +65,9 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
   let contentRef: HTMLDivElement | undefined;
   let topSentinelRef: HTMLDivElement | undefined;
   let followFrame: number | undefined;
+  let userScrollFrame: number | undefined;
+  let userScrollingAway = false;
+  let touchY: number | undefined;
   let lastConversationKey: string | null | undefined;
 
   const loadingOlder = () => Boolean(props.loadingOlder || loadingOlderInternally());
@@ -76,6 +79,15 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
   const cancelFollow = () => {
     if (followFrame !== undefined) cancelAnimationFrame(followFrame);
     followFrame = undefined;
+  };
+
+  const noteUserScrollAway = () => {
+    userScrollingAway = true;
+    if (userScrollFrame !== undefined) cancelAnimationFrame(userScrollFrame);
+    userScrollFrame = requestAnimationFrame(() => {
+      userScrollFrame = undefined;
+      userScrollingAway = false;
+    });
   };
 
   const scrollToLatest = () => {
@@ -119,7 +131,12 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
 
   const updatePinned = () => {
     if (!viewportRef) return;
-    setPinned(isChatNearBottom(viewportRef.scrollHeight, viewportRef.scrollTop, viewportRef.clientHeight, threshold()));
+    const nearBottom = isChatNearBottom(viewportRef.scrollHeight, viewportRef.scrollTop, viewportRef.clientHeight, threshold());
+    if (nearBottom) setPinned(true);
+    else if (userScrollingAway || followFrame === undefined) {
+      if (userScrollingAway) cancelFollow();
+      setPinned(false);
+    }
     if (viewportRef.scrollTop <= threshold()) void loadOlder();
   };
 
@@ -127,6 +144,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
     scrollToLatest();
     const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => scheduleFollow());
     if (contentRef) resizeObserver?.observe(contentRef);
+    if (viewportRef) resizeObserver?.observe(viewportRef);
 
     const historyObserver =
       typeof IntersectionObserver === "undefined" || !topSentinelRef
@@ -141,6 +159,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
 
     onCleanup(() => {
       cancelFollow();
+      if (userScrollFrame !== undefined) cancelAnimationFrame(userScrollFrame);
       resizeObserver?.disconnect();
       historyObserver?.disconnect();
     });
@@ -172,6 +191,26 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
         role="region"
         aria-label={`${props.label ?? "Conversation"} messages`}
         tabIndex={0}
+        onWheel={(event) => {
+          if (event.deltaY < 0) noteUserScrollAway();
+        }}
+        onKeyDown={(event) => {
+          if (event.target !== event.currentTarget) return;
+          if (event.key === "ArrowUp" || event.key === "PageUp" || event.key === "Home" || (event.key === " " && event.shiftKey)) {
+            noteUserScrollAway();
+          }
+        }}
+        onTouchStart={(event) => {
+          touchY = event.touches[0]?.clientY;
+        }}
+        onTouchMove={(event) => {
+          const nextY = event.touches[0]?.clientY;
+          if (nextY !== undefined && touchY !== undefined && nextY > touchY) noteUserScrollAway();
+          touchY = nextY;
+        }}
+        onTouchEnd={() => {
+          touchY = undefined;
+        }}
         onScroll={updatePinned}
       >
         <Show when={props.navigation}>

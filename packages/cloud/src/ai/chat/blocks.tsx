@@ -58,8 +58,8 @@ function ThinkingBlockView(props: { text: string; streaming?: boolean }) {
         </Show>
       }
     >
-      <Chat.Activity label="Show reasoning" icon="ti ti-sparkles" tone="ai">
-        <pre class="max-h-52 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-100/70 p-2 text-[11px] leading-5 text-secondary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+      <Chat.Activity label="Show reasoning" icon="ti ti-sparkles" tone="ai" bodyInset={false}>
+        <pre class="max-h-52 w-full min-w-0 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-100/70 p-2 text-[11px] leading-5 text-secondary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
           {props.text}
         </pre>
       </Chat.Activity>
@@ -78,8 +78,14 @@ function CompactionBlockView(props: { block: Extract<AiTurnBlock, { kind: "compa
 
   return (
     <Show when={status() !== "running"} fallback={<Chat.Activity label="Compacting context" icon="ti ti-brain" tone="ai" busy />}>
-      <Chat.Activity label="Show compaction" description={description()} icon="ti ti-brain" tone={status() === "failed" ? "danger" : "ai"}>
-        <div class="max-w-xl rounded-md bg-zinc-100/70 p-2 text-[11px] leading-5 text-secondary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+      <Chat.Activity
+        label="Show compaction"
+        description={description()}
+        icon="ti ti-brain"
+        tone={status() === "failed" ? "danger" : "ai"}
+        bodyInset={false}
+      >
+        <div class="w-full min-w-0 rounded-md bg-zinc-100/70 p-2 text-[11px] leading-5 text-secondary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
           <Show when={props.block.result} fallback={<p>Older chat context was summarized into compact conversation memory.</p>}>
             {(compactResult) => (
               <dl class="grid grid-cols-2 gap-2">
@@ -102,7 +108,7 @@ function CompactionBlockView(props: { block: Extract<AiTurnBlock, { kind: "compa
 
 function ToolTextDetail(props: { children: JSX.Element }) {
   return (
-    <pre class="max-h-52 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-100 p-2 text-[11px] leading-4 text-primary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+    <pre class="max-h-52 w-full min-w-0 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-100 p-2 text-[11px] leading-4 text-primary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
       {props.children}
     </pre>
   );
@@ -143,8 +149,9 @@ function ToolResultDisclosure(props: {
       label={props.isError ? (props.labelOnError ?? "Show tool error") : props.name}
       tone={props.isError ? "danger" : "neutral"}
       accent={props.accent}
+      bodyInset={false}
     >
-      <div class="ml-6 flex max-w-xl flex-col gap-2">
+      <div class="flex w-full min-w-0 flex-col gap-2">
         <Show when={props.args !== undefined}>
           <ToolDetail title="Input" toolName={props.toolName} value={props.args} />
         </Show>
@@ -440,11 +447,11 @@ function TextEditorToolView(props: { turnId: string; block: ToolBlock; active?: 
   const actions = useAiChatActions();
   const request = () => ({ turnId: props.turnId, callId: props.block.callId, name: props.block.name });
   const submit = actions.onFrontendToolResult;
-  const submittedResult = () =>
+  const completedResult = () =>
     props.block.status === "completed" &&
     isRecord(props.block.result) &&
-    props.block.result.submitted === true &&
-    typeof props.block.result.content === "string"
+    ((props.block.result.submitted === true && typeof props.block.result.content === "string") ||
+      (props.block.result.submitted === false && typeof props.block.result.feedback === "string"))
       ? props.block.result
       : null;
   return (
@@ -470,7 +477,7 @@ function TextEditorToolView(props: { turnId: string; block: ToolBlock; active?: 
           onSubmit={submit ? (result) => submit(request(), result) : undefined}
         />
       </Match>
-      <Match when={submittedResult()}>
+      <Match when={completedResult()}>
         {(result) => <CloudTextEditorResultBlock args={props.block.args} result={result()} continuing={props.active} />}
       </Match>
     </Switch>

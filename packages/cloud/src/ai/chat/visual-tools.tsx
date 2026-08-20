@@ -1,7 +1,7 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { AutocompleteEditor, Button, MarkdownEditor, Slider } from "@k2b/ui";
+import { Button, MarkdownEditor, prompts, Slider } from "@k2b/ui";
 import { createSignal, createUniqueId, For, Show } from "solid-js";
-import { CLOUD_AI_TEXT_EDITOR_MAX_CHARS } from "../default-tool-contracts";
+import { CLOUD_AI_TEXT_EDITOR_FEEDBACK_MAX_CHARS, CLOUD_AI_TEXT_EDITOR_MAX_CHARS } from "../default-tool-contracts";
 import { isRecord, jsonPreview } from "./message-utils";
 
 const toneClass = (tone: unknown) => {
@@ -291,7 +291,7 @@ export function CloudSurveyResultBlock(props: { args?: unknown; result: unknown;
   };
 
   return (
-    <details class="group min-w-0 max-w-[min(46rem,100%)] text-xs">
+    <details class="group w-full min-w-0 text-xs">
       <summary class="inline-flex min-h-7 max-w-full cursor-pointer list-none items-center gap-1.5 py-1 leading-none text-dimmed transition-colors hover:text-primary">
         <i class="ti ti-forms shrink-0 text-base leading-none" aria-hidden="true" />
         <span class="shrink-0 font-medium">survey</span>
@@ -303,7 +303,7 @@ export function CloudSurveyResultBlock(props: { args?: unknown; result: unknown;
           aria-hidden="true"
         />
       </summary>
-      <div class="mt-1 max-w-xl rounded-md bg-zinc-100/70 px-2.5 py-2 [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+      <div class="mt-1 w-full min-w-0 rounded-md bg-zinc-100/70 px-2.5 py-2 [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
         <Show when={rows().length > 0} fallback={<p class="text-xs text-dimmed">No answers submitted.</p>}>
           <dl class="grid grid-cols-[minmax(8rem,auto)_1fr] gap-x-4 gap-y-1.5">
             <For each={rows()}>
@@ -346,58 +346,48 @@ export function CloudTextEditorBlock(props: {
     setError(null);
     if (!submission.loading()) await submission.mutate({ submitted: true, content: content(), format: format() });
   };
+  const requestChanges = async () => {
+    setError(null);
+    if (submission.loading()) return;
+    const result = await prompts.form({
+      title: "Suggest changes",
+      icon: "ti ti-message",
+      confirmText: "Send feedback",
+      size: "medium",
+      fields: {
+        feedback: {
+          type: "text",
+          label: "What should change?",
+          placeholder: "Describe what you want to be different.",
+          multiline: true,
+          lines: 4,
+          required: true,
+          maxLength: CLOUD_AI_TEXT_EDITOR_FEEDBACK_MAX_CHARS,
+        },
+      },
+    });
+    const feedback = result?.feedback.trim();
+    if (feedback) await submission.mutate({ submitted: false, feedback });
+  };
 
   return (
-    <div class="w-full min-w-0 overflow-hidden rounded-xl border border-[var(--k2b-border)] bg-[var(--k2b-surface)]">
-      <div class="p-4">
-        <div class="flex items-center gap-3">
-          <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-lg bg-[color-mix(in_srgb,var(--k2b-ai-accent)_10%,var(--k2b-surface))] text-base text-[var(--k2b-ai-accent)]">
-            <i class="ti ti-edit" aria-hidden="true" />
-          </span>
-          <div class="min-w-0 flex-1">
-            <p class="truncate text-sm font-semibold text-primary">{String(editor()?.title ?? "Review text")}</p>
-            <p class="text-xs text-dimmed">{format() === "markdown" ? "Markdown" : "Plain text"}</p>
-          </div>
-        </div>
-        <Show when={typeof editor()?.description === "string"}>
-          <p class="mt-4 text-xs leading-5 text-secondary">{String(editor()!.description)}</p>
-        </Show>
-        <div class="mt-4 min-h-64">
-          <Show
-            when={format() === "markdown"}
-            fallback={
-              <AutocompleteEditor
-                value={content}
-                onValueChange={setContent}
-                lines={14}
-                maxLength={CLOUD_AI_TEXT_EDITOR_MAX_CHARS}
-                aria-label="Editable text"
-                spellcheck
-                disabled={disabled()}
-                fill
-              />
-            }
-          >
-            <MarkdownEditor
-              value={content}
-              onValueChange={setContent}
-              lines={14}
-              maxLength={CLOUD_AI_TEXT_EDITOR_MAX_CHARS}
-              aria-label="Editable Markdown"
-              spellcheck
-              disabled={disabled()}
-              showStats={false}
-              fill
-            />
-          </Show>
-        </div>
-        <Show when={error()}>
-          <p class="mt-2 text-xs text-red-600 dark:text-red-300" role="alert">
-            {error()}
-          </p>
-        </Show>
-      </div>
-      <footer class="flex min-h-12 items-center gap-3 border-t border-[var(--k2b-border)] bg-[var(--k2b-surface-subtle)] px-4 py-2.5">
+    <div class="w-full min-w-0">
+      <MarkdownEditor
+        value={content}
+        onValueChange={setContent}
+        lines={14}
+        maxLength={CLOUD_AI_TEXT_EDITOR_MAX_CHARS}
+        aria-label={String(editor()?.title ?? "Review text")}
+        spellcheck
+        disabled={disabled()}
+        showStats={false}
+      />
+      <Show when={error()}>
+        <p class="mt-2 text-xs text-red-600 dark:text-red-300" role="alert">
+          {error()}
+        </p>
+      </Show>
+      <div class="mt-3 flex min-h-9 flex-wrap items-center gap-2">
         <span class="text-xs tabular-nums text-dimmed">
           {content().length.toLocaleString()} / {CLOUD_AI_TEXT_EDITOR_MAX_CHARS.toLocaleString()}
         </span>
@@ -405,18 +395,16 @@ export function CloudTextEditorBlock(props: {
           when={!props.disabled && !submitted() && props.onSubmit}
           fallback={<p class="ml-auto text-xs text-dimmed">{props.disabledLabel ?? "Waiting for the assistant to continue."}</p>}
         >
-          <Button
-            variant="ai"
-            size="sm"
-            class="ml-auto"
-            loading={submission.loading()}
-            loadingLabel="Submitting"
-            onClick={() => void submit()}
-          >
-            {String(editor()?.submitLabel ?? "Continue")}
-          </Button>
+          <div class="ml-auto flex flex-wrap justify-end gap-2">
+            <Button variant="secondary" size="sm" disabled={submission.loading()} onClick={() => void requestChanges()}>
+              Suggest changes
+            </Button>
+            <Button variant="ai" size="sm" loading={submission.loading()} loadingLabel="Submitting" onClick={() => void submit()}>
+              {String(editor()?.submitLabel ?? "Continue")}
+            </Button>
+          </div>
         </Show>
-      </footer>
+      </div>
     </div>
   );
 }
@@ -425,24 +413,26 @@ export function CloudTextEditorResultBlock(props: { args?: unknown; result: unkn
   const editor = () => (isRecord(props.args) ? props.args : null);
   const result = () => (isRecord(props.result) ? props.result : null);
   const content = () => (typeof result()?.content === "string" ? String(result()!.content) : "");
+  const feedback = () => (result()?.submitted === false && typeof result()?.feedback === "string" ? String(result()!.feedback) : "");
   const format = () => (result()?.format === "markdown" ? "Markdown" : "Plain text");
+  const state = () => (feedback() ? (props.continuing ? "revising" : "changes requested") : props.continuing ? "waiting" : "submitted");
   return (
-    <details class="group min-w-0 max-w-[min(46rem,100%)] text-xs">
+    <details class="group w-full min-w-0 text-xs">
       <summary class="inline-flex min-h-7 max-w-full cursor-pointer list-none items-center gap-1.5 py-1 leading-none text-dimmed transition-colors hover:text-primary">
         <i class="ti ti-edit shrink-0 text-base leading-none" aria-hidden="true" />
         <span class="shrink-0 font-medium">text editor</span>
         <span class="min-w-0 truncate">
-          {String(editor()?.title ?? "Review text")} · {props.continuing ? "waiting" : "submitted"}
+          {String(editor()?.title ?? "Review text")} · {state()}
         </span>
         <i
           class="ti ti-chevron-right shrink-0 text-base leading-none opacity-60 transition-transform group-open:rotate-90"
           aria-hidden="true"
         />
       </summary>
-      <div class="mt-1 max-w-3xl rounded-md bg-zinc-100/70 px-2.5 py-2 [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
-        <p class="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-dimmed">{format()}</p>
+      <div class="mt-1 w-full min-w-0 rounded-md bg-zinc-100/70 px-2.5 py-2 [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+        <p class="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-dimmed">{feedback() ? "Feedback" : format()}</p>
         <pre class="max-h-72 overflow-auto whitespace-pre-wrap break-words font-sans text-xs leading-5 text-primary">
-          {content() || "Empty text submitted."}
+          {feedback() || content() || "Empty text submitted."}
         </pre>
       </div>
     </details>

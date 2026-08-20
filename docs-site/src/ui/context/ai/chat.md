@@ -42,7 +42,7 @@ as moving a text attachment back into the message field. Composer attachments
 stay on one horizontally scrollable row, and the controlled text field grows
 up to approximately fifteen visible lines.
 
-`Chat.Timeline` follows new messages while the reader remains near the bottom. Set `hasMore` and `onLoadOlder` to load history while preserving the visible scroll position.
+`Chat.Timeline` follows new messages and growing rich content while the reader remains near the bottom. Content and viewport resizing keep the latest item visible without overriding a reader who has scrolled upward. Set `hasMore` and `onLoadOlder` to load history while preserving the visible scroll position.
 
 On hover-capable fine pointers, the timeline keeps its scrollbar thumb hidden
 until the timeline is hovered or contains keyboard focus. Its stable scrollbar

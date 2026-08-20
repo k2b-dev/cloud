@@ -283,6 +283,55 @@ describe("projection reducer", () => {
     ]);
   });
 
+  test.each([
+    ["submitted", { action: "submit", content: "Final draft" }],
+    ["changes requested", { action: "revise", feedback: "Make it shorter" }],
+  ])("keeps a resolved editor in its persisted position when %s starts a resumed attempt", (_label, result) => {
+    const orderedBlocks: AiTurnBlock[] = [
+      { id: "intro-1", kind: "text", text: "Klar, lade ich direkt." },
+      { id: toolBlockId("load-tools"), kind: "tool", callId: "load-tools", name: "load_tools", status: "completed" },
+      { id: "intro-2", kind: "text", text: "Hier ist der Entwurf:" },
+      {
+        id: toolBlockId("editor"),
+        kind: "tool",
+        callId: "editor",
+        name: "text_editor",
+        status: "completed",
+        frontendMode: "client_interaction",
+        result,
+      },
+    ];
+    const expectedIds = orderedBlocks.map((block) => block.id);
+    let state = reduceProjection(
+      {
+        ...emptyProjection(conversation),
+        activeTurn: {
+          turnId: "turn-1",
+          attempt: 1,
+          seq: 8,
+          status: "running",
+          blocks: orderedBlocks,
+          modelProfileId: "m",
+        },
+      },
+      wire({
+        turnId: "turn-1",
+        attempt: 2,
+        seq: 9,
+        type: "turn_started",
+        modelProfileId: "m",
+        providerModel: "p",
+        blocks: orderedBlocks,
+      }),
+    );
+
+    expect(state.activeTurn?.blocks.map((block) => block.id)).toEqual(expectedIds);
+    for (const [index, block] of orderedBlocks.entries()) {
+      state = reduceProjection(state, wire({ turnId: "turn-1", attempt: 2, seq: 10 + index, type: "block_set", block }));
+      expect(state.activeTurn?.blocks.map((candidate) => candidate.id)).toEqual(expectedIds);
+    }
+  });
+
   test("derives waiting_for_action from an awaiting tool block", () => {
     const state = feed([
       { type: "state", conversation, messages: [], activeTurn: null } as AiStreamSseEvent,

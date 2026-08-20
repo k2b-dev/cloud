@@ -23,6 +23,7 @@ import {
   applyWireEventToBlocks,
   buildBlocksFromMessages,
   compactionBlockId,
+  reconcileResolvedTurnActions,
   steerAppliedBlockId,
   steerMessageBlockId,
   streamBlockId,
@@ -252,6 +253,40 @@ const rebuildBlocksFromMessages = (
   return blocks;
 };
 
+type ChatAttemptState = {
+  loopMessages: AiStoredMessage[];
+  pendingRecords: AiPendingTurnActionRecord[];
+  resolvedRecords: AiPendingTurnActionRecord[];
+  turnSteers: AiTurnSteer[];
+};
+
+const rebuildAttemptBaseline = (state: ChatAttemptState): AiTurnBlock[] => {
+  const persisted = rebuildBlocksFromMessages(state.loopMessages, state.pendingRecords, state.turnSteers);
+  const unresolvedCallIds = new Set(
+    persisted.flatMap((block) => (block.kind === "tool" && block.status === "running" ? [block.callId] : [])),
+  );
+  const unreflectedResolvedRecords = state.resolvedRecords.filter((action) => {
+    if (unresolvedCallIds.has(action.callId)) return true;
+    const parentCallId = action.kind === "custom_approval" ? customApprovalParentCallId(action.callId) : undefined;
+    return parentCallId ? unresolvedCallIds.has(parentCallId) : false;
+  });
+  if (unreflectedResolvedRecords.length === 0) return persisted;
+  return reconcileResolvedTurnActions(
+    rebuildBlocksFromMessages(state.loopMessages, [...state.pendingRecords, ...unreflectedResolvedRecords], state.turnSteers),
+    unreflectedResolvedRecords,
+  );
+};
+
+const loadChatAttemptState = async (conversationId: string, turnId: string): Promise<ChatAttemptState> => {
+  const [loopMessages, pendingRecords, resolvedRecords, turnSteers] = await Promise.all([
+    aiConversations.listTurnMessages({ conversationId, loopId: turnId }),
+    aiConversations.listPendingActionRecords({ conversationId, turnId }),
+    aiConversations.listResolvedPendingActions({ conversationId, turnId }),
+    aiConversations.listTurnSteers({ conversationId, turnId }),
+  ]);
+  return { loopMessages, pendingRecords, resolvedRecords, turnSteers };
+};
+
 // ---------------------------------------------------------------------------
 // Event mapper — Nessi block/tool events to Cloud wire block ops
 // ---------------------------------------------------------------------------
@@ -462,19 +497,44 @@ export class AiTurnExecutor {
       leaseOwner: this.config.leaseOwner,
       seedBlocks: claim.liveBlocks ?? [],
     });
-    await pipeline.emitTurnStarted(claim.turn.modelProfileId ?? "");
-
     const runConfig = claim.runConfig;
     if (!runConfig) {
+      pipeline.seedBaseline(claim.liveBlocks ?? []);
+      await pipeline.emitTurnStarted(claim.turn.modelProfileId ?? "");
+      await pipeline.emitBaseline();
       await this.finalize(conversationId, turnId, pipeline, "failed", "AI turn is missing its run configuration.", null);
       return;
     }
 
     if (runConfig.kind === "compact") {
+      pipeline.seedBaseline(claim.liveBlocks ?? []);
+      await pipeline.emitTurnStarted(claim.turn.modelProfileId ?? "");
+      await pipeline.emitBaseline();
       await this.runCompaction(conversationId, turnId, pipeline, runConfig, signal);
       return;
     }
-    await this.runChat(conversationId, turnId, claim, runConfig, pipeline, signal);
+
+    let attemptState: ChatAttemptState;
+    try {
+      attemptState = await loadChatAttemptState(conversationId, turnId);
+    } catch (error) {
+      pipeline.seedBaseline(claim.liveBlocks ?? []);
+      await pipeline.emitTurnStarted(claim.turn.modelProfileId ?? "");
+      await pipeline.emitBaseline();
+      await this.finalize(
+        conversationId,
+        turnId,
+        pipeline,
+        "failed",
+        error instanceof Error ? error.message : "AI turn state could not be loaded.",
+        "chat",
+      );
+      return;
+    }
+    pipeline.seedBaseline(rebuildAttemptBaseline(attemptState));
+    await pipeline.emitTurnStarted(claim.turn.modelProfileId ?? "");
+    await pipeline.emitBaseline();
+    await this.runChat(conversationId, turnId, claim, runConfig, pipeline, signal, false, attemptState);
   }
 
   private async finalize(
@@ -510,6 +570,7 @@ export class AiTurnExecutor {
     pipeline: StreamPipeline,
     signal: AbortSignal,
     skipResolvedActions = false,
+    attemptState?: ChatAttemptState,
   ): Promise<void> {
     const startedAt = Date.now();
     const abortController = new AbortController();
@@ -675,18 +736,16 @@ export class AiTurnExecutor {
       toolPresentations,
     });
 
-    const [loopMessages, pendingRecords, resolvedRecords, turnSteers] = await Promise.all([
-      aiConversations.listTurnMessages({ conversationId, loopId: turnId }),
-      aiConversations.listPendingActionRecords({ conversationId, turnId }),
-      aiConversations.listResolvedPendingActions({ conversationId, turnId }),
-      aiConversations.listTurnSteers({ conversationId, turnId }),
-    ]);
+    const { loopMessages, pendingRecords, resolvedRecords, turnSteers } =
+      attemptState ?? (await loadChatAttemptState(conversationId, turnId));
     const assistantMessages = loopMessages.filter((message) => message.message.role !== "user");
     const isFresh = assistantMessages.length === 0 && resolvedRecords.length === 0 && !skipResolvedActions;
 
     // Rebuild the whole active-turn view so a re-run/continuation reconstructs it.
-    pipeline.seedBaseline(rebuildBlocksFromMessages(loopMessages, pendingRecords, turnSteers));
-    await pipeline.emitBaseline();
+    if (!attemptState) {
+      pipeline.seedBaseline(rebuildAttemptBaseline({ loopMessages, pendingRecords, resolvedRecords, turnSteers }));
+      await pipeline.emitBaseline();
+    }
 
     const appliedSteers: AiTurnSteer[] = [];
 
@@ -1286,7 +1345,9 @@ class StreamPipeline {
 
   async emitTurnStarted(modelProfileId: string): Promise<void> {
     const seq = this.nextSeq();
-    await this.publish(this.envelope({ type: "turn_started" as const, seq, modelProfileId, providerModel: "" }) as AiWireEvent);
+    await this.publish(
+      this.envelope({ type: "turn_started" as const, seq, modelProfileId, providerModel: "", blocks: this.blocks }) as AiWireEvent,
+    );
   }
 
   async apply(event: OutboundEvent): Promise<void> {
@@ -1374,4 +1435,10 @@ class StreamPipeline {
   }
 }
 
-export const __aiExecutorTest = { applyToolRoundPolicy, createEventMapper, rebuildBlocksFromMessages, toolRoundState };
+export const __aiExecutorTest = {
+  applyToolRoundPolicy,
+  createEventMapper,
+  rebuildAttemptBaseline,
+  rebuildBlocksFromMessages,
+  toolRoundState,
+};

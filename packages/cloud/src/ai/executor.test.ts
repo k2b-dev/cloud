@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { OutboundEvent, Provider, Tool } from "@k2b/nessi";
 import { __aiExecutorTest } from "./executor";
-import { streamBlockId, toolBlockId } from "./protocol";
+import { messageBlockId, streamBlockId, toolBlockId } from "./protocol";
 
-const { applyToolRoundPolicy, createEventMapper, rebuildBlocksFromMessages } = __aiExecutorTest;
+const { applyToolRoundPolicy, createEventMapper, rebuildAttemptBaseline, rebuildBlocksFromMessages } = __aiExecutorTest;
 
 const turn = { agentId: "cloud", loopId: "turn-1", turnId: "turn-1:turn:0", turnIndex: 0 };
 
@@ -174,6 +174,63 @@ describe("nessi block event mapping", () => {
       callId: "call-9-approval-0",
       status: "awaiting_approval",
     });
+  });
+
+  test("attempt baseline keeps resolved frontend tools in persisted message order", () => {
+    const result = { action: "submit", content: "Final draft" };
+    const blocks = rebuildAttemptBaseline({
+      loopMessages: [
+        { seq: 1, message: { role: "assistant", content: [{ type: "text", text: "Here is the draft:" }] } },
+        {
+          seq: 2,
+          message: {
+            role: "assistant",
+            content: [{ type: "tool_call", id: "editor", name: "text_editor", args: { content: "Draft" } }],
+          },
+        },
+      ] as never,
+      pendingRecords: [],
+      resolvedRecords: [
+        {
+          callId: "editor",
+          kind: "client_tool",
+          frontendMode: "client_interaction",
+          resolvedEvent: { type: "tool_result", callId: "editor", result },
+        },
+      ] as never,
+      turnSteers: [],
+    });
+
+    expect(blocks.map((block) => block.id)).toEqual([messageBlockId(1, 0), toolBlockId("editor")]);
+    expect(blocks[1]).toMatchObject({ kind: "tool", callId: "editor", status: "completed", result });
+  });
+
+  test("attempt baseline does not downgrade a tool result already persisted by the loop", () => {
+    const persistedResult = { saved: true };
+    const blocks = rebuildAttemptBaseline({
+      loopMessages: [
+        {
+          seq: 1,
+          message: {
+            role: "assistant",
+            content: [{ type: "tool_call", id: "editor", name: "text_editor", args: { content: "Draft" } }],
+          },
+        },
+        { seq: 2, message: { role: "tool_result", callId: "editor", name: "text_editor", result: persistedResult } },
+      ] as never,
+      pendingRecords: [],
+      resolvedRecords: [
+        {
+          callId: "editor",
+          kind: "client_tool",
+          frontendMode: "client_interaction",
+          resolvedEvent: { type: "tool_result", callId: "editor", result: { stale: true } },
+        },
+      ] as never,
+      turnSteers: [],
+    });
+
+    expect(blocks[0]).toMatchObject({ kind: "tool", callId: "editor", status: "completed", result: persistedResult });
   });
 
   test("capability presentation follows a live call through completion", () => {

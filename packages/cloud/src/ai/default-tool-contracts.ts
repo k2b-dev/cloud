@@ -64,6 +64,7 @@ export const CloudAiSurveyOutputSchema = z.object({
 });
 
 export const CLOUD_AI_TEXT_EDITOR_MAX_CHARS = 20_000;
+export const CLOUD_AI_TEXT_EDITOR_FEEDBACK_MAX_CHARS = 2_000;
 
 export const CloudAiTextEditorInputSchema = z.object({
   title: z.string().trim().min(1).max(160),
@@ -73,11 +74,17 @@ export const CloudAiTextEditorInputSchema = z.object({
   submitLabel: z.string().trim().min(1).max(40).default("Continue"),
 });
 
-export const CloudAiTextEditorOutputSchema = z.object({
-  submitted: z.literal(true),
-  content: z.string().max(CLOUD_AI_TEXT_EDITOR_MAX_CHARS),
-  format: z.enum(["plain", "markdown"]),
-});
+export const CloudAiTextEditorOutputSchema = z.discriminatedUnion("submitted", [
+  z.object({
+    submitted: z.literal(true),
+    content: z.string().max(CLOUD_AI_TEXT_EDITOR_MAX_CHARS),
+    format: z.enum(["plain", "markdown"]),
+  }),
+  z.object({
+    submitted: z.literal(false),
+    feedback: z.string().trim().min(1).max(CLOUD_AI_TEXT_EDITOR_FEEDBACK_MAX_CHARS),
+  }),
+]);
 
 export const CloudAiLocalBashInputSchema = z.object({
   command: z.string().trim().min(1).max(20_000),

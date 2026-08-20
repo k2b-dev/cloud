@@ -120,9 +120,12 @@ The built-in `text_editor` is a `clientInteraction()` for one complete
 plain-text or Markdown draft of at most 20,000 characters. It is appropriate
 when the user should revise substantial text before the model continues. The
 browser keeps unsubmitted edits only in local component state, so reloading may
-restore the original tool input. A submitted result is durable, but it only
-returns reviewed text; writing a Mail draft, changing a Note, or sending a
-message remains a separate authorized Capability Action with its own approval.
+restore the original tool input. The user can accept the edited source or send
+feedback without accepting it; after feedback, the model should revise the
+original and present the complete replacement with `text_editor` again. A
+submitted result is durable, but it only returns reviewed text or revision
+feedback; writing a Mail draft, changing a Note, or sending a message remains a
+separate authorized Capability Action with its own approval.
 
 `view_image` is a safe read over one authorized conversation or read-only
 Project file. Its input is an absolute file path and optional bounded guidance;

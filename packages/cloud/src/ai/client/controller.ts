@@ -127,23 +127,6 @@ const completeFrontendToolBlock = (blocks: AiTurnBlock[], callId: string, result
       : block,
   );
 
-type AcceptedTurnAction = NonNullable<Parameters<typeof reconcileActiveTurnActions>[1][number]["resolvedEvent"]>;
-
-const preserveAcceptedTurnActionBlocks = (
-  previous: AiChatProjection["activeTurn"],
-  current: NonNullable<AiChatProjection["activeTurn"]>,
-  actions: ReadonlyMap<string, AcceptedTurnAction>,
-): NonNullable<AiChatProjection["activeTurn"]> => {
-  if (!previous || previous.turnId !== current.turnId) return current;
-  const currentCalls = new Set(
-    current.blocks.filter((block) => block.kind === "tool").map((block) => (block.kind === "tool" ? block.callId : "")),
-  );
-  const preserved = previous.blocks.filter(
-    (block) => block.kind === "tool" && actions.has(block.callId) && !currentCalls.has(block.callId),
-  );
-  return preserved.length > 0 ? { ...current, blocks: [...preserved, ...current.blocks] } : current;
-};
-
 const isActiveConversationLoading = (activeConversationId: string | null, loadingConversationId: string | null): boolean =>
   activeConversationId !== null && loadingConversationId === activeConversationId;
 
@@ -158,7 +141,6 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
 
   // Cache of projections for conversations opened this session (fast switching).
   const cache = new Map<string, AiChatProjection>();
-  const acceptedTurnActions = new Map<string, { turnId: string; actions: Map<string, AcceptedTurnAction> }>();
   const preparedAttachmentRefs = new Map<string, WeakMap<File, Promise<AiAttachmentRef & { version: number }>>>();
   if (options.initialConversationId && options.initialDetail) cache.set(options.initialConversationId, initialProjection);
   // Infinite scroll state per conversation (history is windowed, oldest first).
@@ -237,50 +219,8 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
 
   // ---- streaming --------------------------------------------------------
 
-  const reconcileAcceptedActions = (conversationId: string, event: AiStreamSseEvent, projection: AiChatProjection): AiChatProjection => {
-    const accepted = acceptedTurnActions.get(conversationId);
-    let active = projection.activeTurn;
-    if (!accepted) return projection;
-    if (!active || active.turnId !== accepted.turnId) {
-      acceptedTurnActions.delete(conversationId);
-      return projection;
-    }
-    if (event.type === "state") {
-      for (const [callId, action] of accepted.actions) {
-        const block = event.activeTurn?.blocks.find((candidate) => candidate.kind === "tool" && candidate.callId === callId);
-        const stillAwaiting =
-          block?.kind === "tool" &&
-          ((action.type === "tool_result" && block.status === "awaiting_client") ||
-            (action.type === "approval_response" && block.status === "awaiting_approval"));
-        if (block && !stillAwaiting) accepted.actions.delete(callId);
-      }
-    } else if (event.type === "block_set" && event.block.kind === "tool") {
-      const action = accepted.actions.get(event.block.callId);
-      const stillAwaiting =
-        action &&
-        ((action.type === "tool_result" && event.block.status === "awaiting_client") ||
-          (action.type === "approval_response" && event.block.status === "awaiting_approval"));
-      if (action && !stillAwaiting) accepted.actions.delete(event.block.callId);
-    }
-    if (accepted.actions.size === 0) {
-      acceptedTurnActions.delete(conversationId);
-      return projection;
-    }
-    active = preserveAcceptedTurnActionBlocks(state.activeTurn, active, accepted.actions);
-    const actions = [...accepted.actions].map(([callId, resolvedEvent]) => ({ callId, resolvedEvent }));
-    return { ...projection, activeTurn: reconcileActiveTurnActions(active, actions) };
-  };
-
-  const rememberAcceptedAction = (conversationId: string, turnId: string, action: AcceptedTurnAction) => {
-    const accepted = acceptedTurnActions.get(conversationId);
-    const entry = accepted?.turnId === turnId ? accepted : { turnId, actions: new Map<string, AcceptedTurnAction>() };
-    entry.actions.set(action.callId, action);
-    acceptedTurnActions.set(conversationId, entry);
-  };
-
   const reduceEvent = (conversationId: string, event: AiStreamSseEvent) => {
-    const reduced = reduceProjection({ conversation: state.conversation, messages: state.messages, activeTurn: state.activeTurn }, event);
-    const next = reconcileAcceptedActions(conversationId, event, reduced);
+    const next = reduceProjection({ conversation: state.conversation, messages: state.messages, activeTurn: state.activeTurn }, event);
     setState(reconcile(next, { key: "id", merge: true }));
     cache.set(conversationId, next);
   };
@@ -1107,7 +1047,6 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         (block) => block.kind === "tool" && block.callId === request.callId && block.status === "awaiting_approval",
       );
       if (!pending) return current;
-      rememberAcceptedAction(conversationId, request.turnId, action);
       return reconcileActiveTurnActions(current, [{ callId: request.callId, resolvedEvent: action }]);
     });
     cache.set(conversationId, { conversation: state.conversation, messages: state.messages, activeTurn: state.activeTurn });
@@ -1130,7 +1069,6 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
         (block) => block.kind === "tool" && block.callId === request.callId && block.status === "awaiting_client",
       );
       if (!pending) return current;
-      rememberAcceptedAction(conversationId, request.turnId, action);
       return reconcileActiveTurnActions(current, [{ callId: request.callId, resolvedEvent: action }]);
     });
     cache.set(conversationId, { conversation: state.conversation, messages: state.messages, activeTurn: state.activeTurn });
@@ -1196,7 +1134,6 @@ const isComposerDraftSendable = (input: ComposerDraftInput): boolean =>
 export const __aiControllerTest = {
   claimFrontendCall,
   completeFrontendToolBlock,
-  preserveAcceptedTurnActionBlocks,
   conversationRunError,
   failSteerBlock,
   projectionForConversationOpen,

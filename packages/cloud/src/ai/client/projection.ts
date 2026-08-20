@@ -112,8 +112,9 @@ export const activeTurnFromSnapshot = (snapshot: AiTurnSnapshot | null): AiActiv
  *
  * Rules:
  * - `state` replaces everything (reconnect baseline).
- * - `turn_started` resets the active turn's live blocks (new turn or new attempt);
- *   stale attempts are ignored.
+ * - `turn_started` atomically installs the attempt's ordered block baseline;
+ *   stale attempts are ignored. Older senders without a baseline reset to only
+ *   locally pending steering blocks.
  * - block events apply only when strictly newer than the active turn's cursor.
  * - `turn_finished` folds the turn's persisted messages in and clears the active turn.
  */
@@ -143,14 +144,15 @@ export const reduceWireEvent = (state: AiChatProjection, event: AiWireEvent): Ai
     if (active && active.turnId === event.turnId && event.attempt < active.attempt) return state;
     const pendingSteers =
       active?.turnId === event.turnId ? active.blocks.filter((block) => block.kind === "steer_message" && block.status !== "consumed") : [];
+    const blocks = event.blocks ? overlayBlocks(normalizeCustomApprovalBlocks(event.blocks), pendingSteers) : pendingSteers;
     return {
       ...state,
       activeTurn: {
         turnId: event.turnId,
         attempt: event.attempt,
         seq: event.seq,
-        status: "running",
-        blocks: pendingSteers,
+        status: deriveStatus(blocks),
+        blocks,
         modelProfileId: event.modelProfileId,
       },
     };

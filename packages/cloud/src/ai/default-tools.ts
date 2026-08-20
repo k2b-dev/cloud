@@ -66,12 +66,12 @@ export const createCloudAiTextEditorTool = () =>
   defineAiTool({
     name: "text_editor",
     description:
-      "Let the user review and edit one substantial plain-text or Markdown draft inside the chat. Provide the complete proposed content. Use this for mail bodies, letters, notes, or other long-form text that the user should revise before the assistant continues. This only returns the reviewed text; it does not save or send anything.",
+      "Let the user review one substantial plain-text or Markdown draft inside the chat. Provide the complete proposed content. The user can edit and accept the draft or return feedback instead. When feedback is returned, revise the original draft and present the complete replacement with text_editor again. Use this for mail bodies, letters, notes, or other long-form text that the user should review before the assistant continues. This does not save or send anything.",
     inputSchema: CloudAiTextEditorInputSchema,
     outputSchema: CloudAiTextEditorOutputSchema,
     approval: "never",
     promptHint:
-      "let the user review or revise a substantial text draft before continuing — not for short answers or read-only final responses.",
+      "let the user review a substantial text draft before continuing; if they request changes, revise it and present the complete replacement with text_editor again — not for short answers or read-only final responses.",
   }).clientInteraction();
 
 export const createCloudAiLocalBashTool = () =>

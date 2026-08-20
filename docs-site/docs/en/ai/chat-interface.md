@@ -171,7 +171,9 @@ accent in running, success, and failure states. They stay on one line and omit
 the app name and result summary; the disclosure still contains the complete
 input and response. Expanded generic disclosures show JSON-like payloads as
 structured data previews with at most eight visible rows and an optional raw
-view; plain text and specialized tool results keep their readable renderers.
+view. Expanded data surfaces span the available message column. Plain text and
+specialized tool results keep their readable renderers; web search and extract
+results also span the column without inheriting the activity icon inset.
 Approval prompts additionally show the owning application's saved name. The
 saved snapshot keeps history readable when an app is
 temporarily unavailable or later changes its registry metadata; ordinary Nessi
@@ -214,13 +216,14 @@ acceptance and the next stream event. Accepted frontend-tool and approval
 actions must not regress when a stale live event still contains the pending
 block.
 
-The built-in long-form text interaction uses the existing `@k2b/ui`
-`AutocompleteEditor` for plain text and `MarkdownEditor` for Markdown. Its
+The built-in long-form text interaction presents every draft in the existing
+`@k2b/ui` `MarkdownEditor`; plain text remains valid Markdown source. Its
 unsubmitted value is deliberately component-local: reload may discard edits
-and restore the model's original draft. Do not add a second draft persistence
-layer to the chat controller. Show the submitted source in a bounded disclosure
-without treating the editor submission as authorization for a later domain
-write.
+and restore the model's original draft. The user can accept the edited source
+or send a separate change request so the model can return a replacement draft.
+Do not add a second draft persistence layer to the chat controller. Show the
+submitted source or feedback in a bounded disclosure without treating either
+result as authorization for a later domain write.
 
 Server tools remain the default for domain access.
 

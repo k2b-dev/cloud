@@ -261,7 +261,9 @@ describe("AI tools", () => {
       submitLabel: "Continue",
     });
     expect(CloudAiTextEditorOutputSchema.safeParse({ submitted: true, content: "# Hello", format: "markdown" }).success).toBe(true);
+    expect(CloudAiTextEditorOutputSchema.safeParse({ submitted: false, feedback: "Make the opening more direct." }).success).toBe(true);
     expect(CloudAiTextEditorInputSchema.safeParse({ title: "Review", content: "x".repeat(20_001) }).success).toBe(false);
+    expect(CloudAiTextEditorOutputSchema.safeParse({ submitted: false, feedback: " " }).success).toBe(false);
     expect(CloudAiTextEditorOutputSchema.safeParse({ submitted: false, content: "Hello", format: "plain" }).success).toBe(false);
   });
 

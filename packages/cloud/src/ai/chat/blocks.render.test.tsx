@@ -52,7 +52,7 @@ describe("capability tool presentation", () => {
     }
   });
 
-  test("renders structured tool input and responses as bounded data previews", () => {
+  test("renders structured tool input and responses as full-width data previews", () => {
     const completed = block("completed");
     if (completed.kind !== "tool") throw new Error("tool block missing");
     completed.args = {
@@ -75,7 +75,10 @@ describe("capability tool presentation", () => {
     const html = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
 
     expect(html.match(/class="k2b-content-structured-data w-full"/g)?.length).toBe(2);
-    expect(html).toContain('class="ml-6 flex max-w-xl flex-col gap-2"');
+    expect(html).toContain('data-body-inset="false"');
+    expect(html).toContain('class="flex w-full min-w-0 flex-col gap-2"');
+    expect(html).not.toContain("ml-6");
+    expect(html).not.toContain("max-w-xl");
     expect(html).toContain('<p class="mb-1 text-[10px] font-medium uppercase tracking-wide text-dimmed">Input</p>');
     expect(html).toContain('<p class="mb-1 text-[10px] font-medium uppercase tracking-wide text-dimmed">Response</p>');
     expect(html).not.toContain("k2b-content-structured-data__title");
@@ -83,6 +86,40 @@ describe("capability tool presentation", () => {
     expect(html).toContain("View raw");
     expect(html).toContain("mailboxId");
     expect(html).toContain("commands");
+  });
+
+  test.each([
+    {
+      name: "web_search",
+      args: { query: "Cloud platform" },
+      result: [{ title: "Cloud", url: "https://cloud.example/docs" }],
+      content: "cloud.example",
+      bodyClass: "max-h-56 w-full min-w-0",
+    },
+    {
+      name: "web_extract",
+      args: { url: "https://cloud.example/docs" },
+      result: { title: "Cloud docs", url: "https://cloud.example/docs", description: "Application platform." },
+      content: "Application platform.",
+      bodyClass: "flex w-full min-w-0",
+    },
+  ])("renders completed $name results full-width without an activity inset", ({ name, args, result, content, bodyClass }) => {
+    const completed: AiTurnBlock = {
+      id: `${name}-call`,
+      kind: "tool",
+      callId: `${name}-1`,
+      name,
+      args,
+      status: "completed",
+      result,
+    };
+
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
+
+    expect(html).toContain('data-body-inset="false"');
+    expect(html).toContain(bodyClass);
+    expect(html).toContain(content);
+    expect(html).not.toContain("max-w-xl");
   });
 
   test("renders persisted local Bash calls without execution controls", () => {
@@ -277,6 +314,8 @@ describe("survey presentation", () => {
     const historicalHtml = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
 
     expect(activeHtml).toContain("Invoice details · waiting");
+    expect(activeHtml).toContain('class="group w-full min-w-0 text-xs"');
+    expect(activeHtml).toContain('class="mt-1 w-full min-w-0 rounded-md bg-zinc-100/70');
     expect(activeHtml).toContain("150 EUR");
     expect(activeHtml).not.toContain("Waiting for the assistant to continue");
     expect(activeHtml).not.toContain("Submit</span>");
@@ -285,10 +324,7 @@ describe("survey presentation", () => {
 });
 
 describe("text editor presentation", () => {
-  test.each([
-    ["plain", "Editable text", "k2b-autocomplete"],
-    ["markdown", "Editable Markdown", "k2b-markdown-editor"],
-  ] as const)("renders the existing %s editor with browser-local initial content", (format, label, editorClass) => {
+  test.each(["plain", "markdown"] as const)("renders %s source in the direct Markdown editor", (format) => {
     const html = renderToString(() =>
       createComponent(CloudTextEditorBlock, {
         args: {
@@ -303,9 +339,12 @@ describe("text editor presentation", () => {
     );
 
     expect(html).toContain("Review mail");
-    expect(html).toContain("Adjust this draft before I continue.");
-    expect(html).toContain(`aria-label="${label}"`);
-    expect(html).toContain(editorClass);
+    expect(html).toContain('aria-label="Review mail"');
+    expect(html).toContain("k2b-markdown-editor");
+    expect(html).not.toContain("k2b-autocomplete");
+    expect(html).not.toContain('data-fill="true"');
+    expect(html).not.toContain("Adjust this draft before I continue.");
+    expect(html).toContain("Suggest changes");
     expect(html).toContain("13 / 20,000");
     expect(html).toContain("Use draft");
     expect(html).toContain("20,000");
@@ -326,9 +365,33 @@ describe("text editor presentation", () => {
     const historicalHtml = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
 
     expect(activeHtml).toContain("Review mail · waiting");
+    expect(activeHtml).toContain('class="group w-full min-w-0 text-xs"');
+    expect(activeHtml).toContain('class="mt-1 w-full min-w-0 rounded-md bg-zinc-100/70');
     expect(activeHtml).toContain("Hello **Ada**");
     expect(activeHtml).not.toContain("<strong>Ada</strong>");
     expect(activeHtml).not.toContain("Waiting for the assistant to continue");
     expect(historicalHtml).toContain("Review mail · submitted");
+  });
+
+  test("keeps revision feedback distinct from accepted source", () => {
+    const completed: AiTurnBlock = {
+      id: "text-editor-feedback-call",
+      kind: "tool",
+      callId: "call-3",
+      name: "text_editor",
+      args: { title: "Review mail", content: "Initial", format: "markdown" },
+      status: "completed",
+      frontendMode: "client_interaction",
+      result: { submitted: false, feedback: "Make the opening more direct." },
+    };
+
+    const activeHtml = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1", active: true }));
+    const historicalHtml = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
+
+    expect(activeHtml).toContain("Review mail · revising");
+    expect(activeHtml).toContain("Make the opening more direct.");
+    expect(activeHtml).toContain("Feedback");
+    expect(historicalHtml).toContain("Review mail · changes requested");
+    expect(historicalHtml).not.toContain("Initial");
   });
 });

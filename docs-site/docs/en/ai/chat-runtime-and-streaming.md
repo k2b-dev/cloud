@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-08-18
+updated: 2026-08-20
 ---
 
 # Chat runtime and streaming
@@ -65,10 +65,12 @@ beyond the explicit web tools. See
 [Tools and approvals](/en/docs/ai/tools-and-approvals).
 
 The `text_editor` frontend interaction lets the model provide one complete
-plain-text or Markdown draft for the user to revise. Unsubmitted edits are
-browser-local and may be lost on reload; only the submitted result becomes a
-durable turn action. Submitting reviewed text does not save a domain resource
-or approve a later Capability Action such as updating or sending mail.
+plain-text or Markdown draft for the user to revise. The browser presents both
+formats in one Markdown editor. Unsubmitted edits are browser-local and may be
+lost on reload; only accepted text or submitted revision feedback becomes a
+durable turn action. Feedback asks the model for a replacement draft instead of
+accepting the current source. Neither result saves a domain resource or
+approves a later Capability Action such as updating or sending mail.
 
 An interactive Assistant CLI turn may additionally request the fixed
 `local_bash` client tool. It is not part of the default set: Cloud persists and
@@ -140,7 +142,10 @@ deployment, not per request.
 
 The stream uses versioned Server-Sent Events. Clients receive a full state
 event and then ordered updates for messages, text, tools, approvals, and turn
-completion.
+completion. Each execution attempt starts with one atomic, server-ordered block
+baseline. Resuming after an approval or frontend-tool response therefore keeps
+every existing item in its persisted timeline position while new output is
+appended.
 
 Use `parseAiSse()` for a low-level client. Solid applications should use
 `createAiChatController()` from `@valentinkolb/cloud/ai/solid`.

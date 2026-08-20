@@ -12,7 +12,6 @@ const {
   isActiveConversationLoading,
   isCurrentStreamSession,
   projectionForConversationOpen,
-  preserveAcceptedTurnActionBlocks,
   reconcileSteerBlocks,
   runErrorFromEvent,
   settleFrontendCall,
@@ -460,35 +459,6 @@ describe("AI controller frontend tool deduplication", () => {
         result,
       },
     ]);
-  });
-
-  test("keeps an accepted interaction mounted across a resumed attempt", () => {
-    const result = { submitted: true, answers: { timing: "tomorrow" } };
-    const completed: AiTurnBlock = {
-      id: "survey-call",
-      kind: "tool",
-      callId: "call-1",
-      name: "survey",
-      status: "completed",
-      frontendMode: "client_interaction",
-      result,
-    };
-    const turn = {
-      turnId: "turn-1",
-      attempt: 1,
-      seq: 2,
-      status: "running" as const,
-      blocks: [completed],
-      modelProfileId: "model",
-    };
-
-    const resumed = preserveAcceptedTurnActionBlocks(
-      turn,
-      { ...turn, attempt: 2, seq: 1, blocks: [] },
-      new Map([["call-1", { type: "tool_result", callId: "call-1", result }]]),
-    );
-
-    expect(resumed.blocks).toEqual([completed]);
   });
 });
 

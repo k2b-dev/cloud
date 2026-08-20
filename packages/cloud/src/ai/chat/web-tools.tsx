@@ -72,8 +72,9 @@ export function WebSearchToolBlock(props: { block: ToolBlock }) {
         icon="ti ti-search"
         label={searchQuery(props.block.args)}
         description={`${results().length} result${results().length === 1 ? "" : "s"}`}
+        bodyInset={false}
       >
-        <div class="max-h-56 max-w-xl overflow-y-auto rounded-md bg-zinc-100/70 p-1 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+        <div class="max-h-56 w-full min-w-0 overflow-y-auto rounded-md bg-zinc-100/70 p-1 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
           <Show when={results().length > 0} fallback={<p class="px-2 py-1.5 text-dimmed">No results.</p>}>
             <For each={results()}>{(result) => <WebLinkRow url={result.url} title={result.title} />}</For>
           </Show>
@@ -104,8 +105,9 @@ export function WebExtractToolBlock(props: { block: ToolBlock }) {
         icon="ti ti-world-download"
         leading={<Favicon url={url()} fallbackIcon="ti ti-world-download" />}
         label={title() || domainOf(url())}
+        bodyInset={false}
       >
-        <div class="flex max-w-xl flex-col gap-0.5 rounded-md bg-zinc-100/70 px-2 py-1.5 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+        <div class="flex w-full min-w-0 flex-col gap-0.5 rounded-md bg-zinc-100/70 px-2 py-1.5 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
           <a
             href={url()}
             target="_blank"
