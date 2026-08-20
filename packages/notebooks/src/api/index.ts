@@ -228,6 +228,41 @@ const NoteVersionSchema = z.object({
   noteId: ResourceShortIdSchema,
   createdBy: z.uuid().nullable(),
   createdAt: z.string(),
+  contributors: z.array(
+    z.object({
+      kind: z.enum(["user", "service_account"]),
+      id: z.uuid(),
+      displayName: z.string(),
+      avatarHash: z.string().nullable(),
+    }),
+  ),
+});
+
+const NotebookActivitySchema = z.object({
+  id: z.string(),
+  notebook: z.object({
+    id: ResourceShortIdSchema,
+    name: z.string(),
+    icon: z.string().nullable(),
+  }),
+  note: z
+    .object({
+      id: ResourceShortIdSchema,
+      title: z.string(),
+    })
+    .nullable(),
+  noteVersionId: z.uuid().nullable(),
+  actor: z.object({
+    kind: z.enum(["user", "service_account", "system"]),
+    id: z.uuid().nullable(),
+    displayName: z.string(),
+    avatarHash: z.string().nullable(),
+  }),
+  action: z.string(),
+  metadata: z.record(z.string(), z.unknown()),
+  occurrenceCount: z.number().int().positive(),
+  createdAt: z.string(),
+  lastOccurredAt: z.string(),
 });
 
 const BacklinkSchema = z.object({
@@ -441,6 +476,13 @@ const GlobalNoteSearchQuerySchema = NoteSearchQuerySchema.extend({
   notebook: ResourceShortIdSchema.optional().describe("Notebook ID"),
 });
 
+const NotebookActivityQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+  notebook: ResourceShortIdSchema.optional(),
+  note: ResourceShortIdSchema.optional(),
+});
+
 const parseSearchFilters = (query: z.infer<typeof NoteSearchQuerySchema>) => ({
   query: query.q,
   tags: query.tags?.split(","),
@@ -457,6 +499,13 @@ const parseSearchFilters = (query: z.infer<typeof NoteSearchQuerySchema>) => ({
 const getUserBackedActor = (c: Context<AuthContext>): User | null => {
   const actor = c.get("actor");
   return actor.kind === "user" ? actor.user : actor.delegatedUser;
+};
+
+const getNotebookActivityActor = (c: Context<AuthContext>) => {
+  const actor = c.get("actor");
+  return actor.kind === "user"
+    ? ({ kind: "user", id: actor.user.id } as const)
+    : ({ kind: "service_account", id: actor.serviceAccount.id } as const);
 };
 
 const requireUserBackedActor = (c: Context<AuthContext>): Result<User> => {
@@ -817,6 +866,86 @@ const app = new Hono<AuthContext>()
     },
   )
 
+  .get(
+    "/overview/activity",
+    describeRoute({
+      tags: ["Notebooks"],
+      summary: "List notebook activity",
+      description: "List durable activity across accessible notebooks, optionally filtered to one notebook or note.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(
+          z.object({ data: z.array(NotebookActivitySchema), nextCursor: z.string().nullable() }),
+          "Notebook activity",
+        ),
+        400: jsonResponse(ErrorResponseSchema, "Invalid cursor or filter"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Notebook or note not found"),
+      },
+    }),
+    v("query", NotebookActivityQuerySchema),
+    async (c) => {
+      const subject = getNotebookAccessSubject(c);
+      const binding = getCollectionNotebookBinding(subject);
+      if (!binding.ok) return respond(c, binding);
+      const query = c.req.valid("query");
+      let notebookId: string | null = binding.data;
+      let noteId: string | null = null;
+
+      if (query.notebook) {
+        const checked = await checkNotebookAccess(c, query.notebook);
+        if (checked.error) return checked.error;
+        notebookId = checked.notebook!.id;
+      }
+
+      if (query.note) {
+        const note = await notebooksService.note.getByShortId({ shortId: query.note });
+        if (!note) return respond(c, fail(err.notFound("Note")));
+        const notebook = await notebooksService.notebook.get({ id: note.notebookId });
+        if (!notebook) return respond(c, fail(err.notFound("Notebook")));
+        const checked = await checkNotebookAccess(c, notebook.shortId);
+        if (checked.error) return checked.error;
+        if (notebookId && notebookId !== note.notebookId) {
+          return respond(c, fail(err.badInput("Note does not belong to the selected notebook")));
+        }
+        notebookId = note.notebookId;
+        noteId = note.id;
+      }
+
+      try {
+        const page = await notebooksService.activity.list({
+          userId: subject.userId,
+          serviceAccountId: subject.serviceAccountId,
+          bypassAccess: Boolean(subject.user && hasRole(subject.user, "admin")),
+          notebookId,
+          noteId,
+          cursor: query.cursor,
+          limit: query.limit,
+        });
+        return respond(
+          c,
+          ok({
+            data: page.items.map((item) => ({
+              ...item,
+              notebook: {
+                id: item.notebook.shortId,
+                name: item.notebook.name,
+                icon: item.notebook.icon,
+              },
+              note: item.note ? { id: item.note.shortId, title: item.note.title } : null,
+            })),
+            nextCursor: page.nextCursor,
+          }),
+        );
+      } catch (error) {
+        if (error instanceof Error && error.message === "Invalid activity cursor") {
+          return respond(c, fail(err.badInput(error.message)));
+        }
+        throw error;
+      }
+    },
+  )
+
   // Get Notebook
   .get(
     "/:id",
@@ -1129,6 +1258,7 @@ const app = new Hono<AuthContext>()
           notebooksService.note.create({
             data: { ...data, notebookId, parentId },
             creatorId: user?.id ?? null,
+            actor: getNotebookActivityActor(c),
             dateConfig: getDateConfig(c),
           }),
           notebook!.shortId,
@@ -1335,7 +1465,12 @@ const app = new Hono<AuthContext>()
       if (!noteCheck.ok) return respond(c, noteCheck);
       noteId = noteCheck.data.id;
 
-      const result = await notebooksService.note.editContent({ noteId, data, createdBy: user?.id ?? null });
+      const result = await notebooksService.note.editContent({
+        noteId,
+        data,
+        createdBy: user?.id ?? null,
+        actor: getNotebookActivityActor(c),
+      });
       if (!result.ok) return respond(c, result);
       const [note] = await toPublicNotes([result.data.note], notebook!.shortId);
       return respond(c, ok({ ...result.data, note: note! }));

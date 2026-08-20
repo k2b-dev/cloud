@@ -83,7 +83,7 @@ ui.render(
 export const gardenPlannerTemplate: NotebookTemplate = {
   id: "garden-planner",
   name: "Garden Log",
-  description: "A Central European garden planner with plant windows, beds, native hedge notes, harvest tracking, and date-aware actions.",
+  description: "Planting windows, beds, harvests, and seasonal garden actions.",
   icon: "ti ti-plant-2",
   notebookName: "Garden Log",
   notebookDescription: "Plants, beds, harvests, and a script dashboard that derives what is next from simple tables.",

@@ -5,7 +5,7 @@ section: Work
 order: 120
 description: Collaborative Markdown notebooks with structured blocks, links, files, and small tools.
 tags: [notebooks, markdown, collaboration]
-updated: 2026-08-19
+updated: 2026-08-20
 ---
 
 # Notebooks
@@ -13,6 +13,13 @@ updated: 2026-08-19
 Notebooks keeps prose, lightweight structured data, and small interactive tools
 in one shared workspace. Notes use Markdown, synchronize in realtime, and can
 link to other notes, tags, and uploaded files.
+
+The Notebooks start page keeps accessible notebooks at the top, shows recently
+edited notes across those notebooks, and provides one permission-aware activity
+stream. Pin notebooks to keep them first, or use the shared search prompt to
+open an accessible notebook or note directly. Activity stays beside the
+overview on larger screens and opens as a separate panel on mobile so it does
+not replace the note list.
 
 ## Use Notebooks
 
@@ -41,10 +48,17 @@ export boundary.
 | Link and tag | Connections and searchable labels parsed from note content |
 | Attachment | Notebook-owned file referenced from Markdown |
 | Named block and script | Structured Markdown data and optional code that operates inside the notebook boundary |
+| Activity | Durable, permission-aware semantic changes across a notebook or note |
+| Saved version | Recoverable note snapshot with the set of contributors represented by that version |
 
 Named blocks remain visible Markdown rather than a hidden database. Scripts can
 read and update the current notebook through the documented runtime APIs, but
 cannot use that API to reach another notebook.
+
+Realtime typing does not create one history row per keystroke. Notebooks groups
+collaborative edits by actor, note, and hour. Saved versions remain separate
+recovery snapshots and can reference every user or service account whose edits
+contributed since the preceding saved version.
 
 ## How Notebooks fits Cloud
 

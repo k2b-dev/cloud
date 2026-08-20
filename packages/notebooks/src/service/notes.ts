@@ -16,6 +16,7 @@ import { createInitialNoteMarkdown, deriveNoteTitle, hasUsableNoteTitle } from "
 import { buildNoteTitleTemplateContext, renderNoteTitleTemplate } from "../lib/note-title-template";
 import { generateUniqueShortId } from "../lib/short-id";
 import { buildNotebookVisibleAccessCondition } from "./access";
+import * as activity from "./activity";
 import { reindexNoteRefsSafe } from "./note-refs";
 import { noteCreated, noteDeleted, noteUpdated } from "./workspace-events";
 import { createYjsTopic, NODE_ID, parseStreamCursor, replayYjsTopicToCursor, toBase64 } from "./yjs-sync";
@@ -68,6 +69,18 @@ export type NoteVersion = {
   noteId: string;
   createdBy: string | null;
   createdAt: string;
+  contributors: Array<{
+    kind: "user" | "service_account";
+    id: string;
+    displayName: string;
+    avatarHash: string | null;
+  }>;
+};
+
+export type NoteVersionContributorInput = {
+  kind: "user" | "service_account";
+  id: string;
+  lastContributedAt: Date;
 };
 
 export type EditNoteContent = {
@@ -111,6 +124,12 @@ type DbNoteVersion = {
   note_id: string;
   created_by: string | null;
   created_at: Date;
+  contributors: Array<{
+    kind: "user" | "service_account";
+    id: string;
+    displayName: string;
+    avatarHash: string | null;
+  }> | string;
 };
 
 type DbNotebookTitleTemplate = {
@@ -192,6 +211,7 @@ const mapToNoteVersion = (row: DbNoteVersion): NoteVersion => ({
   noteId: row.note_id,
   createdBy: row.created_by,
   createdAt: row.created_at.toISOString(),
+  contributors: typeof row.contributors === "string" ? JSON.parse(row.contributors) : row.contributors,
 });
 
 const defaultDateConfig = async (): Promise<DateContext> => ({
@@ -690,6 +710,7 @@ export const getWithContentByShortId = async (params: { shortId: string }): Prom
 export const create = async (params: {
   data: CreateNote;
   creatorId: string | null;
+  actor?: activity.NotebookActivityIdentity;
   dateConfig?: DateContext;
 }): Promise<MutationResult<Note>> => {
   const { data, creatorId } = params;
@@ -751,6 +772,12 @@ export const create = async (params: {
     createdNoteId = row.id;
     await reindexNoteRefsSafe({ noteId: row.id, notebookId: data.notebookId, contentMd });
     const note = (await get({ id: row.id })) ?? mapToNote({ ...row, has_children: false });
+    await activity.record({
+      notebookId: data.notebookId,
+      noteId: row.id,
+      actor: params.actor ?? (creatorId ? { kind: "user", id: creatorId } : { kind: "system", id: null }),
+      action: "note.created",
+    });
     await noteCreated(note);
     return { ok: true, data: note };
   } catch (e: unknown) {
@@ -882,8 +909,12 @@ export const save = async (params: {
   createVersion?: boolean;
   streamCursor?: string | null;
   requestedAt?: number;
+  contributors?: NoteVersionContributorInput[];
 }): Promise<MutationResult<void>> => {
   const { noteId, yjsState, contentMd, createdBy, createVersion = false, streamCursor = null, requestedAt } = params;
+  const contributors =
+    params.contributors ??
+    (createdBy ? [{ kind: "user" as const, id: createdBy, lastContributedAt: new Date(requestedAt ?? Date.now()) }] : []);
 
   const existing = await get({ id: noteId });
   if (!existing) return { ok: false, error: "Note not found", status: 404 };
@@ -945,7 +976,7 @@ export const save = async (params: {
   // Optionally create a version entry.
   // This decision is global and DB-backed, so it works consistently across nodes.
   if (createVersion) {
-    const insertedVersion = await sql`
+    const [insertedVersion] = await sql<{ id: string }[]>`
       WITH latest AS (
         SELECT content_md, created_at
         FROM notebooks.note_versions
@@ -964,8 +995,37 @@ export const save = async (params: {
             AND (SELECT created_at FROM latest) <= now() - ${VERSION_MIN_INTERVAL}::interval
           )
         )
+      RETURNING id
     `;
-    if (insertedVersion.count > 0) {
+    if (insertedVersion) {
+      await sql`
+        INSERT INTO notebooks.note_version_contributors (version_id, actor_kind, actor_id)
+        SELECT DISTINCT ${insertedVersion.id}::uuid, event.actor_kind, event.actor_id
+        FROM notebooks.activity_events event
+        WHERE event.note_id = ${noteId}::uuid
+          AND event.action = 'note.edited'
+          AND event.actor_kind IN ('user', 'service_account')
+          AND event.actor_id IS NOT NULL
+          AND event.last_occurred_at > COALESCE(
+            (
+              SELECT previous.created_at
+              FROM notebooks.note_versions previous
+              WHERE previous.note_id = ${noteId}::uuid
+                AND previous.id <> ${insertedVersion.id}::uuid
+              ORDER BY previous.created_at DESC
+              LIMIT 1
+            ),
+            '-infinity'::timestamptz
+          )
+        ON CONFLICT DO NOTHING
+      `;
+      for (const contributor of contributors) {
+        await sql`
+          INSERT INTO notebooks.note_version_contributors (version_id, actor_kind, actor_id)
+          VALUES (${insertedVersion.id}::uuid, ${contributor.kind}, ${contributor.id}::uuid)
+          ON CONFLICT DO NOTHING
+        `;
+      }
       // Compact old versions using retention policy:
       // - Keep all versions from last 24 hours
       // - Keep max 1 per hour for days 1-7
@@ -1020,6 +1080,20 @@ export const save = async (params: {
           )
       `;
     }
+
+    for (const contributor of contributors) {
+      const bucketStartedAt = new Date(contributor.lastContributedAt);
+      bucketStartedAt.setUTCMinutes(0, 0, 0);
+      await activity.record({
+        notebookId: existing.notebookId,
+        noteId,
+        noteVersionId: insertedVersion?.id ?? null,
+        actor: { kind: contributor.kind, id: contributor.id },
+        action: "note.edited",
+        bucketStartedAt,
+        occurredAt: contributor.lastContributedAt,
+      });
+    }
   }
 
   // Refresh the three note-ref indexes (links, tags, attachments) after
@@ -1038,6 +1112,7 @@ export const editContent = async (params: {
   noteId: string;
   data: EditNoteContent;
   createdBy: string | null;
+  actor?: { kind: "user" | "service_account"; id: string };
 }): Promise<MutationResult<EditNoteContentResult>> => {
   const existing = await getWithContent({ id: params.noteId });
   if (!existing) return { ok: false, error: "Note not found", status: 404 };
@@ -1113,6 +1188,11 @@ export const editContent = async (params: {
       payload: toBase64(editUpdate),
       originNodeId: NODE_ID,
       originPeerId: null,
+      ...(params.actor
+        ? { actor: params.actor }
+        : params.createdBy
+          ? { actor: { kind: "user" as const, id: params.createdBy } }
+          : {}),
     },
   });
   editDoc.destroy();
@@ -1136,6 +1216,11 @@ export const editContent = async (params: {
       createVersion: true,
       streamCursor: published.cursor,
       requestedAt,
+      contributors: params.actor
+        ? [{ ...params.actor, lastContributedAt: new Date(requestedAt) }]
+        : params.createdBy === null
+          ? []
+          : [{ kind: "user", id: params.createdBy, lastContributedAt: new Date(requestedAt) }],
     });
     if (!saveResult.ok) return { ok: false, error: saveResult.error, status: saveResult.status };
   } catch (error) {
@@ -1197,10 +1282,35 @@ export const listVersions = async (params: {
   `;
 
   const rows = await sql<DbNoteVersion[]>`
-    SELECT id, note_id, created_by, created_at
-    FROM notebooks.note_versions
-    WHERE note_id = ${noteId}::uuid
-    ORDER BY created_at DESC
+    SELECT
+      version.id,
+      version.note_id,
+      version.created_by,
+      version.created_at,
+      COALESCE(
+        jsonb_agg(
+          jsonb_build_object(
+            'kind', contributor.actor_kind,
+            'id', contributor.actor_id,
+            'displayName', COALESCE(
+              NULLIF(actor_user.display_name, ''),
+              actor_user.uid,
+              actor_service.name,
+              CASE contributor.actor_kind WHEN 'user' THEN 'Former user' ELSE 'Former service account' END
+            ),
+            'avatarHash', actor_user.avatar_hash
+          ) ORDER BY contributor.actor_kind, contributor.actor_id
+        ) FILTER (WHERE contributor.actor_id IS NOT NULL),
+        '[]'::jsonb
+      ) AS contributors
+    FROM notebooks.note_versions version
+    LEFT JOIN notebooks.note_version_contributors contributor ON contributor.version_id = version.id
+    LEFT JOIN auth.users actor_user ON contributor.actor_kind = 'user' AND actor_user.id = contributor.actor_id
+    LEFT JOIN auth.service_accounts actor_service
+      ON contributor.actor_kind = 'service_account' AND actor_service.id = contributor.actor_id
+    WHERE version.note_id = ${noteId}::uuid
+    GROUP BY version.id
+    ORDER BY version.created_at DESC
     LIMIT ${perPage} OFFSET ${offset}
   `;
 
@@ -1283,7 +1393,7 @@ export const restoreFromSnapshot = async (params: {
   const restoreStreamSeq = Number.MAX_SAFE_INTEGER;
   const restoredTitle = deriveNoteTitle(restoredContentMd);
 
-  const restored = await sql.begin(async (tx): Promise<boolean> => {
+  const restored = await sql.begin(async (tx): Promise<{ versionId: string } | null> => {
     const result = await tx`
       UPDATE notebooks.notes
       SET yjs_snapshot = ${snapshotBuffer},
@@ -1297,14 +1407,22 @@ export const restoreFromSnapshot = async (params: {
       WHERE id = ${noteId}::uuid
         AND locked_at IS NULL
     `;
-    if (result.count === 0) return false;
+    if (result.count === 0) return null;
 
     // Keep the restored row and its history entry atomic.
-    await tx`
+    const [version] = await tx<{ id: string }[]>`
       INSERT INTO notebooks.note_versions (note_id, yjs_snapshot, content_md, created_by)
       VALUES (${noteId}::uuid, ${snapshotBuffer}, ${restoredContentMd}, ${createdBy}::uuid)
+      RETURNING id
     `;
-    return true;
+    if (!version) throw new Error("Failed to create restored note version");
+    if (createdBy) {
+      await tx`
+        INSERT INTO notebooks.note_version_contributors (version_id, actor_kind, actor_id)
+        VALUES (${version.id}::uuid, 'user', ${createdBy}::uuid)
+      `;
+    }
+    return { versionId: version.id };
   });
 
   if (!restored) {
@@ -1317,6 +1435,13 @@ export const restoreFromSnapshot = async (params: {
   // Restored content can carry a different set of refs (links, tags,
   // attachments) than was previously indexed — refresh all three.
   await reindexNoteRefsSafe({ noteId, notebookId: existing.notebookId, contentMd: restoredContentMd });
+  await activity.record({
+    notebookId: existing.notebookId,
+    noteId,
+    noteVersionId: restored.versionId,
+    actor: createdBy ? { kind: "user", id: createdBy } : { kind: "system", id: null },
+    action: "note.restored",
+  });
 
   const updated = await get({ id: noteId });
   if (updated) await noteUpdated(updated);

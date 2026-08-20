@@ -1,62 +1,150 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { mutation as mutations } from "@k2b/stdlib/solid";
-import { AppOverview, Button, LinkCard, prompts, TextInput } from "@k2b/ui";
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { type DateContext, dates } from "@k2b/stdlib";
+import { mutation as mutations, query as queries } from "@k2b/stdlib/solid";
+import {
+  AppWorkspace,
+  Avatar,
+  Button,
+  ButtonLink,
+  DetailPanel,
+  dialogCore,
+  Dropdown,
+  IconButton,
+  LinkCard,
+  openSpotlightSearch,
+  PanelDialog,
+  panelDialogOptions,
+  Placeholder,
+  prompts,
+} from "@k2b/ui";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import { setLastNotebookId } from "./[id]/_components/settings/NotebookSettingsStore";
+import { setLastNotebookId, setPinnedNotebookIds as writePinnedNotebookIds } from "./[id]/_components/settings/NotebookSettingsStore";
 
-type TemplateSummary = {
+type TemplateSummary = { id: string; name: string; description: string; icon: string };
+type PublicNotebook = { id: string; name: string; description: string | null; icon: string | null };
+type RecentNote = {
   id: string;
-  name: string;
-  description: string;
-  icon: string;
+  notebookId: string;
+  notebookName: string;
+  notebookIcon: string | null;
+  title: string;
+  updatedAt: string;
 };
-
+type ActivityItem = {
+  id: string;
+  notebook: { id: string; name: string; icon: string | null };
+  note: { id: string; title: string } | null;
+  noteVersionId: string | null;
+  actor: {
+    kind: "user" | "service_account" | "system";
+    id: string | null;
+    displayName: string;
+    avatarHash: string | null;
+  };
+  action: string;
+  metadata: Record<string, unknown>;
+  occurrenceCount: number;
+  createdAt: string;
+  lastOccurredAt: string;
+};
+type ActivityPage = { items: ActivityItem[]; nextCursor: string | null };
 type Props = {
   notebooks: PublicNotebook[];
   templates: TemplateSummary[];
-  initialQuery: string;
+  recentNotes: RecentNote[];
+  initialActivity: ActivityPage;
+  initialActivityError: string | null;
+  initialPinnedNotebookIds: string[];
+  dateConfig: DateContext;
+};
+type CreatedNotebook = { id: string };
+
+type SearchTarget = { href: string };
+type SearchResponse = {
+  data: Array<{
+    note: { id: string; title: string };
+    notebook: { id: string; name: string; icon: string | null };
+    snippet: string | null;
+  }>;
 };
 
-type CreatedNotebook = {
-  id: string;
-};
+const cleanSnippet = (snippet: string | null): string | undefined =>
+  snippet?.replaceAll("\uE000", "").replaceAll("\uE001", "").replace(/\s+/g, " ").trim() || undefined;
 
-type PublicNotebook = {
-  id: string;
-  name: string;
-  description: string | null;
-  icon: string | null;
-};
-
-const notebookMatches = (notebook: PublicNotebook, query: string) => {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-  return `${notebook.name} ${notebook.description ?? ""} ${notebook.id}`.toLowerCase().includes(q);
-};
-
-const setQueryParam = (value: string) => {
-  const url = new URL(window.location.href);
-  const trimmed = value.trim();
-  if (trimmed) url.searchParams.set("q", trimmed);
-  else url.searchParams.delete("q");
-  window.history.replaceState({}, "", url.toString());
-};
-
-const errorMessage = async (res: Response, fallback: string) => {
+const errorMessage = async (response: Response, fallback: string) => {
   try {
-    const body = await res.json();
+    const body = await response.json();
     if (body && typeof body === "object" && "message" in body && typeof body.message === "string") return body.message;
   } catch {
-    // Keep fallback.
+    // Keep the stable fallback.
   }
   return fallback;
 };
 
-export default function NotebooksOverview(props: Props) {
-  const [query, setQuery] = createSignal(props.initialQuery);
+const activityDescription = (item: ActivityItem): string => {
+  const target = item.note ? `“${item.note.title}”` : item.notebook.name;
+  switch (item.action) {
+    case "note.created":
+      return `Created ${target} in ${item.notebook.name}`;
+    case "note.deleted":
+      return `Deleted a note in ${item.notebook.name}`;
+    case "note.restored":
+      return `Restored ${target} in ${item.notebook.name}`;
+    case "note.edited":
+      return `Edited ${target} in ${item.notebook.name}`;
+    case "notebook.created":
+      return `Created ${item.notebook.name}`;
+    case "notebook.updated":
+      return `Updated ${item.notebook.name}`;
+    default:
+      return `${item.action.replaceAll(".", " ")} in ${item.notebook.name}`;
+  }
+};
 
-  const filteredNotebooks = createMemo(() => props.notebooks.filter((notebook) => notebookMatches(notebook, query())));
+const activityHref = (item: ActivityItem): string =>
+  item.note ? `/app/notebooks/${item.notebook.id}/notes/${item.note.id}` : `/app/notebooks/${item.notebook.id}`;
+
+export default function NotebooksOverview(props: Props) {
+  const [pinnedNotebookIds, setPinnedNotebookIds] = createSignal(props.initialPinnedNotebookIds);
+  const [pinAnnouncement, setPinAnnouncement] = createSignal("");
+  const [initialActivityError, setInitialActivityError] = createSignal(props.initialActivityError);
+  const orderedNotebooks = createMemo(() =>
+    [...props.notebooks].sort((left, right) => {
+      const leftIndex = pinnedNotebookIds().indexOf(left.id);
+      const rightIndex = pinnedNotebookIds().indexOf(right.id);
+      if (leftIndex === -1 && rightIndex === -1) return 0;
+      if (leftIndex === -1) return 1;
+      if (rightIndex === -1) return -1;
+      return leftIndex - rightIndex;
+    }),
+  );
+  const notebookIsPinned = (notebookId: string) => pinnedNotebookIds().includes(notebookId);
+
+  const toggleNotebookPin = (notebook: PublicNotebook) => {
+    setPinnedNotebookIds((current) => {
+      const pinned = current.includes(notebook.id);
+      const next = pinned ? current.filter((id) => id !== notebook.id) : [notebook.id, ...current];
+      writePinnedNotebookIds(next);
+      setPinAnnouncement(`${pinned ? "Unpinned" : "Pinned"} ${notebook.name}`);
+      return next;
+    });
+  };
+
+  const activityResults = queries.createInfinite<string, ActivityPage, string>({
+    source: () => "all-notebooks",
+    initial: { source: "all-notebooks", pages: [props.initialActivity] },
+    loadPage: async (_source, { cursor, abortSignal }) => {
+      const response = await apiClient.overview.activity.$get({ query: { limit: "30", cursor } }, { init: { signal: abortSignal } });
+      if (!response.ok) throw new Error(await errorMessage(response, "Failed to load notebook activity"));
+      const page = await response.json();
+      setInitialActivityError(null);
+      return { items: page.data, nextCursor: page.nextCursor };
+    },
+    getNextCursor: (page) => page.nextCursor,
+  });
+  const activityItems = createMemo(() => activityResults.pages().flatMap((page) => page.items));
+  const activityError = () => activityResults.error()?.message ?? initialActivityError();
 
   const openNotebook = (notebook: CreatedNotebook) => {
     setLastNotebookId(notebook.id);
@@ -65,27 +153,25 @@ export default function NotebooksOverview(props: Props) {
 
   const createNotebookMutation = mutations.create<CreatedNotebook, { name: string; description?: string }>({
     mutation: async (input) => {
-      const res = await apiClient.index.$post({
-        json: { name: input.name, description: input.description || undefined },
-      });
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to create notebook"));
-      return (await res.json()) as CreatedNotebook;
+      const response = await apiClient.index.$post({ json: { name: input.name, description: input.description || undefined } });
+      if (!response.ok) throw new Error(await errorMessage(response, "Failed to create notebook"));
+      return response.json();
     },
     onSuccess: openNotebook,
-    onError: (e) => prompts.error(e.message),
+    onError: (error) => prompts.error(error.message),
   });
 
   const createFromTemplateMutation = mutations.create<CreatedNotebook, { templateId: string; name?: string }>({
     mutation: async (input) => {
-      const res = await apiClient.templates[":templateId"].$post({
+      const response = await apiClient.templates[":templateId"].$post({
         param: { templateId: input.templateId },
         json: { name: input.name?.trim() || undefined },
       });
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to create notebook from template"));
-      return (await res.json()) as CreatedNotebook;
+      if (!response.ok) throw new Error(await errorMessage(response, "Failed to create notebook from template"));
+      return response.json();
     },
     onSuccess: openNotebook,
-    onError: (e) => prompts.error(e.message),
+    onError: (error) => prompts.error(error.message),
   });
 
   const createBlank = async () => {
@@ -109,13 +195,7 @@ export default function NotebooksOverview(props: Props) {
     const result = await prompts.form({
       title: template.name,
       icon: template.icon,
-      fields: {
-        name: {
-          type: "text",
-          label: "Name",
-          placeholder: template.name,
-        },
-      },
+      fields: { name: { type: "text", label: "Name", placeholder: template.name } },
       confirmText: "Create",
     });
     if (!result) return;
@@ -125,109 +205,266 @@ export default function NotebooksOverview(props: Props) {
     });
   };
 
-  const onSearchInput = (value: string) => {
-    setQuery(value);
-    setQueryParam(value);
-  };
+  const createMenuItems = () => [
+    {
+      sectionLabel: "Start",
+      items: [
+        {
+          label: "Blank notebook",
+          description: "Start with the standard welcome note.",
+          icon: "ti ti-plus",
+          action: () => void createBlank(),
+        },
+      ],
+    },
+    {
+      sectionLabel: "Templates",
+      items: props.templates.map((template) => ({
+        label: template.name,
+        description: template.description,
+        icon: template.icon,
+        action: () => void createFromTemplate(template),
+      })),
+    },
+  ];
 
-  return (
-    <AppOverview title="Notebooks" subtitle="Collaborative notes, linked knowledge, scripts, and reusable workspaces." icon="ti ti-note">
-      <AppOverview.Main
-        title="Your notebooks"
-        description={
-          props.notebooks.length === 0
-            ? "Start from a template, or create a blank notebook."
-            : `${props.notebooks.length} notebook${props.notebooks.length === 1 ? "" : "s"} available`
-        }
-        toolbar={
-          <TextInput
-            name="notebooks-search"
-            type="search"
-            aria-label="Search notebooks"
-            placeholder="Search notebooks..."
-            icon="ti ti-search"
-            activeIcon="ti ti-search"
-            value={query}
-            onValueChange={onSearchInput}
-            clearable
-            onClear={() => onSearchInput("")}
+  const activityFeed = () => (
+    <Show
+      when={!activityError()}
+      fallback={
+        <Placeholder
+          state="error"
+          title="Could not load activity"
+          description={activityError() ?? undefined}
+          action={
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => {
+                setInitialActivityError(null);
+                void activityResults.refresh();
+              }}
+            >
+              <i class="ti ti-refresh" aria-hidden="true" /> Retry
+            </Button>
+          }
+        />
+      }
+    >
+      <Show
+        when={activityItems().length > 0}
+        fallback={
+          <Placeholder
+            state={activityResults.loading() ? "loading" : "empty"}
+            title={activityResults.loading() ? "Loading activity" : "No activity yet"}
+            description={activityResults.loading() ? undefined : "Notebook and note changes will appear here."}
+            icon="ti ti-history"
           />
         }
       >
-        <Show
-          when={props.notebooks.length > 0}
-          fallback={
-            <AppOverview.EmptyState title="No notebooks yet" icon="ti ti-notebook" class="min-h-72">
-              <p class="max-w-sm text-xs text-dimmed">
-                Templates create a complete starter workspace with useful notes, links, tables, and small automations.
-              </p>
-            </AppOverview.EmptyState>
-          }
-        >
-          <Show
-            when={filteredNotebooks().length > 0}
-            fallback={
-              <AppOverview.EmptyState title="No matching notebooks" description="Try a different search term." icon="ti ti-search" />
-            }
-          >
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <For each={filteredNotebooks()}>
-                {(notebook) => (
-                  <LinkCard
-                    href={`/app/notebooks/${notebook.id}`}
-                    title={notebook.name}
-                    description={notebook.description || "No description"}
-                    icon={notebook.icon || "ti ti-notebook"}
-                    color="blue"
-                  />
-                )}
-              </For>
-            </div>
-          </Show>
-        </Show>
-      </AppOverview.Main>
-
-      <AppOverview.Aside title="Create" description="Choose a useful starter, or start blank.">
-        <div class="grid grid-cols-1 gap-2">
-          <For each={props.templates}>
-            {(template) => (
-              <Button
-                type="button"
-                variant="subtle"
-                class="w-full justify-start text-left"
-                onClick={() => createFromTemplate(template)}
-                disabled={createFromTemplateMutation.loading()}
-              >
-                <span class="thumbnail flex h-9 w-9 shrink-0 items-center justify-center bg-zinc-100 dark:bg-zinc-800">
-                  <i class={`${template.icon} text-lg text-primary`} />
-                </span>
-                <span class="min-w-0 flex-1">
-                  <span class="block text-sm font-semibold text-primary">{template.name}</span>
-                  <span class="block text-xs text-dimmed leading-snug line-clamp-2">{template.description}</span>
-                </span>
-                <i class="ti ti-chevron-right mt-1 shrink-0 text-dimmed transition-transform group-hover:translate-x-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400" />
-              </Button>
+        <DetailPanel.Group label="Recent notebook activity">
+          <For each={activityItems()}>
+            {(item) => (
+              <DetailPanel.Action
+                href={activityHref(item)}
+                title={item.actor.displayName}
+                description={activityDescription(item)}
+                leading={<Avatar name={item.actor.displayName} size="xs" />}
+                trailing={
+                  <time datetime={item.lastOccurredAt} title={dates.formatDateTime(item.lastOccurredAt, props.dateConfig)}>
+                    {dates.formatDateTimeRelative(item.lastOccurredAt, props.dateConfig)}
+                  </time>
+                }
+              />
             )}
           </For>
-
+        </DetailPanel.Group>
+        <Show when={activityResults.hasMore()}>
           <Button
-            type="button"
-            variant="subtle"
-            class="w-full justify-start text-left"
-            onClick={createBlank}
-            disabled={createNotebookMutation.loading()}
+            size="sm"
+            variant="secondary"
+            class="mx-auto mt-2"
+            loading={activityResults.loadingMore()}
+            loadingLabel="Loading more activity"
+            onClick={() => void activityResults.loadMore()}
           >
-            <span class="thumbnail flex h-9 w-9 shrink-0 items-center justify-center bg-blue-100 dark:bg-blue-900/50">
-              <i class="ti ti-plus text-lg text-blue-600 dark:text-blue-400" />
-            </span>
-            <span class="min-w-0 flex-1">
-              <span class="block text-sm font-semibold text-primary">Blank notebook</span>
-              <span class="block text-xs text-dimmed leading-snug">Create an empty notebook with the standard welcome note.</span>
-            </span>
-            <i class="ti ti-chevron-right mt-1 shrink-0 text-dimmed transition-transform group-hover:translate-x-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400" />
+            Load more
           </Button>
-        </div>
-      </AppOverview.Aside>
-    </AppOverview>
+        </Show>
+      </Show>
+    </Show>
+  );
+
+  const openMobileActivity = () => {
+    void dialogCore.open<void>(
+      (close) => (
+        <PanelDialog>
+          <PanelDialog.Header title="Activity" subtitle="Recent changes across your notebooks." icon="ti ti-history" close={close} />
+          <PanelDialog.Body>{activityFeed()}</PanelDialog.Body>
+        </PanelDialog>
+      ),
+      panelDialogOptions,
+    );
+  };
+
+  const openSearch = async () => {
+    const selected = await openSpotlightSearch<SearchTarget>({
+      title: "Search notebooks and notes",
+      icon: "ti ti-search",
+      placeholder: "Search notebooks and notes...",
+      minQueryLength: 1,
+      noResultsText: "No notebooks or notes found.",
+      resolve: async ({ query, abortSignal }) => {
+        const trimmed = query.trim();
+        if (!trimmed) return [];
+        const normalized = trimmed.toLowerCase();
+        const notebookItems = props.notebooks
+          .filter((notebook) => `${notebook.name} ${notebook.description ?? ""}`.toLowerCase().includes(normalized))
+          .slice(0, 8)
+          .map((notebook) => ({
+            value: { href: `/app/notebooks/${notebook.id}` },
+            label: notebook.name,
+            desc: notebook.description ?? "Notebook",
+            icon: notebook.icon || "ti ti-notebook",
+          }));
+
+        const response = await apiClient.search.$get(
+          { query: { q: trimmed, page: "1", per_page: "20" } },
+          { init: { signal: abortSignal } },
+        );
+        if (!response.ok) throw new Error("Notebooks and notes could not be searched. Try again.");
+        const payload = (await response.json()) as SearchResponse;
+        const noteItems = payload.data.map((hit) => ({
+          value: { href: `/app/notebooks/${hit.notebook.id}/notes/${hit.note.id}` },
+          label: `${hit.note.title} · ${hit.notebook.name}`,
+          desc: cleanSnippet(hit.snippet),
+          icon: hit.notebook.icon || "ti ti-note",
+        }));
+        return [...notebookItems, ...noteItems];
+      },
+    });
+    if (selected?.value) navigateTo(selected.value.href);
+  };
+
+  onCleanup(() => {
+    createNotebookMutation.abort();
+    createFromTemplateMutation.abort();
+  });
+
+  return (
+    <AppWorkspace class="notebooks-overview-workspace" resizable={false}>
+      <h1 class="sr-only">Notebooks</h1>
+      <AppWorkspace.Content>
+        <AppWorkspace.Main class="notebooks-overview-main">
+          <header class="notebooks-overview-notebooks">
+            <div class="notebooks-overview-heading">
+              <div>
+                <h2>Notebooks</h2>
+                <p>Open a workspace, search its notes, or manage its settings.</p>
+              </div>
+              <div class="notebooks-overview-actions">
+                <Button type="button" variant="secondary" size="sm" onClick={() => void openSearch()}>
+                  <i class="ti ti-search" aria-hidden="true" /> Search
+                </Button>
+                <Button type="button" variant="secondary" size="sm" class="notebooks-overview-mobile-activity" onClick={openMobileActivity}>
+                  <i class="ti ti-history" aria-hidden="true" /> Activity
+                </Button>
+              </div>
+            </div>
+            <nav class="notebooks-overview-notebook-list" aria-label="Notebooks">
+              <For each={orderedNotebooks()}>
+                {(notebook) => {
+                  const pinned = () => notebookIsPinned(notebook.id);
+                  return (
+                    <span class="notebooks-overview-notebook-item" data-pinned={pinned() ? "true" : undefined}>
+                      <ButtonLink
+                        href={`/app/notebooks/${notebook.id}`}
+                        variant="secondary"
+                        size="sm"
+                        class="notebooks-overview-notebook-button"
+                        title={notebook.description || notebook.name}
+                      >
+                        <i class={`${pinned() ? "ti ti-flag" : notebook.icon || "ti ti-notebook"} app-accent-text`} aria-hidden="true" />
+                        <span class="notebooks-overview-notebook-name">{notebook.name}</span>
+                      </ButtonLink>
+                      <IconButton
+                        label={`${pinned() ? "Unpin" : "Pin"} ${notebook.name}`}
+                        size="xs"
+                        variant="text"
+                        class="notebooks-overview-notebook-pin"
+                        aria-pressed={pinned()}
+                        onClick={() => toggleNotebookPin(notebook)}
+                      >
+                        <i class={`ti ${pinned() ? "ti-flag-off" : "ti-flag"}`} aria-hidden="true" />
+                      </IconButton>
+                    </span>
+                  );
+                }}
+              </For>
+              <Dropdown.Root
+                items={createMenuItems()}
+                position="bottom-right"
+                width="min(38rem, calc(100vw - 1rem))"
+                label="Create notebook"
+              >
+                <Dropdown.Trigger
+                  variant="secondary"
+                  size="sm"
+                  disabled={createNotebookMutation.loading() || createFromTemplateMutation.loading()}
+                >
+                  <i class="ti ti-plus app-accent-text" aria-hidden="true" /> New notebook
+                  <i class="ti ti-chevron-down" aria-hidden="true" />
+                </Dropdown.Trigger>
+              </Dropdown.Root>
+            </nav>
+            <span class="sr-only" aria-live="polite">
+              {pinAnnouncement()}
+            </span>
+          </header>
+
+          <section class="notebooks-overview-recent" aria-labelledby="notebooks-recent-title">
+            <div class="notebooks-overview-heading">
+              <div>
+                <h2 id="notebooks-recent-title">Recent notes</h2>
+                <p>Your latest work across every notebook you can access.</p>
+              </div>
+            </div>
+            <Show
+              when={props.recentNotes.length > 0}
+              fallback={
+                <Placeholder
+                  state="empty"
+                  title="No notes yet"
+                  description="Create a notebook or open one above to start writing."
+                  icon="ti ti-note"
+                  class="min-h-72"
+                />
+              }
+            >
+              <div class="notebooks-overview-note-grid">
+                <For each={props.recentNotes}>
+                  {(note) => (
+                    <LinkCard
+                      href={`/app/notebooks/${note.notebookId}/notes/${note.id}`}
+                      title={note.title}
+                      description={`${note.notebookName} · ${dates.formatDateTimeRelative(note.updatedAt, props.dateConfig)}`}
+                      icon={note.notebookIcon || "ti ti-note"}
+                      color="blue"
+                    />
+                  )}
+                </For>
+              </div>
+            </Show>
+          </section>
+        </AppWorkspace.Main>
+
+        <AppWorkspace.Detail id="notebooks-overview-activity" open width="lg" resizable={false} class="notebooks-overview-activity">
+          <DetailPanel>
+            <DetailPanel.Header title="Activity" subtitle="Recent changes across your notebooks." icon="ti ti-history" />
+            <DetailPanel.Body scrollPreserveKey="notebooks-overview-activity">{activityFeed()}</DetailPanel.Body>
+          </DetailPanel>
+        </AppWorkspace.Detail>
+      </AppWorkspace.Content>
+    </AppWorkspace>
   );
 }

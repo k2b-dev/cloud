@@ -10,6 +10,203 @@
   view-transition-name: notebook-detail-panel;
 }
 
+.k2b-ui .notebooks-overview-workspace {
+  border-color: transparent;
+  border-radius: 0;
+  background: var(--ui-surface);
+  box-shadow: none;
+}
+
+.k2b-ui .notebooks-overview-main {
+  gap: clamp(2rem, 4vw, 3.5rem);
+  padding: clamp(1rem, 3vw, 2.5rem);
+  overflow-y: auto;
+  background: var(--ui-surface);
+}
+
+.notebooks-overview-notebooks,
+.notebooks-overview-recent {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.notebooks-overview-heading {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+}
+
+.notebooks-overview-heading h2 {
+  color: var(--color-zinc-950);
+  font-size: 1rem;
+  font-weight: 650;
+}
+
+.notebooks-overview-heading p {
+  margin-top: 0.125rem;
+  color: var(--color-zinc-500);
+  font-size: 0.8125rem;
+}
+
+.notebooks-overview-actions,
+.notebooks-overview-notebook-list {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.notebooks-overview-notebook-list > :is(a, button, .k2b-dropdown, .notebooks-overview-notebook-item) {
+  min-width: 0;
+  max-width: min(100%, 20rem);
+}
+
+.notebooks-overview-notebook-item {
+  position: relative;
+  display: inline-flex;
+}
+
+.k2b-ui .notebooks-overview-notebook-button {
+  width: 100%;
+  max-width: 100%;
+  padding-right: 2.125rem;
+  overflow: hidden;
+}
+
+.k2b-ui .notebooks-overview-notebook-button > .k2b-button__label {
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+
+.k2b-ui .notebooks-overview-notebook-pin {
+  position: absolute;
+  z-index: 1;
+  top: 50%;
+  right: 0.25rem;
+  translate: 0 -50%;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.notebooks-overview-notebook-item:hover .notebooks-overview-notebook-pin,
+.notebooks-overview-notebook-item:focus-within .notebooks-overview-notebook-pin {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.notebooks-overview-notebook-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notebooks-overview-note-grid {
+  display: grid;
+  grid-template-columns: repeat(1, minmax(0, 1fr));
+  gap: 0.625rem;
+}
+
+.k2b-ui .notebooks-overview-activity {
+  padding: 0;
+}
+
+.notebooks-overview-activity .k2b-detail-panel {
+  min-height: 0;
+}
+
+.notebooks-overview-activity time {
+  color: var(--color-zinc-500);
+  font-size: 0.6875rem;
+  white-space: nowrap;
+}
+
+.notebooks-overview-mobile-activity {
+  display: none;
+}
+
+@media (hover: none) {
+  .k2b-ui .notebooks-overview-notebook-pin {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+.dark .notebooks-overview-heading h2 {
+  color: var(--color-zinc-50);
+}
+
+@media (min-width: 40rem) {
+  .notebooks-overview-note-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 90rem) {
+  .notebooks-overview-note-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 48rem) and (max-width: 63.999rem) {
+  .k2b-ui .notebooks-overview-workspace .k2b-app-workspace__content {
+    flex-direction: row;
+  }
+
+  .k2b-ui .notebooks-overview-workspace .notebooks-overview-main {
+    display: flex !important;
+  }
+
+  .k2b-ui .notebooks-overview-workspace .notebooks-overview-activity {
+    display: flex !important;
+    width: 20rem;
+    flex: 0 0 20rem;
+  }
+}
+
+@media (max-width: 47.999rem) {
+  .k2b-ui .notebooks-overview-workspace .notebooks-overview-main {
+    display: flex !important;
+  }
+
+  .k2b-ui .notebooks-overview-workspace .notebooks-overview-activity {
+    display: none !important;
+  }
+
+  .notebooks-overview-mobile-activity {
+    display: inline-flex;
+  }
+}
+
+@media (max-width: 39.999rem) {
+  .notebooks-overview-heading,
+  .notebooks-overview-actions {
+    align-items: stretch;
+  }
+
+  .notebooks-overview-actions {
+    width: 100%;
+  }
+
+  .notebooks-overview-actions > button {
+    min-width: 0;
+    flex: 1 1 8rem;
+  }
+
+  .notebooks-overview-notebook-list > :is(a, .k2b-dropdown, .notebooks-overview-notebook-item) {
+    flex: 1 1 10rem;
+  }
+}
+
 /* ── Slash-command autocomplete palette ─────────────────────────────────
    The CodeMirror autocomplete tooltip is portaled outside the editor
    surface AND its theme is injected as a runtime `<style>` after this file

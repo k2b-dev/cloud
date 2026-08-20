@@ -279,7 +279,7 @@ ${tasks.map((item, index) => `- [${index < doneTasks ? "x" : " "}] ${item}`).joi
 export const dailyNotesTemplate: NotebookTemplate = {
   id: "daily-notes",
   name: "Daily Journal",
-  description: "A lightweight daily journal with dynamic day creation, inbox triage, habits, tasks, and weekly review.",
+  description: "Daily notes, inbox triage, habits, tasks, and weekly reviews.",
   icon: "ti ti-calendar-stats",
   notebookName: "Daily Journal",
   notebookDescription: "Daily notes, inbox, and a script dashboard that reads real mood, habits, and tasks.",

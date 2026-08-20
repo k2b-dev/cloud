@@ -397,6 +397,7 @@ describe("notebooks capabilities", () => {
         ifContentHash: noteContentHash(note.contentMd),
       },
       createdBy: userId,
+      actor: { kind: "user", id: userId },
     });
     expect(record).toHaveBeenCalledWith(expect.objectContaining({ action: "notebooks.capability.note.edit" }));
   });

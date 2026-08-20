@@ -13,6 +13,7 @@ import {
   NOTEBOOK_RESOURCE_TYPE,
   NOTEBOOKS_APP_ID,
 } from "./access";
+import * as activity from "./activity";
 import helloMd from "./hello.md" with { type: "text" };
 import * as notes from "./notes";
 import { invalidated, notebookUpdated } from "./workspace-events";
@@ -482,6 +483,17 @@ export const create = async (params: {
   if (!accessResult.ok) {
     await cleanupFailedCreate(row.id);
     return { ok: false, error: accessResult.error.message, status: accessResult.error.status };
+  }
+
+  try {
+    await activity.record({
+      notebookId: row.id,
+      actor: { kind: "user", id: creatorId },
+      action: "notebook.created",
+    });
+  } catch (error) {
+    await cleanupFailedCreate(row.id, accessResult.data.id);
+    throw error;
   }
 
   if (seedWelcome) {

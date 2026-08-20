@@ -8,6 +8,7 @@ import { cookies } from "@k2b/stdlib/browser";
 
 const COOKIE_NAME = "settings-app-notebooks";
 const MAX_NOTEBOOK_SETTINGS = 25;
+const MAX_PINNED_NOTEBOOKS = 200;
 
 export type NotebookSettings = {
   lastNoteId: string | null;
@@ -18,6 +19,7 @@ export type NotebookSettings = {
 
 type AllNotebookSettings = {
   lastNotebookId: string | null;
+  pinnedNotebookIds: string[];
   sidebarMode: NotebookSettings["sidebarMode"];
   detailPanelOpen: boolean;
   notebooks: Record<string, Partial<Pick<NotebookSettings, "lastNoteId" | "richMode" | "navigatorSort">>>;
@@ -32,6 +34,7 @@ const DEFAULT_SETTINGS: NotebookSettings = {
 
 const DEFAULT_ALL: AllNotebookSettings = {
   lastNotebookId: null,
+  pinnedNotebookIds: [],
   sidebarMode: "simple",
   detailPanelOpen: false,
   notebooks: {},
@@ -45,6 +48,11 @@ const isSidebarMode = (value: unknown): value is NotebookSettings["sidebarMode"]
 
 const isNavigatorSort = (value: unknown): value is NotebookSettings["navigatorSort"] =>
   value === "updated" || value === "created" || value === "title";
+
+const isPublicNotebookId = (value: unknown): value is string => typeof value === "string" && /^[0-9A-Za-z]{6}$/.test(value);
+
+const normalizePinnedNotebookIds = (value: unknown): string[] =>
+  Array.isArray(value) ? [...new Set(value.filter(isPublicNotebookId))].slice(0, MAX_PINNED_NOTEBOOKS) : [];
 
 const normalizeSettings = (value: unknown): AllNotebookSettings => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return DEFAULT_ALL;
@@ -61,6 +69,7 @@ const normalizeSettings = (value: unknown): AllNotebookSettings => {
 
   return {
     lastNotebookId: typeof parsed.lastNotebookId === "string" ? parsed.lastNotebookId : null,
+    pinnedNotebookIds: normalizePinnedNotebookIds(parsed.pinnedNotebookIds),
     sidebarMode: isSidebarMode(parsed.sidebarMode) ? parsed.sidebarMode : DEFAULT_ALL.sidebarMode,
     detailPanelOpen: parsed.detailPanelOpen === true,
     notebooks,
@@ -152,6 +161,16 @@ export const setLastNotebookId = (id: string) => {
   });
 };
 
+/** Reads and writes the overview's user-defined notebook order. */
+export const readPinnedNotebookIds = (): string[] => readCookie().pinnedNotebookIds;
+
+export const setPinnedNotebookIds = (ids: string[]) => {
+  writeCookie({
+    ...readCookie(),
+    pinnedNotebookIds: normalizePinnedNotebookIds(ids),
+  });
+};
+
 /** Persists the global detail-panel preference for SSR-stable reloads. */
 export const setDetailPanelOpen = (open: boolean) => {
   writeCookie({
@@ -188,3 +207,6 @@ export const parseDetailPanelOpen = (cookieHeader: string | undefined): boolean 
 export const parseLastNotebookId = (cookieHeader: string | undefined): string | null => {
   return parseCookieHeader(cookieHeader).lastNotebookId;
 };
+
+/** Parses pinned notebook ids for SSR-stable ordering on the overview. */
+export const parsePinnedNotebookIds = (cookieHeader: string | undefined): string[] => parseCookieHeader(cookieHeader).pinnedNotebookIds;

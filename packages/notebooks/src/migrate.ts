@@ -178,6 +178,56 @@ export const migrate = async (): Promise<void> => {
   console.log("  ✓ notebooks.note_versions table");
 
   await sql`
+    CREATE TABLE IF NOT EXISTS notebooks.activity_events (
+      id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      notebook_id UUID NOT NULL REFERENCES notebooks.notebooks(id) ON DELETE CASCADE,
+      note_id UUID REFERENCES notebooks.notes(id) ON DELETE SET NULL,
+      note_version_id UUID REFERENCES notebooks.note_versions(id) ON DELETE SET NULL,
+      actor_kind TEXT NOT NULL CHECK (actor_kind IN ('user', 'service_account', 'system')),
+      actor_id UUID,
+      action TEXT NOT NULL CHECK (char_length(action) BETWEEN 1 AND 200),
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(metadata) = 'object'),
+      bucket_started_at TIMESTAMPTZ,
+      occurrence_count INTEGER NOT NULL DEFAULT 1 CHECK (occurrence_count > 0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      last_occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT activity_events_actor_shape CHECK (
+        (actor_kind = 'system' AND actor_id IS NULL)
+        OR (actor_kind <> 'system' AND actor_id IS NOT NULL)
+      )
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notebooks_activity_notebook
+    ON notebooks.activity_events(notebook_id, last_occurred_at DESC, id DESC)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_notebooks_activity_note
+    ON notebooks.activity_events(note_id, last_occurred_at DESC, id DESC)
+    WHERE note_id IS NOT NULL
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_notebooks_activity_bucket
+    ON notebooks.activity_events(note_id, actor_kind, actor_id, action, bucket_started_at)
+    WHERE bucket_started_at IS NOT NULL
+  `.simple();
+  console.log("  ✓ notebooks.activity_events table");
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS notebooks.note_version_contributors (
+      version_id UUID NOT NULL REFERENCES notebooks.note_versions(id) ON DELETE CASCADE,
+      actor_kind TEXT NOT NULL CHECK (actor_kind IN ('user', 'service_account')),
+      actor_id UUID NOT NULL,
+      PRIMARY KEY (version_id, actor_kind, actor_id)
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_note_version_contributors_actor
+    ON notebooks.note_version_contributors(actor_kind, actor_id, version_id)
+  `.simple();
+  console.log("  ✓ notebooks.note_version_contributors table");
+
+  await sql`
     CREATE TABLE IF NOT EXISTS notebooks.note_links (
       source_note_id UUID NOT NULL REFERENCES notebooks.notes(id) ON DELETE CASCADE,
       target_note_id UUID NOT NULL REFERENCES notebooks.notes(id) ON DELETE CASCADE,

@@ -20,6 +20,8 @@ export type YjsTopicEvent = {
   payload: string;
   originNodeId: string;
   originPeerId: string | null;
+  /** Optional for compatibility with retained events from older deployments. */
+  actor?: { kind: "user" | "service_account"; id: string };
 };
 
 export type YjsSyncEvent = YjsTopicEvent & { kind: "sync" };

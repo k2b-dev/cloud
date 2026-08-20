@@ -1,7 +1,7 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, IconButtonLink, MarkdownView, openSpotlightSearch, Placeholder, prompts, SegmentedControl } from "@k2b/ui";
+import { Avatar, Button, IconButtonLink, MarkdownView, openSpotlightSearch, Placeholder, prompts, SegmentedControl } from "@k2b/ui";
 import { markdown } from "@valentinkolb/cloud/shared";
 import { diffLines } from "diff";
 import { createMemo, createSignal, For, Show } from "solid-js";
@@ -14,6 +14,12 @@ type NoteVersion = {
   noteId: string;
   createdBy: string | null;
   createdAt: string;
+  contributors?: Array<{
+    kind: "user" | "service_account";
+    id: string;
+    displayName: string;
+    avatarHash: string | null;
+  }>;
 };
 
 type PaginationInfo = {
@@ -372,6 +378,20 @@ export default function VersionHistory(props: Props) {
                   >
                     <i class="ti ti-history text-[11px] text-dimmed" />
                     <span>{formatDate(version.createdAt)}</span>
+                    <Show when={(version.contributors?.length ?? 0) > 0}>
+                      <span
+                        class="ml-auto flex items-center -space-x-1"
+                        title={`Contributors: ${version.contributors!.map((contributor) => contributor.displayName).join(", ")}`}
+                        aria-label={`Contributors: ${version.contributors!.map((contributor) => contributor.displayName).join(", ")}`}
+                      >
+                        <For each={version.contributors!.slice(0, 3)}>
+                          {(contributor) => <Avatar name={contributor.displayName} size="xs" />}
+                        </For>
+                        <Show when={version.contributors!.length > 3}>
+                          <span class="pl-1 text-[10px] text-dimmed">+{version.contributors!.length - 3}</span>
+                        </Show>
+                      </span>
+                    </Show>
                   </Button>
                 )}
               </For>

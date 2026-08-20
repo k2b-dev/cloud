@@ -107,7 +107,7 @@ ${notes.map((note) => `- ${note}`).join("\n")}
 export const readingListTemplate: NotebookTemplate = {
   id: "reading-list",
   name: "Reading List",
-  description: "A small reading app with a books table, queue, book notes, quotes, ratings, and dashboard charts.",
+  description: "Books, reading queue, notes, quotes, ratings, and charts.",
   icon: "ti ti-books",
   notebookName: "Reading List",
   notebookDescription: "Track books, current reads, quotes, and a queue without turning reading into project management.",

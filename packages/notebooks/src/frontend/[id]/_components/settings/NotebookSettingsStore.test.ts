@@ -1,10 +1,13 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   parseDetailPanelOpen,
+  parsePinnedNotebookIds,
   parseSettings,
+  readPinnedNotebookIds,
   readSettings,
   setDetailPanelOpen,
   setLastNotebookId,
+  setPinnedNotebookIds,
   writeSettings,
 } from "./NotebookSettingsStore";
 
@@ -68,6 +71,13 @@ describe("NotebookSettingsStore", () => {
     expect(decodeURIComponent(cookie)).toContain(COOKIE_NAME);
   });
 
+  test("persists a bounded, unique pinned notebook order for server rendering", () => {
+    setPinnedNotebookIds(["Book02", "Book01", "Book02", "invalid-id"]);
+
+    expect(readPinnedNotebookIds()).toEqual(["Book02", "Book01"]);
+    expect(parsePinnedNotebookIds(cookieHeader())).toEqual(["Book02", "Book01"]);
+  });
+
   test("ignores malformed preference values", () => {
     cookie = `${COOKIE_NAME}=${encodeURIComponent(
       JSON.stringify({
@@ -84,6 +94,7 @@ describe("NotebookSettingsStore", () => {
       navigatorSort: "updated",
     });
     expect(parseDetailPanelOpen(cookieHeader())).toBe(false);
+    expect(parsePinnedNotebookIds(cookieHeader())).toEqual([]);
   });
 
   test("bounds notebook-specific preferences", () => {

@@ -1193,6 +1193,7 @@ const handleSyncPublish = async (ctx: WsContext, payload: z.infer<typeof SyncPub
       payload: payload.payload,
       originNodeId: NODE_ID,
       originPeerId: ctx.peerId,
+      actor: { kind: "user", id: ctx.user!.id },
     },
   });
 

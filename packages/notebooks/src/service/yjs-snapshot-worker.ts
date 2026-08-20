@@ -2,7 +2,15 @@ import { logger } from "@valentinkolb/cloud/services";
 import { mutex, type QueueReceived, queue } from "@k2b/sync";
 import * as Y from "yjs";
 import * as notes from "./notes";
-import { compareStreamCursor, createYjsTopic, fromBase64, NODE_ID, parseStreamCursor, TOPIC_RETENTION_MS } from "./yjs-sync";
+import {
+  compareStreamCursor,
+  createYjsTopic,
+  fromBase64,
+  NODE_ID,
+  parseStreamCursor,
+  TOPIC_RETENTION_MS,
+  type YjsTopicEvent,
+} from "./yjs-sync";
 
 /**
  * Snapshot worker responsibilities:
@@ -37,7 +45,7 @@ type SnapshotSaveJob = {
   sourceNodeId: string;
 };
 type PersistOutcome = "saved" | "stale" | "missing-note" | "locked";
-type ReplayEvent = { cursor: string; data: { kind: "sync" | "awareness"; payload: string } };
+type ReplayEvent = { cursor: string; data: YjsTopicEvent };
 
 const snapshotQueue = queue<SnapshotSaveJob>({
   id: "notebooks.yjs.snapshot",
@@ -121,7 +129,7 @@ const waitUntilTargetCursor = async (config: {
   doc: Y.Doc;
   signal: AbortSignal;
   onProgress: () => Promise<void>;
-}): Promise<void> => {
+}): Promise<notes.NoteVersionContributorInput[]> => {
   const replayAbort = new AbortController();
   const timeout = setTimeout(() => replayAbort.abort("replay-timeout"), computeReplayTimeoutMs(config.after, config.targetCursor));
   const onAbort = () => replayAbort.abort("worker-stopped");
@@ -130,6 +138,7 @@ const waitUntilTargetCursor = async (config: {
   let reachedTarget = false;
   let processedEvents = 0;
   let lastProgressAt = Date.now();
+  const contributors = new Map<string, notes.NoteVersionContributorInput>();
 
   try {
     const noteTopic = createYjsTopic(config.noteId);
@@ -144,6 +153,16 @@ const waitUntilTargetCursor = async (config: {
       }
 
       applyReplayEvent(config.doc, event, config.noteId);
+      if (event.data.kind === "sync" && event.data.actor) {
+        const cursor = parseStreamCursor(event.cursor);
+        const contributor = event.data.actor;
+        const key = `${contributor.kind}:${contributor.id}`;
+        const occurredAt = new Date(cursor?.ms ?? Date.now());
+        const current = contributors.get(key);
+        if (!current || current.lastContributedAt < occurredAt) {
+          contributors.set(key, { ...contributor, lastContributedAt: occurredAt });
+        }
+      }
 
       processedEvents++;
       const now = Date.now();
@@ -166,7 +185,7 @@ const waitUntilTargetCursor = async (config: {
     throw new Error("Snapshot replay aborted");
   }
 
-  if (reachedTarget) return;
+  if (reachedTarget) return [...contributors.values()];
   throw new Error(`Target cursor "${config.targetCursor}" was not reached before replay timeout`);
 };
 
@@ -175,6 +194,7 @@ const persistSnapshotFromDoc = async (config: {
   targetCursor: string;
   requestedAt: number;
   doc: Y.Doc;
+  contributors: notes.NoteVersionContributorInput[];
 }): Promise<PersistOutcome> => {
   const result = await notes.save({
     noteId: config.noteId,
@@ -184,6 +204,7 @@ const persistSnapshotFromDoc = async (config: {
     createVersion: true,
     streamCursor: config.targetCursor,
     requestedAt: config.requestedAt,
+    contributors: config.contributors,
   });
 
   if (!result.ok) {
@@ -213,7 +234,7 @@ const persistSnapshotJob = async (
       Y.applyUpdate(doc, initialState.yjsState, "snapshot");
     }
 
-    await waitUntilTargetCursor({
+    const contributors = await waitUntilTargetCursor({
       noteId: job.noteId,
       after: initialState.streamCursor ?? "0-0",
       targetCursor: job.targetCursor,
@@ -231,6 +252,7 @@ const persistSnapshotJob = async (
       targetCursor: job.targetCursor,
       requestedAt: job.requestedAt,
       doc,
+      contributors,
     });
   } finally {
     doc.destroy();

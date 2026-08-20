@@ -69,6 +69,13 @@ type SoftNavigatedDetail = {
   namedBlocks: NamedBlockSummary[];
 };
 
+type NoteActivityItem = {
+  id: string;
+  actor: { displayName: string };
+  action: string;
+  lastOccurredAt: string;
+};
+
 const namedBlockSnippet = (block: NamedBlockSummary): string => {
   const name = JSON.stringify(block.name);
   switch (block.type) {
@@ -118,6 +125,17 @@ export default function NotebookDetailPanel(props: Props) {
   const [lockedAt, setLockedAt] = createSignal(props.lockedAt);
   const [, setIsLocked] = createSignal(props.isLocked);
   const [namedBlocks, setNamedBlocks] = createSignal<NamedBlockSummary[]>(props.namedBlocks);
+  const noteActivity = query.create<string, NoteActivityItem[]>({
+    source: noteId,
+    load: async (currentNoteId, { abortSignal }) => {
+      const response = await apiClient.overview.activity.$get(
+        { query: { notebook: props.notebookId, note: currentNoteId, limit: "10" } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw new Error("Failed to load note activity");
+      return (await response.json()).data;
+    },
+  });
 
   const buildAttachmentSource = (currentNoteId: string, ids: string[]) => `${props.notebookId}:${currentNoteId}:${ids.join(",")}`;
   const initialAttachmentIds = props.attachments.map((attachment) => attachment.id);
@@ -535,6 +553,46 @@ export default function NotebookDetailPanel(props: Props) {
                 </ul>
               </DetailPanel.Section>
             </Show>
+
+            <DetailPanel.Section
+              title="Recent activity"
+              icon="ti ti-history"
+              tone="neutral"
+              meta={noteActivity.data()?.length ?? 0}
+              collapsible
+            >
+              <Show
+                when={!noteActivity.error()}
+                fallback={
+                  <DetailPanel.Action
+                    type="button"
+                    onClick={() => void noteActivity.refresh()}
+                    leading={<i class="ti ti-refresh" aria-hidden="true" />}
+                    title="Retry activity loading"
+                    description="Note activity could not be loaded."
+                  />
+                }
+              >
+                <Show
+                  when={(noteActivity.data()?.length ?? 0) > 0}
+                  fallback={<p class="px-2 py-1 text-xs text-dimmed">{noteActivity.loading() ? "Loading activity…" : "No activity yet."}</p>}
+                >
+                  <div class="flex flex-col gap-1">
+                    <For each={noteActivity.data()}>
+                      {(item) => (
+                        <DetailPanel.Action
+                          href={buildVersionsUrl(props.notebookId, noteId())}
+                          leading={<Avatar name={item.actor.displayName} size="xs" />}
+                          title={item.actor.displayName}
+                          description={item.action === "note.edited" ? "Edited this note" : item.action.replaceAll(".", " ")}
+                          trailing={<time datetime={item.lastOccurredAt}>{dates.formatDateTimeRelative(item.lastOccurredAt)}</time>}
+                        />
+                      )}
+                    </For>
+                  </div>
+                </Show>
+              </Show>
+            </DetailPanel.Section>
 
             <DetailPanel.Section title="Info" icon="ti ti-info-circle" tone="neutral" collapsible defaultOpen>
               <DescriptionList

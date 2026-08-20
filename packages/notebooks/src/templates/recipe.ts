@@ -181,7 +181,7 @@ ${method}
 export const recipeCollectorTemplate: NotebookTemplate = {
   id: "recipe-collector",
   name: "Recipes & Pantry",
-  description: "A small recipe app with pantry matching, shopping todos, and Bavarian starter recipes.",
+  description: "Recipes, pantry matching, shopping todos, and starter ideas.",
   icon: "ti ti-tools-kitchen-2",
   notebookName: "Recipes & Pantry",
   notebookDescription: "Recipe dashboard, pantry inventory, and recipe pages that calculate what ingredients you already have.",

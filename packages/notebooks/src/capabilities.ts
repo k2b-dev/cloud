@@ -108,6 +108,11 @@ const principalIds = (context: CapabilityExecutionContext) => ({
   serviceAccountId: context.accessSubject.type === "service_account" ? context.accessSubject.serviceAccountId : null,
 });
 
+const activityActor = (context: CapabilityExecutionContext) =>
+  context.actor.kind === "user"
+    ? ({ kind: "user", id: context.actor.user.id } as const)
+    : ({ kind: "service_account", id: context.actor.serviceAccount.id } as const);
+
 const authorizeNotebook = async (notebook: Notebook, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
   const scope = scopedNotebookId(context, required);
   if (!scope.ok) return scope;
@@ -568,6 +573,7 @@ const runNoteCreate = async (input: z.infer<typeof NoteCreateInputSchema>, conte
           contentMd: input.content,
         },
         creatorId: context.user?.id ?? null,
+        actor: activityActor(context),
       }),
       access.data.notebook,
       (note) =>
@@ -583,7 +589,12 @@ const runNoteEdit = async (input: z.infer<typeof NoteEditInputSchema>, context: 
   if (!resolved.ok) return resolved;
   return audited(actionAudit(context, "note.edit", "note", resolved.data.note.id), async () => {
     const { noteId, ...data } = input;
-    const result = await noteStore.editContent({ noteId: resolved.data.note.id, data, createdBy: context.user?.id ?? null });
+    const result = await noteStore.editContent({
+      noteId: resolved.data.note.id,
+      data,
+      createdBy: context.user?.id ?? null,
+      actor: activityActor(context),
+    });
     if (!result.ok) return mutationError(result);
     return ok({
       data: {

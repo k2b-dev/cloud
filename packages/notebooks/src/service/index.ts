@@ -1,6 +1,7 @@
 import { type PageParams, type Paginated, paginate } from "@k2b/stdlib";
 import type { AccessEntry } from "@valentinkolb/cloud/contracts";
 import * as access from "./access";
+import * as activity from "./activity";
 import * as apiKeys from "./api-keys";
 import * as attachments from "./attachments";
 import * as backup from "./backup";
@@ -31,6 +32,10 @@ const pageFromPagination = (pagination?: PageParams) => {
 };
 
 export const notebooksService = {
+  activity: {
+    list: activity.list,
+    record: activity.record,
+  },
   notebook: {
     list: async (config: {
       userId: string | null;
@@ -276,6 +281,7 @@ export const notebooksService = {
 };
 
 export type { Attachment, AttachmentContent, AttachmentKind } from "./attachments";
+export type { NotebookActivityActor, NotebookActivityEvent, NotebookActivityPage } from "./activity";
 export type { Backlink, GraphEdge, GraphNode, NoteGraph, NoteLink } from "./links";
 // Re-export commonly used types
 export type { CreateNotebook, Notebook, NotebookAdminListItem, UpdateNotebook } from "./notebooks";
@@ -289,6 +295,7 @@ export type {
 } from "./notes";
 export {
   access,
+  activity,
   attachments,
   backup,
   exporter,
