@@ -164,6 +164,7 @@ const runBaseRead = async (input: z.infer<typeof BaseReadInputSchema>, context: 
   const [base] = await projectBases([result.data]);
   return ok({
     data: mapBase(base!),
+    summary: `Read Pulse Base “${base!.name}”.`,
     refs: [{ type: "pulse.base", id: base!.id }],
     links: [{ rel: "open" as const, href: pulseBaseHref(base!.id) }],
   });
@@ -204,7 +205,11 @@ const runSourceRead = async (input: z.infer<typeof SourceReadInputSchema>, conte
   const result = await pulseService.source.get(id.data, scope.data);
   if (!result.ok) return result;
   const [source] = await projectSources([result.data]);
-  return ok({ data: mapSource(source!), refs: [{ type: "pulse.source", id: source!.id }] });
+  return ok({
+    data: mapSource(source!),
+    summary: `Read Pulse Source “${source!.name}”.`,
+    refs: [{ type: "pulse.source", id: source!.id }],
+  });
 };
 
 const runResourceSearch = async (input: UniversalSearchInput, context: CapabilityExecutionContext) => {
@@ -260,6 +265,7 @@ const runResourceRead = async (input: z.infer<typeof ResourceReadInputSchema>, c
       lastSeenAt: resource.lastSeenAt,
       links: [{ rel: "open" as const, href: pulseResourceHref(ref.baseShortId, resource.key) }],
     },
+    summary: `Read Pulse Resource “${resource.label.slice(0, 500)}”.`,
     refs: [{ type: "pulse.resource", id: input.id }],
   });
 };
@@ -299,7 +305,11 @@ const runSavedQueryRead = async (input: z.infer<typeof SavedQueryReadInputSchema
   const result = await pulseService.savedQuery.read(id.data, scope.data);
   if (!result.ok) return result;
   const [query] = await projectSavedQueries([result.data]);
-  return ok({ data: mapSavedQuery(query!), refs: [{ type: "pulse.saved_query", id: query!.id }] });
+  return ok({
+    data: mapSavedQuery(query!),
+    summary: `Read saved Pulse Query “${query!.name}”.`,
+    refs: [{ type: "pulse.saved_query", id: query!.id }],
+  });
 };
 
 const runFieldSearch = async (input: z.infer<typeof FieldSearchInputSchema>, context: CapabilityExecutionContext) => {
@@ -337,15 +347,19 @@ const runQueryCompile = async (input: z.infer<typeof QueryTextInputSchema>, cont
   if (!baseId.ok) return baseId;
   const result = await pulseService.query.compileText({ ...input, baseId: baseId.data, user: scope.data });
   if (!result.ok) return result;
+  const diagnostics = result.data.diagnostics.slice(0, 20).map((diagnostic) => ({
+    ...diagnostic,
+    message: diagnostic.message.slice(0, 1_000),
+  }));
   return ok({
     data: {
       valid: result.data.ok,
       kind: result.data.compiled?.kind ?? null,
-      diagnostics: result.data.diagnostics.slice(0, 20).map((diagnostic) => ({
-        ...diagnostic,
-        message: diagnostic.message.slice(0, 1_000),
-      })),
+      diagnostics,
     },
+    summary: result.data.ok
+      ? `Validated a ${result.data.compiled?.kind ?? "telemetry"} Pulse query.`
+      : `Pulse query is invalid with ${diagnostics.length} ${diagnostics.length === 1 ? "diagnostic" : "diagnostics"}.`,
     refs: [{ type: "pulse.base", id: input.baseId }],
     links: [{ rel: "open" as const, href: pulseExplorerHref(input.baseId) }],
   });
@@ -385,13 +399,22 @@ const compactState = (state: PulseCurrentState) => ({
 
 type QueryExecutionData = z.infer<typeof QueryExecutionDataSchema>;
 
-const queryCapabilityResult = (data: QueryExecutionData, refs: CloudResourceRef[]) => ({
+const queryExecutionSummary = (data: QueryExecutionData, savedQueryName?: string) => {
+  const key = data.kind === "metric" ? "points" : data.kind === "events" ? "events" : "states";
+  const count = data[key].length;
+  const countLabel = count === 1 ? (key === "points" ? "point" : key === "events" ? "event" : "state") : key;
+  const target = savedQueryName ? `saved Pulse Query “${savedQueryName}”` : `${data.kind} Pulse query`;
+  return `Executed ${target} with ${count} ${countLabel}${data.truncated ? "; results were truncated" : ""}.`;
+};
+
+const queryCapabilityResult = (data: QueryExecutionData, refs: CloudResourceRef[], savedQueryName?: string) => ({
   data,
+  summary: queryExecutionSummary(data, savedQueryName),
   refs,
   links: [{ rel: "open" as const, href: pulseExplorerHref(refs[0]!.id) }],
 });
 
-const fitQueryResult = (data: QueryExecutionData, refs: CloudResourceRef[]) => {
+const fitQueryResult = (data: QueryExecutionData, refs: CloudResourceRef[], savedQueryName?: string) => {
   const key = data.kind === "metric" ? "points" : data.kind === "events" ? "events" : "states";
   const values = data[key];
   const resultFor = (count: number) =>
@@ -402,6 +425,7 @@ const fitQueryResult = (data: QueryExecutionData, refs: CloudResourceRef[]) => {
         truncated: data.truncated || count < values.length,
       },
       refs,
+      savedQueryName,
     );
   const jsonBytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
   const full = resultFor(values.length);
@@ -430,6 +454,7 @@ const executeQuery = async (
   context: CapabilityExecutionContext,
   extraRefs: CloudResourceRef[] = [],
   resolvedBaseId?: string,
+  savedQueryName?: string,
 ) => {
   const scope = scopeFor(context);
   if (!scope.ok) return scope;
@@ -465,6 +490,7 @@ const executeQuery = async (
       truncated: Boolean(rowQuery && rowQuery.limit > QUERY_ROW_LIMIT && returnedRows > QUERY_ROW_LIMIT),
     },
     [{ type: "pulse.base", id: input.baseId }, ...extraRefs],
+    savedQueryName,
   );
 };
 
@@ -510,6 +536,7 @@ const runSavedQueryExecute = async (input: z.infer<typeof SavedQueryExecuteInput
     context,
     [{ type: "pulse.saved_query", id: input.queryId }],
     baseId.data,
+    saved.data.name,
   );
 };
 
@@ -544,7 +571,8 @@ export const pulseCapabilities = defineCapabilities({
   queries: {
     "base.search": {
       title: "Search Pulse Bases",
-      description: "Find accessible Pulse Bases by name or description.",
+      description:
+        "Find an accessible Pulse Base by name or description when its ID is unknown. Use returned pulse.base refs with base.read or their IDs with source.list, metric.search, field.search, and query tools.",
       input: UniversalSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -554,7 +582,7 @@ export const pulseCapabilities = defineCapabilities({
     "base.list": {
       title: "List Pulse Bases",
       description:
-        "Start here to list accessible Pulse Bases and obtain item-local pulse.base refs for readers, catalog searches, or query calls.",
+        "Normal entry for Base-scoped telemetry work. List accessible Pulse Bases and use returned pulse.base refs or IDs with readers, source and signal discovery, or query calls.",
       input: BaseListInputSchema,
       data: BaseListDataSchema,
       openWorld: false,
@@ -562,7 +590,7 @@ export const pulseCapabilities = defineCapabilities({
     },
     "base.read": {
       title: "Read Pulse Base",
-      description: "Read one accessible Pulse Base from a pulse.base ref or Base ID.",
+      description: "Read one pulse.base ref returned by base.list or base.search.",
       input: BaseReadInputSchema,
       data: BaseDataSchema,
       openWorld: false,
@@ -570,7 +598,8 @@ export const pulseCapabilities = defineCapabilities({
     },
     "source.list": {
       title: "List Pulse Sources",
-      description: "List bounded source health with pulse.source refs for one readable Base, without exposing credentials.",
+      description:
+        "List source health in one known Base without exposing credentials. Get baseId from base.list or base.search; use returned pulse.source refs with source.read.",
       input: SourceListInputSchema,
       data: SourceListDataSchema,
       openWorld: false,
@@ -578,7 +607,7 @@ export const pulseCapabilities = defineCapabilities({
     },
     "source.read": {
       title: "Read Pulse Source",
-      description: "Read one accessible Pulse Source from a pulse.source ref or Source ID.",
+      description: "Read one pulse.source ref returned by source.list, including its current ingest or scrape health.",
       input: SourceReadInputSchema,
       data: SourceDataSchema,
       openWorld: false,
@@ -586,7 +615,8 @@ export const pulseCapabilities = defineCapabilities({
     },
     "resource.search": {
       title: "Search Pulse Resources",
-      description: "Find observed resources across accessible Pulse Bases.",
+      description:
+        "Direct cross-Base entry for finding observed resources. Use the returned composite pulse.resource ref unchanged with resource.read; use metric.search or field.search when authoring a query in one known Base.",
       input: UniversalSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -599,7 +629,7 @@ export const pulseCapabilities = defineCapabilities({
     },
     "resource.read": {
       title: "Read Pulse Resource",
-      description: "Read one observed Pulse Resource by passing the composite id from a pulse.resource search ref unchanged.",
+      description: "Read one observed Pulse Resource by passing the composite ID from a resource.search pulse.resource ref unchanged.",
       input: ResourceReadInputSchema,
       data: ResourceDataSchema,
       openWorld: false,
@@ -607,7 +637,8 @@ export const pulseCapabilities = defineCapabilities({
     },
     "metric.search": {
       title: "Search Pulse Metrics",
-      description: "Discover metric names and types in one readable Base before authoring a query.",
+      description:
+        "Discover metric names and types before authoring a query in one known Base. Get baseId from base.list or base.search; validate the resulting DSL with query.compile before query.execute.",
       input: MetricSearchInputSchema,
       data: MetricSearchDataSchema,
       openWorld: false,
@@ -615,7 +646,8 @@ export const pulseCapabilities = defineCapabilities({
     },
     "field.search": {
       title: "Search Pulse Fields",
-      description: "Discover dimension or attribute keys for metrics, events, and states without exposing sensitive values.",
+      description:
+        "Discover dimension or attribute keys for metrics, events, and states in one known Base without exposing values. Use metric.search for metric names, then query.compile before query.execute.",
       input: FieldSearchInputSchema,
       data: FieldSearchDataSchema,
       openWorld: false,
@@ -623,7 +655,8 @@ export const pulseCapabilities = defineCapabilities({
     },
     "query.compile": {
       title: "Compile Pulse Query",
-      description: "Validate Pulse query DSL and return its kind and actionable diagnostics without reading telemetry rows.",
+      description:
+        "Validate Pulse query DSL for a baseId from base.list or base.search without reading telemetry rows. Use metric.search and field.search to discover valid names; execute valid DSL with query.execute.",
       input: QueryTextInputSchema,
       data: QueryCompileDataSchema,
       openWorld: false,
@@ -632,7 +665,7 @@ export const pulseCapabilities = defineCapabilities({
     "query.execute": {
       title: "Execute telemetry query",
       description:
-        "Run validated Pulse telemetry query DSL with byte-bounded prefixes of at most 500 points or 100 compact rows; raw event payloads are omitted and truncated indicates omitted results.",
+        "Execute Pulse query DSL for a baseId from base.list or base.search, normally after query.compile. Returns at most 500 points or 100 compact rows; raw event payloads are omitted and truncated reports omitted results.",
       input: QueryTextInputSchema,
       data: QueryExecutionDataSchema,
       openWorld: false,
@@ -640,7 +673,8 @@ export const pulseCapabilities = defineCapabilities({
     },
     "saved_query.list": {
       title: "List saved Pulse Queries",
-      description: "List bounded named queries with pulse.saved_query refs in one readable Base.",
+      description:
+        "List named queries in one known Base. Get baseId from base.list or base.search; use returned pulse.saved_query refs with saved_query.read or their IDs with saved_query.execute.",
       input: SavedQueryListInputSchema,
       data: SavedQueryListDataSchema,
       openWorld: false,
@@ -648,7 +682,7 @@ export const pulseCapabilities = defineCapabilities({
     },
     "saved_query.read": {
       title: "Read saved Pulse Query",
-      description: "Read one accessible saved Pulse Query from a pulse.saved_query ref or saved-query ID.",
+      description: "Read one pulse.saved_query ref returned by saved_query.list, including its stored DSL and Base ID.",
       input: SavedQueryReadInputSchema,
       data: SavedQueryDataSchema,
       openWorld: false,
@@ -657,7 +691,7 @@ export const pulseCapabilities = defineCapabilities({
     "saved_query.execute": {
       title: "Execute saved telemetry query",
       description:
-        "Run the exact stored Pulse telemetry query with the same byte-bounded compact limits and truncated signal as query.execute.",
+        "Execute one stored query using baseId and queryId from saved_query.list. This skips query.compile because the stored DSL is already validated and returns the same bounded result as query.execute.",
       input: SavedQueryExecuteInputSchema,
       data: QueryExecutionDataSchema,
       openWorld: false,

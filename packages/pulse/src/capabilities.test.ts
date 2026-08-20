@@ -110,9 +110,10 @@ describe("Pulse capabilities", () => {
       pulseCapabilities.queries?.["query.execute"]?.input.safeParse({ baseId: crypto.randomUUID(), query: "states *", extra: true })
         .success,
     ).toBe(false);
-    expect(pulseCapabilities.queries?.["query.execute"]?.description.toLowerCase()).toContain("run");
-    expect(pulseCapabilities.queries?.["query.execute"]?.description.toLowerCase()).toContain("telemetry");
-    expect(pulseCapabilities.queries?.["saved_query.execute"]?.description.toLowerCase()).toContain("run");
+    expect(pulseCapabilities.queries?.["base.list"]?.description).toContain("Normal entry for Base-scoped telemetry work");
+    expect(pulseCapabilities.queries?.["resource.search"]?.description).toContain("Direct cross-Base entry");
+    expect(pulseCapabilities.queries?.["query.execute"]?.description).toContain("normally after query.compile");
+    expect(pulseCapabilities.queries?.["saved_query.execute"]?.description).toContain("skips query.compile");
     expect(
       BaseListDataSchema.safeParse([
         {
@@ -246,6 +247,7 @@ describe("Pulse capabilities", () => {
       const baseRead = await invoke("base.read", { id: baseShortId }, context);
       expect(baseRead.ok && baseRead.data).toMatchObject({
         data: { id: baseShortId },
+        summary: "Read Pulse Base “Agent telemetry”.",
         refs: [{ type: "pulse.base", id: baseShortId }],
       });
 
@@ -260,6 +262,7 @@ describe("Pulse capabilities", () => {
       const sourceRead = await invoke("source.read", { id: sourceShortId }, context);
       expect(sourceRead.ok && sourceRead.data).toMatchObject({
         data: { id: sourceShortId, baseId: baseShortId },
+        summary: "Read Pulse Source “Agent source”.",
         refs: [{ type: "pulse.source", id: sourceShortId }],
       });
       const resources = await invoke("resource.search", { query: "Agent service", tags: [], limit: 10 }, context);
@@ -273,6 +276,7 @@ describe("Pulse capabilities", () => {
       const resourceRead = await invoke("resource.read", { id: `${baseShortId}/${resourceKey}` }, context);
       expect(resourceRead.ok && resourceRead.data).toMatchObject({
         data: { id: `${baseShortId}/${resourceKey}`, baseId: baseShortId, key: resourceKey },
+        summary: "Read Pulse Resource “Agent service”.",
         refs: [{ type: "pulse.resource", id: `${baseShortId}/${resourceKey}` }],
       });
       const metrics = await invoke("metric.search", { baseId: baseShortId, query: "agent", limit: 25 }, context);
@@ -294,8 +298,10 @@ describe("Pulse capabilities", () => {
 
       const compiled = await invoke("query.compile", { baseId: baseShortId, query }, context);
       expect(compiled.ok && compiled.data.data).toMatchObject({ valid: true, kind: "metric" });
+      if (compiled.ok) expect(compiled.data.summary).toBe("Validated a metric Pulse query.");
       const executed = await invoke("query.execute", { baseId: baseShortId, query }, context);
       expect(executed.ok && executed.data.data).toMatchObject({ kind: "metric", points: [expect.objectContaining({ value: 42 })] });
+      if (executed.ok) expect(executed.data.summary).toBe("Executed metric Pulse query with 1 point.");
       const tooBroad = await invoke("query.execute", { baseId: baseShortId, query: "metric agent.cpu avg every 1m since 1d" }, context);
       expect(tooBroad.ok).toBe(false);
       if (!tooBroad.ok) expect(tooBroad.error.message).toContain("too many grouped points");
@@ -323,6 +329,7 @@ describe("Pulse capabilities", () => {
       const savedRead = await invoke("saved_query.read", { id: savedQueryShortId }, context);
       expect(savedRead.ok && savedRead.data).toMatchObject({
         data: { id: savedQueryShortId, baseId: baseShortId },
+        summary: "Read saved Pulse Query “Agent CPU”.",
         refs: [{ type: "pulse.saved_query", id: savedQueryShortId }],
       });
       const savedExecution = await invoke("saved_query.execute", { baseId: baseShortId, queryId: savedQueryShortId }, context);
@@ -330,6 +337,7 @@ describe("Pulse capabilities", () => {
         kind: "metric",
         points: [expect.objectContaining({ value: 42 })],
       });
+      if (savedExecution.ok) expect(savedExecution.data.summary).toBe("Executed saved Pulse Query “Agent CPU” with 1 point.");
     } finally {
       await sql`DELETE FROM pulse.bases WHERE id = ${baseId}::uuid`;
       if (accessId) await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
