@@ -408,6 +408,20 @@ const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Ma
     if (original?.tableId) {
       if (typeof config.typeField === "string") bindField(context, original.tableId, config.typeField, [...path, "typeField"]);
       if (typeof config.originalField === "string") bindField(context, original.tableId, config.originalField, [...path, "originalField"]);
+      if (Array.isArray(config.copyFields)) {
+        const boundFieldIds = new Set<string>();
+        config.copyFields.forEach((field, index) => {
+          if (typeof field !== "string") return;
+          const fieldPath = [...path, "copyFields", index];
+          const bound = bindField(context, original.tableId!, field, fieldPath);
+          if (!bound) return;
+          if (boundFieldIds.has(bound.id)) {
+            addDiagnostic(context, "binding.duplicate", `Correction prefill field "${field}" is selected more than once`, fieldPath);
+            return;
+          }
+          boundFieldIds.add(bound.id);
+        });
+      }
     }
   } else if (step.action === "updateRecord") {
     const record = expectReference(config.record, "grids.record", "record", [...path, "record"], scope, context);

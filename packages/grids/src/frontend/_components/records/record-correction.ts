@@ -94,7 +94,7 @@ export const createCorrectionDraft = async (params: {
         const result = CorrectionDraftResultSchema.parse(run.result);
         return { recordId: result.recordId, tableId: result.tableId };
       } catch (error) {
-        throw new CorrectionDraftInvocationError(error instanceof Error ? error.message : "Invalid correction workflow result", true);
+        throw new CorrectionDraftInvocationError(error instanceof Error ? error.message : "Invalid correction workflow result", false);
       }
     }
     if (run.status === "failed" || run.status === "canceled" || run.status === "needs_attention") {

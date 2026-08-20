@@ -43,7 +43,20 @@ const workflowLaunchersForTable = async (
     for (const launcher of await gridsService.workflow.launcher.list(workflow.id, true)) {
       if (launcher.config.kind !== "bulk" && launcher.config.kind !== "record") continue;
       if (workflow.plan.bindings[`inputs.${launcher.config.input}.table`] !== tableId) continue;
-      const projected = { ...launcher, workflowRevision: workflow.revision, workflowShortId: workflow.shortId };
+      const correctionAction = workflow.plan.steps[0]?.kind === "action" ? workflow.plan.steps[0] : null;
+      const correctionPrefillFieldCount =
+        launcher.config.kind === "record" &&
+        launcher.config.profile === "correctionDraft" &&
+        correctionAction?.action === "createCorrectionDraft" &&
+        Array.isArray(correctionAction.config.copyFields)
+          ? correctionAction.config.copyFields.length
+          : 0;
+      const projected = {
+        ...launcher,
+        workflowRevision: workflow.revision,
+        workflowShortId: workflow.shortId,
+        correctionPrefillFieldCount,
+      };
       if (launcher.config.kind === "bulk") bulk.push(projected);
       else record.push(projected);
     }

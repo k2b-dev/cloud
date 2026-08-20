@@ -58,6 +58,7 @@ type WorkflowEditorProps = {
   tables: Array<Pick<PublicTable, "id" | "name">>;
   workflow?: PublicWorkflow;
   starter?: WorkflowStarter;
+  beforeClose?: (workflow: PublicWorkflow, context: { abortSignal: AbortSignal }) => Promise<void>;
   onChanged: (workflow?: PublicWorkflow) => void;
   onClose: () => void;
 };
@@ -274,7 +275,9 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
           );
       if (res.status === 409) throw new WorkflowConflictError();
       if (!res.ok) throw new Error(await errorMessage(res, "Could not save workflow."));
-      return PublicGridsWorkflowSchema.parse(await res.json());
+      const saved = PublicGridsWorkflowSchema.parse(await res.json());
+      if (props.beforeClose) await props.beforeClose(saved, { abortSignal });
+      return saved;
     },
     onSuccess: (saved) => {
       toast.success(`Saved "${saved.name}"`);
@@ -283,6 +286,8 @@ export function WorkflowEditor(props: WorkflowEditorProps) {
     },
     onError: (error) => void handleSaveError(error),
   });
+
+  onCleanup(() => saveMut.abort());
 
   const triggerValidationMut = mutations.create<
     { plan: WorkflowBoundPlan; source: string; enabled: boolean },

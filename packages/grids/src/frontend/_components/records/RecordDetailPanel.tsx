@@ -1,7 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import { Button, DescriptionList, DetailPanel, Dropdown, IconButton, NoticeCard, prompts, Tooltip, toast } from "@k2b/ui";
-import { Show } from "solid-js";
+import { createEffect, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
 import type { PublicRecordFinalizationReadiness, PublicRecordFinalizationRequest } from "../../../api/record-finalization";
@@ -65,7 +65,9 @@ type Props = {
 };
 
 export default function RecordDetailPanel(props: Props) {
+  let disposed = false;
   let correctionOperation: { key: string; id: string } | null = null;
+  let correctionRecordId: string | null = null;
   const record = () => props.record();
   const mode = () => props.mode();
   const finalizationQueryEnabled = () => {
@@ -165,7 +167,7 @@ export default function RecordDetailPanel(props: Props) {
   });
 
   const createCorrectionMut = mutations.create<
-    { recordId: string; tableId: string },
+    { recordId: string; tableId: string; originalRecordId: string },
     { rec: GridRecord; launcher: WorkspaceRecordLauncher; operationId: string }
   >({
     mutation: async ({ rec, launcher, operationId }, { abortSignal }) => {
@@ -176,18 +178,35 @@ export default function RecordDetailPanel(props: Props) {
         operationId,
         signal: abortSignal,
       });
-      if (result.tableId !== props.tableId) throw new Error("The correction workflow returned a Record from another Table.");
-      return result;
+      if (result.tableId !== props.tableId) {
+        throw new CorrectionDraftInvocationError("The correction workflow returned a Record from another Table.", false);
+      }
+      return { ...result, originalRecordId: rec.id };
     },
     onSuccess: (result) => {
       correctionOperation = null;
-      props.onOpenRecord(result.recordId);
+      correctionRecordId = null;
+      if (!disposed && record()?.id === result.originalRecordId) props.onOpenRecord(result.recordId);
       toast.success("The linked correction Draft is ready.", { title: "Correction created" });
     },
     onError: (error) => {
+      correctionRecordId = null;
       if (error instanceof CorrectionDraftInvocationError && !error.retrySameOperation) correctionOperation = null;
       prompts.error(error.message);
     },
+    onAbort: () => {
+      correctionRecordId = null;
+    },
+  });
+
+  createEffect(() => {
+    const currentRecordId = record()?.id ?? null;
+    if (correctionRecordId && currentRecordId !== correctionRecordId && createCorrectionMut.loading()) createCorrectionMut.abort();
+  });
+
+  onCleanup(() => {
+    disposed = true;
+    createCorrectionMut.abort();
   });
 
   const finalizeMut = mutations.create<GridRecord, GridRecord>({
@@ -363,8 +382,12 @@ export default function RecordDetailPanel(props: Props) {
 
   const handleCreateCorrection = async (rec: GridRecord, launcher: WorkspaceRecordLauncher) => {
     if (createCorrectionMut.loading()) return;
+    const copySummary =
+      launcher.correctionPrefillFieldCount === 0
+        ? "No values are carried over automatically."
+        : `${launcher.correctionPrefillFieldCount} configured field${launcher.correctionPrefillFieldCount === 1 ? "" : "s"} will be carried over.`;
     const confirmed = await prompts.confirm(
-      `Create a new editable Draft linked to this finalized Record?\n\nThe original remains unchanged and locked. The new Draft uses the Table's normal defaults and numbering rules; values are not copied automatically.`,
+      `Create a new editable Draft linked to this finalized Record?\n\n${copySummary} The original remains unchanged and locked. The new Draft follows the Table's normal numbering rules; Files, other relations, calculated fields, and Documents are not copied.`,
       {
         title: launcher.name,
         icon: "ti ti-file-pencil",
@@ -374,6 +397,7 @@ export default function RecordDetailPanel(props: Props) {
     if (confirmed) {
       const key = `${launcher.id}:${rec.id}`;
       if (correctionOperation?.key !== key) correctionOperation = { key, id: crypto.randomUUID() };
+      correctionRecordId = rec.id;
       createCorrectionMut.mutate({ rec, launcher, operationId: correctionOperation.id });
     }
   };
@@ -543,7 +567,10 @@ export default function RecordDetailPanel(props: Props) {
                       items: props.recordActionLaunchers.map((launcher) => ({
                         label: launcher.name,
                         icon: "ti ti-file-pencil",
-                        description: "Create a linked editable Draft without changing this final Record.",
+                        description:
+                          launcher.correctionPrefillFieldCount === 0
+                            ? "Create a linked empty Draft without changing this final Record."
+                            : `Create a linked Draft and carry over ${launcher.correctionPrefillFieldCount} configured field${launcher.correctionPrefillFieldCount === 1 ? "" : "s"}.`,
                         action: () => void handleCreateCorrection(rec, launcher),
                       })),
                     },

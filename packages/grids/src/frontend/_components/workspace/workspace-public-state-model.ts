@@ -61,7 +61,11 @@ export type PublicWorkspaceCatalog = {
 
 export type PublicRuntimeView = PublicView & { query: RecordQuery; displayConfig: RecordDisplayConfig };
 export type PublicWorkspaceBulkLauncher = PublicWorkflowLauncher & { workflowRevision: number; workflowId: string };
-export type PublicWorkspaceRecordLauncher = PublicWorkflowLauncher & { workflowRevision: number; workflowId: string };
+export type PublicWorkspaceRecordLauncher = PublicWorkflowLauncher & {
+  workflowRevision: number;
+  workflowId: string;
+  correctionPrefillFieldCount: number;
+};
 
 export type PublicWorkspaceRecordDetail = {
   recordId: string;

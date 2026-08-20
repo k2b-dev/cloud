@@ -86,6 +86,21 @@ describe("workflow launcher validation", () => {
   test("accepts only the canonical correction Draft plan", () => {
     const config = { kind: "record", input: "original", profile: "correctionDraft" } as const;
     expect(validateLauncherConfig(correctionWorkflow(), config)).toEqual([]);
+    const prefilled = correctionWorkflow();
+    const action = prefilled.plan.steps[0];
+    if (action?.kind !== "action") throw new Error("invalid fixture");
+    action.config.copyFields = ["name"];
+    prefilled.plan.bindings["steps.0.createCorrectionDraft.copyFields.0"] = "40000000-0000-4000-8000-000000000001";
+    expect(validateLauncherConfig(prefilled, config)).toEqual([]);
+    delete prefilled.plan.bindings["steps.0.createCorrectionDraft.copyFields.0"];
+    expect(validateLauncherConfig(prefilled, config)).toEqual([expect.objectContaining({ code: "launcher.profile.plan" })]);
+    const duplicate = correctionWorkflow();
+    const duplicateAction = duplicate.plan.steps[0];
+    if (duplicateAction?.kind !== "action") throw new Error("invalid fixture");
+    duplicateAction.config.copyFields = ["name", "FLD001"];
+    duplicate.plan.bindings["steps.0.createCorrectionDraft.copyFields.0"] = "40000000-0000-4000-8000-000000000001";
+    duplicate.plan.bindings["steps.0.createCorrectionDraft.copyFields.1"] = "40000000-0000-4000-8000-000000000001";
+    expect(validateLauncherConfig(duplicate, config)).toEqual([expect.objectContaining({ code: "launcher.profile.plan" })]);
     const extended = correctionWorkflow();
     extended.plan.steps.push({ kind: "action", action: "succeed", config: { message: "extra" }, sourcePath: ["steps", 1] });
     expect(validateLauncherConfig(extended, config)).toEqual([expect.objectContaining({ code: "launcher.profile.plan" })]);

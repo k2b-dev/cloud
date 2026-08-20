@@ -99,6 +99,8 @@ steps:
       typeField: FLD002
       typeValue: correction
       originalField: FLD006
+      copyFields:
+        - FLD001
 `,
       catalog(),
     );
@@ -109,7 +111,35 @@ steps:
       "inputs.original.table": ids.items,
       "steps.0.createCorrectionDraft.typeField": ids.status,
       "steps.0.createCorrectionDraft.originalField": ids.corrects,
+      "steps.0.createCorrectionDraft.copyFields.0": ids.name,
     });
+  });
+
+  test("rejects two correction prefill aliases for the same field", async () => {
+    const result = await compileAndBindGridsWorkflowSource(
+      `inputs:
+  original:
+    type: record
+    table: TBL001
+    required: true
+steps:
+  - createCorrectionDraft:
+      original: inputs.original
+      typeField: FLD002
+      typeValue: correction
+      originalField: FLD006
+      copyFields:
+        - Name
+        - FLD001
+`,
+      catalog(),
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({ code: "binding.duplicate", path: ["steps", 0, "createCorrectionDraft", "copyFields", 1] }),
+    );
   });
 
   test("rejects private UUID references and canonicalizes author references to public IDs", async () => {

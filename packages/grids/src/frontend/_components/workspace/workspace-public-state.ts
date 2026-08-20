@@ -223,6 +223,7 @@ const projectRoute = async (state: OkWorkspaceState, catalog: PublicWorkspaceCat
       recordActionLaunchers: recordLaunchers.map((launcher, index) => ({
         ...launcher,
         workflowRevision: route.recordActionLaunchers[index]!.workflowRevision,
+        correctionPrefillFieldCount: route.recordActionLaunchers[index]!.correctionPrefillFieldCount,
       })),
     };
   }

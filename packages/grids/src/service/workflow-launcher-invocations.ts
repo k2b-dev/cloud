@@ -448,6 +448,7 @@ const invoke = (
     inputs: Record<string, WorkflowJsonValue>;
     occurredAt?: string;
     authorization?: z.infer<typeof launcherAuthorizationSchema>;
+    trustedRecordIds?: ReadonlyMap<string, ReadonlySet<string>>;
   },
   deps: WorkflowLauncherInvocationDeps,
 ): Promise<Result<WorkflowInvocationReceipt>> =>
@@ -462,6 +463,7 @@ const invoke = (
     launcherId: ctx.launcher.id,
     authorization: input.authorization,
     occurredAt: input.occurredAt,
+    trustedRecordIds: input.trustedRecordIds,
     context: { launcher: { id: ctx.launcher.id, kind: ctx.config.kind, operationId: input.operationId } },
   });
 
@@ -500,6 +502,7 @@ export const invokeScannerLauncher = async (
       .filter(([, source]) => source.kind === "fixed")
       .map(([name, source]) => [name, source.kind === "fixed" ? source.value : null]),
   );
+  let trustedRecordIds: ReadonlyMap<string, ReadonlySet<string>> | undefined;
   if (scanSource.kind !== "scan") return fail(err.internal("scanner launcher scan input is invalid"));
   if (scanSource.value === "text") {
     controlledInputs[scanInputName] = scannedText;
@@ -512,9 +515,10 @@ export const invokeScannerLauncher = async (
         : await deps.resolveScanCode(ctx.workflow.baseId, ctx.tableId, scannedText, authorized.data);
     if (!recordId.ok) return recordId;
     controlledInputs[scanInputName] = recordId.data;
+    trustedRecordIds = new Map([[ctx.tableId, new Set([recordId.data])]]);
   }
   const inputs = mergeInputs(controlledInputs, input.data.inputs);
-  return inputs.ok ? invoke(ctx, { ...input.data, inputs: inputs.data }, deps) : inputs;
+  return inputs.ok ? invoke(ctx, { ...input.data, inputs: inputs.data, trustedRecordIds }, deps) : inputs;
 };
 
 export const invokeBulkLauncher = async (
@@ -563,7 +567,9 @@ export const invokeBulkLauncher = async (
       : await deps.resolveQueryRecordIds(ctx.tableId, input.data.query, input.data.principal, authorized.data);
   if (!recordIds.ok) return recordIds;
   const inputs = mergeInputs({ [ctx.config.input]: recordIds.data }, input.data.inputs);
-  return inputs.ok ? invoke(ctx, { ...input.data, inputs: inputs.data }, deps) : inputs;
+  return inputs.ok
+    ? invoke(ctx, { ...input.data, inputs: inputs.data, trustedRecordIds: new Map([[ctx.tableId, new Set(recordIds.data)]]) }, deps)
+    : inputs;
 };
 
 export const admitBulkLauncher = async (
@@ -608,7 +614,15 @@ export const invokeRecordLauncher = async (
   if (!authorized.data) return fail(err.internal("record launcher input has no record access policy"));
   const recordIds = await deps.resolveExplicitRecordIds(ctx.workflow.baseId, ctx.tableId, [input.data.recordId], authorized.data);
   if (!recordIds.ok) return recordIds;
-  return invoke(ctx, { ...input.data, inputs: { [ctx.config.input]: recordIds.data[0]! } }, deps);
+  return invoke(
+    ctx,
+    {
+      ...input.data,
+      inputs: { [ctx.config.input]: recordIds.data[0]! },
+      trustedRecordIds: new Map([[ctx.tableId, new Set(recordIds.data)]]),
+    },
+    deps,
+  );
 };
 
 export const admitRecordLauncher = async (

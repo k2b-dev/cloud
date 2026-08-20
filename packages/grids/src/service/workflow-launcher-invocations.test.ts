@@ -194,6 +194,7 @@ describe("workflow kernel scanner launchers", () => {
       expectedRevision: 3,
       idempotencyKey: `launcher:${launcherId}:scan-1`,
       inputs: { note: "accepted", record: recordId },
+      trustedRecordIds: new Map([[tableId, new Set([recordId])]]),
       context: { launcher: { id: launcherId, kind: "scanner", operationId: "scan-1" } },
     });
     expect(calls[1]![0].idempotencyKey).toBe(calls[0]![0].idempotencyKey);
@@ -361,6 +362,7 @@ describe("workflow kernel bulk launchers", () => {
         channel: "bulk",
         idempotencyKey: `launcher:${launcherId}:bulk-1`,
         inputs: { records: [recordId, secondRecordId] },
+        trustedRecordIds: new Map([[tableId, new Set([recordId, secondRecordId])]]),
       }),
     );
   });
@@ -485,6 +487,7 @@ describe("workflow kernel Record launchers", () => {
         channel: "record",
         idempotencyKey: `launcher:${launcherId}:record-1`,
         inputs: { record: recordId },
+        trustedRecordIds: new Map([[tableId, new Set([recordId])]]),
       }),
     );
   });

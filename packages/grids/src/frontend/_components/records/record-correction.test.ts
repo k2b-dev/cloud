@@ -122,4 +122,24 @@ describe("correction Draft Record action", () => {
       }),
     ).rejects.toThrow("Open run Run001");
   });
+
+  test("uses a new operation after a terminal run returns an invalid result", async () => {
+    const responses = [json(receipt), json(run("succeeded", { kind: "record", tableId: "Tab001" }))];
+    const request = mock(async (_input: string, _init: RequestInit) => responses.shift() ?? json({ message: "unexpected" }, 500));
+
+    try {
+      await createCorrectionDraft({
+        launcherId: "Lnch01",
+        expectedRevision: 3,
+        recordId: "Rec001",
+        operationId: "correction-1",
+        signal: new AbortController().signal,
+        request,
+      });
+      throw new Error("Expected the workflow result to be rejected");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CorrectionDraftInvocationError);
+      expect((error as CorrectionDraftInvocationError).retrySameOperation).toBe(false);
+    }
+  });
 });

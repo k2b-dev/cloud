@@ -67,7 +67,11 @@ export type RuntimeView = View & {
 };
 
 export type WorkspaceBulkLauncher = GridsWorkflowLauncher & { workflowRevision: number; workflowShortId: string };
-export type WorkspaceRecordLauncher = GridsWorkflowLauncher & { workflowRevision: number; workflowShortId: string };
+export type WorkspaceRecordLauncher = GridsWorkflowLauncher & {
+  workflowRevision: number;
+  workflowShortId: string;
+  correctionPrefillFieldCount: number;
+};
 
 export type WorkspaceRecordsRoute = {
   kind: "records";

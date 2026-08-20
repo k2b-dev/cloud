@@ -60,6 +60,7 @@ import {
 } from "./service/workflow-atomic-records";
 import { sendWorkflowEmail, type WorkflowEmailRecipient } from "./service/workflow-email-send";
 import { preflightWorkflowHttp, requestWorkflowHttp } from "./service/workflow-http-client";
+import { isCorrectionPrefillFieldType, MAX_CORRECTION_PREFILL_FIELDS } from "./workflows/contracts";
 
 // ─── Shared config fragments ─────────────────────────────────────────────────
 
@@ -220,6 +221,7 @@ const correctionDraftValues = async (
   typeValue: string,
   originalFieldId: string,
   originalRecordId: string,
+  copyFieldIds: string[],
 ): Promise<Record<string, unknown>> => {
   const fields = await listFields(tableId, false, client);
   const typeField = fields.find((field) => field.id === typeFieldId);
@@ -240,8 +242,44 @@ const correctionDraftValues = async (
   ) {
     throw actionError("WORKFLOW_BINDING_INVALID", "Original Record must use a current single self-relation on the original Table");
   }
-  return { [typeFieldId]: [typeValue], [originalFieldId]: originalRecordId };
+  if (copyFieldIds.length > MAX_CORRECTION_PREFILL_FIELDS || new Set(copyFieldIds).size !== copyFieldIds.length) {
+    throw actionError("WORKFLOW_BINDING_INVALID", `Correction prefill must name at most ${MAX_CORRECTION_PREFILL_FIELDS} unique fields`);
+  }
+  const fieldsById = new Map(fields.map((field) => [field.id, field]));
+  for (const fieldId of copyFieldIds) {
+    const field = fieldsById.get(fieldId);
+    if (!field || !isCorrectionPrefillFieldType(field.type) || field.uniqueConstraint) {
+      throw actionError("WORKFLOW_BINDING_INVALID", "Correction prefill fields must be current stored value fields on the original Table");
+    }
+    if (fieldId === typeFieldId || fieldId === originalFieldId) {
+      throw actionError("WORKFLOW_BINDING_INVALID", "Correction prefill cannot replace the correction type or Original Record relation");
+    }
+  }
+  const [original] = await client<Array<{ data: Record<string, unknown> }>>`
+    SELECT data
+    FROM grids.records
+    WHERE id = ${originalRecordId}::uuid AND table_id = ${tableId}::uuid
+      AND deleted_at IS NULL AND finalized_at IS NOT NULL
+  `;
+  if (!original) throw actionError("CONFLICT", "The original Record is no longer finalized and available");
+  const values = Object.fromEntries(
+    copyFieldIds.map((fieldId) => {
+      const field = fieldsById.get(fieldId)!;
+      const value = original.data[fieldId];
+      return [fieldId, field.type === "json" && typeof value === "string" ? JSON.stringify(value) : (value ?? null)];
+    }),
+  );
+  return { ...values, [typeFieldId]: [typeValue], [originalFieldId]: originalRecordId };
 };
+
+const correctionCopyFieldIds = (ctx: WorkflowActionContext, copyFields: string[] | undefined): string[] =>
+  (copyFields ?? []).map((_, index) => {
+    const id = ctx.binding("copyFields", index);
+    if (typeof id !== "string" || !id) {
+      throw actionError("WORKFLOW_BINDING_MISSING", `copyFields.${index} has no stable binding`);
+    }
+    return id;
+  });
 
 const auditAnswerPayload = (answers: Record<string, WorkflowJsonValue> | undefined): RecordMutationAudit | undefined => {
   if (answers === undefined) return undefined;
@@ -584,6 +622,13 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           maxLength: 200,
           description: "Single self-relation that links the correction to its original Record.",
         },
+        copyFields: {
+          kind: "array",
+          items: { kind: "string", minLength: 1, maxLength: 200, description: "Stored value field copied from the original Record." },
+          maxItems: MAX_CORRECTION_PREFILL_FIELDS,
+          optional: true,
+          description: "Explicit stored value fields carried into the correction Draft.",
+        },
       },
     },
 
@@ -613,6 +658,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           config.typeValue,
           boundId(ctx, "originalField"),
           original.recordId,
+          correctionCopyFieldIds(ctx, config.copyFields),
         );
         const created = requireOk(
           await createRecordInTransaction(tx, original.tableId, values, actorId(scope), "workflow", {
@@ -663,6 +709,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           config.typeValue,
           boundId(ctx, "originalField"),
           original.recordId,
+          correctionCopyFieldIds(ctx, config.copyFields),
         );
         return {
           summary: "Create one correction Draft linked to the finalized original Record",

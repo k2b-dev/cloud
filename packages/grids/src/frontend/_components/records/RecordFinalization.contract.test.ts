@@ -24,6 +24,9 @@ describe("record finalization UI contract", () => {
     expect(source).toContain("After finalization, this record and its files and relations can no longer be changed or removed.");
     expect(source).toContain("!rec.finalizedAt");
     expect(source).toContain("showFinalizationStatus={Boolean(rec.finalizedAt || finalization()?.enabled)}");
+    expect(source).toContain("record()?.id === result.originalRecordId");
+    expect(source).toContain("createCorrectionMut.abort()");
+    expect(source).toContain("onCleanup(() =>");
   });
 
   test("keeps activation next to Durable History with shared feedback and confirmation", async () => {

@@ -26,6 +26,9 @@ import {
   finalize as finalizeRecord,
   setPolicy as setFinalizationPolicy,
 } from "./record-finalization";
+import { invokeRecordLauncher } from "./workflow-launcher-invocations";
+import { createLauncher } from "./workflow-launchers";
+import { getWorkflow } from "./workflow-read";
 import { GRIDS_APP_ID, gridsAuthorizationSnapshot } from "./workflow-runs";
 import { dryRunGridsWorkflowRun, runGridsWorkflowRun } from "./workflow-runtime";
 import { deleteTestWorkflowScope, insertTestWorkflow, publishTestWorkflowVersion } from "./workflow-test-fixture";
@@ -37,6 +40,7 @@ type Fixture = {
   assetIdFieldId: string;
   nameFieldId: string;
   statusFieldId: string;
+  jsonFieldId: string;
   correctionTypeFieldId: string;
   originalRelationFieldId: string;
   recordId: string;
@@ -52,6 +56,7 @@ const createFixture = (): Fixture => ({
   assetIdFieldId: uuid(),
   nameFieldId: uuid(),
   statusFieldId: uuid(),
+  jsonFieldId: uuid(),
   correctionTypeFieldId: uuid(),
   originalRelationFieldId: uuid(),
   recordId: uuid(),
@@ -79,15 +84,16 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
       (${fixture.assetIdFieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Asset ID', 'id', '{"strategy":"sequence","prefix":"ITEM-","padding":4}'::jsonb, 0),
       (${fixture.nameFieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Name', 'text', '{}'::jsonb, 1),
       (${fixture.statusFieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Status', 'text', '{}'::jsonb, 2),
+      (${fixture.jsonFieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Metadata', 'json', '{}'::jsonb, 3),
       (${fixture.correctionTypeFieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Document type', 'select',
         ${{
           options: [
             { id: "original", label: "Original" },
             { id: "correction", label: "Correction" },
           ],
-        }}::jsonb, 3),
+        }}::jsonb, 4),
       (${fixture.originalRelationFieldId}::uuid, ${shortId("F")}, ${fixture.tableId}::uuid, 'Corrects', 'relation',
-        ${{ targetTableId: fixture.tableId, cardinality: "single" }}::jsonb, 4)
+        ${{ targetTableId: fixture.tableId, cardinality: "single" }}::jsonb, 5)
   `;
   await provisionFieldNumberSeries(sql, fixture.assetIdFieldId, { strategy: "sequence", prefix: "ITEM-", padding: 4 });
   await sql`
@@ -96,7 +102,12 @@ const insertFixture = async (fixture: Fixture): Promise<void> => {
       ${fixture.recordId}::uuid,
       ${shortId("R")},
       ${fixture.tableId}::uuid,
-      ${{ [fixture.assetIdFieldId]: "ITEM-0001", [fixture.nameFieldId]: "Draft task", [fixture.statusFieldId]: "Open" }}::jsonb,
+      ${{
+        [fixture.assetIdFieldId]: "ITEM-0001",
+        [fixture.nameFieldId]: "Draft task",
+        [fixture.statusFieldId]: "Open",
+        [fixture.jsonFieldId]: "123",
+      }}::jsonb,
       ${fixture.actorId}::uuid,
       ${fixture.actorId}::uuid
     )
@@ -522,6 +533,14 @@ describe("declared Grids workflow actions", () => {
       if (!history.ok) throw history.error;
       const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
       if (!activation.ok) throw activation.error;
+      await sql`
+        UPDATE grids.fields SET default_value = ${JSON.stringify("New")}::jsonb
+        WHERE id = ${fixture.statusFieldId}::uuid
+      `;
+      await sql`
+        UPDATE grids.records SET data = data - ${fixture.statusFieldId}
+        WHERE id = ${fixture.recordId}::uuid
+      `;
       const finalized = await finalizeRecord({
         tableId: fixture.tableId,
         recordId: fixture.recordId,
@@ -542,11 +561,15 @@ describe("declared Grids workflow actions", () => {
               typeField: "Document type",
               typeValue: "correction",
               originalField: "Corrects",
+              copyFields: ["Name", "Status", "Metadata"],
             }),
           ],
           {
             "steps.0.createCorrectionDraft.typeField": fixture.correctionTypeFieldId,
             "steps.0.createCorrectionDraft.originalField": fixture.originalRelationFieldId,
+            "steps.0.createCorrectionDraft.copyFields.0": fixture.nameFieldId,
+            "steps.0.createCorrectionDraft.copyFields.1": fixture.statusFieldId,
+            "steps.0.createCorrectionDraft.copyFields.2": fixture.jsonFieldId,
           },
         ),
         inputs: { original: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
@@ -561,6 +584,10 @@ describe("declared Grids workflow actions", () => {
       `;
       expect(draft?.finalized_at).toBeNull();
       expect(draft?.data[fixture.correctionTypeFieldId]).toEqual(["correction"]);
+      expect(draft?.data[fixture.nameFieldId]).toBe("Draft task");
+      expect(draft?.data).not.toHaveProperty(fixture.statusFieldId);
+      expect(draft?.data[fixture.jsonFieldId]).toBe("123");
+      expect(typeof draft?.data[fixture.jsonFieldId]).toBe("string");
       expect(draft?.data[fixture.assetIdFieldId]).toBe("ITEM-0002");
       const [link] = await sql<Array<{ target: string }>>`
         SELECT to_record_id::text AS target
@@ -576,6 +603,172 @@ describe("declared Grids workflow actions", () => {
         SELECT count(*)::int AS count FROM grids.records WHERE table_id = ${fixture.tableId}::uuid
       `;
       expect(count?.count).toBe(2);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest("Record launcher carries its scoped Record into the correction workflow runtime", async () => {
+    const fixture = createFixture();
+    try {
+      await insertFixture(fixture);
+      const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+      if (!history.ok) throw history.error;
+      const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
+      if (!activation.ok) throw activation.error;
+      const finalized = await finalizeRecord({
+        tableId: fixture.tableId,
+        recordId: fixture.recordId,
+        actorId: fixture.actorId,
+        origin: "direct",
+      });
+      if (!finalized.ok) throw finalized.error;
+
+      const plan = boundPlan(
+        [
+          actionStep(0, "createCorrectionDraft", {
+            original: "inputs.original",
+            typeField: "Document type",
+            typeValue: "correction",
+            originalField: "Corrects",
+          }),
+        ],
+        {
+          "inputs.original.table": fixture.tableId,
+          "steps.0.createCorrectionDraft.typeField": fixture.correctionTypeFieldId,
+          "steps.0.createCorrectionDraft.originalField": fixture.originalRelationFieldId,
+        },
+      );
+      plan.inputs = [{ name: "original", type: "record", config: { table: "Tasks", required: true } }];
+      await publishTestWorkflowVersion(fixture.workflowId, "steps: [] # correction launcher", plan);
+      const workflow = await getWorkflow(fixture.workflowId);
+      if (!workflow) throw new Error("Correction launcher workflow is missing");
+      const launcher = await createLauncher(
+        workflow,
+        { name: "Create correction", config: { kind: "record", input: "original", profile: "correctionDraft" }, enabled: true },
+        fixture.actorId,
+      );
+      if (!launcher.ok) throw launcher.error;
+
+      const invoked = await invokeRecordLauncher({
+        launcherId: launcher.data.id,
+        operationId: uuid(),
+        mode: "execute",
+        expectedRevision: workflow.revision,
+        principal: {
+          userId: fixture.actorId,
+          groupIds: [],
+          serviceAccountId: null,
+          actorServiceAccountId: null,
+          credential: null,
+        },
+        inputs: {},
+        recordId: fixture.recordId,
+      });
+      if (!invoked.ok) throw invoked.error;
+
+      expect(await drive(invoked.data.runId)).toBe("succeeded");
+      const [count] = await sql<Array<{ count: number }>>`
+        SELECT count(*)::int AS count FROM grids.records WHERE table_id = ${fixture.tableId}::uuid
+      `;
+      expect(count?.count).toBe(2);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest("createCorrectionDraft rejects prefill schema drift without a partial Draft", async () => {
+    const fixture = createFixture();
+    try {
+      await insertFixture(fixture);
+      const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+      if (!history.ok) throw history.error;
+      const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
+      if (!activation.ok) throw activation.error;
+      const finalized = await finalizeRecord({
+        tableId: fixture.tableId,
+        recordId: fixture.recordId,
+        actorId: fixture.actorId,
+        origin: "direct",
+      });
+      if (!finalized.ok) throw finalized.error;
+      await sql`
+        UPDATE grids.fields SET type = 'formula', config = ${{ expression: "1" }}::jsonb
+        WHERE id = ${fixture.nameFieldId}::uuid
+      `;
+      const runId = await queueRun(fixture, {
+        plan: boundPlan(
+          [
+            actionStep(0, "createCorrectionDraft", {
+              original: "inputs.original",
+              typeField: "Document type",
+              typeValue: "correction",
+              originalField: "Corrects",
+              copyFields: ["Name"],
+            }),
+          ],
+          {
+            "steps.0.createCorrectionDraft.typeField": fixture.correctionTypeFieldId,
+            "steps.0.createCorrectionDraft.originalField": fixture.originalRelationFieldId,
+            "steps.0.createCorrectionDraft.copyFields.0": fixture.nameFieldId,
+          },
+        ),
+        inputs: { original: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+      });
+
+      expect(await drive(runId)).toBe("failed");
+      expect((await runRow(runId)).error).toMatchObject({ code: "WORKFLOW_BINDING_INVALID" });
+      const [count] = await sql<Array<{ count: number }>>`
+        SELECT count(*)::int AS count FROM grids.records WHERE table_id = ${fixture.tableId}::uuid
+      `;
+      expect(count?.count).toBe(1);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest("createCorrectionDraft rejects a unique prefill field before creating a Draft", async () => {
+    const fixture = createFixture();
+    try {
+      await insertFixture(fixture);
+      const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+      if (!history.ok) throw history.error;
+      const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
+      if (!activation.ok) throw activation.error;
+      const finalized = await finalizeRecord({
+        tableId: fixture.tableId,
+        recordId: fixture.recordId,
+        actorId: fixture.actorId,
+        origin: "direct",
+      });
+      if (!finalized.ok) throw finalized.error;
+      await sql`UPDATE grids.fields SET unique_constraint = TRUE WHERE id = ${fixture.nameFieldId}::uuid`;
+      const runId = await queueRun(fixture, {
+        plan: boundPlan(
+          [
+            actionStep(0, "createCorrectionDraft", {
+              original: "inputs.original",
+              typeField: "Document type",
+              typeValue: "correction",
+              originalField: "Corrects",
+              copyFields: ["Name"],
+            }),
+          ],
+          {
+            "steps.0.createCorrectionDraft.typeField": fixture.correctionTypeFieldId,
+            "steps.0.createCorrectionDraft.originalField": fixture.originalRelationFieldId,
+            "steps.0.createCorrectionDraft.copyFields.0": fixture.nameFieldId,
+          },
+        ),
+        inputs: { original: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+      });
+
+      expect(await drive(runId)).toBe("failed");
+      expect((await runRow(runId)).error).toMatchObject({ code: "WORKFLOW_BINDING_INVALID" });
+      const [count] = await sql<Array<{ count: number }>>`
+        SELECT count(*)::int AS count FROM grids.records WHERE table_id = ${fixture.tableId}::uuid
+      `;
+      expect(count?.count).toBe(1);
     } finally {
       await cleanupFixture(fixture);
     }

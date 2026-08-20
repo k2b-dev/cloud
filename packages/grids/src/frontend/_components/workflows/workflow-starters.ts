@@ -51,6 +51,7 @@ export const correctionDraftWorkflowStarter = (params: {
   typeField: Pick<PublicField, "id">;
   typeValue: string;
   originalField: Pick<PublicField, "id">;
+  copyFields: Array<Pick<PublicField, "id">>;
 }): WorkflowStarter => ({
   name: `Create ${params.table.name} correction Draft`,
   description: "Create one Draft linked to an unchanged finalized original Record.",
@@ -66,6 +67,11 @@ steps:
       typeField: ${JSON.stringify(params.typeField.id)}
       typeValue: ${JSON.stringify(params.typeValue)}
       originalField: ${JSON.stringify(params.originalField.id)}
+${
+  params.copyFields.length > 0
+    ? `      copyFields:\n${params.copyFields.map((field) => `        - ${JSON.stringify(field.id)}`).join("\n")}\n`
+    : ""
+}
 `,
   launcher: {
     name: "Create correction",

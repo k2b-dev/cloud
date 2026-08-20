@@ -1,8 +1,19 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { AppWorkspace, Button, dialogCore, NoticeCard, PanelDialog, panelDialogWorkspaceOptions, prompts, Select } from "@k2b/ui";
-import { createSignal, Show } from "solid-js";
+import {
+  AppWorkspace,
+  Button,
+  dialogCore,
+  MultiSelectInput,
+  NoticeCard,
+  PanelDialog,
+  panelDialogWorkspaceOptions,
+  prompts,
+  Select,
+} from "@k2b/ui";
+import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { PublicField as Field, PublicTable as Table } from "../../../api/public-dto";
+import { isCorrectionPrefillFieldType, MAX_CORRECTION_PREFILL_FIELDS } from "../../../workflows/contracts";
 import { errorMessage } from "../utils/api-helpers";
 import { WorkflowEditor } from "../workflows/WorkflowEditor";
 import { closeSelectionWorkflowStarter, correctionDraftWorkflowStarter, type WorkflowStarter } from "../workflows/workflow-starters";
@@ -11,7 +22,14 @@ import type { PublicWorkflow } from "../workspace/workspace-public-state-model";
 type StarterChoice =
   | { kind: "blank" }
   | { kind: "closeSelection"; tableId: string }
-  | { kind: "correctionDraft"; tableId: string; typeFieldId: string; typeValue: string; originalFieldId: string };
+  | {
+      kind: "correctionDraft";
+      tableId: string;
+      typeFieldId: string;
+      typeValue: string;
+      originalFieldId: string;
+      copyFieldIds: string[];
+    };
 
 const selectOptions = (field: Field | undefined): Array<{ id: string; label: string }> => {
   if (field?.type !== "select" || field.config.multiple === true || !Array.isArray(field.config.options)) return [];
@@ -39,12 +57,16 @@ function WorkflowStarterDialog(props: {
   const [typeFieldId, setTypeFieldId] = createSignal("");
   const [typeValue, setTypeValue] = createSignal("");
   const [originalFieldId, setOriginalFieldId] = createSignal("");
+  const [copyFieldIds, setCopyFieldIds] = createSignal<string[]>([]);
+  const copyFields = () =>
+    tableFields().filter((field) => field.id !== typeFieldId() && !field.uniqueConstraint && isCorrectionPrefillFieldType(field.type));
   const typeValues = () => selectOptions(typeFields().find((field) => field.id === typeFieldId()));
   const chooseTable = (nextTableId: string | null) => {
     setTableId(nextTableId ?? "");
     setTypeFieldId("");
     setTypeValue("");
     setOriginalFieldId("");
+    setCopyFieldIds([]);
   };
   return (
     <PanelDialog>
@@ -107,6 +129,7 @@ function WorkflowStarterDialog(props: {
               onValueChange={(value) => {
                 setTypeFieldId(value ?? "");
                 setTypeValue("");
+                setCopyFieldIds((current) => current.filter((fieldId) => fieldId !== value));
               }}
               required
             />
@@ -125,6 +148,27 @@ function WorkflowStarterDialog(props: {
               onValueChange={(value) => setOriginalFieldId(value ?? "")}
               required
             />
+            <MultiSelectInput
+              label="Fields to carry over"
+              description="Optional. Choose up to 100 stored values. Unique fields, generated IDs, Files, other relations, calculated fields, and Documents are not copied."
+              options={copyFields().map((field) => ({
+                id: field.id,
+                label: field.name,
+                description: field.type,
+                icon: field.icon ?? "ti ti-column-insert-right",
+              }))}
+              value={copyFieldIds}
+              onValueChange={(fieldIds) => {
+                if (fieldIds.length > MAX_CORRECTION_PREFILL_FIELDS) {
+                  void prompts.error(`Choose at most ${MAX_CORRECTION_PREFILL_FIELDS} fields to carry over.`);
+                  return;
+                }
+                setCopyFieldIds(fieldIds);
+              }}
+              placeholder="Choose fields"
+              icon="ti ti-copy"
+              clearable
+            />
             <Show when={tableId() && (typeFields().length === 0 || relationFields().length === 0)}>
               <NoticeCard tone="warning" icon="ti ti-alert-triangle">
                 This Table needs a single-select correction type and a single self-relation before this starter can be installed.
@@ -142,6 +186,7 @@ function WorkflowStarterDialog(props: {
                     typeFieldId: typeFieldId(),
                     typeValue: typeValue(),
                     originalFieldId: originalFieldId(),
+                    copyFieldIds: copyFieldIds(),
                   })
                 }
               >
@@ -167,7 +212,7 @@ function WorkflowStarterDialog(props: {
 type LauncherApi = {
   ":workflowId": {
     launchers: {
-      $post: (input: { param: { workflowId: string }; json: unknown }) => Promise<Response>;
+      $post: (input: { param: { workflowId: string }; json: unknown }, options?: { init?: RequestInit }) => Promise<Response>;
     };
   };
 };
@@ -175,12 +220,20 @@ type LauncherApi = {
 const launcherApi = apiClient.workflows as unknown as LauncherApi;
 
 export default function CreateWorkflowButton(props: { baseId: string; tables: Table[]; fieldsByTable: Record<string, Field[]> }) {
-  const installLauncher = async (workflow: PublicWorkflow, starter: WorkflowStarter) => {
+  let disposed = false;
+  onCleanup(() => {
+    disposed = true;
+  });
+
+  const installLauncher = async (workflow: PublicWorkflow, starter: WorkflowStarter, signal: AbortSignal) => {
     try {
-      const response = await launcherApi[":workflowId"].launchers.$post({
-        param: { workflowId: workflow.id },
-        json: { ...starter.launcher, enabled: true },
-      });
+      const response = await launcherApi[":workflowId"].launchers.$post(
+        {
+          param: { workflowId: workflow.id },
+          json: { ...starter.launcher, enabled: true },
+        },
+        { init: { signal } },
+      );
       if (response.ok) return;
       await prompts.error(
         `The workflow was saved, but its Records action could not be added. Open Run options to finish setup.\n\n${await errorMessage(
@@ -190,6 +243,7 @@ export default function CreateWorkflowButton(props: { baseId: string; tables: Ta
         { title: "Workflow saved" },
       );
     } catch (error) {
+      if (signal.aborted) throw error;
       await prompts.error(
         `The workflow was saved, but its Records action could not be added. Open Run options to finish setup.\n\n${
           error instanceof Error ? error.message : "Could not add the Records action."
@@ -215,6 +269,7 @@ export default function CreateWorkflowButton(props: { baseId: string; tables: Ta
               typeField: { id: choice.typeFieldId },
               typeValue: choice.typeValue,
               originalField: { id: choice.originalFieldId },
+              copyFields: choice.copyFieldIds.map((id) => ({ id })),
             })
           : undefined;
     await dialogCore.open<void>(
@@ -223,12 +278,10 @@ export default function CreateWorkflowButton(props: { baseId: string; tables: Ta
           baseId={props.baseId}
           tables={props.tables}
           starter={starter}
+          beforeClose={starter ? (workflow, context) => installLauncher(workflow, starter, context.abortSignal) : undefined}
           onChanged={(workflow) => {
-            if (!workflow) return;
-            void (async () => {
-              if (starter) await installLauncher(workflow, starter);
-              navigateTo(`/app/grids/${props.baseId}/workflows/${workflow.id}?edit=true`);
-            })();
+            if (!workflow || disposed) return;
+            navigateTo(`/app/grids/${props.baseId}/workflows/${workflow.id}?edit=true`);
           }}
           onClose={close}
         />

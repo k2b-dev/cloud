@@ -10,6 +10,23 @@ import { z } from "zod";
 
 export const GRIDS_WORKFLOW_CHANNELS = ["api", "customApp", "scanner", "bulk", "record", "schedule", "recordEvent"] as const;
 
+export const CORRECTION_PREFILL_FIELD_TYPES = [
+  "text",
+  "longtext",
+  "number",
+  "boolean",
+  "date",
+  "select",
+  "percent",
+  "duration",
+  "json",
+  "principal",
+] as const;
+
+export const MAX_CORRECTION_PREFILL_FIELDS = 100;
+
+export const isCorrectionPrefillFieldType = (type: string): boolean => (CORRECTION_PREFILL_FIELD_TYPES as readonly string[]).includes(type);
+
 export type GridsWorkflowChannel = (typeof GRIDS_WORKFLOW_CHANNELS)[number];
 
 export const GridsWorkflowCredentialBindingSchema = z
@@ -196,12 +213,26 @@ export const isCanonicalCorrectionDraftPlan = (plan: WorkflowBoundPlan, recordIn
   }
   const action = plan.steps[0];
   if (action?.kind !== "action" || action.action !== "createCorrectionDraft") return false;
+  const copyFields = action.config.copyFields;
+  const configKeys = Object.keys(action.config).sort().join(",");
+  const copyFieldsValid =
+    copyFields === undefined ||
+    (Array.isArray(copyFields) &&
+      copyFields.length <= MAX_CORRECTION_PREFILL_FIELDS &&
+      new Set(copyFields).size === copyFields.length &&
+      copyFields.every(
+        (field, index) =>
+          typeof field === "string" && typeof plan.bindings[`steps.0.createCorrectionDraft.copyFields.${index}`] === "string",
+      ) &&
+      new Set(copyFields.map((_, index) => plan.bindings[`steps.0.createCorrectionDraft.copyFields.${index}`])).size === copyFields.length);
   return (
-    Object.keys(action.config).sort().join(",") === "original,originalField,typeField,typeValue" &&
+    (configKeys === "original,originalField,typeField,typeValue" ||
+      configKeys === "copyFields,original,originalField,typeField,typeValue") &&
     action.config.original === `inputs.${recordInput}` &&
     typeof action.config.typeField === "string" &&
     typeof action.config.typeValue === "string" &&
     typeof action.config.originalField === "string" &&
+    copyFieldsValid &&
     typeof plan.bindings["steps.0.createCorrectionDraft.typeField"] === "string" &&
     typeof plan.bindings["steps.0.createCorrectionDraft.originalField"] === "string"
   );
