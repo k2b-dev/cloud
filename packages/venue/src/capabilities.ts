@@ -139,6 +139,7 @@ const runVenueList = async (input: z.infer<typeof VenueListInputSchema>, context
   const page = pageResult(
     publicVenues.map((venue) => ({
       ...mapVenue({ ...venue, publicId: venue.id }),
+      ref: { type: "venue.venue" as const, id: venue.id },
       links: [{ rel: "open" as const, href: openVenueHref({ ...venue, publicId: venue.id }) }],
     })),
     cursor.data,
@@ -289,7 +290,14 @@ const runAssignmentMine = async (input: z.infer<typeof AssignmentMineInputSchema
     offset: cursor.data,
   });
   const publicAssignments = await venueService.publicResources.projectAssignments(assignments);
-  const page = pageResult(publicAssignments.map(mapPersonalAssignment), cursor.data, input.limit);
+  const page = pageResult(
+    publicAssignments.map((assignment) => ({
+      ...mapPersonalAssignment(assignment),
+      ref: { type: "venue.assignment" as const, id: assignment.id },
+    })),
+    cursor.data,
+    input.limit,
+  );
   return ok({
     ...page,
     refs: page.data.map((assignment) => ({ type: "venue.assignment" as const, id: assignment.id })),
@@ -460,7 +468,7 @@ export const venueCapabilities = defineCapabilities({
     },
     "venue.list": {
       title: "List accessible Venues",
-      description: "Start here to list permission-scoped Venues and obtain stable venueId values.",
+      description: "Start here to list permission-scoped Venues and obtain item-local venue.venue refs for all Venue operations.",
       input: VenueListInputSchema,
       data: VenueListDataSchema,
       openWorld: false,
@@ -468,7 +476,7 @@ export const venueCapabilities = defineCapabilities({
     },
     "venue.read": {
       title: "Read Venue",
-      description: "Read compact metadata for one public or accessible Venue without media or secret calendar tokens.",
+      description: "Read compact metadata from a venue.venue ref or Venue ID, without media or secret calendar tokens.",
       input: VenueReadInputSchema,
       data: VenueDataSchema,
       openWorld: false,
@@ -492,7 +500,8 @@ export const venueCapabilities = defineCapabilities({
     },
     "shift.read": {
       title: "Read Venue shift",
-      description: "Read one dated Venue shift by its stable ID.",
+      description:
+        "Specialized occurrence lookup: read one dated Venue shift using the venueId, templateId, and date returned together by List Venue shifts.",
       input: ShiftReadInputSchema,
       data: ShiftDataSchema,
       openWorld: false,
@@ -500,7 +509,7 @@ export const venueCapabilities = defineCapabilities({
     },
     "assignment.mine": {
       title: "List my assignments",
-      description: "List the current user-backed actor's own assignments in a bounded date range.",
+      description: "List the current user-backed actor's own assignments with venue.assignment refs in a bounded date range.",
       input: AssignmentMineInputSchema,
       data: AssignmentListDataSchema,
       openWorld: false,
@@ -508,7 +517,7 @@ export const venueCapabilities = defineCapabilities({
     },
     "assignment.read": {
       title: "Read my assignment",
-      description: "Read one assignment owned by the current user-backed actor.",
+      description: "Read one owned assignment from a venue.assignment ref or assignment ID.",
       input: AssignmentReadInputSchema,
       data: AssignmentDataSchema,
       openWorld: false,

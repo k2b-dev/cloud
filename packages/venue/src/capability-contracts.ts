@@ -9,9 +9,11 @@ const ResourceIdSchema = z
   .string()
   .regex(/^[0-9A-Za-z]{6}$/)
   .describe("Stable 6-character resource ID.");
-const VenueIdSchema = ResourceIdSchema.describe("Stable Venue ID.");
+const VenueIdSchema = ResourceIdSchema.describe("Venue ID returned by Search/List Venues or a venue.venue ref.");
 const PageInputShape = { cursor: CursorSchema, limit: LimitSchema };
 const ResourceLinksSchema = z.array(CapabilitySemanticLinkSchema).min(1).max(10).optional();
+const resourceRef = <Type extends string>(type: Type) =>
+  z.object({ type: z.literal(type), id: ResourceIdSchema }).strict();
 
 export const VenueDataSchema = z
   .object({
@@ -37,7 +39,9 @@ export const VenueListInputSchema = z
     ...PageInputShape,
   })
   .strict();
-export const VenueListDataSchema = z.array(VenueDataSchema.extend({ links: ResourceLinksSchema }).strict()).max(100);
+export const VenueListDataSchema = z
+  .array(VenueDataSchema.extend({ ref: resourceRef("venue.venue"), links: ResourceLinksSchema }).strict())
+  .max(100);
 export const VenueReadInputSchema = z.object({ id: VenueIdSchema }).strict();
 export const VenueTargetInputSchema = z.object({ venueId: VenueIdSchema }).strict();
 
@@ -118,8 +122,11 @@ export const AssignmentMineInputSchema = z
     ...PageInputShape,
   })
   .strict();
-export const AssignmentListDataSchema = z.array(AssignmentDataSchema).max(100);
-export const AssignmentReadInputSchema = z.object({ id: ResourceIdSchema.describe("Stable personal assignment ID.") }).strict();
+const AssignmentListItemDataSchema = AssignmentDataSchema.extend({ ref: resourceRef("venue.assignment") }).strict();
+export const AssignmentListDataSchema = z.array(AssignmentListItemDataSchema).max(100);
+export const AssignmentReadInputSchema = z
+  .object({ id: ResourceIdSchema.describe("Personal assignment ID returned by List my assignments or a venue.assignment ref.") })
+  .strict();
 
 const FeedbackBucketDataSchema = z
   .object({ date: DateKeySchema, count: z.number().int().nonnegative(), averageRating: z.number().min(1).max(5).nullable() })
@@ -149,7 +156,10 @@ export const AssignmentFreeSignupInputSchema = z
   })
   .strict();
 export const AssignmentCancelInputSchema = z
-  .object({ venueId: VenueIdSchema, assignmentId: ResourceIdSchema.describe("Own assignment ID returned by assignment.mine.") })
+  .object({
+    venueId: VenueIdSchema,
+    assignmentId: ResourceIdSchema.describe("Own assignment ID returned by List my assignments or a venue.assignment ref."),
+  })
   .strict();
 export const AssignmentActionDataSchema = AssignmentDataSchema;
 export const AssignmentCancelDataSchema = z.object({ assignmentId: ResourceIdSchema, cancelled: z.literal(true) }).strict();

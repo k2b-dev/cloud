@@ -136,6 +136,7 @@ describe("Venue capabilities", () => {
       VenueListDataSchema.safeParse([
         {
           id: venueId,
+          ref: { type: "venue.venue", id: venueId },
           slug: "venue",
           name: "Venue",
           icon: "ti ti-building",
