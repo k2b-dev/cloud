@@ -542,9 +542,11 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(pin.match(/aria-invalid="true"/g)).toHaveLength(1);
     expect(filledNumber).toContain('data-filled="true"');
     expect(emptyNumber).not.toContain("data-filled");
-    // The right-aligned mono treatment must key off the value: `:placeholder-shown`
-    // never matches when the caller passes no placeholder.
-    expect(cssRule('.k2b-ui .k2b-number-input__control[data-filled="true"]')).toContain("text-align: right");
+    expect(cssRule(".k2b-ui .k2b-number-input__control")).toContain("text-align: right");
+    expect(cssRule(".k2b-ui .k2b-number-input__control::placeholder")).toContain("opacity: 0.65");
+    // The mono treatment must key off the value: `:placeholder-shown` never
+    // matches when the caller passes no placeholder.
+    expect(cssRule('.k2b-ui .k2b-number-input__control[data-filled="true"]')).toContain("font-family: var(--k2b-font-mono)");
   });
 
   test("integrates NumberInput steppers into one full-width input shell", () => {

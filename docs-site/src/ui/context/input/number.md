@@ -37,6 +37,7 @@ The component keeps the raw text while focused, so intermediate input is not los
 - The default stepper buttons are integrated into the left and right edges of the input.
 - `showSteppers={false}` hides the buttons without disabling typed input.
 - `disableSteppers` disables only the buttons.
+- The placeholder and numeric value are both right-aligned; the placeholder is visually quieter than entered values.
 
 `prefix` and `suffix` display short units inside the field. `clearable` adds an explicit empty-state action.
 

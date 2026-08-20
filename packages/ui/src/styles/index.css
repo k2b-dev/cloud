@@ -2754,14 +2754,22 @@
   outline: none;
 }
 
-/* Typed values read as numbers (right aligned, mono, semibold); the empty
-   state stays left aligned in the body font so the placeholder reads as prose.
-   Keyed off the value, not `:placeholder-shown`, which never matches when the
-   caller passes no placeholder. */
+/* Keep the empty hint where the numeric value will appear, avoiding a visual
+   jump from the left edge to the right edge when typing starts. */
+.k2b-ui .k2b-number-input__control {
+  text-align: right;
+}
+
+.k2b-ui .k2b-number-input__control::placeholder {
+  color: var(--k2b-text-muted);
+  opacity: 0.65;
+}
+
+/* Typed values additionally read as numbers (mono, semibold). Keyed off the
+   value, not `:placeholder-shown`, which never matches without a placeholder. */
 .k2b-ui .k2b-number-input__control[data-filled="true"] {
   font-family: var(--k2b-font-mono);
   font-weight: 600;
-  text-align: right;
 }
 
 .k2b-ui .k2b-image-input {
