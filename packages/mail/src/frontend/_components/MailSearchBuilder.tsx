@@ -29,6 +29,7 @@ import {
   type MailSearchFieldKey,
   type MailSearchNodePath,
   mailSearchExpressionDepth,
+  MAIL_SEARCH_FIELD_GROUPS,
   mailSearchFieldKey,
   mailSearchFieldOptionsFor,
   normalizeMailSearchExpression,
@@ -141,6 +142,9 @@ function MailSearchConditionEditor(props: {
                     )
                   }
                   options={mailSearchFieldOptionsFor(props.expression)}
+                  groups={MAIL_SEARCH_FIELD_GROUPS}
+                  defaultGroup="recommended"
+                  groupsAriaLabel="Filter search fields"
                 />
                 <SearchConditionValue
                   expression={props.expression}

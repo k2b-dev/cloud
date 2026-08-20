@@ -4,6 +4,8 @@ import {
   appendMailSearchExpression,
   countMailSearchNodes,
   ensureMailSearchRootGroup,
+  MAIL_SEARCH_FIELD_GROUPS,
+  MAIL_SEARCH_FIELD_OPTIONS,
   mailSearchExpressionDepth,
   mailSearchFieldOptionsFor,
   normalizeMailSearchExpression,
@@ -28,6 +30,27 @@ const root: MailSearchExpression = {
 };
 
 describe("Mail search builder model", () => {
+  test("groups fields into the complete overlapping search taxonomy", () => {
+    expect(MAIL_SEARCH_FIELD_GROUPS.map((group) => group.label)).toEqual([
+      "Recommended",
+      "Content",
+      "People",
+      "Mailbox",
+      "Date & size",
+      "Technical",
+    ]);
+    expect(MAIL_SEARCH_FIELD_OPTIONS.find((option) => option.id === "assignee")?.groups).toEqual([
+      "recommended",
+      "people",
+      "mailbox",
+    ]);
+    expect(MAIL_SEARCH_FIELD_OPTIONS.find((option) => option.id === "text:reference")?.groups).toEqual([
+      "content",
+      "technical",
+    ]);
+    expect(MAIL_SEARCH_FIELD_OPTIONS.every((option) => option.groups.length > 0)).toBe(true);
+  });
+
   test("hides provider keywords from new conditions but preserves existing searches", () => {
     expect(mailSearchFieldOptionsFor({ type: "all" }).map((option) => option.id)).not.toContain("text:keyword");
     const keywordSearch: MailSearchExpression = { type: "text", field: "keyword", query: "Legacy", match: "words" };
