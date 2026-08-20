@@ -46,10 +46,10 @@ const normalizeDataBoundary = (boundary: (typeof DATA_BOUNDARY_INPUTS)[number] |
 
 const isModelCapability = (value: string): value is AiModelCapability => AI_MODEL_CAPABILITIES.some((capability) => capability === value);
 
-// Keep in sync with the ai.max_tool_result_chars default in settings/defaults.ts.
-// Long chats live or die on tool results (web extracts, file reads) surviving
-// into context — 2k proved too aggressive a cut.
-const DEFAULT_MAX_TOOL_RESULT_CHARS = 8_000;
+// Keep in sync with the ai.max_tool_result_chars default in core-settings.ts.
+// This is an operator ceiling. The runtime derives the actual per-result
+// budget from the selected model's context window.
+const DEFAULT_MAX_TOOL_RESULT_CHARS = 2_000_000;
 
 const normalizeMaxToolResultChars = (value: unknown): number => {
   const numeric = Number(value);

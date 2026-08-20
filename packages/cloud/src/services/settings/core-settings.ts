@@ -196,11 +196,12 @@ export const CORE_SETTINGS = {
   },
   "ai.max_tool_result_chars": {
     kind: "number",
-    label: "Max Tool Result Chars",
-    default: 8000,
+    label: "Tool Result Ceiling",
+    default: 2000000,
     min: 500,
-    max: 50000,
-    description: "Maximum characters from one tool result kept in AI context before Nessi truncates it.",
+    max: 4000000,
+    description:
+      "Operator ceiling for one tool result. The runtime uses a smaller budget automatically when the selected model has less context.",
   },
   "ai.firecrawl_api_key": {
     kind: "secret",

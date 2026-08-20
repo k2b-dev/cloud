@@ -85,6 +85,23 @@ describe("Firecrawl AI tools", () => {
     expect(JSON.stringify(result)).not.toContain("creditsUsed");
   });
 
+  test("keeps large extracts up to the independent web safety limit", async () => {
+    const content = "x".repeat(1_000_100);
+    const fetcher = async () =>
+      Response.json({
+        success: true,
+        data: { markdown: content, metadata: { sourceURL: "https://example.com/large" } },
+      });
+
+    const result = await runCloudAiWebExtract(
+      { url: "https://example.com/large" },
+      { apiKey: "fc-secret", fetch: fetcher as unknown as typeof fetch },
+    );
+
+    expect(result.content.length).toBe(1_000_000);
+    expect(result.truncated).toBe(true);
+  });
+
   test("keeps all sources in historical search results while bounding snippets", async () => {
     const tool = createCloudAiWebSearchTool({ apiKey: "fc-secret" });
     const output = Array.from({ length: 5 }, (_, index) => ({

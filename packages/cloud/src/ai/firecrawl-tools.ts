@@ -10,7 +10,7 @@ const FIRECRAWL_BASE_URL = "https://api.firecrawl.dev";
 const FIRECRAWL_SEARCH_LIMIT = 5;
 const FIRECRAWL_TIMEOUT_MS = 30_000;
 const FIRECRAWL_CACHE_MAX_AGE_MS = 172_800_000;
-const DEFAULT_MAX_TOOL_RESULT_CHARS = 2_000;
+const WEB_EXTRACT_MAX_CONTENT_CHARS = 1_000_000;
 const WEB_SEARCH_HISTORY_SNIPPET_CHARS = 120;
 const WEB_EXTRACT_HISTORY_CONTENT_CHARS = 4_000;
 
@@ -53,12 +53,6 @@ export const CloudAiWebExtractOutputSchema = z.object({
 
 const readFirecrawlApiKey = async (): Promise<string> =>
   String((await coreSettings.get<string>(AI_FIRECRAWL_API_KEY_SETTING_KEY)) ?? "").trim();
-
-const readMaxToolResultChars = async (): Promise<number> => {
-  const value = Number(await coreSettings.get<number>("ai.max_tool_result_chars"));
-  if (!Number.isFinite(value) || value <= 0) return DEFAULT_MAX_TOOL_RESULT_CHARS;
-  return Math.floor(value);
-};
 
 export const isCloudAiFirecrawlConfigured = async () => (await readFirecrawlApiKey()).length > 0;
 
@@ -248,7 +242,7 @@ export const runCloudAiWebExtract = async (
     throw new Error(extractErrorMessage(body) ?? "Firecrawl extract returned an invalid response.");
   }
 
-  const maxChars = config.maxChars ?? (await readMaxToolResultChars());
+  const maxChars = config.maxChars ?? WEB_EXTRACT_MAX_CONTENT_CHARS;
   const data = body.data;
   const metadata = isRecord(data.metadata) ? data.metadata : {};
   const normalizedUrl = asString(data.url) || asString(metadata.url) || asString(metadata.sourceURL) || url;
@@ -286,7 +280,7 @@ export const createCloudAiWebExtractTool = (config: FirecrawlToolConfig = {}) =>
   defineAiTool({
     name: "web_extract",
     description:
-      "Read one web page by URL and return clean text. Inspect the relevant pages needed to support the answer; for research or comparison, prefer primary sources and read more than one useful source when warranted.",
+      "Read one web page by URL and return clean Markdown. Inspect the relevant pages needed to support the answer; for research or comparison, prefer primary sources and read more than one useful source when warranted.",
     inputSchema: CloudAiWebExtractInputSchema,
     outputSchema: CloudAiWebExtractOutputSchema,
     approval: "never",

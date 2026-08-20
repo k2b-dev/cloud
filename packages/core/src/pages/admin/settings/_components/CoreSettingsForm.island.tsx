@@ -1170,12 +1170,12 @@ function AiSettingsPanel(props: {
             error={() => props.errorFor(AI_VISION_MODEL_SETTING_KEY)}
           />
           <NumberInput
-            label="Max tool result chars"
-            description="Tool results above this size are truncated before they are sent back into the model context. Higher keeps more detail in long chats; lower saves context."
+            label="Tool result ceiling"
+            description="Maximum characters allowed for one tool result. The runtime automatically uses less for models with smaller context windows."
             value={maxToolResultChars}
-            onValueChange={(value) => props.onChange(AI_MAX_TOOL_RESULT_CHARS_SETTING_KEY, value ?? 8000)}
+            onValueChange={(value) => props.onChange(AI_MAX_TOOL_RESULT_CHARS_SETTING_KEY, value ?? 2000000)}
             min={500}
-            max={50000}
+            max={4000000}
             showSteppers={false}
             error={() => props.errorFor(AI_MAX_TOOL_RESULT_CHARS_SETTING_KEY)}
           />

@@ -110,6 +110,12 @@ Use `toHistoricalResult` when a full tool result is useful now but too large to
 send to the model in later loops. Cloud still persists the full result for the
 user.
 
+Cloud sizes current-loop tool results from the selected model's context window,
+up to the operator-configured ceiling. Large-context models can therefore use
+substantial web extracts and file slices, while models without a known context
+window use a conservative fallback. Tool-specific safety and transport limits
+still apply, and historical projections stay compact for later loops.
+
 `promptHint` adds one short usage nudge to the system prompt. Use it when the
 model could finish with plain text but Cloud prefers the tool-backed experience,
 as with cards, surveys, the long-form text editor, or presented files. Keep

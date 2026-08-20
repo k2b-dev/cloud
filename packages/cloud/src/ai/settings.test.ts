@@ -46,6 +46,7 @@ describe("AI settings model registry", () => {
     expect(state.ok).toBe(true);
     expect(state.enabled).toBe(true);
     expect(state.firecrawlConfigured).toBe(false);
+    expect(state.maxToolResultChars).toBe(2_000_000);
     if (state.ok) expect(state.profiles[0]?.id).toBe("openrouter-fast");
   });
 

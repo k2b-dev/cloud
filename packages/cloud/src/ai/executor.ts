@@ -35,6 +35,7 @@ import { aiConversations } from "./store";
 import { publishAiWireEvent } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
 import { aiToolAudit } from "./tool-audit";
+import { resolveAiToolResultMaxChars } from "./tool-result-budget";
 import { aiToolPromptHints, type PreparedAiTools, prepareAiTools } from "./tools";
 import type {
   AiChatTurnRunConfig,
@@ -878,7 +879,10 @@ export class AiTurnExecutor {
         maxOutputTokens: resolved.profile.maxOutputTokens,
         signal: abortController.signal,
       }),
-      maxToolResultChars: settings.maxToolResultChars,
+      maxToolResultChars: resolveAiToolResultMaxChars({
+        contextWindow: resolved.provider.contextWindow,
+        configuredMaxChars: settings.maxToolResultChars,
+      }),
       signal: abortController.signal,
     });
 
