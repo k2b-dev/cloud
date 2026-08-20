@@ -381,11 +381,14 @@ const runAssignmentSignup = async (input: z.infer<typeof AssignmentSignupInputSc
   if (actor.data.venue.signupMode === "free") return fail(err.badInput("Template shift signup is disabled for this Venue"));
   const templateId = await venueService.publicResources.resolveOwned("templates", actor.data.venue.id, input.templateId);
   if (!templateId) return fail(err.notFound("Shift"));
+  const template = await venueService.templates.get(templateId);
+  if (!template || !template.active) return fail(err.notFound("Shift"));
   const result = await venueService.assignments.signupTemplate(actor.data.venue, templateId, { date: input.date }, actor.data.user);
   if (!result.ok) return result;
   const assignment = (await venueService.publicResources.projectAssignments([result.data]))[0]!;
   return ok({
     data: mapCreatedAssignment(assignment, actor.data.venue),
+    summary: `Signed up for “${template.title}” at ${actor.data.venue.name}.`,
     refs: [
       { type: "venue.venue", id: actor.data.venue.publicId },
       { type: "venue.assignment", id: assignment.id },
@@ -405,6 +408,7 @@ const runAssignmentFreeSignup = async (input: z.infer<typeof AssignmentFreeSignu
   const assignment = (await venueService.publicResources.projectAssignments([result.data]))[0]!;
   return ok({
     data: mapCreatedAssignment(assignment, actor.data.venue),
+    summary: `Signed up for a shift at ${actor.data.venue.name}.`,
     refs: [
       { type: "venue.venue", id: actor.data.venue.publicId },
       { type: "venue.assignment", id: assignment.id },
@@ -422,6 +426,7 @@ const runAssignmentCancel = async (input: z.infer<typeof AssignmentCancelInputSc
   if (!result.ok) return result;
   return ok({
     data: { assignmentId: input.assignmentId, cancelled: true as const },
+    summary: `Cancelled your shift at ${actor.data.venue.name}.`,
     refs: [{ type: "venue.venue", id: actor.data.venue.publicId }],
     links: [{ rel: "open" as const, href: myShiftsHref(actor.data.venue.publicId) }],
   });

@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { ok } from "@k2b/stdlib";
-import type { CapabilityActionDefinition, CapabilityExecutionContext, User } from "@valentinkolb/cloud/contracts";
+import {
+  type CapabilityActionDefinition,
+  CapabilityActionReviewSchema,
+  type CapabilityExecutionContext,
+  capabilityResultSchema,
+  type User,
+} from "@valentinkolb/cloud/contracts";
 import { audit, weatherService } from "@valentinkolb/cloud/services";
 import { decodeWeatherCapabilityCursor, weatherCapabilities } from "./capabilities";
 import { CurrentWeatherSchema } from "./contracts";
@@ -9,11 +15,11 @@ const userId = "11111111-1111-4111-8111-111111111111";
 const locationId = "Wthr01";
 const legacyLocationUuid = "22222222-2222-4222-8222-222222222222";
 
-test("keeps permanent location deletion on fresh approval", () => {
-  const rememberable = (Object.values(weatherCapabilities.actions) as CapabilityActionDefinition[]).filter(
-    (action) => action.approval === "rememberable",
-  );
-  expect(rememberable).toEqual([]);
+test("remembers only bounded saved-location creation", () => {
+  const rememberable = (Object.entries(weatherCapabilities.actions) as Array<[string, CapabilityActionDefinition]>)
+    .filter(([, action]) => action.approval === "rememberable")
+    .map(([localId]) => localId);
+  expect(rememberable).toEqual(["location.create"]);
 });
 
 const user = {
@@ -120,7 +126,7 @@ describe("weather capabilities", () => {
       openWorld: false,
       idempotency: "none",
     });
-    expect("review" in weatherCapabilities.actions["location.create"]).toBeFalse();
+    expect(weatherCapabilities.actions["location.create"].review).toBeFunction();
     expect(weatherCapabilities.actions["location.delete"].review).toBeFunction();
   });
 
@@ -158,6 +164,24 @@ describe("weather capabilities", () => {
 
     expect(result).toMatchObject({ ok: true, data: { message: "Permanently delete saved weather location Ulm." } });
     expect(remove).not.toHaveBeenCalled();
+  });
+
+  test("returns a valid app-owned scope from every rememberable action review", async () => {
+    const review = await weatherCapabilities.actions["location.create"].review!(
+      { name: location.name, state: location.state ?? undefined, lat: location.lat, lon: location.lon },
+      userContext,
+    );
+    const results = [review];
+
+    expect(results).toHaveLength(
+      (Object.values(weatherCapabilities.actions) as CapabilityActionDefinition[]).filter((action) => action.approval === "rememberable")
+        .length,
+    );
+    expect(review).toMatchObject({ ok: true, data: { approvalScope: "locations" } });
+    for (const result of results) {
+      expect(result.ok).toBeTrue();
+      if (result.ok) expect(CapabilityActionReviewSchema.safeParse(result.data).success).toBeTrue();
+    }
   });
 
   test("accepts only opaque v1 page cursors", () => {
@@ -280,8 +304,10 @@ describe("weather capabilities", () => {
     expect(result).toMatchObject({ ok: true, data: { data: [{ name: "Ulm", lat: 48.4, lon: 9.99, country: "DE" }] } });
   });
 
-  test("audits allowed creates and denied deletes", async () => {
+  test("audits location writes and returns schema-valid user outcomes from every action", async () => {
     const create = spyOn(weatherService.location.saved, "create").mockResolvedValue(ok(location));
+    spyOn(weatherService.location.saved, "get").mockResolvedValue(location);
+    spyOn(weatherService.location.saved, "remove").mockResolvedValue(ok(undefined));
     const recordAllowed = spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
     const recordDenied = spyOn(audit, "recordResult").mockImplementation(async ({ result }) => result);
 
@@ -290,13 +316,30 @@ describe("weather capabilities", () => {
       userContext,
     );
     const denied = await weatherCapabilities.actions["location.delete"].run({ locationId }, serviceAccountContext);
+    const deleted = await weatherCapabilities.actions["location.delete"].run({ locationId }, userContext);
 
     expect(create).toHaveBeenCalledWith({
       userId,
       data: { name: location.name, state: location.state, lat: location.lat, lon: location.lon },
     });
-    expect(created).toMatchObject({ ok: true, data: { data: location } });
+    expect(created).toMatchObject({ ok: true, data: { data: location, summary: "Saved Ulm for weather forecasts." } });
     expect(denied).toMatchObject({ ok: false, error: { code: "FORBIDDEN" } });
+    expect(deleted).toMatchObject({
+      ok: true,
+      data: { data: { locationId, deleted: true }, summary: "Deleted Ulm from your saved weather locations." },
+    });
+    const successful = [
+      ["location.create", created],
+      ["location.delete", deleted],
+    ] as const;
+    expect(successful).toHaveLength(Object.keys(weatherCapabilities.actions).length);
+    for (const [localId, result] of successful) {
+      expect(result.ok).toBeTrue();
+      if (result.ok) {
+        expect(result.data.summary?.length).toBeGreaterThan(0);
+        expect(capabilityResultSchema(weatherCapabilities.actions[localId].data).safeParse(result.data).success).toBeTrue();
+      }
+    }
     expect(recordAllowed).toHaveBeenCalledWith(expect.objectContaining({ action: "weather.capability.location.create" }));
     expect(recordDenied).toHaveBeenCalledWith(expect.objectContaining({ action: "weather.capability.location.delete" }));
   });

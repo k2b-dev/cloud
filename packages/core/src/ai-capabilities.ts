@@ -9,11 +9,11 @@ import {
   aiCapabilityToolName,
   aiChatTasks,
   aiConversations,
-  isConversationResourceCursor,
   ChatTaskIdSchema,
   ChatTaskOccurrenceIdSchema,
   ChatTaskScheduleInputSchema,
   chatTaskCreateFingerprint,
+  isConversationResourceCursor,
   normalizeChatTaskSchedule,
 } from "@valentinkolb/cloud/ai";
 import {
@@ -123,6 +123,13 @@ const taskData = (task: AiChatTask): z.infer<typeof ChatTaskDataSchema> => ({
 });
 const taskScheduleLabel = (task: AiChatTask): string =>
   task.schedule.kind === "once" ? `${task.schedule.runAt} (${task.timezone})` : `${task.schedule.cron} (${task.timezone})`;
+const taskChatTitle = (task: AiChatTask): string => `“${task.chatTitle}”`;
+const taskUpdateSummary = (input: z.infer<typeof ChatTaskUpdateInputSchema>, task: AiChatTask): string => {
+  if (input.prompt !== undefined && input.schedule !== undefined)
+    return `Changed the instructions and schedule of a task in ${taskChatTitle(task)}.`;
+  if (input.prompt !== undefined) return `Changed the instructions of a task in ${taskChatTitle(task)}.`;
+  return `Changed the schedule of a task in ${taskChatTitle(task)}.`;
+};
 const invalidTaskState = (task: AiChatTask, action: "pause" | "resume" | "run"): string | null => {
   if (action === "pause")
     return task.state === "active" || task.state === "paused" ? null : `Task ${task.shortId} cannot be paused while ${task.state}`;
@@ -349,8 +356,7 @@ export const aiCapabilities = defineCapabilities({
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
         const task = await aiChatTasks.get({ userId: context.user.id, taskId: input.id });
         if (!task) return fail(err.notFound("Task"));
-        const occurrences =
-          (await aiChatTasks.listOccurrences({ userId: context.user.id, taskId: input.id })) ?? [];
+        const occurrences = (await aiChatTasks.listOccurrences({ userId: context.user.id, taskId: input.id })) ?? [];
         return ok({
           data: {
             task: taskData(task),
@@ -490,7 +496,8 @@ export const aiCapabilities = defineCapabilities({
   actions: {
     "task.create": {
       title: "Create a scheduled AI task",
-      description: "Create one reviewed future prompt in an owned AI conversation. Resolve relative user wording to localAt before calling.",
+      description:
+        "Create one reviewed future prompt in an owned AI conversation. Resolve relative user wording to localAt before calling.",
       input: ChatTaskCreateInputSchema,
       data: ChatTaskDataSchema,
       destructive: false,
@@ -527,6 +534,7 @@ export const aiCapabilities = defineCapabilities({
           if (replay)
             return ok({
               data: taskData(replay),
+              summary: `Scheduled a task in ${taskChatTitle(replay)}.`,
               refs: [
                 { type: "core.task", id: replay.shortId },
                 { type: "core.chat", id: replay.chatId },
@@ -560,6 +568,7 @@ export const aiCapabilities = defineCapabilities({
         void reconcileAiChatTasks().catch(() => undefined);
         return ok({
           data: taskData(task),
+          summary: `Scheduled a task in ${taskChatTitle(task)}.`,
           refs: [
             { type: "core.task", id: task.shortId },
             { type: "core.chat", id: task.chatId },
@@ -613,7 +622,11 @@ export const aiCapabilities = defineCapabilities({
         });
         if (!task) return fail(err.notFound("Task"));
         void reconcileAiChatTasks().catch(() => undefined);
-        return ok({ data: taskData(task), refs: [{ type: "core.task", id: task.shortId }] });
+        return ok({
+          data: taskData(task),
+          summary: taskUpdateSummary(input, task),
+          refs: [{ type: "core.task", id: task.shortId }],
+        });
       },
     },
     "task.pause": {
@@ -624,6 +637,7 @@ export const aiCapabilities = defineCapabilities({
       destructive: true,
       openWorld: false,
       idempotency: "none",
+      approval: "rememberable",
       async review(input, context) {
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
         const task = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
@@ -636,6 +650,7 @@ export const aiCapabilities = defineCapabilities({
             { label: "Task", value: task.prompt, display: "block" },
             { label: "Schedule", value: taskScheduleLabel(task) },
           ],
+          approvalScope: `task:${task.shortId}`,
         });
       },
       async run(input, context) {
@@ -651,7 +666,11 @@ export const aiCapabilities = defineCapabilities({
         });
         if (!task) return fail(err.conflict("Task state changed; read it and retry"));
         void reconcileAiChatTasks().catch(() => undefined);
-        return ok({ data: taskData(task), refs: [{ type: "core.task", id: task.shortId }] });
+        return ok({
+          data: taskData(task),
+          summary: `Paused the scheduled task in ${taskChatTitle(task)}.`,
+          refs: [{ type: "core.task", id: task.shortId }],
+        });
       },
     },
     "task.resume": {
@@ -689,7 +708,11 @@ export const aiCapabilities = defineCapabilities({
         });
         if (!task) return fail(err.conflict("Task state changed; read it and retry"));
         void reconcileAiChatTasks().catch(() => undefined);
-        return ok({ data: taskData(task), refs: [{ type: "core.task", id: task.shortId }] });
+        return ok({
+          data: taskData(task),
+          summary: `Resumed the scheduled task in ${taskChatTitle(task)}.`,
+          refs: [{ type: "core.task", id: task.shortId }],
+        });
       },
     },
     "task.run": {
@@ -732,7 +755,11 @@ export const aiCapabilities = defineCapabilities({
         }
         if (!occurrence) return fail(err.conflict("This task already has a queued or running occurrence"));
         void aiChatTaskRuntime.recover().catch(() => undefined);
-        return ok({ data: { id: occurrence.shortId, state: occurrence.state }, refs: [{ type: "core.task", id: task.shortId }] });
+        return ok({
+          data: { id: occurrence.shortId, state: occurrence.state },
+          summary: `Queued a run of the scheduled task in ${taskChatTitle(task)}.`,
+          refs: [{ type: "core.task", id: task.shortId }],
+        });
       },
     },
     "task.delete": {
@@ -758,10 +785,11 @@ export const aiCapabilities = defineCapabilities({
       },
       async run(input, context) {
         if (!context.user) return fail(err.forbidden("Scheduled tasks require a user-backed actor"));
-        if (!(await aiChatTasks.delete({ userId: context.user.id, taskId: input.taskId })))
-          return fail(err.notFound("Task"));
+        const task = await aiChatTasks.get({ userId: context.user.id, taskId: input.taskId });
+        if (!task) return fail(err.notFound("Task"));
+        if (!(await aiChatTasks.delete({ userId: context.user.id, taskId: input.taskId }))) return fail(err.notFound("Task"));
         void reconcileAiChatTasks().catch(() => undefined);
-        return ok({ data: { deleted: true as const } });
+        return ok({ data: { deleted: true as const }, summary: `Deleted the scheduled task in ${taskChatTitle(task)}.` });
       },
     },
     "chat.message": {
@@ -815,6 +843,10 @@ export const aiCapabilities = defineCapabilities({
         if (status === "failed") return fail(err.conflict("The target chat could not accept the message"));
         return ok({
           data: { id: created.message.shortId, status, targetChatId: created.message.targetChatId },
+          summary:
+            status === "delivered"
+              ? `Sent a message to “${created.message.targetTitle}”.`
+              : `Queued a message for “${created.message.targetTitle}”.`,
           refs: [{ type: "core.chat", id: created.message.targetChatId }],
           links: [{ rel: "open", href: chatHref(created.message.targetChatId) }],
         });

@@ -16,6 +16,7 @@ import { z } from "zod";
 import { CurrentWeatherSchema, WeatherDataSchema, WeatherIconSchema, WeatherLocationIdSchema } from "./contracts";
 
 const MAX_CURSOR_OFFSET = 10_000;
+const WEATHER_LOCATIONS_APPROVAL_SCOPE = "locations";
 
 const unavailable = <T>(): CapabilityInvocationResult<T> =>
   fail({
@@ -394,6 +395,7 @@ const runLocationCreate = async (input: z.infer<typeof LocationCreateInputSchema
       const data = mapLocation(result.data);
       return ok({
         data,
+        summary: `Saved ${data.name} for weather forecasts.`,
         refs: [{ type: "weather.location", id: data.id }],
         links: [{ rel: "open" as const, href: locationHref(data.id) }],
       });
@@ -411,8 +413,15 @@ const runLocationDelete = async (input: z.infer<typeof LocationTargetInputSchema
     async () => {
       const userId = requireUserId(context);
       if (!userId.ok) return userId;
+      const location = await weatherService.location.saved.get({ id: input.locationId, userId: userId.data });
+      if (!location) return fail(err.notFound("Location"));
       const result = await weatherService.location.saved.remove({ id: input.locationId, userId: userId.data });
-      return result.ok ? ok({ data: { locationId: input.locationId, deleted: true as const } }) : result;
+      return result.ok
+        ? ok({
+            data: { locationId: input.locationId, deleted: true as const },
+            summary: `Deleted ${mapLocation(location).name} from your saved weather locations.`,
+          })
+        : result;
     },
   );
 
@@ -497,6 +506,21 @@ export const weatherCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "none",
+      approval: "rememberable",
+      review: async (input, context) => {
+        const userId = requireUserId(context);
+        if (!userId.ok) return userId;
+        return ok({
+          message: `Save ${input.name} for weather forecasts.`,
+          details: [
+            { label: "Location", value: input.name },
+            ...(input.state ? [{ label: "State or region", value: input.state }] : []),
+            { label: "Latitude", value: String(input.lat) },
+            { label: "Longitude", value: String(input.lon) },
+          ],
+          approvalScope: WEATHER_LOCATIONS_APPROVAL_SCOPE,
+        });
+      },
       run: runLocationCreate,
     },
     "location.delete": {

@@ -313,6 +313,7 @@ describe("Venue capabilities", () => {
           templateId: templateShortId,
           venueName: "Agent Venue",
         });
+        expect(signup.ok && signup.data.summary).toBe("Signed up for “Agent shift” at Agent Venue.");
         if (!signup.ok) throw new Error(signup.error.message);
         const assignedShifts = await invokeQuery(
           "shift.list",
@@ -359,6 +360,7 @@ describe("Venue capabilities", () => {
           templateId: null,
           note: "Agent-created shift",
         });
+        expect(freeSignup.ok && freeSignup.data.summary).toBe("Signed up for a shift at Agent Venue.");
         const duplicateFree = await invokeAction(
           "assignment.signup_free",
           { venueId: venueShortId, startsAt: freeStart.toISOString(), endsAt: freeEnd.toISOString(), note: "Duplicate" },
@@ -387,6 +389,13 @@ describe("Venue capabilities", () => {
 
         const cancelled = await invokeAction("assignment.cancel", { venueId: venueShortId, assignmentId: signup.data.data.id }, context);
         expect(cancelled.ok && cancelled.data.data).toEqual({ assignmentId: signup.data.data.id, cancelled: true });
+        expect(cancelled.ok && cancelled.data.summary).toBe("Cancelled your shift at Agent Venue.");
+        const successfulActions = [signup, freeSignup, cancelled];
+        expect(successfulActions).toHaveLength(Object.keys(venueCapabilities.actions).length);
+        for (const result of successfulActions) {
+          expect(result.ok).toBeTrue();
+          if (result.ok) expect(result.data.summary?.length).toBeGreaterThan(0);
+        }
         const cancelledAgain = await invokeAction(
           "assignment.cancel",
           { venueId: venueShortId, assignmentId: signup.data.data.id },
