@@ -2,6 +2,7 @@ import { timed as timing } from "@k2b/stdlib/solid";
 import { MultiSelectInput, TextInput } from "@k2b/ui";
 import { createEffect, createSignal, Show } from "solid-js";
 import type { PublicField as Field } from "../../../api/public-dto";
+import { fieldChoiceGroupsFor, fieldTypeGroups } from "../fields/field-type-meta";
 
 type Props = {
   /** Fields the server-side search compiler can search. */
@@ -91,7 +92,10 @@ export default function SearchBar(props: Props) {
               label: f.name,
               icon: f.icon ?? "ti ti-columns",
               description: f.type,
+              groups: fieldTypeGroups(f.type),
             }))}
+            groups={fieldChoiceGroupsFor(props.fields)}
+            groupsAriaLabel="Filter columns"
             renderOption={(option) => (
               <span class="flex min-w-0 items-baseline gap-1.5">
                 <strong class="truncate">{option.label}</strong>

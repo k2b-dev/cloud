@@ -3,7 +3,7 @@ import { Button, DatePicker, DateRangePicker, DateTimePicker, IconButton, MultiS
 import { EntitySearch, type EntitySearchPrincipal } from "@valentinkolb/cloud/account/ui";
 import { createEffect, createMemo, createSignal, For, Index, Match, onMount, Switch, untrack } from "solid-js";
 import type { PublicField as Field } from "../../../api/public-dto";
-import { fieldOption } from "../fields/field-type-meta";
+import { fieldChoiceGroupsFor, fieldOption } from "../fields/field-type-meta";
 import RelationPicker from "../records/RelationPicker";
 import { type FilterOp, filterableFields, opsForType } from "./filter-ops";
 
@@ -105,6 +105,8 @@ export default function FilterPanel(props: Props) {
                     if (v !== null) updateLeaf(index, { fieldId: v });
                   }}
                   options={fields().map((f) => fieldOption(f))}
+                  groups={fieldChoiceGroupsFor(fields())}
+                  groupsAriaLabel="Filter fields"
                   placeholder="Field"
                 />
               </div>

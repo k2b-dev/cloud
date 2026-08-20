@@ -2,7 +2,7 @@ import { Button, IconButton, Select } from "@k2b/ui";
 import { createMemo, Index } from "solid-js";
 import type { PublicField as Field } from "../../../api/public-dto";
 import type { RecordMetaSortKey, RecordQuery } from "../../../contracts";
-import { fieldOption } from "../fields/field-type-meta";
+import { fieldChoiceGroupsFor, fieldOption } from "../fields/field-type-meta";
 
 export type SortRow = NonNullable<RecordQuery["sort"]>[number];
 type Direction = SortRow["direction"];
@@ -85,6 +85,7 @@ export default function SortPanel(props: Props) {
       label: item.label,
       description: item.description,
       icon: item.icon,
+      groups: ["system"],
     })),
   ]);
 
@@ -120,6 +121,8 @@ export default function SortPanel(props: Props) {
                   if (v !== null) updateTarget(index, v);
                 }}
                 options={sortOptions()}
+                groups={fieldChoiceGroupsFor(fields(), ["system"])}
+                groupsAriaLabel="Filter sort fields"
                 placeholder="Sort by"
               />
             </div>
