@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { MailActivityEvent } from "../../service/collaboration";
-import { mailActivityLabel, presentMailActivity } from "./mail-activity-presentation";
+import { mailActivityIcon, mailActivityLabel, presentMailActivity, showMailActivityInline } from "./mail-activity-presentation";
 
 const event = (metadata: Record<string, unknown> = {}): MailActivityEvent => ({
   id: crypto.randomUUID(),
@@ -24,5 +24,21 @@ describe("mail activity presentation", () => {
   test("collapses consecutive duplicate events", () => {
     expect(presentMailActivity([event(), event()])).toHaveLength(1);
     expect(presentMailActivity([event(), event()])[0]?.count).toBe(2);
+  });
+
+  test("uses quiet semantic icons and names workflows explicitly", () => {
+    const workflowEvent = event();
+    workflowEvent.actor = { kind: "workflow", id: "Workflow01", displayName: "Invoice triage", avatarHash: null };
+    workflowEvent.action = "conversation.local_tag_added";
+
+    expect(mailActivityIcon(workflowEvent)).toBe("ti-tag");
+    expect(presentMailActivity([workflowEvent])[0]?.actorLabel).toBe("Workflow Invoice triage");
+    expect(showMailActivityInline(workflowEvent)).toBe(true);
+  });
+
+  test("keeps technical activity and human draft churn out of the inline timeline", () => {
+    expect(showMailActivityInline(event())).toBe(true);
+    expect(showMailActivityInline({ ...event(), action: "command.execute" })).toBe(false);
+    expect(showMailActivityInline({ ...event(), action: "draft.created" })).toBe(false);
   });
 });

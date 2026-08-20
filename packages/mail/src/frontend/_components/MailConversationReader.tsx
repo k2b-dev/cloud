@@ -27,6 +27,7 @@ import type {
   MailDraftSeed,
   SenderIdentity,
 } from "../../contracts";
+import type { MailActivityEvent } from "../../service/collaboration";
 import type { ConversationContentSummary } from "../../service/conversation-summary";
 import type { MessageDetail } from "../../service/messages";
 import { readApiError } from "./api-response";
@@ -37,6 +38,7 @@ import { getMailAction, type MailActionId } from "./mail-actions";
 import { deriveReplyIdentityId, deriveReplyRecipients, forwardMessageBody, forwardSubject, replySubject } from "./mail-compose-derivation";
 import { mailDraftHref, mailDraftSeedHref } from "./mail-compose-route";
 import { initialConversationMessageId, isNearConversationStart, newestFirstMessages } from "./mail-conversation-history";
+import { buildMailConversationTimeline } from "./mail-conversation-timeline";
 import { MAIL_CONVERSATION_TOOLBAR_SECTIONS, type MailConversationToolbarActionId } from "./mail-conversation-toolbar";
 import { storeMailDraftSeed } from "./mail-draft-seed-store";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
@@ -80,6 +82,7 @@ export default function MailConversationReader(props: {
   reference: string | null;
   subject: string;
   messages: MessageDetail[];
+  activity: MailActivityEvent[];
   conversationSummary: ConversationContentSummary | null;
   conversationDrafts: ConversationDraftSummary[];
   totalMessageCount: number;
@@ -112,6 +115,7 @@ export default function MailConversationReader(props: {
       : initialConversationMessageId(props.messages);
   const initialMessageId = selectedHistoryMessageId();
   const orderedMessages = createMemo(() => newestFirstMessages(props.messages));
+  const timeline = createMemo(() => buildMailConversationTimeline(props.messages, props.activity));
   const latestMessage = createMemo(() => orderedMessages()[0] ?? null);
   const [expandedMessages, setExpandedMessages] = createSignal(new Set(initialMessageId ? [initialMessageId] : []));
   const [messageSelections, setMessageSelections] = createSignal<Record<string, string>>({});
@@ -1088,50 +1092,70 @@ export default function MailConversationReader(props: {
               )}
             </Show>
             <div class="mx-auto flex w-full max-w-4xl flex-col gap-2" data-mail-conversation-messages>
-              <For each={orderedMessages()}>
-                {(message) => (
-                  <MailMessageCard
-                    message={message}
-                    expanded={expandedMessages().has(message.id)}
-                    isLatest={props.messages.at(-1)?.id === message.id}
-                    selectionAvailable={Boolean(messageSelections()[message.id])}
-                    context={{
-                      mailboxId: props.mailboxId,
-                      requestUrl: props.requestUrl,
-                      canWrite: props.canWrite,
-                      canAdmin: props.canAdmin,
-                      selectionKey: props.selectionKey,
-                      selectedConversationId: props.selectedConversationId,
-                      totalMessageCount: props.totalMessageCount,
-                      identities: props.identities,
-                      dateConfig: props.dateConfig,
-                      readingFormat: props.readingFormat,
-                      theme: props.theme,
-                      calendarIntegrationAvailable: props.calendarIntegrationAvailable,
-                      composerBusy: composerBusy(),
-                    }}
-                    actions={{
-                      toggle: toggleMessage,
-                      selectionChange: (messageId, value) =>
-                        setMessageSelections((current) => {
-                          if (value)
-                            return current[messageId] === value && Object.keys(current).length === 1 ? current : { [messageId]: value };
-                          if (!(messageId in current)) return current;
-                          const next = { ...current };
-                          delete next[messageId];
-                          return next;
-                        }),
-                      compose: startComposer,
-                      quoteReply: startQuoteReply,
-                      derive: (kind, selectedMessage) => {
-                        void deriveMessage(kind, selectedMessage);
-                      },
-                      reconcile: props.onReconcileAfterWrite,
-                      reassign: props.onReassignMessage,
-                      split: props.onSplitMessage,
-                    }}
-                  />
-                )}
+              <For each={timeline()}>
+                {(item) =>
+                  item.kind === "activity" ? (
+                    <div class="flex min-w-0 items-center gap-2 px-2 py-0.5 text-xs leading-5 text-dimmed" data-mail-conversation-activity>
+                      <i
+                        class={`ti ${item.activity.icon} w-4 shrink-0 text-center ${item.activity.outcome === "failed" ? "text-red-500" : "text-dimmed"}`}
+                        aria-hidden="true"
+                      />
+                      <span class="min-w-0 flex-1">
+                        <span class="font-medium text-secondary">{item.activity.actorLabel}</span> {item.activity.label}
+                        <Show when={item.activity.count > 1}> ({item.activity.count})</Show>
+                      </span>
+                      <time
+                        class="shrink-0 text-dimmed"
+                        dateTime={item.activity.createdAt}
+                        title={dates.formatDateTime(item.activity.createdAt, props.dateConfig)}
+                      >
+                        {dates.formatDateTimeRelative(item.activity.createdAt, props.dateConfig)}
+                      </time>
+                    </div>
+                  ) : (
+                    <MailMessageCard
+                      message={item.message}
+                      expanded={expandedMessages().has(item.message.id)}
+                      isLatest={props.messages.at(-1)?.id === item.message.id}
+                      selectionAvailable={Boolean(messageSelections()[item.message.id])}
+                      context={{
+                        mailboxId: props.mailboxId,
+                        requestUrl: props.requestUrl,
+                        canWrite: props.canWrite,
+                        canAdmin: props.canAdmin,
+                        selectionKey: props.selectionKey,
+                        selectedConversationId: props.selectedConversationId,
+                        totalMessageCount: props.totalMessageCount,
+                        identities: props.identities,
+                        dateConfig: props.dateConfig,
+                        readingFormat: props.readingFormat,
+                        theme: props.theme,
+                        calendarIntegrationAvailable: props.calendarIntegrationAvailable,
+                        composerBusy: composerBusy(),
+                      }}
+                      actions={{
+                        toggle: toggleMessage,
+                        selectionChange: (messageId, value) =>
+                          setMessageSelections((current) => {
+                            if (value)
+                              return current[messageId] === value && Object.keys(current).length === 1 ? current : { [messageId]: value };
+                            if (!(messageId in current)) return current;
+                            const next = { ...current };
+                            delete next[messageId];
+                            return next;
+                          }),
+                        compose: startComposer,
+                        quoteReply: startQuoteReply,
+                        derive: (kind, selectedMessage) => {
+                          void deriveMessage(kind, selectedMessage);
+                        },
+                        reconcile: props.onReconcileAfterWrite,
+                        reassign: props.onReassignMessage,
+                        split: props.onSplitMessage,
+                      }}
+                    />
+                  )
+                }
               </For>
             </div>
           </ScrollArea>

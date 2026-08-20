@@ -787,11 +787,11 @@ export default function MailDetailsPanel(props: {
                     {(event) => (
                       <div class="flex min-w-0 items-center gap-2 text-xs">
                         <i
-                          class={`ti ${event.outcome === "failed" ? "ti-alert-circle text-red-500" : "ti-circle-check text-dimmed"}`}
+                          class={`ti ${event.outcome === "failed" ? "ti-alert-circle text-red-500" : `${event.icon} text-dimmed`}`}
                           aria-hidden="true"
                         />
                         <span class="min-w-0 flex-1 truncate text-secondary">
-                          <span class="font-medium text-primary">{event.actor.displayName}</span> {event.label}
+                          <span class="font-medium text-primary">{event.actorLabel}</span> {event.label}
                           <Show when={event.count > 1}> ({event.count})</Show>
                         </span>
                         <time class="shrink-0 text-xs text-dimmed" dateTime={event.createdAt}>

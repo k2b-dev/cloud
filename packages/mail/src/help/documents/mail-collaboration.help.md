@@ -8,6 +8,8 @@ order: 40
 
 Cloud collaboration stays attached to a conversation while the underlying email remains normal provider mail. Open **Conversation details** to see shared follow-up state separately from your private personal reminder.
 
+The conversation reader places meaningful collaboration and workflow changes quietly between messages in chronological order and updates them while the conversation stays open. Each row names who or which workflow made the change. The broader recent activity list remains in **Conversation details**; low-level processing events do not interrupt the message history.
+
 ## Use ownership and follow-up consistently {icon="route"}
 
 - **Assignee** names the person currently responsible for the conversation.

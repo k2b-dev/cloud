@@ -11,6 +11,7 @@ import { newShortId } from "../lib/short-id";
 import { migrate } from "../migrate";
 import type { MailRequestContext } from "./auth";
 import { cancelPendingAutomaticRepliesInTransaction, prepareAutomaticReplyInTransaction } from "./automatic-reply";
+import { listActivity } from "./collaboration";
 import { getDraft, listConversationDrafts } from "./drafts";
 import { createMailbox } from "./mailboxes";
 import { EMPTY_MESSAGE_PROTOCOL_FACTS } from "./message-protocol";
@@ -1243,5 +1244,15 @@ steps:
       summary_revision: String(Number(conversation.summary_revision) + 1),
       revision: String(Number(conversation.revision) + 1),
     });
+    const activity = await listActivity({ context, mailboxId, conversationId: conversation.id, limit: 10 });
+    expect(activity.ok).toBe(true);
+    if (activity.ok) {
+      expect(activity.data.items).toContainEqual(
+        expect.objectContaining({
+          action: "conversation.summary_updated",
+          actor: expect.objectContaining({ kind: "workflow", displayName: `Summary action ${suffix}` }),
+        }),
+      );
+    }
   });
 });

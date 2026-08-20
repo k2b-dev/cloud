@@ -9,7 +9,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { apiClient } from "../api/client";
 import { MAIL_LIVE_WS_TYPE, type MailLiveClientMessage, type MailLiveServerMessage, parseMailLiveServerMessage } from "../live-events";
 import { resolveMailSearchRoute } from "../search-state";
-import type { ConversationCollaboration } from "../service/collaboration";
+import type { ConversationCollaboration, MailActivityEvent } from "../service/collaboration";
 import type { ConversationLocalTags } from "../service/local-tags";
 import type { ConversationPresenceSnapshot } from "../service/presence";
 import type { MailboxPageData, MailListItem } from "../service/workspace";
@@ -200,6 +200,43 @@ export default function MailWorkspace(props: {
     },
     onFailed: () => setLiveSnapshotDegraded(true),
   });
+
+  type ConversationActivityResult = { conversationId: string; items: MailActivityEvent[] };
+  const activityQuery = query.create<string | null, ConversationActivityResult, MailLiveInvalidation>({
+    source: selectedConversationId,
+    initial: props.data.selectedConversationId
+      ? {
+          source: props.data.selectedConversationId,
+          data: { conversationId: props.data.selectedConversationId, items: props.data.activity },
+        }
+      : undefined,
+    enabled: () => selectedConversationId() !== null,
+    load: async (conversationId, { abortSignal }) => {
+      if (!conversationId) throw new Error("Select a conversation to load its activity");
+      const response = await apiClient.mailboxes[":mailboxId"].activity.$get(
+        {
+          param: { mailboxId },
+          query: { conversationId, limit: "30" },
+        },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw new Error(await readApiError(response, "Conversation activity could not be refreshed"));
+      const page = await response.json();
+      return { conversationId, items: page.items };
+    },
+    subscribe: ({ invalidate }) =>
+      liveHub.register({
+        matches: (invalidation) => {
+          const conversationId = selectedConversationId();
+          return Boolean(conversationId && (invalidation.conversationIds === null || invalidation.conversationIds.has(conversationId)));
+        },
+        invalidate,
+      }),
+  });
+  const conversationActivity = () => {
+    const current = activityQuery.data();
+    return current?.conversationId === data.selectedConversationId && !activityQuery.error() ? current.items : data.activity;
+  };
 
   const workspaceQuery = query.createInfinite<string, WorkspaceRouteResult, string, MailLiveInvalidation>({
     source: routeSource,
@@ -1509,6 +1546,7 @@ export default function MailWorkspace(props: {
                   reference={data.selectedReference}
                   subject={data.selectedSubject}
                   messages={data.detailMessages}
+                  activity={conversationActivity()}
                   conversationSummary={data.conversationSummary}
                   conversationDrafts={data.conversationDrafts}
                   totalMessageCount={selectedListItem()?.messageCount ?? data.detailMessages.length}
@@ -1594,7 +1632,7 @@ export default function MailWorkspace(props: {
               initialCommentsCursor={data.commentsCursor}
               assignableUsers={data.assignableUsers}
               presence={presence().participants}
-              activity={data.activity}
+              activity={conversationActivity()}
               initialReminder={data.reminder}
               detailErrors={data.detailErrors}
               conversationDrafts={data.conversationDrafts}

@@ -5,7 +5,7 @@ section: Work
 order: 110
 description: Connected mailboxes with search, team context, reliable sending, and automation.
 tags: [mail, email, collaboration]
-updated: 2026-08-19
+updated: 2026-08-20
 ---
 
 # Mail
@@ -23,6 +23,8 @@ context such as assignments, comments, local tags, reminders, and follow-up stat
 - Assign conversations, maintain a shared summary, leave internal comments,
   browse by local tag, and mark work done while Mail derives whether the next
   step needs action or is waiting for a reply.
+- See meaningful status, assignment, tag, summary, and workflow changes quietly
+  in the conversation at the time they happened.
 - Continue the newest unfinished conversation draft directly from the reader.
 - Compose and schedule messages through verified sender identities.
 - Review detected mailing lists and safely request unsubscribe or clean up existing messages when permitted.
@@ -97,7 +99,10 @@ returned UTF-8 byte `nextOffset`; a pending or terminal status returns metadata
 without invented content.
 
 The conversation view includes its shared summary, collaboration state, local
-tags, and the most recent messages. It marks the result when earlier messages
+tags, recent messages, and meaningful collaboration activity. New activity is
+refreshed while the conversation stays open. Technical processing events remain
+in the broader activity history instead of interrupting the conversation. The
+composer shows message history only. The result is marked when earlier messages
 are not included, so a person or agent can decide whether to page through the
 complete history.
 

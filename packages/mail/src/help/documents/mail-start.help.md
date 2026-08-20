@@ -61,7 +61,9 @@ The left navigation contains:
 - **Mailbox tools** for synchronization, health, automations, mailing lists, remote images, shared links, and browser email-link handling. Available tools depend on your permission.
 - **Settings** at the bottom when your permission allows it.
 
-The center list shows one row per conversation. The reader groups the messages in that conversation. Use the **Conversation details** button to open team context, local tags, ownership, comments, reminders, and recent activity. You can hide the conversation list when you need more reading space.
+The center list shows one row per conversation. The reader groups the messages in that conversation and quietly places meaningful status, assignment, tag, summary, and workflow activity at the time it happened. Technical processing events stay out of the reading flow. Use the **Conversation details** button to open team context, local tags, ownership, comments, reminders, and the broader recent activity list. You can hide the conversation list when you need more reading space.
+
+The conversation history beside a composer contains messages only, so operational activity does not distract while you write.
 
 ## Work with calendar invitations {icon="calendar-event"}
 

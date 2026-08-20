@@ -6,6 +6,7 @@ import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { ConversationDraftSummary } from "../../contracts";
+import type { MailActivityEvent } from "../../service/collaboration";
 import type { MessageDetail } from "../../service/messages";
 
 const root = mkdtempSync(join(tmpdir(), "mail-conversation-reader-render-tests-"));
@@ -60,7 +61,7 @@ const draft: ConversationDraftSummary = {
 
 const renderReader = (
   conversationDrafts: ConversationDraftSummary[],
-  options: { messages?: MessageDetail[]; selectedMessageId?: string | null } = {},
+  options: { messages?: MessageDetail[]; activity?: MailActivityEvent[]; selectedMessageId?: string | null } = {},
 ) => {
   const messages = options.messages ?? [message];
   return renderToString(() =>
@@ -79,6 +80,7 @@ const renderReader = (
       reference: null,
       subject: message.subject,
       messages,
+      activity: options.activity ?? [],
       conversationSummary: null,
       conversationDrafts,
       totalMessageCount: messages.length,
@@ -156,5 +158,29 @@ describe("Mail conversation reader", () => {
       'class="flex items-start gap-1 rounded-[var(--ui-radius-surface)] p-1 transition-colors bg-[var(--ui-surface-subtle)]',
     );
     expect(olderArticle).toContain('aria-expanded="true"');
+  });
+
+  test("renders meaningful SSR activity inline without turning it into a message card", () => {
+    const html = renderReader([], {
+      activity: [
+        {
+          id: "10",
+          conversationId: "Conv01",
+          actor: { kind: "workflow", id: "Workflow01", displayName: "Invoice triage", avatarHash: null },
+          action: "conversation.local_tag_added",
+          outcome: "confirmed",
+          targetType: "local_tag",
+          targetId: "Tag001",
+          metadata: {},
+          createdAt: "2026-08-16T12:01:00.000Z",
+        },
+      ],
+    });
+
+    expect(html).toContain("data-mail-conversation-activity");
+    expect(html).toContain("ti-tag");
+    expect(html).toContain("Workflow Invoice triage");
+    expect(html).toContain("added a tag");
+    expect(html.match(/<article/g)).toHaveLength(1);
   });
 });

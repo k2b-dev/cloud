@@ -113,6 +113,7 @@ describe("Mail composer history", () => {
       setActive(true);
       await settle();
       expect(requests.filter((url) => url.includes(`/conversations/${conversationId}/messages`))).toHaveLength(1);
+      expect(requests.some((url) => url.includes("/activity"))).toBeFalse();
       expect(requests.some((url) => url.includes("/messages/New001"))).toBeTrue();
       expect(requests.some((url) => url.includes("/messages/Old001"))).toBeFalse();
       expect(dom.root.textContent).toContain("Newest subject");
