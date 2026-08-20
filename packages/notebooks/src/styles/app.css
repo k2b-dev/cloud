@@ -142,13 +142,21 @@
 }
 
 .k2b-ui .notebooks-overview-activity-paper {
+  position: relative;
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: 0.1875rem;
-  padding: 0.625rem 0.75rem;
+  padding: 0.625rem 2.125rem 0.625rem 0.75rem;
   color: inherit;
   text-decoration: none;
+}
+
+.notebooks-overview-activity-icon {
+  position: absolute;
+  top: 0.6875rem;
+  right: 0.75rem;
+  font-size: 0.875rem;
 }
 
 .notebooks-overview-activity-meta {

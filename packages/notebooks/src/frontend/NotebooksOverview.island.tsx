@@ -117,6 +117,25 @@ const activityAvatarIcon = (item: ActivityItem): string | undefined => {
   return undefined;
 };
 
+const activityEventIcon = (action: string): string => {
+  switch (action) {
+    case "note.created":
+      return "ti ti-plus";
+    case "note.deleted":
+      return "ti ti-trash";
+    case "note.restored":
+      return "ti ti-history";
+    case "note.edited":
+      return "ti ti-pencil";
+    case "notebook.created":
+      return "ti ti-notebook";
+    case "notebook.updated":
+      return "ti ti-settings";
+    default:
+      return "ti ti-activity";
+  }
+};
+
 export default function NotebooksOverview(props: Props) {
   const [pinnedNotebookIds, setPinnedNotebookIds] = createSignal(props.initialPinnedNotebookIds);
   const [pinAnnouncement, setPinAnnouncement] = createSignal("");
@@ -280,6 +299,7 @@ export default function NotebooksOverview(props: Props) {
               <li class="notebooks-overview-activity-item">
                 <Avatar name={item.actor.displayName} src={activityAvatarSource(item)} icon={activityAvatarIcon(item)} size="sm" />
                 <Paper as="a" href={activityHref(item)} interactive class="notebooks-overview-activity-paper">
+                  <i class={`${activityEventIcon(item.action)} notebooks-overview-activity-icon app-accent-text`} aria-hidden="true" />
                   <span class="notebooks-overview-activity-meta">
                     <strong>{item.actor.displayName}</strong>
                     <span aria-hidden="true">·</span>
@@ -313,7 +333,7 @@ export default function NotebooksOverview(props: Props) {
     void dialogCore.open<void>(
       (close) => (
         <PanelDialog>
-          <PanelDialog.Header title="Activity" subtitle="Recent changes across your notebooks." icon="ti ti-history" close={close} />
+          <PanelDialog.Header title="Activity" subtitle="Recent changes across your notebooks." close={close} />
           <PanelDialog.Body>{activityFeed()}</PanelDialog.Body>
         </PanelDialog>
       ),
@@ -474,7 +494,7 @@ export default function NotebooksOverview(props: Props) {
 
         <AppWorkspace.Detail id="notebooks-overview-activity" open width="lg" resizable={false} class="notebooks-overview-activity">
           <DetailPanel>
-            <DetailPanel.Header title="Activity" subtitle="Recent changes across your notebooks." icon="ti ti-history" />
+            <DetailPanel.Header title="Activity" subtitle="Recent changes across your notebooks." />
             <DetailPanel.Body scrollPreserveKey="notebooks-overview-activity">{activityFeed()}</DetailPanel.Body>
           </DetailPanel>
         </AppWorkspace.Detail>

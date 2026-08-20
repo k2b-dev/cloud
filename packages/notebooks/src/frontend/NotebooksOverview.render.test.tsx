@@ -65,7 +65,9 @@ describe("Notebooks overview", () => {
     expect(html).toContain("Edited “Launch plan” in Product");
     expect(html).toMatch(/class="k2b-paper notebooks-overview-activity-paper /);
     expect(html).toContain("notebooks-overview-activity-list");
+    expect(html).toContain("ti ti-pencil notebooks-overview-activity-icon app-accent-text");
     expect(html).toContain('datetime="2026-08-20T10:00:00.000Z"');
+    expect(html).not.toContain("k2b-detail-panel__header-icon");
     expect(html).toMatch(/<aside[^>]*id="k2b-workspace-detail-notebooks-overview-activity"(?![^>]*hidden)/);
   });
 
