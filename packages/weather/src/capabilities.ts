@@ -231,6 +231,7 @@ const runLocationRead = async (input: z.infer<typeof LocationReadInputSchema>, c
   const data = mapLocation(location);
   return ok({
     data,
+    summary: `Read saved weather location “${data.name}”.`,
     refs: [{ type: "weather.location", id: data.id }],
     links: [{ rel: "open" as const, href: locationHref(data.id) }],
   });
@@ -331,7 +332,13 @@ const runCurrentForecast = async (input: z.infer<typeof ForecastInputSchema>, co
     const data = await weatherService.forecast.current.get({ lat: source.data.lat, lon: source.data.lon });
     if (!data) return unavailable();
     const projected = projectCurrentWeather(data);
-    return projected.success ? ok({ data: projected.data, ...forecastIdentity(source.data.locationId) }) : unavailable();
+    return projected.success
+      ? ok({
+          data: projected.data,
+          summary: `Read current weather for “${projected.data.stationName}”: ${projected.data.temperature} °C.`,
+          ...forecastIdentity(source.data.locationId),
+        })
+      : unavailable();
   } catch {
     return unavailable();
   }
@@ -344,7 +351,13 @@ const runForecast = async (input: z.infer<typeof ForecastInputSchema>, context: 
     const data = await weatherService.forecast.get({ lat: source.data.lat, lon: source.data.lon });
     if (!data) return unavailable();
     const projected = projectWeatherData(data);
-    return projected.success ? ok({ data: projected.data, ...forecastIdentity(source.data.locationId) }) : unavailable();
+    return projected.success
+      ? ok({
+          data: projected.data,
+          summary: `Read weather forecast for “${projected.data.current.stationName}”.`,
+          ...forecastIdentity(source.data.locationId),
+        })
+      : unavailable();
   } catch {
     return unavailable();
   }
@@ -451,7 +464,8 @@ export const weatherCapabilities = defineCapabilities({
   queries: {
     "location.search": {
       title: "Search saved weather locations",
-      description: "Normal discovery path for saved weather locations: find owned locations by name or state and return weather.location refs.",
+      description:
+        "Find an owned saved location by name or state when its ID is unknown. Use returned weather.location refs with location.read, forecast.current, or forecast.get; use city.search for unsaved places.",
       input: UniversalSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -469,7 +483,8 @@ export const weatherCapabilities = defineCapabilities({
     },
     "location.list": {
       title: "List my saved weather locations",
-      description: "List the current user's saved weather locations with bounded pagination and item-local weather.location refs.",
+      description:
+        "Normal entry for browsing all saved locations. Use returned weather.location refs or IDs with location.read, forecast.current, or forecast.get; use location.search to filter by name or state.",
       input: LocationListInputSchema,
       data: z.array(LocationListItemSchema).max(100),
       openWorld: false,
@@ -477,7 +492,7 @@ export const weatherCapabilities = defineCapabilities({
     },
     "location.read": {
       title: "Read saved weather location",
-      description: "Read one owned saved weather location from a weather.location ref or saved-location ID.",
+      description: "Read one weather.location ref returned by location.list, location.search, or location.create.",
       input: LocationReadInputSchema,
       data: LocationSchema,
       openWorld: false,
@@ -486,7 +501,7 @@ export const weatherCapabilities = defineCapabilities({
     "forecast.current": {
       title: "Get current weather",
       description:
-        "Get current weather for one owned saved location or explicit coordinates. Temperatures use degrees Celsius, wind uses km/h, precipitation uses mm, pressure uses hPa, and visibility uses metres.",
+        "Get current conditions for a saved location ID from location.list/search or explicit coordinates from city.search. Use forecast.get when hourly or daily outlooks are needed. Units are °C, km/h, mm, hPa, and metres.",
       input: ForecastInputSchema,
       data: CurrentWeatherSchema,
       openWorld: true,
@@ -495,7 +510,7 @@ export const weatherCapabilities = defineCapabilities({
     "forecast.get": {
       title: "Get weather forecast",
       description:
-        "Get current conditions plus up to 12 hourly and 7 daily forecasts for one owned saved location or explicit coordinates. Temperatures use degrees Celsius, wind uses km/h, precipitation uses mm, and sunshine uses minutes.",
+        "Get current conditions plus hourly and daily outlooks for a saved location ID from location.list/search or explicit coordinates from city.search. Use forecast.current for current conditions only. Units are °C, km/h, mm, and sunshine minutes.",
       input: ForecastInputSchema,
       data: WeatherDataSchema,
       openWorld: true,

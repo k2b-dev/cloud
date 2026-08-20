@@ -128,6 +128,9 @@ describe("weather capabilities", () => {
     });
     expect(weatherCapabilities.actions["location.create"].review).toBeFunction();
     expect(weatherCapabilities.actions["location.delete"].review).toBeFunction();
+    expect(weatherCapabilities.queries["location.list"].description).toContain("Normal entry for browsing all saved locations");
+    expect(weatherCapabilities.queries["location.search"].description).toContain("when its ID is unknown");
+    expect(weatherCapabilities.queries["forecast.current"].description).toContain("Use forecast.get");
   });
 
   test("keeps inputs closed and bounded", () => {
@@ -243,6 +246,15 @@ describe("weather capabilities", () => {
     });
   });
 
+  test("reads a saved location with a human-readable summary", async () => {
+    const get = spyOn(weatherService.location.saved, "get").mockResolvedValue(location);
+
+    const result = await weatherCapabilities.queries["location.read"].run({ id: locationId }, userContext);
+
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ ok: true, data: { summary: "Read saved weather location “Ulm”." } });
+  });
+
   test("resolves an owned saved location through the existing forecast service", async () => {
     const getLocation = spyOn(weatherService.location.saved, "get").mockResolvedValue(location);
     const getCurrent = spyOn(weatherService.forecast.current, "get").mockResolvedValue(currentWeather);
@@ -250,10 +262,13 @@ describe("weather capabilities", () => {
     const result = await weatherCapabilities.queries["forecast.current"].run({ source: { kind: "saved", locationId } }, userContext);
 
     expect(getLocation).toHaveBeenCalledWith({ id: locationId, userId });
+    expect(getLocation).toHaveBeenCalledTimes(1);
     expect(getCurrent).toHaveBeenCalledWith({ lat: String(location.lat), lon: String(location.lon) });
+    expect(getCurrent).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       ok: true,
       data: {
+        summary: "Read current weather for “Ulm”: 22 °C.",
         refs: [{ type: "weather.location", id: locationId }],
         links: [{ rel: "open", href: `/app/weather/${locationId}` }],
       },
