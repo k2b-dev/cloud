@@ -3,6 +3,8 @@ import { compileCapabilityManifest } from "@valentinkolb/cloud/capabilities/test
 import {
   CAPABILITY_MAX_RESULT_BYTES,
   type CapabilityActionDefinition,
+  type CapabilityActionReviewResult,
+  CapabilityActionReviewSchema,
   type CapabilityExecutionContext,
   type User,
 } from "@valentinkolb/cloud/contracts";
@@ -41,16 +43,22 @@ const commentId = "Com001";
 const tagId = "Tag001";
 const createdAt = "2026-08-02T08:00:00.000Z";
 
-test("only exposes remembered approval for reversible Space changes", () => {
+test("declares remembered approval for bounded Space changes", () => {
   const rememberable = (Object.entries(spacesCapabilities.actions) as Array<[string, CapabilityActionDefinition]>)
     .filter(([, action]) => action.approval === "rememberable")
     .map(([localId]) => localId)
     .sort();
   expect(rememberable).toEqual([
     "calendar-invitation.response.commit",
+    "comment.create",
     "comment.update",
     "event.invitation.commit",
     "event.update",
+    "item.reference.add",
+    "item.reference.remove",
+    "item.tags.set",
+    "task.blocker.add",
+    "task.blocker.remove",
     "task.set-completed",
     "task.update",
   ]);
@@ -314,6 +322,7 @@ describe("spaces capabilities", () => {
       "item.delete",
       "item.reference.add",
       "item.reference.remove",
+      "item.tags.set",
       "task.blocker.add",
       "task.blocker.remove",
       "task.create",
@@ -328,11 +337,17 @@ describe("spaces capabilities", () => {
     ).toEqual([
       "calendar-invitation.import",
       "calendar-invitation.response.commit",
+      "comment.create",
       "comment.delete",
       "comment.update",
       "event.invitation.commit",
       "event.update",
       "item.delete",
+      "item.reference.add",
+      "item.reference.remove",
+      "item.tags.set",
+      "task.blocker.add",
+      "task.blocker.remove",
       "task.set-completed",
       "task.update",
     ]);
@@ -584,7 +599,10 @@ describe("spaces capabilities", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      data: { links: [{ rel: "open", href: `/app/spaces/${spaceId}?item=${itemId}` }] },
+      data: {
+        approvalScope: `space:${spaceId}`,
+        links: [{ rel: "open", href: `/app/spaces/${spaceId}?item=${itemId}` }],
+      },
     });
   });
 
@@ -598,6 +616,7 @@ describe("spaces capabilities", () => {
         itemId,
         description: "First line\n\nSecond line",
         deadline: "2026-08-20T15:00:00.000Z",
+        estimatedDurationMinutes: 90,
       },
       userContext,
     );
@@ -609,9 +628,112 @@ describe("spaces capabilities", () => {
           { label: "Task", value: task.title },
           { label: "Description", value: "First line\n\nSecond line", display: "block" },
           { label: "Deadline", value: "2026-08-20T15:00:00.000Z", format: "date-time" },
+          { label: "Estimated duration", value: "90 minutes" },
+        ],
+        approvalScope: `space:${spaceId}`,
+      },
+    });
+  });
+
+  test("scopes tag and comment approvals to their understandable work context", async () => {
+    spyOn(spacesService.item, "get").mockResolvedValue(task);
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    spyOn(spacesService.space, "getDetail").mockResolvedValue({
+      ...space,
+      columns: [],
+      tags: [tag],
+    });
+
+    const tags = await spacesCapabilities.actions["item.tags.set"].review!({ itemId, tagIds: [tagId] }, userContext);
+    const commentReview = await spacesCapabilities.actions["comment.create"].review!({ itemId, content: "Draft is ready." }, userContext);
+
+    expect(tags).toMatchObject({
+      ok: true,
+      data: {
+        approvalScope: `space:${spaceId}`,
+        details: [
+          { label: "Item", value: task.title },
+          { label: "Tags", value: tag.name },
         ],
       },
     });
+    expect(commentReview).toMatchObject({
+      ok: true,
+      data: {
+        approvalScope: `item:${itemId}`,
+        details: [
+          { label: "Item", value: task.title },
+          { label: "Comment", value: "Draft is ready.", display: "block" },
+        ],
+      },
+    });
+  });
+
+  test("returns a scope from every rememberable action review", async () => {
+    const getItem = spyOn(spacesService.item, "get").mockResolvedValue(task);
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    spyOn(spacesService.space, "getDetail").mockResolvedValue({ ...space, columns: [], tags: [tag] });
+    spyOn(spacesService.comment, "get").mockResolvedValue(comment);
+    spyOn(spacesService.calendarInvitations, "getEventInvitationCommitContext").mockResolvedValue({
+      ok: true,
+      data: {
+        deliveryId: "99999999-9999-4999-8999-999999999999",
+        itemId: itemUuid,
+        spaceId: spaceUuid,
+        draftId: "draft1",
+        title: event.title,
+      },
+    });
+    spyOn(spacesService.calendarInvitations, "getCalendarResponseCommitContext").mockResolvedValue({
+      ok: true,
+      data: { itemId: itemUuid, spaceId: spaceUuid, title: event.title },
+    });
+
+    const results: CapabilityActionReviewResult[] = [
+      await spacesCapabilities.actions["item.reference.add"].review!(
+        { itemId, reference: { ref: { type: "notebooks.note", id: "Note01" }, label: "Release notes" } },
+        userContext,
+      ),
+      await spacesCapabilities.actions["item.reference.remove"].review!(
+        { itemId, ref: { type: "notebooks.note", id: "Note01" } },
+        userContext,
+      ),
+      await spacesCapabilities.actions["item.tags.set"].review!({ itemId, tagIds: [tagId] }, userContext),
+      await spacesCapabilities.actions["task.blocker.add"].review!({ itemId, blockerItemId: itemId }, userContext),
+      await spacesCapabilities.actions["task.blocker.remove"].review!({ itemId, blockerItemId: itemId }, userContext),
+      await spacesCapabilities.actions["task.update"].review!({ itemId, title: "Updated task" }, userContext),
+      await spacesCapabilities.actions["task.set-completed"].review!({ itemId, completed: true }, userContext),
+      await spacesCapabilities.actions["comment.create"].review!({ itemId, content: "Ready." }, userContext),
+      await spacesCapabilities.actions["comment.update"].review!({ commentId, content: "Updated." }, userContext),
+    ];
+
+    getItem.mockResolvedValue(event);
+    results.push(
+      await spacesCapabilities.actions["event.update"].review!({ itemId, title: "Updated event" }, userContext),
+      await spacesCapabilities.actions["event.invitation.commit"].review!(
+        { deliveryId: "99999999-9999-4999-8999-999999999999" },
+        userContext,
+      ),
+      await spacesCapabilities.actions["calendar-invitation.response.commit"].review!(
+        { mailboxId: "mail01", messageId: "msg001", participationStatus: "accepted", draftId: "draft1" },
+        userContext,
+      ),
+    );
+
+    expect(results).toHaveLength(
+      (Object.values(spacesCapabilities.actions) as CapabilityActionDefinition[]).filter((action) => action.approval === "rememberable")
+        .length,
+    );
+    for (const [index, result] of results.entries()) {
+      expect(result.ok).toBeTrue();
+      if (result.ok) {
+        expect(typeof result.data.approvalScope).toBe("string");
+        const parsed = CapabilityActionReviewSchema.safeParse(result.data);
+        if (!parsed.success) throw new Error(`Review ${index} is invalid: ${JSON.stringify(parsed.error.issues)}`);
+      }
+    }
   });
 
   test("reviews an existing calendar import against the internal Space boundary", async () => {
@@ -707,6 +829,22 @@ describe("spaces capabilities", () => {
       data: { data: { kind: "task", id: itemId }, refs: [{ type: "spaces.item", id: itemId }] },
     });
     expect(recordAllowed).toHaveBeenCalledWith(expect.objectContaining({ action: "spaces.capability.task.create" }));
+  });
+
+  test("sets item tags through the existing item update boundary", async () => {
+    spyOn(spacesService.item, "get").mockResolvedValue(task);
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    const update = spyOn(spacesService.item, "update").mockResolvedValue({ ok: true, data: { ...task, tags: [tag] } });
+    spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+
+    const result = await spacesCapabilities.actions["item.tags.set"].run({ itemId, tagIds: [tagId] }, userContext);
+
+    expect(update).toHaveBeenCalledWith({ id: itemUuid, data: { tagIds: [tagUuid] } });
+    expect(result).toMatchObject({
+      ok: true,
+      data: { data: { id: itemId, tags: [{ id: tagId }] }, refs: [{ type: "spaces.item", id: itemId }] },
+    });
   });
 
   test("reads comments through parent Space access without exposing avatar hashes", async () => {

@@ -76,6 +76,13 @@ export const TaskDependencyRemoveDataSchema = z
   .object({ itemId: ResourceShortIdSchema, blockerItemId: ResourceShortIdSchema, removed: z.literal(true) })
   .strict();
 
+export const ItemTagsSetInputSchema = z
+  .object({
+    itemId: ResourceShortIdSchema.describe("Writable task or event ID."),
+    tagIds: ResourceIdListSchema.describe("Complete replacement set of tag IDs from this Space."),
+  })
+  .strict();
+
 const SpaceColumnDataSchema = z
   .object({
     id: ResourceShortIdSchema,

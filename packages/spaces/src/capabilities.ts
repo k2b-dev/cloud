@@ -58,6 +58,7 @@ import {
   ItemResourceReferenceListInputSchema,
   ItemResourceReferenceRemoveDataSchema,
   ItemResourceReferenceRemoveInputSchema,
+  ItemTagsSetInputSchema,
   SpaceAssigneeListDataSchema,
   SpaceAssigneeListInputSchema,
   SpaceDetailDataSchema,
@@ -106,6 +107,9 @@ const truncateText = (value: string, maxBytes: number): { text: string; truncate
 };
 
 type ReviewDetails = NonNullable<CapabilityActionReview["details"]>;
+
+const spaceApprovalScope = (spaceId: string): string => `space:${spaceId}`;
+const itemApprovalScope = (itemId: string): string => `item:${itemId}`;
 
 const capabilityDateConfig = async () => ({
   timeZone: normalizeTimeZone(String((await settingsGet<string>("app.timezone")) || "").trim(), "UTC"),
@@ -776,6 +780,15 @@ const runItemReferenceRemove = async (input: z.infer<typeof ItemResourceReferenc
     });
   });
 
+const runItemTagsSet = async (input: z.infer<typeof ItemTagsSetInputSchema>, context: CapabilityExecutionContext) =>
+  audited(actionAudit(context, "item.tags.set", "space_item", input.itemId), async () => {
+    const resolved = await requireItem(input.itemId, context, "write");
+    if (!resolved.ok) return resolved;
+    const tagIds = await spacesPublicResources.resolveSpacePublicIds("tags", resolved.data.internalSpaceId, input.tagIds);
+    if (!tagIds) return fail(err.badInput("Unknown Space tag"));
+    return itemMutationResult(await spacesService.item.update({ id: resolved.data.internalId, data: { tagIds } }));
+  });
+
 const runTaskDependencyList = async (input: z.infer<typeof TaskDependencyListInputSchema>, context: CapabilityExecutionContext) => {
   const resolved = await requireItem(input.itemId, context, "read");
   if (!resolved.ok) return resolved;
@@ -1303,6 +1316,21 @@ export const spacesCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "none",
+      approval: "rememberable",
+      review: async (input, context) => {
+        const resolved = await requireItem(input.itemId, context, "write");
+        if (!resolved.ok) return resolved;
+        return ok({
+          message: `Link ${input.reference.label} to ${resolved.data.item.title}.`,
+          details: [
+            { label: "Item", value: resolved.data.item.title },
+            { label: "Resource", value: input.reference.label },
+            { label: "Reference", value: `${input.reference.ref.type}:${input.reference.ref.id}` },
+          ],
+          links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+          approvalScope: spaceApprovalScope(resolved.data.item.spaceId),
+        });
+      },
       run: runItemReferenceAdd,
     },
     "item.reference.remove": {
@@ -1313,7 +1341,43 @@ export const spacesCapabilities = defineCapabilities({
       destructive: true,
       openWorld: false,
       idempotency: "none",
+      approval: "rememberable",
+      review: async (input, context) => {
+        const resolved = await requireItem(input.itemId, context, "write");
+        if (!resolved.ok) return resolved;
+        return ok({
+          message: `Unlink a Cloud resource from ${resolved.data.item.title}.`,
+          details: [
+            { label: "Item", value: resolved.data.item.title },
+            { label: "Reference", value: `${input.ref.type}:${input.ref.id}` },
+          ],
+          links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+          approvalScope: spaceApprovalScope(resolved.data.item.spaceId),
+        });
+      },
       run: runItemReferenceRemove,
+    },
+    "item.tags.set": {
+      title: "Set item tags",
+      description: "Replace the tags on one writable task or event without changing its other fields.",
+      input: ItemTagsSetInputSchema,
+      data: ItemDataSchema,
+      destructive: true,
+      openWorld: false,
+      idempotency: "none",
+      approval: "rememberable",
+      review: async (input, context) => {
+        const resolved = await requireItem(input.itemId, context, "write");
+        if (!resolved.ok) return resolved;
+        const details = await relationReviewDetails({ tagIds: input.tagIds }, resolved.data.internalSpaceId);
+        return ok({
+          message: `Replace the tags on ${resolved.data.item.title}.`,
+          details: [{ label: "Item", value: resolved.data.item.title }, ...details],
+          links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+          approvalScope: spaceApprovalScope(resolved.data.item.spaceId),
+        });
+      },
+      run: runItemTagsSet,
     },
     "task.blocker.add": {
       title: "Add task blocker",
@@ -1323,6 +1387,27 @@ export const spacesCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "none",
+      approval: "rememberable",
+      review: async (input, context) => {
+        const [resolved, blocker] = await Promise.all([
+          requireItem(input.itemId, context, "write"),
+          requireItem(input.blockerItemId, context, "read"),
+        ]);
+        if (!resolved.ok) return resolved;
+        if (!blocker.ok) return blocker;
+        if (isEvent(resolved.data.item) || isEvent(blocker.data.item))
+          return fail(err.badInput("Task dependencies can only connect tasks"));
+        if (resolved.data.item.spaceId !== blocker.data.item.spaceId) return fail(err.badInput("Task dependencies must stay in one Space"));
+        return ok({
+          message: `Block ${resolved.data.item.title} with ${blocker.data.item.title}.`,
+          details: [
+            { label: "Task", value: resolved.data.item.title },
+            { label: "Blocked by", value: blocker.data.item.title },
+          ],
+          links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+          approvalScope: spaceApprovalScope(resolved.data.item.spaceId),
+        });
+      },
       run: runTaskDependencyAdd,
     },
     "task.blocker.remove": {
@@ -1333,6 +1418,27 @@ export const spacesCapabilities = defineCapabilities({
       destructive: true,
       openWorld: false,
       idempotency: "none",
+      approval: "rememberable",
+      review: async (input, context) => {
+        const [resolved, blocker] = await Promise.all([
+          requireItem(input.itemId, context, "write"),
+          requireItem(input.blockerItemId, context, "read"),
+        ]);
+        if (!resolved.ok) return resolved;
+        if (!blocker.ok) return blocker;
+        if (isEvent(resolved.data.item) || isEvent(blocker.data.item))
+          return fail(err.badInput("Task dependencies can only connect tasks"));
+        if (resolved.data.item.spaceId !== blocker.data.item.spaceId) return fail(err.badInput("Task dependencies must stay in one Space"));
+        return ok({
+          message: `Remove ${blocker.data.item.title} as a blocker of ${resolved.data.item.title}.`,
+          details: [
+            { label: "Task", value: resolved.data.item.title },
+            { label: "Blocked by", value: blocker.data.item.title },
+          ],
+          links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+          approvalScope: spaceApprovalScope(resolved.data.item.spaceId),
+        });
+      },
       run: runTaskDependencyRemove,
     },
     "task.create": {
@@ -1378,10 +1484,19 @@ export const spacesCapabilities = defineCapabilities({
                     : { label: "Deadline", value: input.deadline, format: "date-time" as const },
                 ]
               : []),
+            ...(input.estimatedDurationMinutes !== undefined
+              ? [
+                  {
+                    label: "Estimated duration",
+                    value: input.estimatedDurationMinutes === null ? "Clear estimate" : `${input.estimatedDurationMinutes} minutes`,
+                  },
+                ]
+              : []),
             ...(input.priority !== undefined ? [{ label: "Priority", value: input.priority ?? "No priority" }] : []),
             ...relations,
           ],
           links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+          approvalScope: spaceApprovalScope(resolved.data.item.spaceId),
         });
       },
       run: runTaskUpdate,
@@ -1406,6 +1521,7 @@ export const spacesCapabilities = defineCapabilities({
           message: `${input.completed ? "Complete" : "Reopen"} task ${resolved.data.item.title}.`,
           details: [{ label: "Task", value: resolved.data.item.title }],
           links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+          approvalScope: spaceApprovalScope(resolved.data.item.spaceId),
         });
       },
       run: runTaskSetCompleted,
@@ -1491,6 +1607,7 @@ export const spacesCapabilities = defineCapabilities({
             ...relations,
           ],
           links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+          approvalScope: spaceApprovalScope(resolved.data.item.spaceId),
         });
       },
       run: runEventUpdate,
@@ -1530,6 +1647,7 @@ export const spacesCapabilities = defineCapabilities({
             { label: "Draft", value: delivery.data.draftId },
           ],
           links: [{ rel: "open" as const, href: buildSpaceItemHref(item.data.item.spaceId, item.data.item.id) }],
+          approvalScope: spaceApprovalScope(item.data.item.spaceId),
         });
       },
       run: runEventInvitationCommit,
@@ -1561,6 +1679,21 @@ export const spacesCapabilities = defineCapabilities({
       destructive: false,
       openWorld: false,
       idempotency: "none",
+      approval: "rememberable",
+      review: async (input, context) => {
+        if (!context.user) return fail(err.forbidden("Comments require a user-backed actor"));
+        const resolved = await requireItem(input.itemId, context, "write");
+        if (!resolved.ok) return resolved;
+        return ok({
+          message: `Post a comment on ${resolved.data.item.title}.`,
+          details: [
+            { label: "Item", value: resolved.data.item.title },
+            { label: "Comment", value: input.content, display: "block" },
+          ],
+          links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
+          approvalScope: itemApprovalScope(input.itemId),
+        });
+      },
       run: runCommentCreate,
     },
     "comment.update": {
@@ -1585,6 +1718,7 @@ export const spacesCapabilities = defineCapabilities({
             { label: "Replacement comment", value: input.content, display: "block" },
           ],
           links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
+          approvalScope: itemApprovalScope(resolved.data.item.id),
         });
       },
       run: runCommentUpdate,
@@ -1676,6 +1810,7 @@ export const spacesCapabilities = defineCapabilities({
             { label: "Draft", value: input.draftId },
           ],
           links: [{ rel: "open" as const, href: buildSpaceItemHref(item.data.item.spaceId, item.data.item.id) }],
+          approvalScope: spaceApprovalScope(item.data.item.spaceId),
         });
       },
       run: runCalendarInvitationResponseCommit,

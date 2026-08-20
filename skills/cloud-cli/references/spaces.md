@@ -24,12 +24,24 @@ Most item commands accept a space short ID or exact name first, or `--space <sho
 ```bash
 cld spaces items "Roadmap" --status active --query "release" --json
 cld spaces item "Roadmap" "Publish release notes" --json
-cld spaces add-item "Roadmap" "Publish release notes" --column "To do" --deadline 2026-07-20
-cld spaces update-item "Roadmap" "Publish release notes" --priority high
+cld spaces add-item "Roadmap" "Publish release notes" --column "To do" --deadline 2026-07-20 --estimate-minutes 90
+cld spaces update-item "Roadmap" "Publish release notes" --priority high --estimate-minutes 60
+cld spaces update-item "Roadmap" "Publish release notes" --clear-estimate
 cld spaces done "Roadmap" "Publish release notes"
 ```
 
-Use `cld spaces get <space> --json` to see the available columns and tags before creating or moving an item. Pass long descriptions through `--file` or `--stdin`.
+Use `cld spaces get <space> --json` to see the available columns and tags before creating or moving an item. Repeat `--tag` or `--assignee` to select several values. Pass long descriptions through `--file` or `--stdin`.
+
+## Manage task dependencies
+
+```bash
+cld spaces blockers "Roadmap" "Publish release notes" --json
+cld spaces blocks "Roadmap" "Approve release" --json
+cld spaces block "Roadmap" "Publish release notes" "Approve release"
+cld spaces unblock "Roadmap" "Publish release notes" "Approve release"
+```
+
+`block` reads as “the first task is blocked by the second task.” Both tasks must belong to the same Space, and dependencies cannot form a cycle. `done` fails while a task still has an active blocker; complete or remove every active blocker first.
 
 ## Comments and calendar
 
@@ -81,7 +93,7 @@ Run `cld spaces <command> --help` for flags and argument order.
 | Area | Commands |
 | --- | --- |
 | Spaces | `list`, `use`, `current`, `get`, `create` |
-| Items | `items`, `item`, `add-item`, `update-item`, `done`, `reopen` |
+| Items | `items`, `item`, `add-item`, `update-item`, `blockers`, `blocks`, `block`, `unblock`, `done`, `reopen` |
 | Comments | `comments`, `comment` |
 | Calendar | `calendar`, `overlap`, `invitation context`, `invitation draft`, `mail event-source` |
 | Access | `access list`, `access grant`, `access set`, `access revoke`, `access search-principals` |

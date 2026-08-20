@@ -13,5 +13,10 @@ describe("spacesHelp", () => {
 
     expect(spacesHelp.getMarkdown("spaces-start")).toContain("Spaces is for shared work");
     expect(spacesHelp.getMarkdown("spaces-troubleshooting")).toContain("A space is missing from the overview");
+    expect(spacesHelp.getMarkdown("spaces-workflow")).toContain("**Estimated duration:**");
+    expect(spacesHelp.getMarkdown("spaces-workflow")).toContain("**Blocked by:**");
+    expect(spacesHelp.getMarkdown("spaces-workflow")).toContain("**Blocks:**");
+    expect(spacesHelp.getMarkdown("spaces-workflow")).toContain("**Related tasks:**");
+    expect(spacesHelp.getMarkdown("spaces-troubleshooting")).toContain("A task cannot be completed");
   });
 });

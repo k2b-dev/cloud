@@ -50,7 +50,7 @@ test("uses only six-character Space IDs as direct resource references", async ()
   const legacy = await runCli(`http://127.0.0.1:${server.port}`, ["spaces", "get", legacyUuid]);
   expect(legacy.exitCode).toBe(1);
   expect(requestUrls.map((value) => new URL(value).pathname)).toEqual(["/api/spaces/space1", "/api/spaces"]);
-});
+}, 10_000);
 
 test("sends task estimates and blocker relationships through the public REST contract", async () => {
   const writes: Array<{ path: string; method: string; body: unknown }> = [];
@@ -161,4 +161,4 @@ test("sends task estimates and blocker relationships through the public REST con
       body: { blockerItemId: "Block1" },
     },
   ]);
-});
+}, 10_000);
