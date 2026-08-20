@@ -1656,6 +1656,7 @@ const requireConversationForReview = async (
     subject: reviewSubject(message.subject),
     href: conversationHref(scope.data.shortId, conversationId),
     mailboxInternalId: scope.data.id,
+    conversationInternalId: resolvedConversation.data,
   });
 };
 
@@ -2228,17 +2229,17 @@ const actionDefinitions = {
       });
     },
     run: async (input: z.output<typeof c.ConversationTagUpdateInputSchema>, context: CapabilityExecutionContext) => {
-      const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
-      if (!scope.ok) return scope;
+      const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
+      if (!conversation.ok) return conversation;
       const [addTagIds, removeTagIds] = await Promise.all([
-        publicResources.resolveMailboxPublicIds("tags", scope.data.mailbox.id, input.addTagIds),
-        publicResources.resolveMailboxPublicIds("tags", scope.data.mailbox.id, input.removeTagIds),
+        publicResources.resolveMailboxPublicIds("tags", conversation.data.mailboxInternalId, input.addTagIds),
+        publicResources.resolveMailboxPublicIds("tags", conversation.data.mailboxInternalId, input.removeTagIds),
       ]);
       if (!addTagIds || !removeTagIds) return fail(err.notFound("Mail resource"));
       const current = await localTags.getConversationLocalTags({
         context: requestContext(context),
-        mailboxId: scope.data.mailbox.id,
-        conversationId: scope.data.conversationId,
+        mailboxId: conversation.data.mailboxInternalId,
+        conversationId: conversation.data.conversationInternalId,
       });
       if (!current.ok) return current;
       const next = new Set(current.data.tags.map((tag) => tag.id));
@@ -2246,8 +2247,8 @@ const actionDefinitions = {
       for (const id of removeTagIds) next.delete(id);
       const result = await localTags.setConversationLocalTags({
         context: requestContext(context),
-        mailboxId: scope.data.mailbox.id,
-        conversationId: scope.data.conversationId,
+        mailboxId: conversation.data.mailboxInternalId,
+        conversationId: conversation.data.conversationInternalId,
         input: { expectedRevision: input.expectedRevision, tagIds: [...next] },
       });
       if (!result.ok) return result;
@@ -2263,8 +2264,10 @@ const actionDefinitions = {
         },
         summary: truncateText(
           result.data.tags.length > 0
-            ? `Updated conversation tags: ${result.data.tags.map((tag) => tag.name).join(", ")}`
-            : "Removed all conversation tags",
+            ? `Set tags on “${truncateText(conversation.data.subject, 180).text}” to ${
+                truncateText(result.data.tags.map((tag) => tag.name).join(", "), 250).text
+              }.`
+            : `Removed all tags from “${truncateText(conversation.data.subject, 450).text}”.`,
           500,
         ).text,
         ...conversationMetadata(input.mailboxId, input.conversationId),

@@ -915,6 +915,55 @@ describe("mail capabilities", () => {
     });
   });
 
+  test("summarizes a tag update with the readable conversation and final state", async () => {
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: { items: [{ subject: "Planning session" }], nextCursor: null },
+    } as never);
+    spyOn(publicResources, "resolveMailboxPublicIds").mockImplementation(async (_table, _mailboxId, ids) =>
+      ids.map((id) => internalIdsByTable.tags.get(id)!).filter(Boolean),
+    );
+    spyOn(localTags, "getConversationLocalTags").mockResolvedValue({
+      ok: true,
+      data: { conversationId: internalConversationId, conversationRevision: 4, tags: [] },
+    });
+    spyOn(localTags, "setConversationLocalTags").mockResolvedValue({
+      ok: true,
+      data: {
+        conversationId: internalConversationId,
+        conversationRevision: 5,
+        tags: [
+          {
+            id: internalConversationId,
+            mailboxId: internalMailboxId,
+            name: "customer",
+            color: "blue",
+            revision: 1,
+            createdAt: "2026-08-20T10:00:00.000Z",
+            updatedAt: "2026-08-20T10:00:00.000Z",
+          },
+        ],
+      },
+    });
+
+    const result = await mailCapabilities.actions["conversation.tag.update"].run(
+      {
+        mailboxId,
+        conversationId,
+        expectedRevision: 4,
+        addTagIds: [tagId],
+        removeTagIds: [],
+      },
+      context,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: { summary: "Set tags on “Planning session” to customer." },
+    });
+  });
+
   test("encodes subscription links and omits links that exceed the platform bound", async () => {
     const subscription = (listKey: string) => ({
       listKey,
