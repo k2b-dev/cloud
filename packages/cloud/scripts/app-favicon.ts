@@ -15,10 +15,18 @@ export function renderAppFavicon(sourceSvg: string): string {
   if (!source?.[1]) throw new Error("Tabler icon did not contain an SVG body");
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+  <style>
+    .start { stop-color: #3b82f6; }
+    .end { stop-color: #1d4ed8; }
+    @media (prefers-color-scheme: dark) {
+      .start { stop-color: #f0f6ff; }
+      .end { stop-color: #1f8bff; }
+    }
+  </style>
   <defs>
     <linearGradient id="cloud-icon" x1="12" y1="2" x2="12" y2="22" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#f0f6ff" />
-      <stop offset="1" stop-color="#1f8bff" />
+      <stop class="start" />
+      <stop class="end" offset="1" />
     </linearGradient>
   </defs>
   <g fill="none" stroke="url(#cloud-icon)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

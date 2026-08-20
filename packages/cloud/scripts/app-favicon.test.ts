@@ -16,8 +16,11 @@ describe("app favicon", () => {
 
     const svg = renderAppFavicon(source);
     expect(svg).toContain('<linearGradient id="cloud-icon"');
-    expect(svg).toContain('<stop stop-color="#f0f6ff" />');
-    expect(svg).toContain('<stop offset="1" stop-color="#1f8bff" />');
+    expect(svg).toContain(".start { stop-color: #3b82f6; }");
+    expect(svg).toContain(".end { stop-color: #1d4ed8; }");
+    expect(svg).toContain("@media (prefers-color-scheme: dark)");
+    expect(svg).toContain(".start { stop-color: #f0f6ff; }");
+    expect(svg).toContain(".end { stop-color: #1f8bff; }");
     expect(svg).toContain('stroke="url(#cloud-icon)"');
     expect(svg).toContain('stroke-width="2"');
     expect(svg).not.toContain("<rect");

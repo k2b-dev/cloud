@@ -44,9 +44,9 @@ export const app = defineApp({
 Use an address that resolves from the gateway container for `baseUrl`. Do not
 use the public browser URL.
 
-Cloud generates a transparent favicon with the Cloud blue-white gradient for
-rendered application pages from `icon`. Core pages keep the operator-configured
-Cloud favicon.
+Cloud generates a transparent favicon with a theme-adaptive Cloud gradient for
+rendered application pages from `icon`: blue in light mode and blue-white in
+dark mode. Core pages keep the operator-configured Cloud favicon.
 
 Declare only prefixes the application serves. See
 [Routes and discovery](/en/docs/build/routing).

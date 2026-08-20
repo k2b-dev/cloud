@@ -138,7 +138,7 @@ if (appId === "notebooks") {
 const appPublicDir = resolve(publicDir, appId);
 await mkdir(appPublicDir, { recursive: true });
 
-if (appId !== "core") {
+if (appId !== "core" && app) {
   await writeAppFavicon({
     publicDir,
     appId,

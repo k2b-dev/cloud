@@ -183,7 +183,7 @@ if (existsSync(appPublic)) {
   await cp(appPublic, resolve(distPublic, appId), { recursive: true });
 }
 
-if (appId !== "core") {
+if (appId !== "core" && app) {
   await writeAppFavicon({
     publicDir: distPublic,
     appId,
