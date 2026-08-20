@@ -43,7 +43,7 @@ const render = (initialActivityError: string | null = null) =>
       ],
       today: [],
       upcoming: [],
-      counts: { mine: 1, today: 0, upcoming: 0, open: 4, urgent: 1 },
+      counts: { mine: 1, today: 0, upcoming: 0 },
       initialActivity: {
         items: [
           {
@@ -66,7 +66,7 @@ const render = (initialActivityError: string | null = null) =>
   );
 
 describe("Spaces overview", () => {
-  test("renders pinned launchers, real tabs, work rows, stats, and stable activity", () => {
+  test("renders pinned launchers, real tabs, work rows, and stable activity without a stat grid", () => {
     const html = render();
     expect(html).toContain("spaces-overview-workspace");
     expect(html).toContain("Unpin Launch");
@@ -74,7 +74,7 @@ describe("Spaces overview", () => {
     expect(html).toContain('role="tablist"');
     expect(html).toContain("For me");
     expect(html).toContain("Ship overview");
-    expect(html).toContain("k2b-stat-grid");
+    expect(html).not.toContain("k2b-stat-grid");
     expect(html).toContain("Completed “Ship overview” in Launch");
     expect(html).toMatch(/<aside[^>]*id="k2b-workspace-detail-spaces-overview-activity"(?![^>]*hidden)/);
   });

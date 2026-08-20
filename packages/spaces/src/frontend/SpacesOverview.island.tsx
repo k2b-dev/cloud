@@ -18,8 +18,6 @@ import {
   Paper,
   Placeholder,
   prompts,
-  StatCell,
-  StatGrid,
   Tabs,
   TextInput,
   toast,
@@ -63,7 +61,7 @@ type Props = {
   mine: WorkItem[];
   today: WorkItem[];
   upcoming: WorkItem[];
-  counts: { mine: number; today: number; upcoming: number; open: number; urgent: number };
+  counts: { mine: number; today: number; upcoming: number };
   initialActivity: { items: ActivityItem[]; nextCursor: string | null };
   initialActivityError: string | null;
   dateConfig: DateContext;
@@ -552,15 +550,6 @@ export default function SpacesOverview(props: Props) {
                 <p>Tasks and events that need attention across your Spaces.</p>
               </div>
             </div>
-            <StatGrid columns={3} size="sm" class="spaces-overview-stats">
-              <StatCell label="Open work" value={props.counts.open} />
-              <StatCell label="Assigned to me" value={props.counts.mine} />
-              <StatCell
-                label="Urgent"
-                value={props.counts.urgent}
-                accent={props.counts.urgent > 0 ? { tone: "amber", icon: "ti ti-alert-circle" } : undefined}
-              />
-            </StatGrid>
             <Tabs<OverviewView> ariaLabel="Spaces work view" value={view} onValueChange={selectView}>
               <Tabs.Item
                 value="mine"

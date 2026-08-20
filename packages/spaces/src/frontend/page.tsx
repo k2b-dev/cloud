@@ -53,8 +53,6 @@ export default ssr<AuthContext>(async (c) => {
           mine: dashboard.assignedToMeCount,
           today: dashboard.todayCount,
           upcoming: dashboard.upcomingCount,
-          open: dashboard.openTodoCount,
-          urgent: dashboard.urgentCount,
         }}
         initialActivity={{
           items: activityResult.page.items.map((item) => ({

@@ -20,7 +20,6 @@
 .k2b-ui .spaces-overview-space-pin { position: absolute; z-index: 1; top: 50%; right: .25rem; translate: 0 -50%; opacity: 0; pointer-events: none; }
 .spaces-overview-space-item:hover .spaces-overview-space-pin, .spaces-overview-space-item:focus-within .spaces-overview-space-pin { opacity: 1; pointer-events: auto; }
 .spaces-overview-space-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.k2b-ui .spaces-overview-stats { min-width: 0; }
 .spaces-overview-tab-count { margin-left: .2rem; color: var(--color-zinc-500); font-variant-numeric: tabular-nums; }
 .spaces-overview-work-list { display: flex; flex-direction: column; }
 .spaces-overview-work-row { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: .75rem; padding: .85rem .35rem; color: inherit; text-decoration: none; border-bottom: 1px solid var(--ui-border-subtle); }
