@@ -158,6 +158,9 @@ describe("Core AI capabilities", () => {
     expect(aiCapabilities.queries["chat.resources"].input.safeParse({ chatId: chat.shortId, cursor: userCursor }).success).toBe(false);
     expect(aiCapabilities.queries["chats.resources"].input.safeParse({ cursor: userCursor }).success).toBe(true);
     expect(aiCapabilities.queries["chats.resources"].input.safeParse({ cursor: localCursor }).success).toBe(false);
+    expect(aiCapabilities.queries["chats.search"].description).toContain("Normal entry for finding");
+    expect(aiCapabilities.queries["chat.read"].description).toContain("Use chat.search");
+    expect(aiCapabilities.queries["chats.resources"].description).toContain("Direct cross-chat entry");
   });
 
   test("scopes remembered pause approval to one public task", async () => {
@@ -189,6 +192,20 @@ describe("Core AI capabilities", () => {
       },
     });
     expect(aiChatTasks.list).toHaveBeenCalledWith(expect.objectContaining({ limit: 2, offset: 0 }));
+  });
+
+  test("reads a scheduled task with its chat name and no extra task lookup", async () => {
+    const get = spyOn(aiChatTasks, "get").mockResolvedValue(scheduledTask);
+    const listOccurrences = spyOn(aiChatTasks, "listOccurrences").mockResolvedValue([taskOccurrence]);
+
+    const result = await aiCapabilities.queries["task.read"].run({ id: scheduledTask.shortId }, context);
+
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(listOccurrences).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      ok: true,
+      data: { summary: "Read active scheduled task in “Release planning”." },
+    });
   });
 
   test("returns a schema-valid user outcome from every Core action", async () => {
@@ -301,7 +318,7 @@ describe("Core AI capabilities", () => {
   test("reads bounded visible text without thinking or tool results", async () => {
     const longText = "x".repeat(8_001);
     const get = spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(chat);
-    spyOn(aiConversations, "listMessagesPage").mockResolvedValue({
+    const listMessages = spyOn(aiConversations, "listMessagesPage").mockResolvedValue({
       messages: [
         storedMessage(1, { role: "user", content: [{ type: "text", text: "Please plan it." }] }),
         storedMessage(2, {
@@ -320,9 +337,12 @@ describe("Core AI capabilities", () => {
     const result = await aiCapabilities.queries["chat.read"].run({ id: chat.shortId, limit: 20 }, context);
 
     expect(get).toHaveBeenCalledWith({ shortId: chat.shortId, ownerUserId: user.id, archived: false });
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(listMessages).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({
       ok: true,
       data: {
+        summary: "Read AI conversation “Release planning”.",
         data: {
           chat: { id: chat.shortId, title: chat.title },
           messages: [

@@ -343,7 +343,7 @@ export const aiCapabilities = defineCapabilities({
     "tasks.list": {
       title: "List scheduled AI tasks",
       description:
-        "List the current user's chat-bound scheduled tasks, optionally for one chat or state. Each item includes a core.task ref for Read a scheduled AI task.",
+        "Normal entry for scheduled-task work. List the current user's tasks, optionally for a core.chat ref or state; use returned core.task refs with task.read or task Actions.",
       input: ChatTasksListInputSchema,
       data: z.array(ChatTaskListItemDataSchema),
       openWorld: false,
@@ -361,7 +361,7 @@ export const aiCapabilities = defineCapabilities({
     },
     "task.read": {
       title: "Read a scheduled AI task",
-      description: "Read one owned scheduled task from a core.task ref or task ID, including its recent occurrence history.",
+      description: "Read one core.task ref returned by tasks.list or a task Action, including its parent core.chat ref and recent runs.",
       input: ChatTaskReadInputSchema,
       data: ChatTaskDetailDataSchema,
       openWorld: false,
@@ -383,6 +383,7 @@ export const aiCapabilities = defineCapabilities({
               completedAt: occurrence.completedAt,
             })),
           },
+          summary: `Read ${task.state} scheduled task in “${task.chatTitle}”.`,
           refs: [
             { type: "core.task", id: task.shortId },
             { type: "core.chat", id: task.chatId },
@@ -393,7 +394,8 @@ export const aiCapabilities = defineCapabilities({
     },
     "chats.search": {
       title: "Search AI conversations",
-      description: "Find the current user's AI conversations by text and exact Cloud resource refs.",
+      description:
+        "Normal entry for finding the current user's AI conversations by text or exact Cloud resource refs. Use returned core.chat refs with chat.read, chat.search, chat.resources, task creation, or chat.message.",
       input: ChatsSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -411,7 +413,8 @@ export const aiCapabilities = defineCapabilities({
     },
     "chat.read": {
       title: "Read an AI conversation",
-      description: "Read one page of visible user and assistant text from one explicitly identified owned chat.",
+      description:
+        "Read visible text from one core.chat ref returned by chats.search, tasks.list, or a Core Action. Use chat.search for text lookup inside the known chat and chat.resources for referenced Cloud resources.",
       input: ChatReadInputSchema,
       data: ChatMessagesDataSchema,
       openWorld: false,
@@ -425,6 +428,7 @@ export const aiCapabilities = defineCapabilities({
         const oldestSeq = page.messages[0]?.seq;
         return ok({
           data: { chat: chatSummary(chat), messages: page.messages.flatMap((message) => visibleMessage(message) ?? []) },
+          summary: `Read AI conversation “${chat.title}”.`,
           refs: [{ type: "core.chat", id: chat.shortId }],
           links: [{ rel: "open", href: chatHref(chat.shortId) }],
           page: capabilityPage(page.hasMore && oldestSeq !== undefined ? String(oldestSeq) : undefined),
@@ -433,7 +437,8 @@ export const aiCapabilities = defineCapabilities({
     },
     "chat.search": {
       title: "Search messages in an AI conversation",
-      description: "Search visible text inside one explicitly identified owned AI conversation, including compacted history.",
+      description:
+        "Search visible text inside one known core.chat ref, including compacted history. Get chatId from chats.search, chat.read, or a core.task ref; use chat.read to browse without a search term.",
       input: ChatSearchInputSchema,
       data: ChatMessagesDataSchema,
       openWorld: false,
@@ -459,7 +464,8 @@ export const aiCapabilities = defineCapabilities({
     },
     "chat.resources": {
       title: "List resources used in an AI conversation",
-      description: "List or search structured Cloud resource refs observed in one explicitly identified owned chat.",
+      description:
+        "List or search Cloud resource refs observed in one known core.chat. Get chatId from chats.search, chat.read, or a core.task ref; returned refs can be passed directly to their owning app readers.",
       input: ChatResourcesInputSchema,
       data: ChatResourcesDataSchema,
       openWorld: false,
@@ -483,7 +489,8 @@ export const aiCapabilities = defineCapabilities({
     },
     "chats.resources": {
       title: "Search resources used across AI conversations",
-      description: "List or search structured Cloud resource refs across the current user's active AI conversations.",
+      description:
+        "Direct cross-chat entry for finding Cloud resources previously used in active AI conversations. Returned refs can be passed to their owning app readers; use chat.resources when one chat is already known.",
       input: ChatsResourcesInputSchema,
       data: ChatsResourcesDataSchema,
       openWorld: false,
