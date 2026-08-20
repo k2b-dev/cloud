@@ -118,7 +118,7 @@ export default function MailOverview(props: {
       const mailboxStats = mailboxCountsById().get(mailbox.id) ?? { unread: 0, needsAction: 0 };
       return {
         id: mailbox.id,
-        href: `/app/mail/${mailbox.id}`,
+        href: `/app/mail/${mailbox.id}?view=needs_action`,
         name: mailbox.name,
         subtitle: mailboxOverviewSubtitle(mailbox),
         unread: mailboxStats.unread,

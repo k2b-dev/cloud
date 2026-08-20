@@ -73,7 +73,7 @@ describe("Mail overview", () => {
     expect(html).not.toContain("What needs attention across your mailboxes.");
     expect(html).toContain('href="/app/mail/compose"');
     expect(html).toContain("Compose");
-    expect(html).toContain('href="/app/mail/Mail01"');
+    expect(html).toContain('href="/app/mail/Mail01?view=needs_action"');
     expect(html).toContain("1 unread");
     expect(html).toContain("1 need action");
     expect(html.match(/mail-focus-mailbox-button/g)).toHaveLength(12);
