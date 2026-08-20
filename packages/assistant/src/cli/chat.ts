@@ -15,6 +15,7 @@ import { arg, command, confirmFlag, flag, readCliInput } from "@valentinkolb/clo
 import { AI_API, jsonRequest, parseJson, printRows, printValue, queryString, readApi, requireConfirmation, shortId } from "./shared";
 import { streamAssistantTurn } from "./stream";
 import { type ConversationDetail, conversationPath, submitAndMaybeWatch } from "./turn";
+import { buildAssistantChatDiagnostic } from "./diagnostics";
 
 type FullConversationDetail = ConversationDetail & {
   messages: AiStoredMessage[];
@@ -102,6 +103,14 @@ export const assistantChatCommands = [
     async run({ ctx, args }) {
       const detail = await readApi<FullConversationDetail>(ctx, conversationPath(args.chat));
       printValue(ctx, detail);
+    },
+  }),
+  command("chats diagnose", {
+    summary: "Export a compact chat and tool-run diagnostic",
+    args: { chat: arg.required({ valueLabel: "chat-id" }) },
+    async run({ ctx, args }) {
+      const detail = await readApi<FullConversationDetail>(ctx, conversationPath(args.chat));
+      printValue(ctx, buildAssistantChatDiagnostic(detail));
     },
   }),
   command("chats create", {

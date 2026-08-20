@@ -116,6 +116,14 @@ language-dependent automatic retries.
 The router also supports message retry, forks, compaction, pending tool
 actions, conversation enrichment, and paged history.
 
+For a compact diagnostic of one owned chat, including its ordered tool calls,
+arguments, results, model profiles, errors, usage, and timing without the
+duplicated loop transcript, run:
+
+```bash
+cld assistant chats diagnose <chat-id> --json
+```
+
 Search applies ownership, Project, archive, status, and pagination
 filters before returning visible conversation text. Tool results and model
 thinking are not user-visible message search results. Structured Cloud resource
