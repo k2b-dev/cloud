@@ -31,11 +31,15 @@ const ResourceIdListSchema = z.array(ResourceShortIdSchema).max(100);
 const UserIdListSchema = z.array(UuidSchema).max(100);
 const PageInputShape = { cursor: CursorSchema, limit: LimitSchema };
 const ResourceLinksSchema = z.array(CapabilitySemanticLinkSchema).min(1).max(10).optional();
+const resourceRef = <Type extends string>(type: Type) =>
+  z.object({ type: z.literal(type), id: ResourceShortIdSchema }).strict();
+const SpaceIdSchema = ResourceShortIdSchema.describe("Space ID returned by Space search/list/read or a spaces.space ref.");
+const ItemIdSchema = ResourceShortIdSchema.describe("Task or event ID returned by item search/list/read or a spaces.item ref.");
 
 export const ItemResourceReferenceInputSchema = SpaceItemResourceReferenceInputSchema;
 export const ItemResourceReferenceDataSchema = SpaceItemResourceReferenceSchema;
 export const ItemResourceReferenceListInputSchema = z
-  .object({ itemId: ResourceShortIdSchema.describe("Readable Space item ID.") })
+  .object({ itemId: ItemIdSchema })
   .strict();
 export const ItemResourceReferenceListDataSchema = z.array(ItemResourceReferenceDataSchema).max(100);
 export const ItemResourceReferenceFindInputSchema = z
@@ -49,13 +53,13 @@ export const ItemResourceReferenceFindDataSchema = z
   .strict();
 export const ItemResourceReferenceAddInputSchema = z
   .object({
-    itemId: ResourceShortIdSchema.describe("Writable Space item ID."),
+    itemId: ItemIdSchema,
     reference: ItemResourceReferenceInputSchema.describe("Cloud resource to link."),
   })
   .strict();
 export const ItemResourceReferenceRemoveInputSchema = z
   .object({
-    itemId: ResourceShortIdSchema.describe("Writable Space item ID."),
+    itemId: ItemIdSchema,
     ref: CloudResourceRefSchema.describe("Cloud resource to unlink."),
   })
   .strict();
@@ -69,10 +73,14 @@ export const TaskDependencyInputSchema = z
     blockerItemId: ResourceShortIdSchema.describe("Same-Space task that blocks itemId."),
   })
   .strict();
-export const TaskDependencyDataSchema = SpaceTaskDependencySchema;
-export const TaskDependencyListInputSchema = z.object({ itemId: ResourceShortIdSchema.describe("Readable task ID.") }).strict();
+export const TaskDependencyDataSchema = SpaceTaskDependencySchema.extend({
+  blocker: SpaceTaskDependencySchema.shape.blocker.extend({ ref: resourceRef("spaces.item") }).strict(),
+}).strict();
+export const TaskDependencyListInputSchema = z.object({ itemId: ItemIdSchema }).strict();
 export const TaskDependencyListDataSchema = z.array(TaskDependencyDataSchema).max(100);
-export const TaskDependentDataSchema = SpaceTaskDependentSchema;
+export const TaskDependentDataSchema = SpaceTaskDependentSchema.extend({
+  dependent: SpaceTaskDependentSchema.shape.dependent.extend({ ref: resourceRef("spaces.item") }).strict(),
+}).strict();
 export const TaskDependentListDataSchema = z.array(TaskDependentDataSchema).max(100);
 export const TaskDependencyRemoveDataSchema = z
   .object({ itemId: ResourceShortIdSchema, blockerItemId: ResourceShortIdSchema, removed: z.literal(true) })
@@ -80,8 +88,8 @@ export const TaskDependencyRemoveDataSchema = z
 
 export const ItemTagsSetInputSchema = z
   .object({
-    itemId: ResourceShortIdSchema.describe("Writable task or event ID."),
-    tagIds: ResourceIdListSchema.describe("Complete replacement set of tag IDs from this Space."),
+    itemId: ItemIdSchema,
+    tagIds: ResourceIdListSchema.describe("Complete replacement set of tag IDs returned by Read space."),
   })
   .strict();
 
@@ -133,8 +141,9 @@ export const SpaceListInputSchema = z
   })
   .strict();
 
-export const SpaceListDataSchema = z.array(SpaceSummaryDataSchema).max(100);
-export const SpaceReadInputSchema = z.object({ id: ResourceShortIdSchema.describe("Stable Space ID.") }).strict();
+const SpaceListItemDataSchema = SpaceSummaryDataSchema.extend({ ref: resourceRef("spaces.space") }).strict();
+export const SpaceListDataSchema = z.array(SpaceListItemDataSchema).max(100);
+export const SpaceReadInputSchema = z.object({ id: SpaceIdSchema }).strict();
 
 const ItemAssigneeDataSchema = z.object({ id: UuidSchema, displayName: z.string().min(1).max(200) }).strict();
 const ItemTagDataSchema = z
@@ -204,6 +213,7 @@ export const EventDataSchema = z
 export const ItemDataSchema = z.discriminatedUnion("kind", [TaskDataSchema, EventDataSchema]);
 const ItemListBaseDataShape = {
   id: ResourceShortIdSchema,
+  ref: resourceRef("spaces.item"),
   spaceId: ResourceShortIdSchema,
   columnId: ResourceShortIdSchema,
   title: z.string().min(1).max(200),
@@ -245,13 +255,13 @@ export const TaskListDataSchema = z.array(TaskListItemDataSchema).max(100);
 export const EventListDataSchema = z.array(EventListItemDataSchema).max(100);
 
 const ItemListBaseShape = {
-  spaceId: ResourceShortIdSchema.describe("Space whose items should be listed."),
+  spaceId: SpaceIdSchema,
   query: QuerySchema,
   status: z.enum(["active", "completed", "all"]).default("active").describe("Completion-state filter."),
   priority: z.array(PrioritySchema).max(4).optional().describe("Optional priority filter."),
-  columnIds: ResourceIdListSchema.optional().describe("Optional Space column ID filter."),
-  tagIds: ResourceIdListSchema.optional().describe("Optional Space tag ID filter."),
-  assigneeIds: UserIdListSchema.optional().describe("Optional assignee user UUID filter."),
+  columnIds: ResourceIdListSchema.optional().describe("Optional column IDs returned by Read space."),
+  tagIds: ResourceIdListSchema.optional().describe("Optional tag IDs returned by Read space."),
+  assigneeIds: UserIdListSchema.optional().describe("Optional user UUIDs returned by List assignable Space members."),
   assignedTo: z
     .enum(["all", "assigned", "me", "unassigned"])
     .default("all")
@@ -263,7 +273,7 @@ const ItemListBaseShape = {
 
 export const TaskListInputSchema = z.object(ItemListBaseShape).strict();
 export const EventListInputSchema = z.object(ItemListBaseShape).strict();
-export const ItemReadInputSchema = z.object({ id: ResourceShortIdSchema.describe("Stable Space item ID.") }).strict();
+export const ItemReadInputSchema = z.object({ id: ItemIdSchema }).strict();
 export const ItemLinkCandidateSearchInputSchema = z
   .object({
     query: z.string().trim().max(500).default("").describe("Optional item title or content search."),
@@ -273,7 +283,7 @@ export const ItemLinkCandidateSearchInputSchema = z
 
 export const SpaceAssigneeListInputSchema = z
   .object({
-    spaceId: ResourceShortIdSchema.describe("Writable Space whose assignable members should be listed."),
+    spaceId: SpaceIdSchema,
     query: QuerySchema,
     limit: LimitSchema,
   })
@@ -284,8 +294,8 @@ export const SpaceAssigneeDataSchema = z
 export const SpaceAssigneeListDataSchema = z.array(SpaceAssigneeDataSchema).max(100);
 
 const ItemRelationInputShape = {
-  assigneeIds: UserIdListSchema.optional().describe("Complete replacement set of assignee user UUIDs from this Space."),
-  tagIds: ResourceIdListSchema.optional().describe("Complete replacement set of tag IDs from this Space."),
+  assigneeIds: UserIdListSchema.optional().describe("Complete replacement set of user UUIDs returned by List assignable Space members."),
+  tagIds: ResourceIdListSchema.optional().describe("Complete replacement set of tag IDs returned by Read space."),
 };
 
 const TaskFieldsInputShape = {
@@ -298,8 +308,8 @@ const TaskFieldsInputShape = {
 
 export const TaskCreateInputSchema = z
   .object({
-    spaceId: ResourceShortIdSchema.describe("Writable Space ID."),
-    columnId: ResourceShortIdSchema.describe("Target column ID in the selected Space."),
+    spaceId: SpaceIdSchema,
+    columnId: ResourceShortIdSchema.describe("Target column ID returned by Read space for the selected Space."),
     title: z.string().trim().min(1).max(200).describe("Task title."),
     description: z.string().max(5000).optional().describe("Optional task description."),
     deadline: TimestampSchema.optional().describe("Optional task deadline."),
@@ -312,7 +322,7 @@ export const TaskCreateInputSchema = z
   .strict();
 
 export const TaskUpdateInputSchema = z
-  .object({ itemId: ResourceShortIdSchema.describe("Stable task item ID."), ...ItemRelationInputShape, ...TaskFieldsInputShape })
+  .object({ itemId: ItemIdSchema, ...ItemRelationInputShape, ...TaskFieldsInputShape })
   .strict()
   .refine(({ itemId: _itemId, ...changes }) => Object.values(changes).some((value) => value !== undefined), {
     message: "At least one task field must be provided",
@@ -334,8 +344,8 @@ const validTimeRange = (value: { startsAt?: string; endsAt?: string }) =>
 
 export const EventCreateInputSchema = z
   .object({
-    spaceId: ResourceShortIdSchema.describe("Writable Space ID."),
-    columnId: ResourceShortIdSchema.describe("Target column ID in the selected Space."),
+    spaceId: SpaceIdSchema,
+    columnId: ResourceShortIdSchema.describe("Target column ID returned by Read space for the selected Space."),
     title: z.string().trim().min(1).max(200).describe("Event title."),
     description: z.string().max(5000).optional().describe("Optional event description."),
     location: z.string().max(500).optional().describe("Optional event location."),
@@ -352,7 +362,7 @@ export const EventCreateInputSchema = z
   .refine(validTimeRange, { message: "End time must be after start time", path: ["endsAt"] });
 
 export const EventUpdateInputSchema = z
-  .object({ itemId: ResourceShortIdSchema.describe("Stable event item ID."), ...ItemRelationInputShape, ...EventFieldsInputShape })
+  .object({ itemId: ItemIdSchema, ...ItemRelationInputShape, ...EventFieldsInputShape })
   .strict()
   .refine(({ itemId: _itemId, ...changes }) => Object.values(changes).some((value) => value !== undefined), {
     message: "At least one event field must be provided",
@@ -365,11 +375,11 @@ export const EventUpdateInputSchema = z
 
 export const TaskSetCompletedInputSchema = z
   .object({
-    itemId: ResourceShortIdSchema.describe("Stable task item ID."),
+    itemId: ItemIdSchema,
     completed: z.boolean().describe("True completes the task; false reopens it."),
   })
   .strict();
-export const ItemDeleteInputSchema = z.object({ itemId: ResourceShortIdSchema.describe("Stable task or event item ID.") }).strict();
+export const ItemDeleteInputSchema = z.object({ itemId: ItemIdSchema }).strict();
 export const ItemDeleteDataSchema = z.object({ itemId: ResourceShortIdSchema, deleted: z.literal(true) }).strict();
 
 export const CommentDataSchema = z
@@ -389,7 +399,7 @@ export const CommentDataSchema = z
 
 export const CommentListInputSchema = z
   .object({
-    itemId: ResourceShortIdSchema.describe("Item whose discussion should be listed."),
+    itemId: ItemIdSchema,
     recurrenceId: TimestampSchema.optional().describe("Optional recurring occurrence timestamp; omit for the item or whole series."),
     query: QuerySchema,
     ...PageInputShape,
@@ -397,14 +407,17 @@ export const CommentListInputSchema = z
   .strict();
 
 export const CommentListItemDataSchema = CommentDataSchema.omit({ content: true }).extend({
+  ref: resourceRef("spaces.comment"),
   content: z.string().min(1).max(1000),
   contentTruncated: z.boolean(),
 });
 export const CommentListDataSchema = z.array(CommentListItemDataSchema).max(100);
-export const CommentReadInputSchema = z.object({ id: ResourceShortIdSchema.describe("Stable comment ID.") }).strict();
+export const CommentReadInputSchema = z
+  .object({ id: ResourceShortIdSchema.describe("Comment ID returned by List comments or a spaces.comment ref.") })
+  .strict();
 export const CommentCreateInputSchema = z
   .object({
-    itemId: ResourceShortIdSchema.describe("Writable parent item ID."),
+    itemId: ItemIdSchema,
     recurrenceId: TimestampSchema.optional().describe("Optional recurring occurrence timestamp."),
     content: z.string().trim().min(1).max(5000).describe("Comment content."),
   })
@@ -452,7 +465,7 @@ export const CalendarInvitationResponseCommitCapabilityInputSchema = z
 export const CalendarInvitationResponseCommitCapabilityDataSchema = CalendarInvitationResponseStateSchema;
 export const CalendarDestinationListInputSchema = z.object({}).strict();
 export const CalendarDestinationListDataSchema = z
-  .array(SpacesMailDestinationSchema.extend({ links: ResourceLinksSchema }).strict())
+  .array(SpacesMailDestinationSchema.extend({ ref: resourceRef("spaces.space"), links: ResourceLinksSchema }).strict())
   .max(500);
 export const EventInvitationPrepareInputSchema = z
   .object({

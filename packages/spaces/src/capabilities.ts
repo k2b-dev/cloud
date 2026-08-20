@@ -536,6 +536,7 @@ const runSpaceList = async (input: z.infer<typeof SpaceListInputSchema>, context
   const publicSpaces = await spacesPublicResources.projectSpaces(page.items);
   const data = publicSpaces.map((space) => ({
     ...mapSpace(space, context),
+    ref: { type: "spaces.space" as const, id: space.id },
     links: [{ rel: "open" as const, href: `/app/spaces/${space.id}` }],
   }));
   return pageResult(
@@ -609,7 +610,8 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
     spacesPublicResources.resolveSpacePublicIds("columns", access.data.internalId, input.columnIds ?? []),
     spacesPublicResources.resolveSpacePublicIds("tags", access.data.internalId, input.tagIds ?? []),
   ]);
-  if (!columnIds || !tagIds) return fail(err.badInput("Unknown Space filter ID"));
+  if (!columnIds) return fail(err.badInput("Unknown columnIds value; use a column ID returned by Read space"));
+  if (!tagIds) return fail(err.badInput("Unknown tagIds value; use a tag ID returned by Read space"));
   const page = await spacesService.item.listFiltered({
     spaceId: access.data.internalId,
     currentUserId: context.user?.id,
@@ -635,6 +637,7 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
     kind === "event" ? publicItems.filter(isEvent).map(mapEventSummary) : publicItems.filter((item) => !isEvent(item)).map(mapTaskSummary)
   ).map((item) => ({
     ...item,
+    ref: { type: "spaces.item" as const, id: item.id },
     links: [{ rel: "open" as const, href: buildSpaceItemHref(item.spaceId, item.id) }],
   }));
   return pageResult(
@@ -674,7 +677,10 @@ const runCommentList = async (input: z.infer<typeof CommentListInputSchema>, con
     pagination: { page: cursor.data, perPage: input.limit },
     filter: { query: input.query },
   });
-  const data = (await spacesPublicResources.projectComments(page.items)).map(mapCommentSummary);
+  const data = (await spacesPublicResources.projectComments(page.items)).map((comment) => ({
+    ...mapCommentSummary(comment),
+    ref: { type: "spaces.comment" as const, id: comment.id },
+  }));
   return pageResult(
     page,
     data,
@@ -890,10 +896,14 @@ const runTaskDependencyList = async (input: z.infer<typeof TaskDependencyListInp
   const resolved = await requireItem(input.itemId, context, "read");
   if (!resolved.ok) return resolved;
   if (isEvent(resolved.data.item)) return fail(err.badInput("Item is not a task"));
+  const dependencies = await spacesPublicResources.projectTaskDependencies(
+    await spacesService.item.dependencies.list({ itemId: resolved.data.internalId }),
+  );
   return ok({
-    data: await spacesPublicResources.projectTaskDependencies(
-      await spacesService.item.dependencies.list({ itemId: resolved.data.internalId }),
-    ),
+    data: dependencies.map((dependency) => ({
+      ...dependency,
+      blocker: { ...dependency.blocker, ref: { type: "spaces.item" as const, id: dependency.blocker.id } },
+    })),
     refs: [{ type: "spaces.item", id: input.itemId }],
     links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
   });
@@ -903,10 +913,14 @@ const runTaskDependentList = async (input: z.infer<typeof TaskDependencyListInpu
   const resolved = await requireItem(input.itemId, context, "read");
   if (!resolved.ok) return resolved;
   if (isEvent(resolved.data.item)) return fail(err.badInput("Item is not a task"));
+  const dependents = await spacesPublicResources.projectTaskDependents(
+    await spacesService.item.dependencies.listBlocks({ blockerItemId: resolved.data.internalId }),
+  );
   return ok({
-    data: await spacesPublicResources.projectTaskDependents(
-      await spacesService.item.dependencies.listBlocks({ blockerItemId: resolved.data.internalId }),
-    ),
+    data: dependents.map((dependency) => ({
+      ...dependency,
+      dependent: { ...dependency.dependent, ref: { type: "spaces.item" as const, id: dependency.dependent.id } },
+    })),
     refs: [{ type: "spaces.item", id: input.itemId }],
     links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
   });
@@ -1180,6 +1194,7 @@ const calendarDestinationContext = async (context: CapabilityExecutionContext) =
   return ok({
     data: spaces.map((space) => ({
       id: space.id,
+      ref: { type: "spaces.space" as const, id: space.id },
       name: space.name,
       color: space.color,
       links: [{ rel: "open" as const, href: `/app/spaces/${space.id}` }],
@@ -1343,7 +1358,7 @@ export const spacesCapabilities = defineCapabilities({
     },
     "space.list": {
       title: "List spaces",
-      description: "List accessible Spaces with effective permission and bounded SQL pagination.",
+      description: "List accessible Spaces with effective permission, bounded pagination, and item-local spaces.space refs.",
       input: SpaceListInputSchema,
       data: SpaceListDataSchema,
       openWorld: false,
@@ -1351,7 +1366,7 @@ export const spacesCapabilities = defineCapabilities({
     },
     "space.read": {
       title: "Read space",
-      description: "Read one accessible Space plus its bounded column and tag vocabulary.",
+      description: "Read one Space from a spaces.space ref or Space ID, including the bounded column and tag IDs used by item operations.",
       input: SpaceReadInputSchema,
       data: SpaceDetailDataSchema,
       openWorld: false,
@@ -1367,7 +1382,7 @@ export const spacesCapabilities = defineCapabilities({
     },
     "task.list": {
       title: "List tasks",
-      description: "List task-shaped items in one readable Space with bounded filters and pagination.",
+      description: "List tasks in one readable Space with bounded filters, pagination, and item-local spaces.item refs.",
       input: TaskListInputSchema,
       data: TaskListDataSchema,
       openWorld: false,
@@ -1375,7 +1390,7 @@ export const spacesCapabilities = defineCapabilities({
     },
     "event.list": {
       title: "List events",
-      description: "List event-shaped items in one readable Space with bounded filters and pagination.",
+      description: "List events in one readable Space with bounded filters, pagination, and item-local spaces.item refs.",
       input: EventListInputSchema,
       data: EventListDataSchema,
       openWorld: false,
@@ -1383,7 +1398,7 @@ export const spacesCapabilities = defineCapabilities({
     },
     "item.read": {
       title: "Read Space item",
-      description: "Read one task or event by stable public item ID with an explicit kind discriminator.",
+      description: "Read one task or event from a spaces.item ref or item ID with an explicit kind discriminator.",
       input: ItemReadInputSchema,
       data: ItemDataSchema,
       openWorld: false,
@@ -1423,7 +1438,8 @@ export const spacesCapabilities = defineCapabilities({
     },
     "comment.list": {
       title: "List comments",
-      description: "Read comments in one bounded item or recurring-occurrence discussion after checking parent Space access.",
+      description:
+        "List comments with spaces.comment refs in one bounded item or recurring-occurrence discussion after checking parent Space access.",
       input: CommentListInputSchema,
       data: CommentListDataSchema,
       openWorld: false,
@@ -1431,7 +1447,7 @@ export const spacesCapabilities = defineCapabilities({
     },
     "comment.read": {
       title: "Read comment",
-      description: "Read one comment by stable public ID after checking its parent item and Space.",
+      description: "Read one comment from a spaces.comment ref or comment ID after checking its parent item and Space.",
       input: CommentReadInputSchema,
       data: CommentDataSchema,
       openWorld: false,

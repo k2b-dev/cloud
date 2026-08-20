@@ -281,6 +281,7 @@ describe("spaces capabilities", () => {
         data: [
           {
             id: spaceId,
+            ref: { type: "spaces.space", id: spaceId },
             name: space.name,
             color: space.color,
             links: [{ rel: "open", href: `/app/spaces/${spaceId}` }],
@@ -558,7 +559,7 @@ describe("spaces capabilities", () => {
     expect(result).toMatchObject({
       ok: true,
       data: {
-        data: [{ id: spaceId, permission: "read" }],
+        data: [{ id: spaceId, permission: "read", ref: { type: "spaces.space", id: spaceId } }],
         refs: [{ type: "spaces.space", id: spaceId }],
         page: { hasMore: true },
       },
@@ -1019,6 +1020,7 @@ describe("spaces capabilities", () => {
     const tasks = Array.from({ length: 50 }, () => ({
       kind: "task" as const,
       id: itemId,
+      ref: { type: "spaces.item" as const, id: itemId },
       spaceId,
       columnId,
       title: "t".repeat(200),
@@ -1038,6 +1040,7 @@ describe("spaces capabilities", () => {
     }));
     const comments = Array.from({ length: 100 }, () => ({
       id: commentId,
+      ref: { type: "spaces.comment" as const, id: commentId },
       itemId,
       recurrenceId: null,
       userId,
