@@ -167,6 +167,7 @@ const mapContactDetail = (contact: Contact) => {
 };
 
 const mapContactSuggestion = (contact: Contact) => ({
+  ref: { type: "contacts.contact" as const, id: contact.id },
   contactId: contact.id,
   bookId: contact.bookId,
   displayName: resolveContactName(contact),
@@ -188,6 +189,11 @@ const mapNote = (note: ContactNote) => ({
   content: note.content,
   createdAt: note.createdAt,
   updatedAt: note.updatedAt,
+});
+
+const withRef = <Type extends string, Value extends { id: string }>(type: Type, value: Value) => ({
+  ...value,
+  ref: { type, id: value.id },
 });
 
 type ContactUpdateInput = z.infer<typeof ContactUpdateInputSchema>;
@@ -568,6 +574,7 @@ const runContactResolve = async (input: z.infer<typeof ContactResolveInputSchema
     ...resolvedData,
     items: publicItems.map((contact) => ({
       ...contact,
+      ref: { type: "contacts.contact" as const, id: contact.contactId },
       openHref: contactHrefById(contact.bookId, contact.contactId),
       links: [{ rel: "open" as const, href: contactHrefById(contact.bookId, contact.contactId) }],
     })),
@@ -693,6 +700,7 @@ const runBookList = async (input: z.infer<typeof ContactBookListInputSchema>, co
     return pageResult(
       page,
       books.map((book) => ({
+        ref: { type: "contacts.book" as const, id: book.id },
         id: book.id,
         name: book.name,
         description: book.description,
@@ -714,6 +722,7 @@ const runBookList = async (input: z.infer<typeof ContactBookListInputSchema>, co
   return pageResult(
     page,
     books.map((book) => ({
+      ref: { type: "contacts.book" as const, id: book.id },
       id: book.id,
       name: book.name,
       description: book.description,
@@ -735,7 +744,7 @@ const runTagList = async (input: z.infer<typeof ContactTagListInputSchema>, cont
   const tags = await projectTags(page.items);
   return pageResult(
     page,
-    tags.map(mapTag),
+    tags.map((tag) => withRef("contacts.tag", mapTag(tag))),
     tags.map((tag) => ({ type: "contacts.tag", id: tag.id })),
   );
 };
@@ -755,7 +764,7 @@ const runNoteList = async (input: z.infer<typeof ContactNoteListInputSchema>, co
   if (!contact) return fail(err.notFound("Contact"));
   return pageResult(
     page,
-    notes.map(mapNote),
+    notes.map((note) => withRef("contacts.note", mapNote(note))),
     notes.map((note) => ({ type: "contacts.note", id: note.id })),
     [{ rel: "open" as const, href: contactHref(contact) }],
   );
@@ -1034,7 +1043,7 @@ export const contactsCapabilities = defineCapabilities({
     "contact.suggest": {
       title: "Suggest contacts",
       description:
-        "Autocomplete readable email recipients while composing mail by matching names, organizations, email addresses, phone numbers, and addresses.",
+        "Specialized recipient autocomplete for composing mail. Matches readable contacts by name, organization, email address, phone number, or address and returns contacts.contact refs.",
       input: ContactSuggestInputSchema,
       data: ContactSuggestDataSchema,
       openWorld: false,
@@ -1042,7 +1051,8 @@ export const contactsCapabilities = defineCapabilities({
     },
     "contact.resolve": {
       title: "Resolve contacts by email",
-      description: "Resolve up to 100 known exact email addresses to every readable matching contact with bounded contact details.",
+      description:
+        "Specialized exact-email lookup. Resolve up to 100 known exact email addresses to every readable matching contact and contacts.contact ref.",
       input: ContactResolveInputSchema,
       data: ContactResolveDataSchema,
       openWorld: false,
@@ -1059,7 +1069,7 @@ export const contactsCapabilities = defineCapabilities({
     },
     "contact.read": {
       title: "Read contact",
-      description: "Read one contact by its stable public ID after checking its owning address book.",
+      description: "Read one contact from a contacts.contact ref or contact ID after checking its owning address book.",
       input: ContactReadInputSchema,
       data: ContactDetailDataSchema,
       openWorld: false,
@@ -1067,7 +1077,7 @@ export const contactsCapabilities = defineCapabilities({
     },
     "book.read": {
       title: "Read address book",
-      description: "Read one accessible address book by its stable identifier.",
+      description: "Read one accessible address book from a contacts.book ref or address-book ID.",
       input: ContactBookReadInputSchema,
       data: ContactBookDataSchema,
       openWorld: false,
@@ -1075,7 +1085,7 @@ export const contactsCapabilities = defineCapabilities({
     },
     "tag.read": {
       title: "Read contact tag",
-      description: "Read one contact tag after checking its owning address book.",
+      description: "Read one contact tag from a contacts.tag ref or tag ID after checking its owning address book.",
       input: ContactTagReadInputSchema,
       data: ContactTagDataSchema,
       openWorld: false,
@@ -1083,7 +1093,7 @@ export const contactsCapabilities = defineCapabilities({
     },
     "note.read": {
       title: "Read contact note",
-      description: "Read one contact note after checking its parent contact and address book.",
+      description: "Read one contact note from a contacts.note ref or note ID after checking its parent contact and address book.",
       input: ContactNoteReadInputSchema,
       data: ContactNoteDataSchema,
       openWorld: false,

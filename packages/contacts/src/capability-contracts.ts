@@ -8,6 +8,8 @@ const LimitSchema = z.number().int().min(1).max(100).default(25).describe("Maxim
 const ResourceLinksSchema = z.array(CapabilitySemanticLinkSchema).min(1).max(10).optional();
 const ContactOpenHrefSchema = z.string().regex(/^\/app\/contacts\/.*/);
 export const ResourceShortIdSchema = z.string().regex(/^[0-9A-Za-z]{6}$/);
+const resourceRef = <Type extends string>(type: Type) =>
+  z.object({ type: z.literal(type), id: ResourceShortIdSchema }).strict();
 export const CONTACT_COLLECTION_LIMIT = 20;
 export const CONTACT_TAG_LIMIT = 100;
 
@@ -89,6 +91,7 @@ export const ContactSuggestInputSchema = z
 
 export const ContactSuggestionDataSchema = z
   .object({
+    ref: resourceRef("contacts.contact"),
     contactId: ResourceShortIdSchema,
     bookId: ResourceShortIdSchema,
     displayName: z.string().min(1),
@@ -124,6 +127,7 @@ export const ContactResolveInputSchema = z
 
 export const ContactResolveMatchDataSchema = z
   .object({
+    ref: resourceRef("contacts.contact"),
     contactId: ResourceShortIdSchema,
     bookId: ResourceShortIdSchema,
     bookName: z.string().min(1),
@@ -169,9 +173,13 @@ export const ContactDetailDataSchema = ContactSummaryDataSchema.extend({
 
 export const ContactListInputSchema = z
   .object({
-    bookId: ResourceShortIdSchema.describe("Public address-book ID."),
+    bookId: ResourceShortIdSchema.describe("Address-book ID returned by List address books or a contacts.book resource ref."),
     query: z.string().trim().max(500).optional().describe("Optional text matched against contact fields."),
-    tagIds: z.array(ResourceShortIdSchema).max(100).optional().describe("Only contacts having at least one of these book-scoped tags."),
+    tagIds: z
+      .array(ResourceShortIdSchema)
+      .max(100)
+      .optional()
+      .describe("Contact-tag IDs returned by List contact tags for this address book; matches contacts having at least one."),
     sort: z.enum(["name", "updated", "created", "company"]).default("name").describe("Contact sort order."),
     email: z.enum(["all", "yes", "no"]).default("all").describe("Filter by email-address presence."),
     phone: z.enum(["all", "yes", "no"]).default("all").describe("Filter by phone-number presence."),
@@ -180,9 +188,13 @@ export const ContactListInputSchema = z
   })
   .strict();
 
-export const ContactReadInputSchema = z.object({ id: ResourceShortIdSchema.describe("Stable public contact ID.") }).strict();
+export const ContactReadInputSchema = z
+  .object({ id: ResourceShortIdSchema.describe("Contact ID returned by contact search, suggest, resolve, list, or a contacts.contact ref.") })
+  .strict();
 
-export const ContactBookReadInputSchema = z.object({ id: ResourceShortIdSchema.describe("Stable public address-book ID.") }).strict();
+export const ContactBookReadInputSchema = z
+  .object({ id: ResourceShortIdSchema.describe("Address-book ID returned by List address books or a contacts.book ref.") })
+  .strict();
 export const ContactBookDataSchema = z
   .object({
     id: ResourceShortIdSchema,
@@ -194,7 +206,8 @@ export const ContactBookDataSchema = z
     updatedAt: TimestampSchema.nullable(),
   })
   .strict();
-export const ContactBookListDataSchema = z.array(ContactBookDataSchema).max(100);
+const ContactBookListItemDataSchema = ContactBookDataSchema.extend({ ref: resourceRef("contacts.book") }).strict();
+export const ContactBookListDataSchema = z.array(ContactBookListItemDataSchema).max(100);
 export const ContactBookListInputSchema = z
   .object({
     query: z.string().trim().max(500).optional().describe("Optional address-book name or description search."),
@@ -206,13 +219,21 @@ export const ContactBookListInputSchema = z
   })
   .strict();
 
-export const ContactTagReadInputSchema = z.object({ id: ResourceShortIdSchema.describe("Stable public contact-tag ID.") }).strict();
-export const ContactTagListDataSchema = z.array(ContactTagDataSchema).max(100);
+export const ContactTagReadInputSchema = z
+  .object({ id: ResourceShortIdSchema.describe("Contact-tag ID returned by List contact tags or a contacts.tag ref.") })
+  .strict();
+const ContactTagListItemDataSchema = ContactTagDataSchema.extend({ ref: resourceRef("contacts.tag") }).strict();
+export const ContactTagListDataSchema = z.array(ContactTagListItemDataSchema).max(100);
 export const ContactTagListInputSchema = z
-  .object({ bookId: ResourceShortIdSchema.describe("Public address-book ID whose tags should be listed."), ...CapabilityPageInputShape })
+  .object({
+    bookId: ResourceShortIdSchema.describe("Address-book ID returned by List address books or a contacts.book ref."),
+    ...CapabilityPageInputShape,
+  })
   .strict();
 
-export const ContactNoteReadInputSchema = z.object({ id: ResourceShortIdSchema.describe("Stable public contact-note ID.") }).strict();
+export const ContactNoteReadInputSchema = z
+  .object({ id: ResourceShortIdSchema.describe("Contact-note ID returned by List contact notes or a contacts.note ref.") })
+  .strict();
 export const ContactNoteDataSchema = z
   .object({
     id: ResourceShortIdSchema,
@@ -224,9 +245,13 @@ export const ContactNoteDataSchema = z
     updatedAt: TimestampSchema,
   })
   .strict();
-export const ContactNoteListDataSchema = z.array(ContactNoteDataSchema).max(100);
+const ContactNoteListItemDataSchema = ContactNoteDataSchema.extend({ ref: resourceRef("contacts.note") }).strict();
+export const ContactNoteListDataSchema = z.array(ContactNoteListItemDataSchema).max(100);
 export const ContactNoteListInputSchema = z
-  .object({ contactId: ResourceShortIdSchema.describe("Public contact ID whose notes should be listed."), ...CapabilityPageInputShape })
+  .object({
+    contactId: ResourceShortIdSchema.describe("Contact ID returned by contact search, suggest, resolve, list, or a contacts.contact ref."),
+    ...CapabilityPageInputShape,
+  })
   .strict();
 
 const EmailInputSchema = z

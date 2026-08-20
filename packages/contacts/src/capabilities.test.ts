@@ -526,6 +526,7 @@ describe("contacts capabilities", () => {
     expect(
       ContactSuggestDataSchema.safeParse([
         {
+          ref: { type: "contacts.contact", id: publicContactId },
           contactId: publicContactId,
           bookId: publicBookId,
           displayName: "Ada Example",
@@ -559,6 +560,7 @@ describe("contacts capabilities", () => {
     expect(suggested.ok).toBeTrue();
     if (!suggested.ok) return;
     expect(suggested.data.data[0]).toMatchObject({
+      ref: { type: "contacts.contact", id: publicContactId },
       openHref: `/app/contacts/${publicBookId}?contact=${publicContactId}&contactBook=${publicBookId}`,
       links: [{ rel: "open", href: `/app/contacts/${publicBookId}?contact=${publicContactId}&contactBook=${publicBookId}` }],
     });
@@ -589,6 +591,7 @@ describe("contacts capabilities", () => {
     expect(resolved.ok).toBeTrue();
     if (!resolved.ok) return;
     expect(resolved.data.data.items[0]).toMatchObject({
+      ref: { type: "contacts.contact", id: publicContactId },
       openHref: `/app/contacts/${publicBookId}?contact=${publicContactId}&contactBook=${publicBookId}`,
       links: [{ rel: "open", href: `/app/contacts/${publicBookId}?contact=${publicContactId}&contactBook=${publicBookId}` }],
     });

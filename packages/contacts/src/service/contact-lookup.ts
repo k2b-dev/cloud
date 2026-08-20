@@ -9,7 +9,7 @@ import type { ContactResolveDataSchema, ContactResolveInputSchema, ContactResolv
 const cursorSchema = z.object({ version: z.literal(1), id: z.uuid() }).strict();
 type MatchCursor = z.infer<typeof cursorSchema>;
 type ContactResolveInput = z.infer<typeof ContactResolveInputSchema>;
-type ContactResolveMatch = Omit<z.infer<typeof ContactResolveMatchDataSchema>, "links" | "openHref">;
+type ContactResolveMatch = Omit<z.infer<typeof ContactResolveMatchDataSchema>, "ref" | "links" | "openHref">;
 type ContactResolveData = Omit<z.infer<typeof ContactResolveDataSchema>, "items"> & { items: ContactResolveMatch[] };
 type ContactResolvePage = ContactResolveData & { nextCursor: string | null };
 
