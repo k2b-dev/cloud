@@ -503,6 +503,102 @@
   margin: 0 auto;
 }
 
+.ui-scroll-area-demo {
+  width: min(100%, 34rem);
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid var(--k2b-border);
+  border-radius: var(--k2b-radius-surface);
+  background: var(--k2b-surface);
+}
+
+.ui-scroll-area-demo__viewport {
+  height: 18rem;
+}
+
+.ui-scroll-area-demo__content {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.ui-scroll-area-demo__content > header {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ui-scroll-area-demo__content > header > div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.ui-scroll-area-demo__content > header strong {
+  color: var(--k2b-text);
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+.ui-scroll-area-demo__content > header > div > span,
+.ui-scroll-area-demo__content > p {
+  color: var(--k2b-text-muted);
+  font-size: 0.75rem;
+  line-height: 1.125rem;
+}
+
+.ui-scroll-area-demo__content > p {
+  margin: 0;
+}
+
+.ui-scroll-area-demo__content details {
+  border-top: 1px solid var(--k2b-border);
+  padding-top: 0.75rem;
+}
+
+.ui-scroll-area-demo__content summary {
+  color: var(--k2b-action);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.ui-scroll-area-demo__content summary:focus-visible {
+  border-radius: var(--k2b-radius-control);
+  outline: 2px solid var(--k2b-focus);
+  outline-offset: 3px;
+}
+
+.ui-scroll-area-demo__content ol {
+  display: grid;
+  margin: 0.75rem 0 0;
+  padding: 0;
+  gap: 0.5rem;
+  list-style: none;
+}
+
+.ui-scroll-area-demo__content li {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--k2b-radius-control);
+  color: var(--k2b-text);
+  background: var(--k2b-surface-muted);
+  font-size: 0.75rem;
+}
+
+.ui-scroll-area-demo__content time {
+  color: var(--k2b-text-muted);
+  font-family: var(--k2b-font-mono);
+}
+
 .ui-detail-panel-patterns {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 17rem), 1fr));

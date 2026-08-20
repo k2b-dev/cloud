@@ -1692,6 +1692,14 @@
   border-top: 0;
 }
 
+.k2b-ui .k2b-scroll-area {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+
 /* A host may expose its trailing inset to the panel. The scrollport expands
    into that space so its stable gutter replaces the inset instead of adding a
    second gap, while the non-scrolling header keeps its original alignment. */

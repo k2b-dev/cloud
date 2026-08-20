@@ -166,6 +166,33 @@ drawer are sibling regions inside that frame, not adjacent cards. Use
 and `Panes` for their documented roles instead of recreating their geometry.
 See [Application shells](/en/docs/frontend/application-shells).
 
+## Keep dynamic scroll regions stable
+
+Let normal page content grow with the document. When a region is already
+height-constrained and may cross its overflow boundary, use
+[`ScrollArea`](/en/ui/layout/scroll-area) or the scrolling part of the shared
+component that owns the region. Its stable scrollbar gutter keeps text,
+controls, and aligned columns from moving horizontally when a scrollbar
+appears or disappears.
+
+Treat the content length as dynamic when it can change through:
+
+- filters, search results, tabs, or view switches;
+- disclosures, expandable sections, validation messages, or optional fields;
+- pagination, incremental loading, or live updates;
+- user-created, user-edited, or otherwise unbounded domain content.
+
+The surrounding layout still owns the region's height, flex behavior, padding,
+and spacing. Keep one scroll owner for each full-height region. Do not wrap
+`DetailPanel.Body`, `PanelDialog.Body`, `DataTable`, `ChatTimeline`, or another
+component that already owns scrolling in an additional `ScrollArea`. Do not
+use it for a horizontal-only strip or add a bounded scroll region where the
+page should grow naturally.
+
+When a standalone scroll region needs to be announced, give it an appropriate
+landmark and accessible name. Add a tab stop only when keyboard users would
+otherwise have no focusable content through which to reach the scrollport.
+
 ## Keep controls and feedback consistent
 
 A shared control owns its resting, hover, focus, active, selected, disabled,
@@ -243,6 +270,7 @@ Before accepting a component or screen, verify:
 - Hover, focus, active, selected, disabled, loading, empty, and error states
   are covered.
 - Progressive disclosure works with pointer, keyboard, and touch.
+- Height-constrained dynamic content keeps a stable width as overflow changes.
 - Desktop and mobile layouts avoid page-level overflow.
 - Light and dark modes preserve the same hierarchy.
 - Icon-only actions have accessible names and useful focus treatment.

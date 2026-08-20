@@ -19,6 +19,7 @@ import {
   type PanesLayout,
   type PanesNode,
   removePanesItem,
+  ScrollArea,
   Select,
   SelectChip,
   SettingsCollection,
@@ -1212,6 +1213,68 @@ const DetailPanelDemo = () => {
   );
 };
 
+const scrollAreaEvents = [
+  ["09:14", "Validated inventory"],
+  ["09:16", "Reserved packing station"],
+  ["09:18", "Generated shipping label"],
+  ["09:21", "Assigned outbound lane"],
+  ["09:24", "Confirmed package weight"],
+  ["09:27", "Transferred to carrier"],
+] as const;
+
+const ScrollAreaDemo = () => (
+  <DemoCard
+    id="scroll-area"
+    chip={{ kind: "component", name: "ScrollArea", from: "@k2b/ui" }}
+    description="Open the native disclosure. The fixed-height region begins to scroll, while the status badge and text keep the same horizontal alignment."
+    code={`<ScrollArea
+  role="region"
+  aria-label="Order activity"
+  scrollPreserveKey="order-activity"
+  style={{ height: "18rem" }}
+>
+  <OrderSummary />
+  <details>
+    <summary>Show all processing events</summary>
+    <OrderEvents />
+  </details>
+</ScrollArea>`}
+  >
+    <div class="ui-scroll-area-demo">
+      <ScrollArea
+        class="ui-scroll-area-demo__viewport"
+        role="region"
+        aria-label="Order activity"
+        scrollPreserveKey="showcase-order-activity"
+      >
+        <div class="ui-scroll-area-demo__content">
+          <header>
+            <div>
+              <strong>Order #1048</strong>
+              <span>Dynamic activity region</span>
+            </div>
+            <StatusBadge tone="ok" label="Ready" />
+          </header>
+          <p>
+            The trailing edge is reserved before this content overflows. Watch the Ready badge while opening and closing the event list.
+          </p>
+          <details>
+            <summary>Show all processing events</summary>
+            <ol>
+              {scrollAreaEvents.map(([time, label]) => (
+                <li>
+                  <time>{time}</time>
+                  <span>{label}</span>
+                </li>
+              ))}
+            </ol>
+          </details>
+        </div>
+      </ScrollArea>
+    </div>
+  </DemoCard>
+);
+
 const DetailPanelActionDemo = () => (
   <DemoCard
     id="detail-panel-action"
@@ -1369,6 +1432,11 @@ const demos: DemoSection = {
     <DemoGrid columns="one">
       <DetailPanelActionDemo />
       <DetailPanelDemo />
+    </DemoGrid>
+  ),
+  "scroll-area": () => (
+    <DemoGrid columns="one">
+      <ScrollAreaDemo />
     </DemoGrid>
   ),
   discussion: () => (

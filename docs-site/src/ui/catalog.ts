@@ -129,6 +129,12 @@ const portableSections = [
         "ti ti-messages",
         "Portable notes and comments with compact authorship, Markdown composition, and progressive actions.",
       ),
+      page(
+        "scroll-area",
+        "ScrollArea",
+        "ti ti-arrows-vertical",
+        "A bounded scrollport that keeps content aligned as overflow appears and disappears.",
+      ),
       page("panes", "Panes", "ti ti-columns", "Controlled serializable tabs and nested split layouts."),
       page("overview", "AppOverview", "ti ti-home", "Application landing page with primary and supporting panels."),
       page("settings-modal", "Settings", "ti ti-settings", "Accessible settings tabs, fields, and save state."),
@@ -262,7 +268,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 103;
+export const portableUiComponentCount = 104;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
