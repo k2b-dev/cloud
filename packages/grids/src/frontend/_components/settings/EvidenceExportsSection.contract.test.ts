@@ -13,6 +13,7 @@ describe("Evidence exports settings contract", () => {
     expect(section).toContain("Available evidence");
     expect(section).toContain("This check changes nothing and is not a compliance assessment");
     expect(section).toContain("Review Table coverage");
+    expect(section).toContain('class="mb-8"');
     expect(coverageDialog).toContain("Evidence coverage by Table");
     expect(coverageDialog).toContain("Earlier states unavailable");
     expect(coverageDialog).toContain("Building baseline");

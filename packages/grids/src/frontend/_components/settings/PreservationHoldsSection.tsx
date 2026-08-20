@@ -241,7 +241,7 @@ export function PreservationHoldsSection(props: { baseId: string; onSavingChange
                   <SettingsCollection.Item
                     title={scopeLabel}
                     description={`${hold.reason} · Created ${new Date(hold.createdAt).toLocaleString()}${hold.createdByDisplayName ? ` by ${hold.createdByDisplayName}` : ""} · ${hold.id}`}
-                    icon={<i class={hold.scope.type === "base" ? "ti ti-database-lock" : "ti ti-table-lock"} aria-hidden="true" />}
+                    icon={<i class={hold.scope.type === "base" ? "ti ti-database" : "ti ti-table"} aria-hidden="true" />}
                   >
                     <SettingsCollection.Item.Status>
                       <StatusBadge tone="neutral" variant="text" label={scopeDescription} icon={null} />

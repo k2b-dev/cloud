@@ -64,6 +64,7 @@ describe("Grids Base settings composition", () => {
     expect(source).toContain("A Table hold also prevents deleting its parent Base");
     expect(source).toContain('class="mt-5"');
     expect(source).toContain('class="ti ti-lock"');
+    expect(source).toContain('"ti ti-database" : "ti ti-table"');
     expect(source).toContain("fetchData");
     expect(source).toContain('limit: "25"');
     expect(source).toContain("Could not search Tables");

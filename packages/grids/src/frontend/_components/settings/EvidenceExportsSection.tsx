@@ -382,6 +382,7 @@ export function EvidenceExportsSection(props: { base: PublicBase }) {
   return (
     <>
       <SettingsGroup
+        class="mb-8"
         title="Available evidence"
         description="Live coverage derived from stored Grids data. This check changes nothing and is not a compliance assessment."
       >
