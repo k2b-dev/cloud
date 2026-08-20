@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { LoopAggregate, Message, Usage } from "@k2b/nessi";
 import type { AiStoredMessage } from "../types";
-import { aiToolIcon, latestLoopUsage, latestUsage, latestUsageSnapshot, memoryToolPresentation } from "./message-utils";
+import { aiToolIcon, displayToolName, latestLoopUsage, latestUsage, latestUsageSnapshot, memoryToolPresentation } from "./message-utils";
 
 const storedAssistant = (input: { usage: Usage; aggregate?: LoopAggregate }): AiStoredMessage => {
   const message: Message = {
@@ -78,6 +78,12 @@ describe("AI usage selectors", () => {
 });
 
 describe("AI tool icons", () => {
+  test("humanizes technical fallback names without metadata", () => {
+    expect(displayToolName("search_tools")).toBe("Search tools");
+    expect(displayToolName("custom_tool")).toBe("Custom tool");
+    expect(displayToolName("local_bash")).toBe("Local Bash");
+  });
+
   test.each([
     ["search_project", "ti ti-folder-search"],
     ["read_project_knowledge", "ti ti-notebook"],

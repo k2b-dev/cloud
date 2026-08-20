@@ -1,4 +1,4 @@
-import { Chat, type ChatTimelineItem } from "@k2b/ui";
+import type { ChatTimelineItem } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, type JSX, onCleanup, Show } from "solid-js";
 import type { AiActiveTurn } from "../client/projection";
 import { type AiActiveTurnSegment, isRenderableTurnBlock, splitActiveTurnBlocks } from "../protocol";
@@ -6,7 +6,7 @@ import { type AiAssistantTimelineItem, buildAiMessageTimeline, copyTextFromAssis
 import type { AiConversationTimelineEntry, AiStoredMessage } from "../types";
 import { AiTurnBlockList } from "./blocks";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
-import { formatWorkedDuration, isCardToolName, isSurveyToolName, isTextEditorToolName, textFromMessage } from "./message-utils";
+import { textFromMessage } from "./message-utils";
 import { TurnNavigator } from "./turn-navigator";
 import { activeTimelineSeq } from "./turn-navigator-utils";
 import {
@@ -24,27 +24,15 @@ export type AiChatTimelineSession = {
 
 export { type AiChatActions, AiChatActionsProvider };
 
-const isShowcaseBlock = (block: AiAssistantTimelineItem["blocks"][number]) =>
-  block.kind === "tool" &&
-  (isCardToolName(block.name) || isSurveyToolName(block.name) || isTextEditorToolName(block.name) || block.name === "present");
+const isWideBlock = (block: AiAssistantTimelineItem["blocks"][number]) => block.kind === "tool";
 
-const isWideBlock = (block: AiAssistantTimelineItem["blocks"][number]) =>
-  isShowcaseBlock(block) || (block.kind === "tool" && (block.status === "awaiting_approval" || block.status === "rejected"));
-
-function AiAssistantContent(props: { item: AiAssistantTimelineItem }): JSX.Element {
+export function AiAssistantContent(props: { item: AiAssistantTimelineItem }): JSX.Element {
   const renderable = createMemo(() => props.item.blocks.filter(isRenderableTurnBlock));
-  const worked = () => renderable().filter((block) => block.kind !== "text" && !isShowcaseBlock(block));
-  const visible = () => renderable().filter((block) => block.kind === "text" || isShowcaseBlock(block));
   const turnId = () => props.item.loopId ?? props.item.id;
 
   return (
     <div class="flex flex-col gap-2">
-      <Show when={worked().length > 0}>
-        <Chat.Activity icon="ti ti-route" label={`Worked for ${formatWorkedDuration(props.item.workedMs)}`} bodyInset={false}>
-          <AiTurnBlockList blocks={worked()} turnId={turnId()} compact />
-        </Chat.Activity>
-      </Show>
-      <AiTurnBlockList blocks={visible()} turnId={turnId()} />
+      <AiTurnBlockList blocks={renderable()} turnId={turnId()} />
     </div>
   );
 }

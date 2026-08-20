@@ -167,20 +167,29 @@ Keep the Stop action available until the server accepts the abort.
 Render tool input and output as data. Do not inject model text as HTML.
 
 Compact capability rows use the saved capability title, app icon, and optional
-accent in running, success, and failure states. A successful result with a
-provider-authored `summary` shows that escaped plain-text summary plus semantic
-resource references and links; older results without one retain the complete
-generic input and response disclosure. Expanded generic disclosures show
+accent while running and on failure. A successful provider-authored `summary`
+replaces the title as one escaped plain-text result row without a disclosure or
+duplicate raw data. Semantic links remain direct row actions; raw resource refs
+remain structured result data rather than user-facing labels. Older results
+without a summary retain the complete generic input and response disclosure.
+Expanded generic disclosures show
 JSON-like payloads as structured data previews with at most eight visible rows
 and an optional raw view. Expanded data surfaces span the available message
 column. Built-in discovery, Help, Project, file, calculation, image, web,
 memory, and interaction tools use Cloud-owned readable renderers and omit raw
 input or output that adds no user value. Unknown tools and failures retain the
-generic technical details.
+generic technical details. Failures open those details immediately so the
+error and bounded validation issues are visible without another interaction.
 Approval prompts additionally show the owning application's saved name. The
 saved snapshot keeps history readable when an app is
 temporarily unavailable or later changes its registry metadata; ordinary Nessi
 tools keep the generic tool presentation.
+
+Discovery result disclosures use flat, single-line rows with a readable title,
+truncated description, and app label instead of enclosing the list in another
+surface. Loaded tools use titles from the catalog snapshot already available to
+the Assistant; resolving display text does not require another registry call.
+Persisted and active turns render their blocks in the same saved order.
 
 Generic tool rows and disclosures use `Chat.Activity` from `@k2b/ui`. Cloud
 only supplies protocol-derived labels and specialized bodies such as web search
@@ -191,8 +200,10 @@ shell.
 An active response always uses the shared streaming state of `Chat.Message`,
 including before the first model block arrives. It renders the minimal
 three-dot progress indicator; do not add a separate generating activity or
-label. Active tool rows set `busy` on `Chat.Activity`, which uses a quiet accent
-sweep across the tool icon and title instead of adding another loader.
+label. Active tool rows set `busy` on `Chat.Activity`, which moves a quiet
+text-color-to-transparency shimmer across the tool icon and title instead of
+adding another loader or pulsing the accent color. Reduced-motion clients keep
+the same text static.
 
 Approval prompts span the available message column and lead with the owning
 application's name and icon. The primary control names the concrete action;

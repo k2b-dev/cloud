@@ -12,9 +12,11 @@ Use `leading` when an activity needs a host-owned visual such as a favicon. Use
 the optional `accent` only for source or application identity; `success` and
 `danger` tones continue to own semantic state colors. Keep the rich activity
 body in the host so `Chat` remains independent from tool protocols.
-Set `busy` on an activity while work is running. Streaming messages and busy
-activities share the same three-dot progress treatment; applications should
-not add a second spinner or visible generating label.
+Set `busy` on an activity while work is running. It applies a quiet horizontal
+text-color-to-transparency shimmer to the activity icon and title; reduced-
+motion clients keep the text static. Streaming messages retain the minimal
+three-dot indicator. Applications should not add another spinner or visible
+generating label.
 Activity bodies are inset beneath their row by default. Set `bodyInset={false}`
 when the body is a peer list that should align with the activity row itself.
 

@@ -10,6 +10,7 @@ type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 type PresentResult = { path: string; size: number; mediaType: string };
 
 const presentResult = (block: ToolBlock): PresentResult | null => {
+  if (block.status === "running") return null;
   if (isRecord(block.result) && typeof block.result.path === "string") {
     return { path: block.result.path, size: Number(block.result.size ?? 0), mediaType: String(block.result.mediaType ?? "") };
   }

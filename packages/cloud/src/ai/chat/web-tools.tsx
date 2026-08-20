@@ -102,6 +102,7 @@ export function WebExtractToolBlock(props: { block: ToolBlock }) {
   return (
     <Show when={!running()} fallback={<Chat.Activity label={domainOf(url()) || "Reading page"} icon="ti ti-world-download" busy />}>
       <Chat.Activity
+        defaultOpen
         icon="ti ti-world-download"
         leading={<Favicon url={url()} fallbackIcon="ti ti-world-download" />}
         label={title() || domainOf(url())}

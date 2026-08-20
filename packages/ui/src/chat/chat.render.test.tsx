@@ -551,8 +551,12 @@ describe("@k2b/ui portable chat family", () => {
     const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
     const dotsRule = css.match(/\.k2b-ui \.k2b-chat-progress-dots > span \{([^}]+)\}/)?.[1] ?? "";
     const assistantMessageRule = css.match(/\.k2b-ui \.k2b-chat-message\[data-role="assistant"\] \{([^}]+)\}/)?.[1] ?? "";
+    const activityRule = css.match(/\.k2b-ui \.k2b-chat-activity \{([^}]+)\}/)?.[1] ?? "";
 
     expect(assistantMessageRule).toContain("width: 100%;");
+    expect(activityRule).toContain("min-width: 0;");
+    expect(activityRule).toContain("width: 100%;");
+    expect(activityRule).toContain("max-width: 100%;");
     expect(dotsRule).toContain("width: 0.3rem;");
     expect(dotsRule).toContain("height: 0.3rem;");
     expect(dotsRule).toContain("animation: k2b-chat-dot-pulse 1s ease-in-out infinite;");
@@ -560,13 +564,16 @@ describe("@k2b/ui portable chat family", () => {
     expect(css).toContain(".k2b-ui .k2b-chat-message__status--streaming");
   });
 
-  test("uses an accent sweep instead of progress dots for busy activities", () => {
+  test("uses a text-color shimmer instead of a color pulse for busy activities", () => {
     const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
 
     expect(css).toContain('.k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"])');
-    expect(css).toContain("animation: k2b-chat-activity-accent-sweep 1.5s ease-in-out infinite;");
-    expect(css).toContain("animation-delay: 120ms;");
-    expect(css).toContain("@keyframes k2b-chat-activity-accent-sweep");
+    expect(css).toContain("color-mix(in srgb, var(--k2b-chat-activity-busy-color) 48%, transparent)");
+    expect(css).toContain("animation: k2b-chat-activity-shimmer 1.7s linear infinite;");
+    expect(css).toContain("@keyframes k2b-chat-activity-shimmer");
+    expect(css).not.toContain("k2b-chat-activity-accent-sweep");
+    expect(css).toContain("color: var(--k2b-chat-activity-busy-color);");
+    expect(css).toContain("background-image: none;");
   });
 
   test("keeps semantic activity tones stronger than an optional identity accent", () => {

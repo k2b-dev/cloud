@@ -147,9 +147,10 @@ function ToolResultDisclosure(props: {
   return (
     <Chat.Activity
       icon={props.icon ?? (props.isError ? "ti ti-alert-circle" : aiToolIcon(props.toolName))}
-      label={props.isError ? (props.labelOnError ?? "Show tool error") : props.name}
+      label={props.isError ? `${props.labelOnError ?? props.name} failed` : props.name}
       tone={props.isError ? "danger" : "neutral"}
       accent={props.accent}
+      defaultOpen={props.isError}
       bodyInset={false}
     >
       <div class="flex w-full min-w-0 flex-col gap-2">
@@ -401,10 +402,6 @@ function CapabilityToolView(props: { block: ToolBlock }) {
     const trimmed = value.trim();
     return trimmed.length <= 500 ? trimmed : "";
   };
-  const refs = () => {
-    const value = result()?.refs;
-    return Array.isArray(value) ? value.filter((ref) => isRecord(ref) && typeof ref.type === "string" && typeof ref.id === "string") : [];
-  };
   const links = () => {
     const value = result()?.links;
     return Array.isArray(value)
@@ -442,37 +439,28 @@ function CapabilityToolView(props: { block: ToolBlock }) {
       >
         <Chat.Activity
           icon={aiToolIcon(props.block.name, presentation().appIcon)}
-          label={label()}
-          description={summary()}
+          label={summary()}
           accent={presentation().appAccent}
-          bodyInset={false}
-        >
-          {refs().length > 0 || links().length > 0 ? (
-            <div class="flex w-full min-w-0 flex-wrap gap-1.5 rounded-md bg-zinc-100/70 p-2 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
-              <For each={refs()}>
-                {(ref) => (
-                  <span class="inline-flex min-w-0 items-center gap-1 rounded bg-white/65 px-1.5 py-1 text-secondary dark:bg-white/5">
-                    <i class="ti ti-link shrink-0" aria-hidden="true" />
-                    <span class="truncate">{`${String(ref.type ?? "resource")}:${String(ref.id ?? "")}`}</span>
-                  </span>
-                )}
-              </For>
-              <For each={links()}>
-                {(link) => (
-                  <ButtonLink href={String(link.href)} size="xs" variant="ghost">
-                    {typeof link.title === "string"
-                      ? link.title
-                      : link.rel === "edit"
-                        ? "Edit"
-                        : link.rel === "download"
-                          ? "Download"
-                          : "Open"}
-                  </ButtonLink>
-                )}
-              </For>
-            </div>
-          ) : undefined}
-        </Chat.Activity>
+          trailing={
+            links().length > 0 ? (
+              <span class="flex min-w-0 flex-wrap items-center justify-end gap-1">
+                <For each={links()}>
+                  {(link) => (
+                    <ButtonLink href={String(link.href)} size="xs" variant="ghost">
+                      {typeof link.title === "string"
+                        ? link.title
+                        : link.rel === "edit"
+                          ? "Edit"
+                          : link.rel === "download"
+                            ? "Download"
+                            : "Open"}
+                    </ButtonLink>
+                  )}
+                </For>
+              </span>
+            ) : undefined
+          }
+        />
       </Show>
     </Show>
   );

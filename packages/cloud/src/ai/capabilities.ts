@@ -514,6 +514,7 @@ export const createAiToolMetaTools = (input: {
         alreadyLoaded: z.array(z.string()),
         missing: z.array(z.string()),
         evicted: z.array(z.string()),
+        titles: z.record(z.string(), z.string()),
       })
       .strict(),
     approval: "never",
@@ -528,7 +529,15 @@ export const createAiToolMetaTools = (input: {
       names: valid,
       maxLoadedTools: input.maxLoadedTools,
     });
-    return { ...updated, alreadyLoaded: [...new Set([...eager, ...updated.alreadyLoaded])], missing };
+    const alreadyLoaded = [...new Set([...eager, ...updated.alreadyLoaded])];
+    const catalogByName = new Map(input.catalog.map((entry) => [entry.name, entry]));
+    const titles = Object.fromEntries(
+      [...new Set([...updated.loaded, ...alreadyLoaded, ...updated.evicted])].flatMap((name) => {
+        const entry = catalogByName.get(name);
+        return entry ? [[name, entry.title]] : [];
+      }),
+    );
+    return { ...updated, alreadyLoaded, missing, titles };
   });
 
   return [search, load, listApps];

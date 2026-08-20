@@ -6026,7 +6026,9 @@
 }
 
 .k2b-ui .k2b-chat-activity {
-  width: min(100%, 44rem);
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
   align-self: flex-start;
   color: var(--k2b-text-muted);
   font-size: 0.75rem;
@@ -6109,22 +6111,35 @@
 
 .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"]) .k2b-chat-activity__leading,
 .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"]) .k2b-chat-activity__copy strong {
-  --k2b-chat-activity-busy-rest: var(--k2b-text-muted);
-  animation: k2b-chat-activity-accent-sweep 1.5s ease-in-out infinite;
+  color: transparent;
+  background-image: linear-gradient(
+    105deg,
+    var(--k2b-chat-activity-busy-color) 0%,
+    var(--k2b-chat-activity-busy-color) 38%,
+    color-mix(in srgb, var(--k2b-chat-activity-busy-color) 48%, transparent) 50%,
+    var(--k2b-chat-activity-busy-color) 62%,
+    var(--k2b-chat-activity-busy-color) 100%
+  );
+  background-size: 240% 100%;
+  background-clip: text;
+  animation: k2b-chat-activity-shimmer 1.7s linear infinite;
+  -webkit-background-clip: text;
+}
+
+.k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"]) .k2b-chat-activity__leading {
+  --k2b-chat-activity-busy-color: var(--k2b-text-muted);
 }
 
 .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"]) .k2b-chat-activity__copy strong {
-  --k2b-chat-activity-busy-rest: var(--k2b-text-secondary);
-  animation-delay: 120ms;
+  --k2b-chat-activity-busy-color: var(--k2b-text-secondary);
 }
 
-@keyframes k2b-chat-activity-accent-sweep {
-  0%,
-  100% {
-    color: var(--k2b-chat-activity-busy-rest);
+@keyframes k2b-chat-activity-shimmer {
+  from {
+    background-position: 120% 0;
   }
-  45% {
-    color: var(--k2b-ai-accent);
+  to {
+    background-position: -120% 0;
   }
 }
 
@@ -6687,10 +6702,6 @@
     max-width: 96%;
   }
 
-  .k2b-ui .k2b-chat-activity {
-    width: 100%;
-  }
-
   .k2b-ui .k2b-chat-composer__footer {
     align-items: flex-end;
   }
@@ -6713,7 +6724,8 @@
   .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"]) .k2b-chat-activity__leading,
   .k2b-ui .k2b-chat-activity[data-busy="true"]:not([data-tone="success"]):not([data-tone="danger"]) .k2b-chat-activity__copy strong {
     animation: none;
-    color: var(--k2b-ai-accent);
+    color: var(--k2b-chat-activity-busy-color);
+    background-image: none;
   }
 
   .k2b-ui .k2b-chat-activity__chevron,

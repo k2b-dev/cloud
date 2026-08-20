@@ -603,6 +603,7 @@ describe("AI capability catalog", () => {
       alreadyLoaded: [],
       missing: ["missing__query__thing"],
       evicted: [],
+      titles: { contacts__query__list: "List items" },
     });
     expect(updates).toEqual([{ names: ["contacts__query__list"], maxLoadedTools: 2 }]);
 

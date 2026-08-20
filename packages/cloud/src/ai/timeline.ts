@@ -14,8 +14,7 @@ export type AiAssistantTimelineItem = {
   /**
    * Active work duration of the loop (nessi timing: generation + tool
    * execution, excluding approval/client waits); legacy fallback is user
-   * message submitted → last message persisted. Feeds the "Worked for Xs"
-   * collapse of finished responses.
+   * message submitted → last message persisted. Retained for response metrics.
    */
   workedMs: number;
 };

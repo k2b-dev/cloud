@@ -16,6 +16,15 @@
 
 .k2b-ui .k2b-chat-message.ai-chat-message-wide {
   width: 100%;
+  max-width: none;
+}
+
+.k2b-ui
+  .k2b-chat-message.ai-chat-message-wide
+  :where(.k2b-chat-message__bubble, .k2b-chat-message__content, .k2b-chat-message__content > *) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .assistant-markdown-block :where(*) {

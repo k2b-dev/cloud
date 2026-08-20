@@ -15,14 +15,25 @@ test("uses the shared message streaming state before the first model block", () 
   expect(blocksSource).toContain('label="Show reasoning"');
 });
 
-test("uses the full message width for approvals and showcase tools, including persisted messages", () => {
+test("uses the full message width for every tool, including persisted messages", () => {
   const presentationSource = readFileSync(resolve(import.meta.dir, "presentation.tsx"), "utf8");
   const cloudStyles = readFileSync(resolve(import.meta.dir, "../../styles/effects.css"), "utf8");
 
-  expect(presentationSource).toContain("const isWideBlock");
+  expect(presentationSource).toContain('const isWideBlock = (block: AiAssistantTimelineItem["blocks"][number]) => block.kind === "tool";');
   expect(presentationSource).toContain('class: item.blocks.some(isWideBlock) ? "ai-chat-message-wide" : undefined');
   expect(presentationSource).toContain('class: blocks.some(isWideBlock) ? "ai-chat-message-wide" : undefined');
   expect(cloudStyles).toMatch(/\.k2b-chat-message\.ai-chat-message-wide\s*\{\s*width:\s*100%;/);
+  expect(cloudStyles).toMatch(/\.k2b-chat-message\.ai-chat-message-wide\s*\{[^}]*max-width:\s*none;/);
+  expect(cloudStyles).toMatch(/\.k2b-chat-message\.ai-chat-message-wide\s+:where\([^}]+min-width:\s*0;/);
+});
+
+test("keeps persisted assistant blocks in their original order without a Worked wrapper", () => {
+  const presentationSource = readFileSync(resolve(import.meta.dir, "presentation.tsx"), "utf8");
+
+  expect(presentationSource).toContain("<AiTurnBlockList blocks={renderable()} turnId={turnId()} />");
+  expect(presentationSource).not.toContain("const worked =");
+  expect(presentationSource).not.toContain("const visible =");
+  expect(presentationSource).not.toContain("Worked for ${");
 });
 
 test("renders attributable inter-chat input as a system message", () => {

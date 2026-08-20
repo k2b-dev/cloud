@@ -264,7 +264,8 @@ export const displayToolName = (name: string) => {
   if (isSurveyToolName(name)) return "survey";
   if (isTextEditorToolName(name)) return "text editor";
   if (name === "local_bash") return "Local Bash";
-  return name;
+  const words = name.split("_").filter(Boolean).join(" ");
+  return `${words.slice(0, 1).toUpperCase()}${words.slice(1)}`;
 };
 
 const BUILT_IN_TOOL_ICONS = new Map<string, string>([

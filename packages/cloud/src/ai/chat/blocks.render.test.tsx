@@ -6,15 +6,19 @@ import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { AiTurnBlock } from "../protocol";
+import type { AiAssistantTimelineItem } from "../timeline";
 
 const root = mkdtempSync(resolve(tmpdir(), "cloud-capability-block-tests-"));
 const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { AiTurnBlockView } = await import("./blocks");
+const { AiTurnBlockList, AiTurnBlockView } = await import("./blocks");
 const { AiChatActionsProvider } = await import("./message-actions");
+const { AiAssistantContent } = await import("./presentation");
 const { CloudSurveyBlock, CloudTextEditorBlock } = await import("./visual-tools");
+
+const hasOpenDetails = (html: string): boolean => /<details\b[^>]*\sopen(?:=""|(?=[\s>]))/.test(html);
 
 const block = (status: "running" | "awaiting_approval" | "completed" | "failed"): AiTurnBlock => ({
   id: "tool-call-1",
@@ -120,6 +124,7 @@ describe("capability tool presentation", () => {
     expect(html).toContain(bodyClass);
     expect(html).toContain(content);
     expect(html).not.toContain("max-w-xl");
+    expect(hasOpenDetails(html)).toBe(true);
   });
 
   test("renders internal discovery results as readable tool lists instead of JSON", () => {
@@ -149,9 +154,13 @@ describe("capability tool presentation", () => {
     expect(html).toContain("Change conversation tags");
     expect(html).toContain("Add or remove mailbox tags.");
     expect(html).toContain(">mail</span>");
+    expect(html).toContain(">·</span>");
+    expect(html).toContain("min-w-0 flex-1 truncate text-dimmed");
+    expect(html).not.toContain("bg-zinc-100/70");
     expect(html).not.toContain(">Input</p>");
     expect(html).not.toContain(">Response</p>");
     expect(html).not.toContain("k2b-content-structured-data");
+    expect(hasOpenDetails(html)).toBe(false);
   });
 
   test("uses provider-authored capability summaries and semantic links", () => {
@@ -167,11 +176,26 @@ describe("capability tool presentation", () => {
     const html = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
 
     expect(html).toContain("Tagged mail with #foo");
-    expect(html).toContain("mail.conversation:nTf34n");
+    expect(html).not.toContain(">List contacts</strong>");
+    expect(html).not.toContain("mail.conversation:nTf34n");
     expect(html).toContain('href="/app/mail/5guDsC?conversation=nTf34n"');
     expect(html).not.toContain(">Input</p>");
     expect(html).not.toContain(">Response</p>");
     expect(html).not.toContain("k2b-content-structured-data");
+    expect(hasOpenDetails(html)).toBe(false);
+  });
+
+  test("keeps capability failures and validation details immediately visible", () => {
+    const failed = block("failed");
+    if (failed.kind !== "tool") throw new Error("tool block missing");
+    failed.result = "VALIDATION_FAILED: Capability input did not match the registered schema Input issues: mailboxId: Must be a stable ID";
+
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: failed, turnId: "turn-1" }));
+
+    expect(html).toContain("List contacts failed");
+    expect(html).toContain("mailboxId: Must be a stable ID");
+    expect(html).toContain('data-tone="danger"');
+    expect(hasOpenDetails(html)).toBe(true);
   });
 
   test("does not turn malformed historical capability links into navigation", () => {
@@ -191,7 +215,18 @@ describe("capability tool presentation", () => {
 
   test.each([
     ["list_apps", {}, { apps: { contacts: "People and address books" } }, "People and address books"],
-    ["load_tools", { names: ["calculate"] }, { loaded: ["calculate"], alreadyLoaded: [], missing: [], evicted: [] }, "calculate"],
+    [
+      "load_tools",
+      { names: ["mail__query__activity_dot_list"] },
+      {
+        loaded: ["mail__query__activity_dot_list"],
+        alreadyLoaded: [],
+        missing: [],
+        evicted: [],
+        titles: { mail__query__activity_dot_list: "List mail activity" },
+      },
+      "List mail activity",
+    ],
     [
       "search_help",
       { query: "mail tags" },
@@ -279,6 +314,8 @@ describe("capability tool presentation", () => {
     expect(html).not.toContain(">Input</p>");
     expect(html).not.toContain(">Response</p>");
     expect(html).not.toContain("k2b-content-structured-data");
+    expect(hasOpenDetails(html)).toBe(name === "view_image");
+    if (name === "load_tools") expect(html).not.toContain("mail__query__activity_dot_list");
   });
 
   test("renders persisted local Bash calls without execution controls", () => {
@@ -301,6 +338,7 @@ describe("capability tool presentation", () => {
     expect(completedHtml).toContain("ti-terminal-2");
     expect(completedHtml).toContain("git status --short");
     expect(completedHtml).not.toContain("<small>");
+    expect(hasOpenDetails(completedHtml)).toBe(false);
     expect(pendingHtml).toContain("Local Bash");
     expect(pendingHtml).toContain("ti-terminal-2");
     expect(pendingHtml).not.toContain("Approve");
@@ -323,6 +361,57 @@ describe("capability tool presentation", () => {
 
     expect(runningHtml).toContain("ti-folder-search");
     expect(completedHtml).toContain("ti-folder-search");
+  });
+
+  test("keeps Present busy until a completed result is available", () => {
+    const running: AiTurnBlock = {
+      id: "present-call",
+      kind: "tool",
+      callId: "present-1",
+      name: "present",
+      args: { path: "/report.pdf", title: "Quarterly report" },
+      status: "running",
+    };
+
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: running, turnId: "turn-1" }));
+
+    expect(html).toContain("Preparing file");
+    expect(html).toContain('data-busy="true"');
+    expect(html).not.toContain("Quarterly report");
+    expect(html).not.toContain("Download");
+  });
+
+  test("keeps stored and live block presentation in the same order", () => {
+    const blocks: AiTurnBlock[] = [
+      { id: "text-before", kind: "text", text: "Before tool" },
+      {
+        id: "tool-middle",
+        kind: "tool",
+        callId: "tool-1",
+        name: "unknown_tool",
+        status: "completed",
+        result: { ok: true },
+      },
+      { id: "text-after", kind: "text", text: "After tool" },
+    ];
+    const item: AiAssistantTimelineItem = {
+      type: "assistant",
+      id: "stored-1",
+      loopId: "turn-1",
+      entries: [],
+      blocks,
+      actionEntry: null,
+      workedMs: 1_000,
+    };
+    const storedHtml = renderToString(() => createComponent(AiAssistantContent, { item }));
+    const liveHtml = renderToString(() => createComponent(AiTurnBlockList, { blocks, turnId: "turn-1" }));
+
+    for (const html of [storedHtml, liveHtml]) {
+      expect(html.indexOf("Before tool")).toBeLessThan(html.indexOf("Unknown tool"));
+      expect(html.indexOf("Unknown tool")).toBeLessThan(html.indexOf("After tool"));
+      expect(html).not.toContain("unknown_tool");
+      expect(html).not.toContain("Worked for");
+    }
   });
 
   test("keeps the app identity on approval prompts", () => {

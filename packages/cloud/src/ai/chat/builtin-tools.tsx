@@ -34,12 +34,16 @@ const number = (value: unknown): number => (typeof value === "number" && Number.
 const records = (value: unknown): Record<string, unknown>[] => (Array.isArray(value) ? value.filter(isRecord) : []);
 const basename = (path: string): string => path.slice(path.lastIndexOf("/") + 1) || path;
 
-function ResultSurface(props: { children: JSX.Element }) {
+function DetailSurface(props: { children: JSX.Element }) {
   return (
     <div class="w-full min-w-0 rounded-md bg-zinc-100/70 p-1 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
       {props.children}
     </div>
   );
+}
+
+function ResultList(props: { children: JSX.Element }) {
+  return <div class="flex w-full min-w-0 flex-col text-xs">{props.children}</div>;
 }
 
 function EmptyRow(props: { children: JSX.Element }) {
@@ -48,15 +52,19 @@ function EmptyRow(props: { children: JSX.Element }) {
 
 function ResultRow(props: { icon: string; title: string; description?: string; meta?: string }) {
   return (
-    <div class="flex min-w-0 items-start gap-2 rounded-md px-2 py-1.5">
-      <i class={`ti ${props.icon} mt-px shrink-0 text-sm text-dimmed`} aria-hidden="true" />
-      <div class="min-w-0 flex-1">
-        <p class="truncate font-medium text-primary">{props.title}</p>
-        <Show when={props.description}>
-          <p class="line-clamp-2 text-dimmed">{props.description}</p>
-        </Show>
-      </div>
+    <div class="flex min-w-0 items-center gap-1.5 px-2 py-1.5">
+      <i class={`ti ${props.icon} shrink-0 text-sm text-dimmed`} aria-hidden="true" />
+      <span class="max-w-[42%] shrink-0 truncate font-medium text-primary">{props.title}</span>
+      <Show when={props.description}>
+        <span class="shrink-0 text-dimmed" aria-hidden="true">
+          ·
+        </span>
+        <span class="min-w-0 flex-1 truncate text-dimmed">{props.description}</span>
+      </Show>
       <Show when={props.meta}>
+        <span class="shrink-0 text-dimmed" aria-hidden="true">
+          ·
+        </span>
         <span class="shrink-0 text-[11px] text-dimmed">{props.meta}</span>
       </Show>
     </div>
@@ -89,8 +97,8 @@ function SearchToolsView(props: { block: ToolBlock }) {
   const tools = () => records(result().tools);
   const query = () => text(args().query) || "Tools";
   return (
-    <CompletedActivity block={props.block} label={`Search tools: ${query()}`} description={`${tools().length} found`} defaultOpen>
-      <ResultSurface>
+    <CompletedActivity block={props.block} label={`Search tools: ${query()}`} description={`${tools().length} found`}>
+      <ResultList>
         <Show when={tools().length > 0} fallback={<EmptyRow>No tools found.</EmptyRow>}>
           <For each={tools()}>
             {(tool) => (
@@ -103,7 +111,7 @@ function SearchToolsView(props: { block: ToolBlock }) {
             )}
           </For>
         </Show>
-      </ResultSurface>
+      </ResultList>
     </CompletedActivity>
   );
 }
@@ -115,18 +123,22 @@ function ListAppsView(props: { block: ToolBlock }) {
     return isRecord(value) ? Object.entries(value) : [];
   };
   return (
-    <CompletedActivity block={props.block} label="List apps" description={`${apps().length} available`} defaultOpen>
-      <ResultSurface>
+    <CompletedActivity block={props.block} label="List apps" description={`${apps().length} available`}>
+      <ResultList>
         <Show when={apps().length > 0} fallback={<EmptyRow>No capability apps available.</EmptyRow>}>
           <For each={apps()}>{([appId, description]) => <ResultRow icon="ti-apps" title={appId} description={text(description)} />}</For>
         </Show>
-      </ResultSurface>
+      </ResultList>
     </CompletedActivity>
   );
 }
 
 function LoadToolsView(props: { block: ToolBlock }) {
   const result = () => (isRecord(props.block.result) ? props.block.result : {});
+  const titles = (): Record<string, unknown> => {
+    const value = result().titles;
+    return isRecord(value) ? value : {};
+  };
   const groups = () =>
     (
       [
@@ -143,22 +155,17 @@ function LoadToolsView(props: { block: ToolBlock }) {
     return Array.isArray(value) ? value.length : 0;
   };
   return (
-    <CompletedActivity block={props.block} label="Load tools" description={`${loadedCount()} loaded`} defaultOpen={groups().length > 0}>
+    <CompletedActivity block={props.block} label="Load tools" description={`${loadedCount()} loaded`}>
       <Show when={groups().length > 0}>
-        <ResultSurface>
+        <ResultList>
           <For each={groups()}>
             {(group) => (
-              <div class="px-2 py-1.5">
-                <p class="mb-1 text-[10px] font-medium uppercase tracking-wide text-dimmed">{group.label}</p>
-                <div class="flex flex-wrap gap-1">
-                  <For each={group.names}>
-                    {(name) => <code class="rounded bg-white/65 px-1.5 py-0.5 text-[11px] text-secondary dark:bg-white/5">{name}</code>}
-                  </For>
-                </div>
-              </div>
+              <For each={group.names}>
+                {(name) => <ResultRow icon={aiToolIcon(name)} title={text(titles()[name]) || name} meta={group.label} />}
+              </For>
             )}
           </For>
-        </ResultSurface>
+        </ResultList>
       </Show>
     </CompletedActivity>
   );
@@ -170,8 +177,8 @@ function SearchHelpView(props: { block: ToolBlock }) {
   const documents = () => records(result().documents);
   const query = () => text(args().query) || "Help";
   return (
-    <CompletedActivity block={props.block} label={`Search help: ${query()}`} description={`${documents().length} found`} defaultOpen>
-      <ResultSurface>
+    <CompletedActivity block={props.block} label={`Search help: ${query()}`} description={`${documents().length} found`}>
+      <ResultList>
         <Show when={documents().length > 0} fallback={<EmptyRow>No Help articles found.</EmptyRow>}>
           <For each={documents()}>
             {(document) => (
@@ -184,7 +191,7 @@ function SearchHelpView(props: { block: ToolBlock }) {
             )}
           </For>
         </Show>
-      </ResultSurface>
+      </ResultList>
     </CompletedActivity>
   );
 }
@@ -214,9 +221,8 @@ function SearchProjectView(props: { block: ToolBlock }) {
       block={props.block}
       label={query() ? `Search Project: ${query()}` : "List Project sources"}
       description={`${items().length} found${result().truncated === true ? "+" : ""}`}
-      defaultOpen
     >
-      <ResultSurface>
+      <ResultList>
         <Show when={items().length > 0} fallback={<EmptyRow>No Project sources found.</EmptyRow>}>
           <For each={items()}>
             {(item) => {
@@ -240,7 +246,7 @@ function SearchProjectView(props: { block: ToolBlock }) {
             }}
           </For>
         </Show>
-      </ResultSurface>
+      </ResultList>
     </CompletedActivity>
   );
 }
@@ -259,9 +265,8 @@ function ListFilesView(props: { block: ToolBlock }) {
       block={props.block}
       label={`List files: ${text(args().path) || "/"}`}
       description={`${files().length} found${result().truncated === true ? "+" : ""}`}
-      defaultOpen
     >
-      <ResultSurface>
+      <ResultList>
         <Show when={files().length > 0} fallback={<EmptyRow>No files found.</EmptyRow>}>
           <For each={files()}>
             {(file) => {
@@ -277,7 +282,7 @@ function ListFilesView(props: { block: ToolBlock }) {
             }}
           </For>
         </Show>
-      </ResultSurface>
+      </ResultList>
     </CompletedActivity>
   );
 }
@@ -325,9 +330,9 @@ function ViewImageView(props: { block: ToolBlock }) {
   const path = () => text(result().path) || text(args().path);
   return (
     <CompletedActivity block={props.block} label={`Inspect image: ${basename(path())}`} defaultOpen>
-      <ResultSurface>
+      <DetailSurface>
         <p class="whitespace-pre-wrap px-2 py-1.5 leading-5 text-secondary">{text(result().description)}</p>
-      </ResultSurface>
+      </DetailSurface>
     </CompletedActivity>
   );
 }
@@ -335,7 +340,7 @@ function ViewImageView(props: { block: ToolBlock }) {
 function LocalBashView(props: { block: ToolBlock }) {
   const args = () => (isRecord(props.block.args) ? props.block.args : {});
   return (
-    <CompletedActivity block={props.block} label="Local Bash" defaultOpen>
+    <CompletedActivity block={props.block} label="Local Bash">
       <div class="flex w-full min-w-0 flex-col gap-2">
         <pre class="max-h-40 w-full min-w-0 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-100 p-2 font-mono text-[11px] leading-4 text-primary [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
           {text(args().command)}
