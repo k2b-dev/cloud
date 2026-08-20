@@ -19,7 +19,7 @@ import { apiClient } from "../../../api/client";
 import type { PublicTable } from "../../../api/public-dto";
 import { PublicGridsWorkflowLauncherListSchema, PublicGridsWorkflowLauncherSchema } from "../../../api/workflow-public-contracts";
 import type { CreateGridsWorkflowLauncherInput, GridsScannerInputSource, GridsWorkflowLauncherKind } from "../../../workflows/contracts";
-import { scannerLauncherInputSources } from "../../../workflows/contracts";
+import { isCanonicalCloseSelectionPlan, scannerLauncherInputSources } from "../../../workflows/contracts";
 import { errorMessage } from "../utils/api-helpers";
 import type { PublicWorkflow, PublicWorkflowLauncher } from "../workspace/workspace-public-state-model";
 import { WorkflowInputFields } from "./WorkflowInputFields";
@@ -67,7 +67,9 @@ const launcherConfigurationSummary = (launcher: PublicWorkflowLauncher): string 
       sources.filter((source) => source.kind === "afterScan").length
     } after each scan`;
   }
-  if (launcher.config.kind === "bulk") return `Supplies ${launcher.config.input}`;
+  if (launcher.config.kind === "bulk") {
+    return "profile" in launcher.config ? "Exact Close selection" : `Supplies ${launcher.config.input}`;
+  }
   return launcher.config.inputMode === "prompt" ? "Asks for input when run" : "Uses fixed input values";
 };
 
@@ -156,6 +158,7 @@ function LauncherEditor(props: {
       .filter((candidate) => candidate.type === "recordList")
       .map((candidate) => ({ id: candidate.name, label: candidate.config.label?.toString() || candidate.name })),
   );
+  const closeSelectionProfile = createMemo(() => (kind() === "bulk" ? isCanonicalCloseSelectionPlan(props.workflow.plan, input()) : false));
   const missingRequiredInputs = createMemo(() => missingLauncherRequiredInputs(props.workflow.plan.inputs, kind(), input()));
   const customAppValidation = createMemo(() => buildWorkflowRunInput(props.workflow.plan.inputs, customAppBindings()));
   const fixedScannerInputs = createMemo(() =>
@@ -184,7 +187,7 @@ function LauncherEditor(props: {
             missingScannerInputs().length === 0 &&
             fixedScannerValuesComplete() &&
             (Object.values(scannerSources()).includes("scanRecord") ? resolveBy() !== "field" || field().trim().length > 0 : true)
-          : input().length > 0 && missingRequiredInputs().length === 0),
+          : input().length > 0 && (closeSelectionProfile() || missingRequiredInputs().length === 0)),
   );
   const customAppErrors = () => {
     const validation = customAppValidation();
@@ -231,7 +234,11 @@ function LauncherEditor(props: {
             customAppInputMode() === "fixed" && bindings.ok ? bindings.input : undefined,
           )
         : kind() === "bulk"
-          ? { kind: "bulk", input: input() }
+          ? {
+              kind: "bulk",
+              input: input(),
+              ...(closeSelectionProfile() ? { profile: "closeSelection" as const } : {}),
+            }
           : { kind: "scanner", inputSources: scannerInputSources() };
     props.close({ name: name().trim(), enabled: enabled(), config });
   };
@@ -272,7 +279,12 @@ function LauncherEditor(props: {
               value={input}
               onValueChange={setInput}
             />
-            <Show when={missingRequiredInputs().length > 0}>
+            <Show when={closeSelectionProfile()}>
+              <NoticeCard tone="info" icon="ti ti-list-check">
+                This run option closes only the exact Records a person selects and confirms.
+              </NoticeCard>
+            </Show>
+            <Show when={!closeSelectionProfile() && missingRequiredInputs().length > 0}>
               <NoticeCard tone="danger" icon={false} role="alert">
                 This surface cannot supply the required {missingRequiredInputs().length === 1 ? "input" : "inputs"}:{" "}
                 {missingRequiredInputs().join(", ")}. Use a App run option or make the inputs optional.

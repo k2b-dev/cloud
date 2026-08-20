@@ -4,7 +4,12 @@ import { type AuthContext, jsonResponse, respond, v } from "@valentinkolb/cloud/
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import type { z } from "zod";
-import { invokeBulkLauncher, invokeCustomAppLauncher, invokeScannerLauncher } from "../service/workflow-launcher-invocations";
+import {
+  admitBulkLauncher,
+  invokeBulkLauncher,
+  invokeCustomAppLauncher,
+  invokeScannerLauncher,
+} from "../service/workflow-launcher-invocations";
 import { invokeGridsWorkflow } from "../service/workflow-runtime";
 import { GridsWorkflowInvocationRequestSchema } from "../workflows/contracts";
 import { resolvePublicIdParam } from "./route-params";
@@ -152,6 +157,9 @@ export const createWorkflowTriggerRoutes = () =>
         const launcherId = await resolvePublicIdParam(c, "launcherId", "workflowLauncher");
         if (!launcherId) return c.json({ message: "Invalid workflow launcher id" }, 400);
         const body = c.req.valid("json");
+        const principal = workflowPrincipal(c);
+        const admission = await admitBulkLauncher({ launcherId, expectedRevision: body.expectedRevision, principal });
+        if (!admission.ok) return respond(c, () => Promise.resolve(admission));
         const resolved = "recordIds" in body ? await resolveBulkRecordIds(body.recordIds) : undefined;
         if (resolved === null) return c.json({ message: "Record not found" }, 404);
         return respond(c, async () =>
@@ -160,7 +168,7 @@ export const createWorkflowTriggerRoutes = () =>
               ...body,
               ...(resolved ? { recordIds: resolved } : {}),
               launcherId,
-              principal: workflowPrincipal(c),
+              principal,
             }),
           ),
         );

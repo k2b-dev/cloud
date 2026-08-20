@@ -7,7 +7,7 @@ import { z } from "zod";
 import { RecordOperationBodySchema, RecordPayloadSchema, RecordUpdateBodySchema, ShortIdSchema } from "../contracts";
 import { gridsService } from "../service";
 import { DEFAULT_MAX_FILE_SIZE_MB, getMaxFileSizeBytes } from "../service/file-limits";
-import { fromPublicRecordValues, resolvePublicId } from "../service/public-resources";
+import { fromPublicRecordValues, resolvePublicId, resolvePublicIds } from "../service/public-resources";
 import { validateRecordQueryForTable } from "../service/query-validation";
 import { ALL_RECORD_ACCESS } from "../service/record-access";
 import * as recordFinalizationService from "../service/record-finalization";
@@ -32,6 +32,8 @@ import {
 } from "./public-dto";
 import { fromPublicExportBody, PublicExportBodySchema } from "./public-query";
 import {
+  PublicCloseSelectionPreviewInputSchema,
+  PublicCloseSelectionPreviewSchema,
   PublicFinalizationRequestInputSchema,
   PublicFinalizationResolutionInputSchema,
   PublicRecordFinalizationReadinessSchema,
@@ -97,6 +99,64 @@ export const recordsRoutes = new Hono<AuthContext>()
   // Record listing is served by the unified table query endpoint so
   // list, search, filter, sort, group, and aggregate reads share one
   // backend contract.
+
+  .post(
+    "/:tableId/finalization/preview",
+    requirePublicIdParam("tableId", "table", "Table"),
+    describeRoute({
+      tags: ["Grids:Record"],
+      summary: "Preview Finalization for an exact Record selection",
+      responses: {
+        200: jsonResponse(PublicCloseSelectionPreviewSchema, "Finalization readiness for the selected Records"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid selection"),
+        403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+        404: jsonResponse(ErrorResponseSchema, "Table not found"),
+      },
+    }),
+    v("json", PublicCloseSelectionPreviewInputSchema),
+    async (c) => {
+      const tableId = internalIdParam(c, "tableId")!;
+      const table = await gridsService.table.get(tableId);
+      if (!table) return c.json({ message: "Table not found" }, 404);
+      const gate = await gateAt(c, { baseId: table.baseId }, "write");
+      if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+      const recordIds = c.req.valid("json").recordIds;
+      const internalIds = await resolvePublicIds("record", recordIds);
+      const items = [] as z.infer<typeof PublicCloseSelectionPreviewSchema>["items"];
+      let cursor = 0;
+      const worker = async () => {
+        while (!c.req.raw.signal.aborted && cursor < recordIds.length) {
+          const index = cursor++;
+          const recordId = recordIds[index]!;
+          const internalRecordId = internalIds.get(recordId);
+          if (!internalRecordId) {
+            items[index] = { ok: false, recordId, reason: "Record not found." };
+            continue;
+          }
+          const result = await recordFinalizationService.inspect({
+            tableId,
+            recordId: internalRecordId,
+            actorId: currentActorUserId(c),
+            recordAccess: ALL_RECORD_ACCESS,
+          });
+          items[index] = result.ok
+            ? {
+                ok: true,
+                recordId,
+                enabled: result.data.enabled,
+                mode: result.data.mode,
+                policyRevision: result.data.policyRevision,
+                finalized: result.data.finalized,
+                pendingRequest: result.data.request?.status === "pending",
+                missingFieldNames: result.data.missing.map((field) => field.fieldName),
+              }
+            : { ok: false, recordId, reason: result.error.message };
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(8, recordIds.length) }, () => worker()));
+      return c.json(PublicCloseSelectionPreviewSchema.parse({ items }));
+    },
+  )
 
   .get(
     "/:tableId/:recordId/versions",

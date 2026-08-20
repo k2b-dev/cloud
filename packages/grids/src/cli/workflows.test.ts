@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type CloudCliContext, type CloudCliFlags, defineCliCommands } from "@valentinkolb/cloud/cli";
 import { compileWorkflow } from "@valentinkolb/cloud/workflows/language";
+import { BulkLauncherRequestSchema } from "../api/workflow-public-contracts";
 import { buildWorkflowCatalog } from "../service/workflow-catalog";
 import { bindGridsWorkflow } from "../workflows/binder";
 import { gridsWorkflows } from "../workflows/module";
@@ -126,6 +127,13 @@ describe("Grids workflow CLI", () => {
       fieldsByTable: new Map([[baseId, [{ id: itemRecordId, shortId: "status", name: "Status" }]]]),
     });
     expect((await bindGridsWorkflow(compiled.ir, catalog)).ok).toBe(true);
+
+    const closeSelection = await compileWorkflow(WORKFLOW_REFERENCE.closeSelectionExample, gridsWorkflows);
+    expect(closeSelection.ok).toBe(true);
+    if (!closeSelection.ok) return;
+    const boundCloseSelection = await bindGridsWorkflow(closeSelection.ir, catalog);
+    expect(boundCloseSelection.ok).toBe(true);
+    expect(BulkLauncherRequestSchema.safeParse(WORKFLOW_REFERENCE.invocation.closeSelectionRecordIds).success).toBe(true);
   });
 
   test("documents only kernel direct invocation and launcher JSON shapes", async () => {

@@ -104,7 +104,7 @@ const mutationTargets = (
         targets.add(boundTable);
         outputTable = boundTable;
       }
-    } else if (step.action === "updateRecord" || step.action === "finalizeRecord") {
+    } else if (step.action === "updateRecord" || step.action === "finalizeRecord" || step.action === "closeRecord") {
       const target = recordTableForReference(step.config.record, scope, bindings, [...actionPath, "record"]);
       if (target) {
         targets.add(target);

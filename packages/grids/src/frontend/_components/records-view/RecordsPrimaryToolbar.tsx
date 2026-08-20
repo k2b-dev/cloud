@@ -24,6 +24,7 @@ type Props = {
   recordMetaCount: number;
   bulkSelectionEnabled: boolean;
   selectedBulkCount: number;
+  bulkQueueing: boolean;
   bulkLaunchers: WorkspaceBulkLauncher[];
   queryHref: string;
   onSearchChange: (next: { q: string; fieldIds: string[] }) => void;
@@ -111,11 +112,16 @@ export default function RecordsPrimaryToolbar(props: Props) {
               ? [
                   {
                     sectionLabel: "Workflows",
-                    items: props.bulkLaunchers.map((launcher) => ({
-                      icon: "ti ti-route",
-                      label: bulkWorkflowActionLabel(launcher.name, props.selectedBulkCount),
-                      action: () => props.onQueueBulkWorkflow(launcher),
-                    })),
+                    items: props.bulkLaunchers.map((launcher) => {
+                      const label = bulkWorkflowActionLabel(
+                        launcher.name,
+                        props.selectedBulkCount,
+                        launcher.config.kind === "bulk" && "profile" in launcher.config && launcher.config.profile === "closeSelection",
+                      );
+                      return props.bulkQueueing
+                        ? { icon: "ti ti-loader-2 animate-spin", label: `Preparing ${launcher.name}`, disabled: true as const }
+                        : { icon: "ti ti-route", label, action: () => props.onQueueBulkWorkflow(launcher) };
+                    }),
                   },
                 ]
               : []),

@@ -116,8 +116,15 @@ export const WORKFLOW_REFERENCE = {
       operationId: "bulk-42",
       mode: "execute",
       expectedRevision: 3,
-      recordIds: ["00000000-0000-4000-8000-000000000001"],
+      recordIds: ["Rec001"],
       inputs: {},
+    },
+    closeSelectionRecordIds: {
+      operationId: "close-42",
+      mode: "execute",
+      expectedRevision: 3,
+      recordIds: ["Rec001"],
+      inputs: { closeMode: "fourEyes", closePolicyRevision: 2 },
     },
     bulkQuery: {
       operationId: "bulk-query-42",
@@ -151,6 +158,15 @@ export const WORKFLOW_REFERENCE = {
       enabled: true,
     },
     bulk: { name: "Process selection", config: { kind: "bulk", input: "items" }, enabled: true },
+    explicitBulk: {
+      name: "Close selection",
+      config: {
+        kind: "bulk",
+        input: "records",
+        profile: "closeSelection",
+      },
+      enabled: true,
+    },
     customApp: {
       name: "Run report",
       config: { kind: "customApp", label: "Refresh", inputMode: "fixed", inputBindings: { range: "30d" } },
@@ -171,6 +187,8 @@ export const WORKFLOW_REFERENCE = {
   },
   example:
     "inputs:\n  item:\n    type: record\n    table: Items\n    required: true\nsteps:\n  - setVariable:\n      name: ranAt\n      value: ${{ now() }}\n  - updateRecord:\n      record: inputs.item\n      set:\n        Status: Checked",
+  closeSelectionExample:
+    "inputs:\n  records:\n    type: recordList\n    table: Items\n    required: true\n  closeMode:\n    type: text\n    required: true\n  closePolicyRevision:\n    type: number\n    required: true\nsteps:\n  - forEach: inputs.records\n    as: record\n    do:\n      - closeRecord:\n          record: record\n          expectedMode: inputs.closeMode\n          expectedPolicyRevision: inputs.closePolicyRevision",
 };
 
 export const listEmailTemplates = (ctx: CloudCliContext, baseId: string): Promise<EmailTemplate[]> =>

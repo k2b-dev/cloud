@@ -64,6 +64,13 @@ documents, and workflows without splitting the domain across unrelated tools.
   Records metadata filter, GQL, or the CLI. Awaiting review means a current
   Four-eyes request still matches the Record and Table policy; it does not
   imply that the current viewer can approve it.
+- Create the **Close selected Records** workflow starter for a stored Table
+  when a reviewed selection of up to 100 Records should be closed together. Its Records
+  action freezes the exact selected public IDs: Direct mode finalizes each
+  eligible Record, while Four-eyes mode requests approval and never bypasses
+  the configured approver. The preview also pins the complete Finalization
+  policy revision, so a mode or approver change stops later steps instead of
+  mixing policies. It does not close a period or capture Records added later.
 - Keep the default open mutation policy, or let a Base admin limit record,
   Relation, and File changes to direct editing and APIs, Forms, or Workflows
   and actions. Every client follows the same server-enforced policy.

@@ -84,6 +84,7 @@ export type AuditAction =
   | "workflow.record.updated"
   | "workflow.record.created"
   | "workflow.record.finalized"
+  | "workflow.record.finalization.requested"
   | "workflow.document.generated"
   | "workflow.document_link.created"
   | "workflow.email.sent"

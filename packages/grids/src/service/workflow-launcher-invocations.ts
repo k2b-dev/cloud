@@ -6,6 +6,8 @@ import { sql } from "bun";
 import { z } from "zod";
 import { type RecordQuery, RecordQuerySchema } from "../contracts";
 import {
+  CLOSE_SELECTION_MODE_INPUT,
+  CLOSE_SELECTION_POLICY_REVISION_INPUT,
   type GridsWorkflow,
   type GridsWorkflowLauncher,
   type GridsWorkflowLauncherConfig,
@@ -309,7 +311,7 @@ const resolveExplicitRecordIds: WorkflowLauncherInvocationDeps["resolveExplicitR
       AND ${recordAccessPredicate(recordAccess, "r")}
   `;
   const found = new Set(rows.map((row) => row.id));
-  return found.size === recordIds.length ? ok(recordIds) : fail(err.notFound("bulk selection record"));
+  return found.size === recordIds.length ? ok(recordIds) : fail(err.notFound("Record"));
 };
 
 const resolveQueryRecordIds: WorkflowLauncherInvocationDeps["resolveQueryRecordIds"] = async (tableId, query, principal, recordAccess) => {
@@ -516,6 +518,19 @@ export const invokeBulkLauncher = async (
   if (!loaded.ok) return loaded;
   const ctx = loaded.data;
   if (ctx.config.kind !== "bulk" || !ctx.tableId) return fail(err.internal("bulk launcher context is invalid"));
+  if ("profile" in ctx.config && ctx.config.profile === "closeSelection") {
+    if (!("recordIds" in input.data)) {
+      return fail(err.badInput("This workflow run option requires an explicit Record selection."));
+    }
+    const mode = input.data.inputs[CLOSE_SELECTION_MODE_INPUT];
+    if (mode !== "direct" && mode !== "fourEyes") {
+      return fail(err.badInput("Close selection requires the previewed Finalization mode."));
+    }
+    const policyRevision = input.data.inputs[CLOSE_SELECTION_POLICY_REVISION_INPUT];
+    if (typeof policyRevision !== "number" || !Number.isSafeInteger(policyRevision) || policyRevision < 1) {
+      return fail(err.badInput("Close selection requires the previewed Finalization policy revision."));
+    }
+  }
   if (input.data.authorization?.kind === "custom-app-bulk-action") {
     if (!("recordIds" in input.data)) return fail(err.badInput("Grids App bulk launchers require explicit record IDs"));
     const claimed = [...input.data.authorization.recordIds].sort();
@@ -540,6 +555,26 @@ export const invokeBulkLauncher = async (
   if (!recordIds.ok) return recordIds;
   const inputs = mergeInputs({ [ctx.config.input]: recordIds.data }, input.data.inputs);
   return inputs.ok ? invoke(ctx, { ...input.data, inputs: inputs.data }, deps) : inputs;
+};
+
+export const admitBulkLauncher = async (
+  input: {
+    launcherId: string;
+    expectedRevision?: number;
+    principal: GridsWorkflowPrincipal;
+  },
+  deps: WorkflowLauncherInvocationDeps = defaultDeps,
+): Promise<Result<void>> => {
+  const loaded = await loadLauncherContext(input.launcherId, "bulk", input.expectedRevision, deps);
+  if (!loaded.ok) return loaded;
+  const ctx = loaded.data;
+  const authorized = await deps.authorize({
+    launcherId: ctx.launcher.id,
+    workflow: ctx.workflow,
+    principal: input.principal,
+    tableId: ctx.tableId,
+  });
+  return authorized.ok ? ok() : authorized;
 };
 
 export const invokeCustomAppLauncher = async (

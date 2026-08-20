@@ -8,7 +8,7 @@ import type {
   GridsWorkflowLauncherConfig,
   UpdateGridsWorkflowLauncherInput,
 } from "../workflows/contracts";
-import { GridsWorkflowLauncherConfigSchema, scannerLauncherInputSources } from "../workflows/contracts";
+import { GridsWorkflowLauncherConfigSchema, isCanonicalCloseSelectionPlan, scannerLauncherInputSources } from "../workflows/contracts";
 import { logAudit, type SqlClient } from "./audit";
 import { parseJsonbRow } from "./jsonb";
 import { insertWithShortId } from "./short-id";
@@ -55,15 +55,19 @@ export const validateLauncherConfig = (workflow: GridsWorkflow, config: GridsWor
     else if (input.type !== expected) {
       add("launcher.input.type", `${config.kind} requires a ${expected} input`, ["config", "input"]);
     }
-    for (const candidate of workflow.plan.inputs) {
-      if (candidate.name === config.input) continue;
-      const message = workflowInputShapeError(candidate, undefined);
-      if (message) {
-        add("launcher.input.unsupplied", `${config.kind} run option cannot supply required workflow input "${candidate.name}"`, [
-          "config",
-          "input",
-        ]);
+    if (!("profile" in config)) {
+      for (const candidate of workflow.plan.inputs) {
+        if (candidate.name === config.input) continue;
+        const message = workflowInputShapeError(candidate, undefined);
+        if (message) {
+          add("launcher.input.unsupplied", `${config.kind} run option cannot supply required workflow input "${candidate.name}"`, [
+            "config",
+            "input",
+          ]);
+        }
       }
+    } else if (config.profile === "closeSelection" && !isCanonicalCloseSelectionPlan(workflow.plan, config.input)) {
+      add("launcher.profile.plan", "Close selection requires its canonical exact-selection workflow plan", ["config", "profile"]);
     }
   }
   if (config.kind === "scanner") {

@@ -21,12 +21,19 @@ import { get as settingsGet } from "@valentinkolb/cloud/services/settings";
 import { normalizeTimeZone } from "@valentinkolb/cloud/shared";
 import type { WorkflowActionContext, WorkflowActionResult, WorkflowJsonValue, WorkflowPlannedEffect } from "@valentinkolb/cloud/workflows";
 import { workflowAction } from "@valentinkolb/cloud/workflows";
+import { sql } from "bun";
 import type { RecordMutationAudit, Table } from "./contracts";
 import { logAudit, type SqlClient } from "./service/audit";
 import { summarizeDocumentRun } from "./service/document-mappers";
 import { createDocumentLink, createRunForRecord, getDocumentRun, getTemplate, publicDocumentLinkBaseUrl } from "./service/documents";
 import { get as getEmailTemplate } from "./service/email-templates";
-import { finalizeInTransaction as finalizeRecordInTransaction } from "./service/record-finalization";
+import { assertMutationAllowed } from "./service/mutation-policy";
+import {
+  finalizeInTransaction as finalizeRecordInTransaction,
+  getStatus as getRecordFinalizationStatus,
+  inspect as inspectRecordFinalization,
+  requestFinalizationInTransaction,
+} from "./service/record-finalization";
 import { createInTransaction as createRecordInTransaction, updateInTransaction as updateRecordInTransaction } from "./service/record-write";
 import { get as getRecord } from "./service/records";
 import { get as getTable } from "./service/tables";
@@ -378,6 +385,158 @@ const httpInput = (config: {
 // ─── Actions ─────────────────────────────────────────────────────────────────
 
 export const GRIDS_WORKFLOW_ACTIONS = {
+  closeRecord: workflowAction.transactional({
+    label: "Close record",
+    description: "Finalizes directly or requests Four-eyes Finalization, according to the Table's current mode.",
+    outputType: "grids.record",
+    config: {
+      kind: "object",
+      properties: {
+        record: { kind: "string", minLength: 1, maxLength: 500, description: "Record input or output reference." },
+        expectedMode: {
+          kind: "string",
+          minLength: 1,
+          maxLength: 500,
+          optional: true,
+          description: "Optional text reference that pins the previewed Direct or Four-eyes mode.",
+        },
+        expectedPolicyRevision: {
+          kind: "string",
+          minLength: 1,
+          maxLength: 500,
+          optional: true,
+          description: "Optional number reference that pins the previewed Finalization policy revision.",
+        },
+      },
+    },
+
+    run: (ctx, config) =>
+      attempt(async () => {
+        const tx = transaction(ctx);
+        const scope = await workflowRunScope(ctx, tx);
+        await requireExecution(scope, tx);
+        const record = await recordReference(ctx, config.record, "record");
+        await currentTable(scope, record.tableId);
+        const recordAccess = await requireRecordAccess(scope, record.tableId, "write", tx);
+        requireOk(await assertMutationAllowed(tx, record.tableId, "workflow"));
+        const status = requireOk(await getRecordFinalizationStatus(record.tableId, tx));
+        if (!status.enabled) throw actionError("BAD_INPUT", "Finalization is not enabled for this Table");
+        const expectedPolicyRevision = config.expectedPolicyRevision
+          ? await ctx.resolveReference(config.expectedPolicyRevision, "expectedPolicyRevision")
+          : undefined;
+        if (
+          expectedPolicyRevision !== undefined &&
+          (typeof expectedPolicyRevision !== "number" || !Number.isSafeInteger(expectedPolicyRevision) || expectedPolicyRevision < 1)
+        ) {
+          throw actionError("WORKFLOW_VALUE_INVALID", "expectedPolicyRevision must resolve to a positive integer");
+        }
+        if (config.expectedMode) {
+          const expectedMode = await ctx.resolveReference(config.expectedMode, "expectedMode");
+          if (expectedMode !== "direct" && expectedMode !== "fourEyes") {
+            throw actionError("WORKFLOW_VALUE_INVALID", "expectedMode must resolve to direct or fourEyes");
+          }
+          if (status.mode !== expectedMode) {
+            throw actionError("CONFLICT", "The Table Finalization mode changed after Close selection was previewed");
+          }
+        }
+
+        if (status.mode === "fourEyes") {
+          requireOk(
+            await requestFinalizationInTransaction(tx, {
+              tableId: record.tableId,
+              recordId: record.recordId,
+              actorId: actorId(scope),
+              recordAccess,
+              expectedPolicyRevision,
+            }),
+          );
+          await logAudit(
+            {
+              baseId: scope.baseId,
+              tableId: record.tableId,
+              recordId: record.recordId,
+              userId: actorId(scope),
+              action: "workflow.record.finalization.requested",
+              diff: { workflowRecordFinalizationRequest: { old: null, new: workflowAuditMeta(scope) } },
+            },
+            tx,
+          );
+        } else {
+          requireOk(
+            await finalizeRecordInTransaction(tx, {
+              tableId: record.tableId,
+              recordId: record.recordId,
+              actorId: actorId(scope),
+              origin: "workflow",
+              recordAccess,
+              dateConfig: await dateContext(),
+              expectedPolicyRevision,
+            }),
+          );
+          await logAudit(
+            {
+              baseId: scope.baseId,
+              tableId: record.tableId,
+              recordId: record.recordId,
+              userId: actorId(scope),
+              action: "workflow.record.finalized",
+              diff: { workflowRecordFinalization: { old: null, new: workflowAuditMeta(scope) } },
+            },
+            tx,
+          );
+        }
+        return {
+          state: "succeeded",
+          output: { kind: "record", tableId: record.tableId, recordId: record.recordId } as WorkflowJsonValue,
+          message: status.mode === "fourEyes" ? "Finalization requested" : "Record finalized",
+        };
+      }),
+
+    plan: (ctx, config) =>
+      planned(async () => {
+        const scope = await workflowRunScope(ctx);
+        await requireExecution(scope);
+        const record = await recordReference(ctx, config.record, "record");
+        await readableRecord(scope, record, "write");
+        requireOk(await assertMutationAllowed(sql, record.tableId, "workflow"));
+        const readiness = requireOk(
+          await inspectRecordFinalization({
+            tableId: record.tableId,
+            recordId: record.recordId,
+            actorId: actorId(scope),
+            recordAccess: await requireRecordAccess(scope, record.tableId, "write"),
+          }),
+        );
+        if (!readiness.enabled) throw actionError("BAD_INPUT", "Finalization is not enabled for this Table");
+        if (config.expectedPolicyRevision) {
+          const expectedPolicyRevision = await ctx.resolveReference(config.expectedPolicyRevision, "expectedPolicyRevision");
+          if (typeof expectedPolicyRevision !== "number" || !Number.isSafeInteger(expectedPolicyRevision) || expectedPolicyRevision < 1) {
+            throw actionError("WORKFLOW_VALUE_INVALID", "expectedPolicyRevision must resolve to a positive integer");
+          }
+          if (readiness.policyRevision !== expectedPolicyRevision) {
+            throw actionError("CONFLICT", "The Table Finalization policy changed after Close selection was previewed");
+          }
+        }
+        if (config.expectedMode) {
+          const expectedMode = await ctx.resolveReference(config.expectedMode, "expectedMode");
+          if (expectedMode !== "direct" && expectedMode !== "fourEyes") {
+            throw actionError("WORKFLOW_VALUE_INVALID", "expectedMode must resolve to direct or fourEyes");
+          }
+          if (readiness.mode !== expectedMode) {
+            throw actionError("CONFLICT", "The Table Finalization mode changed after Close selection was previewed");
+          }
+        }
+        if (readiness.finalized) throw actionError("CONFLICT", "Record is already finalized");
+        if (readiness.missing.length > 0) {
+          throw actionError("BAD_INPUT", `Record is not ready to finalize: ${readiness.missing.map((item) => item.fieldName).join(", ")}`);
+        }
+        return {
+          summary: readiness.mode === "fourEyes" ? "Request Four-eyes Finalization" : "Finalize one record permanently",
+          output: record as unknown as WorkflowJsonValue,
+        };
+      }),
+  }),
+
   finalizeRecord: workflowAction.transactional({
     label: "Finalize record",
     description: "Validates and permanently locks one record after a current permission check.",

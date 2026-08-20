@@ -309,6 +309,77 @@ describe("record finalization Postgres integration", () => {
     }
   });
 
+  postgresTest("rejects a previewed policy revision under the activation lock", async () => {
+    const actorId = testUuid();
+    const groupId = testUuid();
+    await sql`
+      INSERT INTO auth.users (id, uid, provider, profile, display_name, given_name, sn)
+      VALUES (${actorId}::uuid, ${`policy-actor-${actorId}`}, 'local', 'user', 'Policy actor', 'Policy', 'Actor')
+    `;
+    await sql`
+      INSERT INTO auth.groups (id, cn, provider, name)
+      VALUES (${groupId}::uuid, ${`policy-reviewers-${groupId}`}, 'local', 'Policy reviewers')
+    `;
+    const item = await fixture({ mode: "fourEyes", approverGroupId: groupId });
+    try {
+      const previewed = await finalization.getStatus(item.tableId);
+      if (!previewed.ok || !previewed.data.enabled) throw new Error("Finalization policy fixture failed");
+      const target = await records.create(item.tableId, { [item.name.id]: "Policy revision" }, actorId, "direct");
+      if (!target.ok) throw target.error;
+
+      const direct = await finalization.setPolicy(item.tableId, { mode: "direct" }, actorId);
+      if (!direct.ok) throw direct.error;
+      const current = await finalization.setPolicy(item.tableId, { mode: "fourEyes", approverGroupId: groupId }, actorId);
+      if (!current.ok || !current.data.enabled) throw new Error("Finalization policy update failed");
+      const currentPolicyRevision = current.data.policyRevision;
+
+      const staleRequest = await finalization.requestFinalization({
+        tableId: item.tableId,
+        recordId: target.data.id,
+        actorId,
+        expectedPolicyRevision: previewed.data.policyRevision,
+      });
+      expect(staleRequest.ok).toBe(false);
+      if (!staleRequest.ok) expect(staleRequest.error.status).toBe(409);
+      const [requestCount] = await sql<Array<{ count: number }>>`
+        SELECT count(*)::int AS count FROM grids.record_finalization_requests WHERE record_id = ${target.data.id}::uuid
+      `;
+      expect(requestCount?.count).toBe(0);
+
+      const validRequest = await finalization.requestFinalization({
+        tableId: item.tableId,
+        recordId: target.data.id,
+        actorId,
+        expectedPolicyRevision: currentPolicyRevision,
+      });
+      expect(validRequest.ok).toBe(true);
+
+      const directAgain = await finalization.setPolicy(item.tableId, { mode: "direct" }, actorId);
+      if (!directAgain.ok || !directAgain.data.enabled) throw new Error("Direct Finalization policy update failed");
+      const directTarget = await records.create(item.tableId, { [item.name.id]: "Direct revision" }, actorId, "direct");
+      if (!directTarget.ok) throw directTarget.error;
+      const staleFinalize = await sql.begin((tx) =>
+        finalization.finalizeInTransaction(tx, {
+          tableId: item.tableId,
+          recordId: directTarget.data.id,
+          actorId,
+          origin: "direct",
+          expectedPolicyRevision: currentPolicyRevision,
+        }),
+      );
+      expect(staleFinalize.ok).toBe(false);
+      if (!staleFinalize.ok) expect(staleFinalize.error.status).toBe(409);
+      const [stored] = await sql<Array<{ finalized_at: Date | null }>>`
+        SELECT finalized_at FROM grids.records WHERE id = ${directTarget.data.id}::uuid
+      `;
+      expect(stored?.finalized_at).toBeNull();
+    } finally {
+      await cleanup(item.baseId);
+      await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${actorId}::uuid`;
+    }
+  });
+
   postgresTest("enforces a different current approver for Four-eyes Finalization and invalidates stale requests", async () => {
     const requesterId = testUuid();
     const approverId = testUuid();

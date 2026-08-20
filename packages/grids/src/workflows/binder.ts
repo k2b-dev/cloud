@@ -388,8 +388,21 @@ const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Ma
   const outputType = gridsWorkflows.manifest.actions.find((action) => action.kind === step.action)?.outputType;
   let output: ValueInfo | undefined = outputType ? valueDescriptor(outputType) : undefined;
 
-  if (step.action === "finalizeRecord") {
+  if (step.action === "finalizeRecord" || step.action === "closeRecord") {
     expectReference(config.record, "grids.record", "record", [...path, "record"], scope, context);
+    if (step.action === "closeRecord" && config.expectedMode !== undefined) {
+      expectReference(config.expectedMode, "core.text", "expectedMode", [...path, "expectedMode"], scope, context);
+    }
+    if (step.action === "closeRecord" && config.expectedPolicyRevision !== undefined) {
+      expectReference(
+        config.expectedPolicyRevision,
+        "core.number",
+        "expectedPolicyRevision",
+        [...path, "expectedPolicyRevision"],
+        scope,
+        context,
+      );
+    }
   } else if (step.action === "updateRecord") {
     const record = expectReference(config.record, "grids.record", "record", [...path, "record"], scope, context);
     bindFieldMap(config.set, record?.tableId, [...path, "set"], scope, context);

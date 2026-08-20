@@ -828,6 +828,7 @@ Action fields are:
 
 | Action | Required | Optional and defaults | Saved output |
 | --- | --- | --- | --- |
+| `closeRecord` | `record` | `expectedMode`, `expectedPolicyRevision` | none |
 | `finalizeRecord` | `record` | none | none |
 | `updateRecord` | `record`, non-empty `set` | `audit` answers by question UUID | none |
 | `createRecord` | `table`, non-empty `values` | `saveAs` | created record |
@@ -1068,7 +1069,7 @@ happened. Run commands are `workflow-runs list|get|cancel|steps|documents|downlo
 
 ### Run options and email templates
 
-Run options expose a workflow as a scanner, bulk, or Grids App interaction. The API and CLI call these resources launchers. A Grids App option uses `inputMode: "fixed"` with complete `inputBindings` for a one-click action, or `inputMode: "prompt"` to request the workflow's declared inputs when it runs. Fixed options reject runtime inputs; prompt options do not store fixed bindings. Their complete JSON shapes and invocation bodies are part of `workflows reference`.
+Run options expose a workflow as a scanner, bulk, or Grids App interaction. The API and CLI call these resources launchers. The **Close selected Records** starter installs the dedicated bulk profile `closeSelection`; it accepts only exact public Record IDs and is rejected if the workflow no longer has the canonical close-only plan. The browser reviews up to 100 Records and supplies the current Finalization mode and policy revision. API and CLI callers must review and provide those two inputs themselves; every action verifies them again before changing anything. Ordinary bulk options may use explicit IDs or a row-shaped query. A Grids App option uses `inputMode: "fixed"` with complete `inputBindings` for a one-click action, or `inputMode: "prompt"` to request the workflow's declared inputs when it runs. Fixed options reject runtime inputs; prompt options do not store fixed bindings. Their complete JSON shapes and invocation bodies are part of `workflows reference`.
 
 A Grids App definition may also embed an enabled Scanner run option as a `scanner` block. Embedded scanners require a signed-in App reader and pin the exact launcher configuration and workflow revision at publish time. They accept scalar session and after-scan prompts; use the full Workflow scanner when those prompts must select records.
 

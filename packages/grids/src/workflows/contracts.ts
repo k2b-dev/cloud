@@ -155,9 +155,37 @@ export const scannerLauncherPromptInputSources = (config: GridsScannerLauncherCo
     ),
   );
 
+export const CLOSE_SELECTION_MODE_INPUT = "closeMode";
+export const CLOSE_SELECTION_POLICY_REVISION_INPUT = "closePolicyRevision";
+
+export const isCanonicalCloseSelectionPlan = (plan: WorkflowBoundPlan, recordListInput: string): boolean => {
+  const inputByName = (name: string) => plan.inputs.find((input) => input.name === name);
+  const requiredInput = (name: string, type: string) => {
+    const input = inputByName(name);
+    return Boolean(input && input.type === type && input.config.required === true);
+  };
+  if (plan.inputs.length !== 3 || plan.triggers.length !== 0 || plan.steps.length !== 1) return false;
+  if (!requiredInput(recordListInput, "recordList")) return false;
+  if (!requiredInput(CLOSE_SELECTION_MODE_INPUT, "text")) return false;
+  if (!requiredInput(CLOSE_SELECTION_POLICY_REVISION_INPUT, "number")) return false;
+  if (typeof plan.bindings[`inputs.${recordListInput}.table`] !== "string") return false;
+  const loop = plan.steps[0];
+  if (loop?.kind !== "forEach" || loop.reference !== `inputs.${recordListInput}` || loop.steps.length !== 1) return false;
+  const action = loop.steps[0];
+  if (action?.kind !== "action" || action.action !== "closeRecord") return false;
+  return (
+    Object.keys(action.config).sort().join(",") === "expectedMode,expectedPolicyRevision,record" &&
+    action.config.record === loop.alias &&
+    action.config.expectedMode === `inputs.${CLOSE_SELECTION_MODE_INPUT}` &&
+    action.config.expectedPolicyRevision === `inputs.${CLOSE_SELECTION_POLICY_REVISION_INPUT}`
+  );
+};
+
+export type GridsBulkLauncherConfig = { kind: "bulk"; input: string } | { kind: "bulk"; input: string; profile: "closeSelection" };
+
 export type GridsWorkflowLauncherConfig =
   | GridsScannerLauncherConfig
-  | { kind: "bulk"; input: string }
+  | GridsBulkLauncherConfig
   | {
       kind: "customApp";
       label?: string;
@@ -397,12 +425,22 @@ const StagedScannerLauncherConfigSchema = z
 
 const ScannerLauncherConfigSchema = z.union([LegacyScannerLauncherConfigSchema, StagedScannerLauncherConfigSchema]);
 
-const BulkLauncherConfigSchema = z
+const StandardBulkLauncherConfigSchema = z
   .object({
     kind: z.literal("bulk"),
     input: z.string().trim().min(1).max(120),
   })
   .strict();
+
+const CloseSelectionBulkLauncherConfigSchema = z
+  .object({
+    kind: z.literal("bulk"),
+    input: z.string().trim().min(1).max(120),
+    profile: z.literal("closeSelection"),
+  })
+  .strict();
+
+const BulkLauncherConfigSchema = z.union([StandardBulkLauncherConfigSchema, CloseSelectionBulkLauncherConfigSchema]);
 
 const CustomAppLauncherConfigSchema = z
   .object({

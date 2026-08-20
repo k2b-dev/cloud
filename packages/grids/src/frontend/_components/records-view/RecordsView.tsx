@@ -382,6 +382,7 @@ export default function RecordsView(props: Props) {
     props.bulkSelectionLaunchers.length > 0 && !props.trashMode && !isGrouped() && renderMode() === "table";
   const bulkSelection = createRecordsBulkController({
     baseId: props.baseId,
+    tableId: props.tableId,
     enabled: bulkSelectionEnabled,
     items: () => items() as GridRecord[],
     query: queryWithSearch,
@@ -397,6 +398,7 @@ export default function RecordsView(props: Props) {
   const {
     selectedIds: bulkSelectedRecordIds,
     selectedCount: selectedBulkCount,
+    queueing: bulkQueueing,
     clear: clearBulkSelection,
     toggleRecord: toggleBulkRecordSelection,
     toggleVisible: toggleVisibleBulkRecords,
@@ -692,6 +694,7 @@ export default function RecordsView(props: Props) {
               recordMetaCount={activeRecordMetaCount()}
               bulkSelectionEnabled={bulkSelectionEnabled()}
               selectedBulkCount={selectedBulkCount()}
+              bulkQueueing={bulkQueueing()}
               bulkLaunchers={props.bulkSelectionLaunchers}
               queryHref={queryWorkspaceHref()}
               onSearchChange={onSearchChange}

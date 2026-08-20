@@ -887,6 +887,7 @@ const migrateDurableHistory = async (sql: SQL): Promise<void> => {
 };
 
 const migrateRecordFinalization = async (sql: SQL): Promise<void> => {
+  await sql`ALTER TABLE grids.tables ADD COLUMN IF NOT EXISTS finalization_policy_revision INT NOT NULL DEFAULT 0`.simple();
   await sql`
     CREATE TABLE IF NOT EXISTS grids.table_finalization_activations (
       table_id UUID PRIMARY KEY REFERENCES grids.tables(id) ON DELETE RESTRICT,
@@ -900,6 +901,12 @@ const migrateRecordFinalization = async (sql: SQL): Promise<void> => {
   await sql`ALTER TABLE grids.table_finalization_activations ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'direct'`.simple();
   await sql`ALTER TABLE grids.table_finalization_activations ADD COLUMN IF NOT EXISTS approver_group_id UUID`.simple();
   await sql`ALTER TABLE grids.table_finalization_activations ADD COLUMN IF NOT EXISTS policy_revision INT NOT NULL DEFAULT 1`.simple();
+  await sql`
+    UPDATE grids.tables table_ref
+    SET finalization_policy_revision = GREATEST(table_ref.finalization_policy_revision, activation.policy_revision)
+    FROM grids.table_finalization_activations activation
+    WHERE activation.table_id = table_ref.id
+  `.simple();
   await sql`ALTER TABLE grids.table_finalization_activations DROP CONSTRAINT IF EXISTS table_finalization_activations_policy_chk`.simple();
   await sql`
     ALTER TABLE grids.table_finalization_activations ADD CONSTRAINT table_finalization_activations_policy_chk CHECK (

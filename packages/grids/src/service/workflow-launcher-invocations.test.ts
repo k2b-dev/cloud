@@ -4,6 +4,7 @@ import type { WorkflowInvocationReceipt } from "@valentinkolb/cloud/workflows";
 import type { GridsWorkflow, GridsWorkflowLauncher, GridsWorkflowLauncherConfig } from "../workflows/contracts";
 import { ALL_RECORD_ACCESS } from "./record-access";
 import {
+  admitBulkLauncher,
   invokeBulkLauncher,
   invokeCustomAppLauncher,
   invokeScannerLauncher,
@@ -140,7 +141,7 @@ const setup = (
   return {
     deps,
     invokeWorkflow,
-    authorize,
+    authorize: deps.authorize,
     resolveScanCode,
     resolveUniqueField,
     resolveExplicitRecordIds,
@@ -289,6 +290,19 @@ describe("workflow kernel scanner launchers", () => {
 });
 
 describe("workflow kernel bulk launchers", () => {
+  test("admits the launcher principal before a public route resolves Record IDs", async () => {
+    const item = setup(launcher({ kind: "bulk", input: "records" }), workflow("records", "recordList"), {
+      authorize: mock(async () => fail(err.forbidden("denied"))),
+    });
+
+    const result = await admitBulkLauncher({ launcherId, expectedRevision: 3, principal }, item.deps);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.status).toBe(403);
+    expect(item.authorize).toHaveBeenCalledTimes(1);
+    expect(item.resolveExplicitRecordIds).not.toHaveBeenCalled();
+  });
+
   test("enforces non-empty, UUID, and maximum-count boundaries", async () => {
     const item = setup(launcher({ kind: "bulk", input: "records" }), workflow("records", "recordList"));
     const tooManyIds = Array.from({ length: 10_001 }, (_, index) => `00000000-0000-4000-8000-${index.toString(16).padStart(12, "0")}`);
@@ -335,6 +349,49 @@ describe("workflow kernel bulk launchers", () => {
         idempotencyKey: `launcher:${launcherId}:bulk-1`,
         inputs: { records: [recordId, secondRecordId] },
       }),
+    );
+  });
+
+  test("Close selection bulk launchers reject query-shaped runs", async () => {
+    const item = setup(launcher({ kind: "bulk", input: "records", profile: "closeSelection" }), workflow("records", "recordList"));
+    const { recordIds: _recordIds, ...queryInput } = bulkInput({ query: { limit: 2 } });
+
+    const result = await invokeBulkLauncher(queryInput, item.deps);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("explicit Record selection");
+    expect(item.authorize).not.toHaveBeenCalled();
+    expect(item.resolveQueryRecordIds).not.toHaveBeenCalled();
+    expect(item.invokeWorkflow).not.toHaveBeenCalled();
+  });
+
+  test("Close selection requires and forwards the previewed Finalization policy", async () => {
+    const configuredWorkflow = workflow("records", "recordList");
+    configuredWorkflow.plan.inputs.push(
+      { name: "closeMode", type: "text", config: { required: true } },
+      { name: "closePolicyRevision", type: "number", config: { required: true } },
+    );
+    const item = setup(
+      launcher({
+        kind: "bulk",
+        input: "records",
+        profile: "closeSelection",
+      }),
+      configuredWorkflow,
+    );
+
+    const missing = await invokeBulkLauncher(bulkInput({ recordIds: [recordId] }), item.deps);
+    const missingRevision = await invokeBulkLauncher(bulkInput({ recordIds: [recordId], inputs: { closeMode: "fourEyes" } }), item.deps);
+    const accepted = await invokeBulkLauncher(
+      bulkInput({ recordIds: [recordId], inputs: { closeMode: "fourEyes", closePolicyRevision: 3 } }),
+      item.deps,
+    );
+
+    expect(missing.ok).toBe(false);
+    expect(missingRevision.ok).toBe(false);
+    expect(accepted.ok).toBe(true);
+    expect(item.invokeWorkflow).toHaveBeenLastCalledWith(
+      expect.objectContaining({ inputs: { records: [recordId], closeMode: "fourEyes", closePolicyRevision: 3 } }),
     );
   });
 

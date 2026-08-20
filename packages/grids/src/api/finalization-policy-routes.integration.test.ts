@@ -103,6 +103,29 @@ describe("Four-eyes Finalization routes", () => {
       expect(policy.status).toBe(200);
       expect(await policy.json()).toMatchObject({ mode: "fourEyes", approverGroupId: groupId, approverGroupName: "Route final reviewers" });
 
+      const readiness = await request(`/records/${tableShortId}/${recordShortId}/finalization`, requester);
+      expect(readiness.status).toBe(200);
+      expect(await readiness.json()).toMatchObject({ enabled: true, mode: "fourEyes", policyRevision: 1 });
+
+      const preview = await request(`/records/${tableShortId}/finalization/preview`, requester, "POST", {
+        recordIds: [recordShortId],
+      });
+      expect(preview.status).toBe(200);
+      expect(await preview.json()).toEqual({
+        items: [
+          {
+            ok: true,
+            recordId: recordShortId,
+            enabled: true,
+            mode: "fourEyes",
+            policyRevision: 1,
+            finalized: false,
+            pendingRequest: false,
+            missingFieldNames: [],
+          },
+        ],
+      });
+
       expect((await request(`/records/${tableShortId}/${recordShortId}/finalize`, requester, "POST")).status).toBe(409);
       const submitted = await request(`/records/${tableShortId}/${recordShortId}/finalization/request`, requester, "POST", {
         comment: "Ready for another person",

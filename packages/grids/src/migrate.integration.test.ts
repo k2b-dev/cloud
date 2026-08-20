@@ -62,6 +62,12 @@ describe("grids schema migration", () => {
           { name: "mode", nullable: "NO", defaultValue: "'direct'::text" },
           { name: "policy_revision", nullable: "NO", defaultValue: "1" },
         ]);
+        const [tablePolicyRevision] = await database<Array<{ nullable: string; defaultValue: string | null }>>`
+          SELECT is_nullable AS nullable, column_default AS "defaultValue"
+          FROM information_schema.columns
+          WHERE table_schema = 'grids' AND table_name = 'tables' AND column_name = 'finalization_policy_revision'
+        `;
+        expect(tablePolicyRevision).toEqual({ nullable: "NO", defaultValue: "0" });
         const [policyConstraint] = await database<Array<{ definition: string }>>`
           SELECT pg_get_constraintdef(oid) AS definition
           FROM pg_constraint

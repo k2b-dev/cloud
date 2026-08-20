@@ -231,7 +231,7 @@ Direct callers can provide every declared input. Run options accept only the inp
 
 :::reference
 - **Scanner:** Maps exactly one text or record input to the scan. Record scans resolve by generated scan code or a configured unique field. Any other workflow input can be asked once before scanning, asked after every scan, or fixed by the run option.
-- **Bulk:** Binds one recordList input from explicit record IDs or a row-shaped table query, with at most 10,000 records per run.
+- **Bulk:** Binds one recordList input from explicit record IDs or a row-shaped table query, with at most 10,000 records per run. The **Close selected Records** starter installs a protected exact-selection profile; ordinary bulk options keep their normal query behavior.
 - **Grids App:** Exposes the workflow as a Grids App action and may save input bindings such as a fixed reporting range.
 - **Lifecycle:** Each option has its own name, enabled state, validated workflow revision, and diagnostics. Source changes can make an option unavailable until it is reviewed and saved again.
 :::
@@ -244,6 +244,7 @@ Run options are configured separately from the workflow source. One workflow can
 
 | Step | Required fields | Optional fields and defaults | Dry run |
 | --- | --- | --- | --- |
+| `closeRecord` | `record` | `expectedMode`, `expectedPolicyRevision` | Predicts Direct Finalization or a Four-eyes request from the Table's current policy |
 | `finalizeRecord` | `record` | None | Validates Write access and predicts one permanent finalization |
 | `updateRecord` | `record`, non-empty `set` | `audit` answers keyed by audit-question UUID | Validates and predicts the record update |
 | `createRecord` | `table`, non-empty `values` | `saveAs` | Validates and predicts the new record |
@@ -255,6 +256,8 @@ Run options are configured separately from the workflow source. One workflow can
 | `setVariable` | `name`, `value` | None | Stores the planned value in the current scope |
 | `succeed` | `message` | None | Stops planning with a successful terminal result |
 | `fail` | `message` | None | Stops planning with the failure that execution would produce |
+
+`closeRecord` follows the Table's current Finalization mode: Direct mode finalizes the Record, while Four-eyes mode creates an exact request for another eligible person. The optional expected mode and policy revision can pin a prior review. The **Close selected Records** starter reviews and closes up to 100 exact Records at once. Its protected profile ensures that the confirmed public Record IDs are never replaced by a later View or query result and a policy change stops later steps. Records are rechecked when each step runs; a changed or incomplete Record stops the run and remains editable. Open the run to see completed steps and the exact failure.
 
 `finalizeRecord` uses the table's generic Finalization contract: it validates the complete record, assigns final IDs, stores the final Durable History version, and permanently locks the record atomically. Retrying the same workflow step is safe. `updateRecord` and `createRecord` field keys accept exact field names or public IDs. If a table requires change context, `updateRecord.audit` must answer the applicable questions by their question UUID. `generateDocument.template` and `sendEmail.template` accept an enabled template exact name or public ID. Ambiguous and inaccessible references are rejected during validation.
 

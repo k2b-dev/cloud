@@ -50,6 +50,7 @@ export const PublicRecordFinalizationReadinessSchema = z
   .object({
     enabled: z.boolean(),
     mode: z.enum(["direct", "fourEyes"]).nullable(),
+    policyRevision: z.number().int().positive().nullable(),
     finalized: z.boolean(),
     finalizedAt: z.string().datetime().nullable(),
     request: PublicRecordFinalizationRequestSchema.nullable(),
@@ -57,6 +58,32 @@ export const PublicRecordFinalizationReadinessSchema = z
     resolutionDisabledReason: z.string().nullable(),
     missing: z.array(FinalizationFieldSchema.extend({ message: z.string() })),
     assignedOnFinalization: z.array(FinalizationFieldSchema),
+  })
+  .strict();
+
+export const PublicCloseSelectionPreviewInputSchema = z
+  .object({ recordIds: z.array(ShortIdSchema).min(1).max(100) })
+  .strict()
+  .refine((input) => new Set(input.recordIds).size === input.recordIds.length, "Record IDs must be unique");
+export const PublicCloseSelectionPreviewSchema = z
+  .object({
+    items: z.array(
+      z.discriminatedUnion("ok", [
+        z
+          .object({
+            ok: z.literal(true),
+            recordId: ShortIdSchema,
+            enabled: z.boolean(),
+            mode: z.enum(["direct", "fourEyes"]).nullable(),
+            policyRevision: z.number().int().positive().nullable(),
+            finalized: z.boolean(),
+            pendingRequest: z.boolean(),
+            missingFieldNames: z.array(z.string()),
+          })
+          .strict(),
+        z.object({ ok: z.literal(false), recordId: ShortIdSchema, reason: z.string() }).strict(),
+      ]),
+    ),
   })
   .strict();
 

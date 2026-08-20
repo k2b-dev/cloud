@@ -20,7 +20,7 @@ import { gridsWorkflows } from "../workflows/module";
 import { enable as enableDurableHistory, listRecordRevisions } from "./durable-history";
 import { update as updateMutationPolicy } from "./mutation-policy";
 import { provisionFieldNumberSeries } from "./number-series";
-import { enable as enableFinalization, setPolicy as setFinalizationPolicy } from "./record-finalization";
+import { disable as disableFinalization, enable as enableFinalization, setPolicy as setFinalizationPolicy } from "./record-finalization";
 import { GRIDS_APP_ID, gridsAuthorizationSnapshot } from "./workflow-runs";
 import { dryRunGridsWorkflowRun, runGridsWorkflowRun } from "./workflow-runtime";
 import { deleteTestWorkflowScope, insertTestWorkflow, publishTestWorkflowVersion } from "./workflow-test-fixture";
@@ -421,6 +421,194 @@ describe("declared Grids workflow actions", () => {
       await cleanupFixture(fixture);
       await sql`DELETE FROM auth.user_groups_v2 WHERE group_id = ${groupId}::uuid`;
       await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
+    }
+  });
+
+  postgresTest("closeRecord follows the Table's Direct Finalization mode", async () => {
+    const fixture = createFixture();
+    try {
+      await insertFixture(fixture);
+      const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+      if (!history.ok) throw history.error;
+      const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
+      if (!activation.ok) throw activation.error;
+      const runId = await queueRun(fixture, {
+        plan: boundPlan([actionStep(0, "closeRecord", { record: "inputs.record" })], {}),
+        inputs: { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+      });
+
+      expect(await drive(runId)).toBe("succeeded");
+      const [record] = await sql<Array<{ finalized_at: Date | null }>>`
+        SELECT finalized_at FROM grids.records WHERE id = ${fixture.recordId}::uuid
+      `;
+      expect(record?.finalized_at).toBeTruthy();
+      const [request] = await sql<Array<{ count: number }>>`
+        SELECT count(*)::int AS count FROM grids.record_finalization_requests WHERE record_id = ${fixture.recordId}::uuid
+      `;
+      expect(request?.count).toBe(0);
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest("closeRecord requests approval in Four-eyes mode without finalizing", async () => {
+    const fixture = createFixture();
+    const groupId = uuid();
+    try {
+      await insertFixture(fixture);
+      await sql`INSERT INTO auth.groups (id, cn, provider, name) VALUES (${groupId}::uuid, ${`close-approvers-${groupId}`}, 'local', 'Close approvers')`;
+      const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+      if (!history.ok) throw history.error;
+      const activation = await enableFinalization(fixture.tableId, { mode: "fourEyes", approverGroupId: groupId }, fixture.actorId);
+      if (!activation.ok) throw activation.error;
+      const runId = await queueRun(fixture, {
+        plan: boundPlan([actionStep(0, "closeRecord", { record: "inputs.record" })], {}),
+        inputs: { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+      });
+
+      expect(await drive(runId)).toBe("succeeded");
+      const [record] = await sql<Array<{ finalized_at: Date | null }>>`
+        SELECT finalized_at FROM grids.records WHERE id = ${fixture.recordId}::uuid
+      `;
+      expect(record?.finalized_at).toBeNull();
+      const [request] = await sql<Array<{ status: string; requested_by: string }>>`
+        SELECT status, requested_by::text
+        FROM grids.record_finalization_requests
+        WHERE record_id = ${fixture.recordId}::uuid
+      `;
+      expect(request).toEqual({ status: "pending", requested_by: fixture.actorId });
+
+      await reopenForReplay(runId);
+      expect(await drive(runId)).toBe("succeeded");
+      const [requestCount] = await sql<Array<{ count: number }>>`
+        SELECT count(*)::int AS count FROM grids.record_finalization_requests WHERE record_id = ${fixture.recordId}::uuid
+      `;
+      expect(requestCount?.count).toBe(1);
+    } finally {
+      await cleanupFixture(fixture);
+      await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
+    }
+  });
+
+  postgresTest("closeRecord obeys the workflow mutation policy before Direct or Four-eyes behavior", async () => {
+    const fixture = createFixture();
+    const groupId = uuid();
+    try {
+      await insertFixture(fixture);
+      await sql`INSERT INTO auth.groups (id, cn, provider, name) VALUES (${groupId}::uuid, ${`close-policy-${groupId}`}, 'local', 'Close policy approvers')`;
+      const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+      if (!history.ok) throw history.error;
+      const activation = await enableFinalization(fixture.tableId, { mode: "fourEyes", approverGroupId: groupId }, fixture.actorId);
+      if (!activation.ok) throw activation.error;
+      const policy = await updateMutationPolicy(fixture.tableId, { mode: "selected", sources: ["direct", "form"] }, fixture.actorId);
+      if (!policy.ok) throw policy.error;
+      const plan = boundPlan([actionStep(0, "closeRecord", { record: "inputs.record" })], {});
+      const inputs = { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } };
+
+      const runId = await queueRun(fixture, { plan, inputs });
+      expect(await drive(runId)).toBe("failed");
+      expect((await runRow(runId)).error).toMatchObject({ code: "FORBIDDEN" });
+      const [state] = await sql<Array<{ finalized_at: Date | null; requests: number }>>`
+        SELECT record.finalized_at,
+               (SELECT count(*)::int FROM grids.record_finalization_requests request WHERE request.record_id = record.id) AS requests
+        FROM grids.records record
+        WHERE record.id = ${fixture.recordId}::uuid
+      `;
+      expect(state).toEqual({ finalized_at: null, requests: 0 });
+
+      const dryRunId = await queueRun(fixture, { mode: "dryRun", plan, inputs });
+      expect(await drive(dryRunId, "dryRun")).toBe("failed");
+      expect(JSON.stringify((await runRow(dryRunId)).error)).toContain("does not allow changes from workflows and actions");
+    } finally {
+      await cleanupFixture(fixture);
+      await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
+    }
+  });
+
+  postgresTest("closeRecord refuses when Finalization mode changed after preview", async () => {
+    const fixture = createFixture();
+    const groupId = uuid();
+    try {
+      await insertFixture(fixture);
+      await sql`INSERT INTO auth.groups (id, cn, provider, name) VALUES (${groupId}::uuid, ${`mode-approvers-${groupId}`}, 'local', 'Mode approvers')`;
+      const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+      if (!history.ok) throw history.error;
+      const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
+      if (!activation.ok) throw activation.error;
+      const runId = await queueRun(fixture, {
+        plan: boundPlan([actionStep(0, "closeRecord", { record: "inputs.record", expectedMode: "inputs.closeMode" })], {}),
+        inputs: {
+          record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId },
+          closeMode: "direct",
+        },
+      });
+      const policy = await setFinalizationPolicy(fixture.tableId, { mode: "fourEyes", approverGroupId: groupId }, fixture.actorId);
+      if (!policy.ok) throw policy.error;
+
+      expect(await drive(runId)).toBe("failed");
+      expect((await runRow(runId)).error).toMatchObject({ code: "CONFLICT" });
+      const [record] = await sql<Array<{ finalized_at: Date | null }>>`
+        SELECT finalized_at FROM grids.records WHERE id = ${fixture.recordId}::uuid
+      `;
+      expect(record?.finalized_at).toBeNull();
+      const [request] = await sql<Array<{ count: number }>>`
+        SELECT count(*)::int AS count FROM grids.record_finalization_requests WHERE record_id = ${fixture.recordId}::uuid
+      `;
+      expect(request?.count).toBe(0);
+    } finally {
+      await cleanupFixture(fixture);
+      await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
+    }
+  });
+
+  postgresTest("closeRecord refuses when Four-eyes was disabled and re-enabled after preview", async () => {
+    const fixture = createFixture();
+    const firstGroupId = uuid();
+    const secondGroupId = uuid();
+    try {
+      await insertFixture(fixture);
+      await sql`
+        INSERT INTO auth.groups (id, cn, provider, name) VALUES
+          (${firstGroupId}::uuid, ${`first-close-approvers-${firstGroupId}`}, 'local', 'First close approvers'),
+          (${secondGroupId}::uuid, ${`second-close-approvers-${secondGroupId}`}, 'local', 'Second close approvers')
+      `;
+      const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+      if (!history.ok) throw history.error;
+      const activation = await enableFinalization(fixture.tableId, { mode: "fourEyes", approverGroupId: firstGroupId }, fixture.actorId);
+      if (!activation.ok) throw activation.error;
+      const runId = await queueRun(fixture, {
+        plan: boundPlan(
+          [
+            actionStep(0, "closeRecord", {
+              record: "inputs.record",
+              expectedMode: "inputs.closeMode",
+              expectedPolicyRevision: "inputs.closePolicyRevision",
+            }),
+          ],
+          {},
+        ),
+        inputs: {
+          record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId },
+          closeMode: "fourEyes",
+          closePolicyRevision: activation.data.enabled ? activation.data.policyRevision : 1,
+        },
+      });
+      const disabled = await disableFinalization(fixture.tableId, fixture.actorId);
+      if (!disabled.ok) throw disabled.error;
+      const changed = await enableFinalization(fixture.tableId, { mode: "fourEyes", approverGroupId: secondGroupId }, fixture.actorId);
+      if (!changed.ok) throw changed.error;
+      if (!activation.data.enabled || !changed.data.enabled) throw new Error("Finalization policy was not enabled");
+      expect(changed.data.policyRevision).toBeGreaterThan(activation.data.policyRevision);
+
+      expect(await drive(runId)).toBe("failed");
+      expect((await runRow(runId)).error).toMatchObject({ code: "CONFLICT" });
+      const [request] = await sql<Array<{ count: number }>>`
+        SELECT count(*)::int AS count FROM grids.record_finalization_requests WHERE record_id = ${fixture.recordId}::uuid
+      `;
+      expect(request?.count).toBe(0);
+    } finally {
+      await cleanupFixture(fixture);
+      await sql`DELETE FROM auth.groups WHERE id IN (${firstGroupId}::uuid, ${secondGroupId}::uuid)`;
     }
   });
 

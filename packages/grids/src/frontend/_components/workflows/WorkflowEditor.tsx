@@ -27,6 +27,7 @@ import {
   workflowEditorDraftDirty,
   workflowEditorSavePayload,
 } from "./workflow-editor-draft";
+import type { WorkflowStarter } from "./workflow-starters";
 
 type WorkflowEditorApi = {
   "by-base": {
@@ -56,6 +57,7 @@ type WorkflowEditorProps = {
   baseId: string;
   tables: Array<Pick<PublicTable, "id" | "name">>;
   workflow?: PublicWorkflow;
+  starter?: WorkflowStarter;
   onChanged: (workflow?: PublicWorkflow) => void;
   onClose: () => void;
 };
@@ -126,8 +128,18 @@ function DiagnosticsPanel(props: { diagnostics: WorkflowDiagnostic[]; validating
 }
 
 export function WorkflowEditor(props: WorkflowEditorProps) {
-  const initialDraft = workflowEditorDraft(props.workflow, defaultSource(props.tables[0]));
-  let cleanDraft = initialDraft;
+  const blankDraft = workflowEditorDraft(props.workflow, defaultSource(props.tables[0]));
+  const initialDraft =
+    !props.workflow && props.starter
+      ? {
+          ...blankDraft,
+          name: props.starter.name,
+          description: props.starter.description,
+          enabled: props.starter.enabled,
+          source: props.starter.source,
+        }
+      : blankDraft;
+  let cleanDraft = !props.workflow && props.starter ? blankDraft : initialDraft;
   const [name, setName] = createSignal(initialDraft.name);
   const [persistedName, setPersistedName] = createSignal(initialDraft.name);
   const [description, setDescription] = createSignal(initialDraft.description);

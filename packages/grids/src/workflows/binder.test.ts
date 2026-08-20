@@ -56,6 +56,29 @@ const compile = async (source: string) => {
 };
 
 describe("Grids workflow binder", () => {
+  test("binds a Close selection profile to one stable Table", async () => {
+    const result = await compileAndBindGridsWorkflowSource(
+      `inputs:
+  records:
+    type: recordList
+    table: TBL001
+    required: true
+steps:
+  - forEach: inputs.records
+    as: record
+    do:
+      - closeRecord:
+          record: record
+`,
+      catalog(),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.bindings["inputs.records.table"]).toBe(ids.items);
+    expect(result.plan.steps[0]).toMatchObject({ kind: "forEach", alias: "record" });
+  });
+
   test("rejects private UUID references and canonicalizes author references to public IDs", async () => {
     const source = `inputs:
   item:

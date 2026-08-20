@@ -51,6 +51,7 @@ describe("records bulk selection helpers", () => {
   test("labels workflow actions by the active run scope", () => {
     expect(bulkWorkflowActionLabel("Print labels", 0)).toBe("Run Print labels for current query");
     expect(bulkWorkflowActionLabel("Print labels", 3)).toBe("Run Print labels for 3 selected");
+    expect(bulkWorkflowActionLabel("Close selection", 0, true)).toBe("Select Records to run Close selection");
   });
 
   test("describes the queued workflow target without reporting zero records", () => {
