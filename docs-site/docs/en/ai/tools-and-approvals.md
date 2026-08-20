@@ -118,7 +118,7 @@ still apply, and historical projections stay compact for later loops.
 
 `promptHint` adds one short usage nudge to the system prompt. Use it when the
 model could finish with plain text but Cloud prefers the tool-backed experience,
-as with cards, surveys, the long-form text editor, or presented files. Keep
+as with surveys, the long-form text editor, or presented files. Keep
 operation details and arguments in the tool description and schema; the hint
 does not replace either.
 
@@ -182,6 +182,10 @@ when one short statement communicates the successful outcome better than raw
 data. AI Core stores and displays that provider-authored text together with
 semantic refs and links. It does not ask the model to supply a second
 explanation of its own call.
+
+Assistant keeps ordinary technical tool details collapsed by default. Result-
+first experiences such as web sources, presented files, image
+inspection, surveys, and the text editor remain directly visible or expanded.
 
 Discovery is not authorization. Every invocation resolves the conversation's
 current user, creates a short-lived request delegation, and lets the owning app

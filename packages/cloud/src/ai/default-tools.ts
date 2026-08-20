@@ -86,11 +86,10 @@ export const createCloudAiLocalBashTool = () =>
       "use local_bash only when work on the user's local CLI computer is necessary; every command requires local confirmation and its result must be checked.",
   }).client();
 
-export const createDefaultCloudAiTools = () => [createCloudAiCardTool(), createCloudAiSurveyTool(), createCloudAiTextEditorTool()];
+export const createDefaultCloudAiTools = () => [createCloudAiSurveyTool(), createCloudAiTextEditorTool()];
 
 /** Built-ins advertised through discovery and loaded only when needed. */
 export const CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES = new Set([
-  "card",
   "survey",
   "text_editor",
   "list_files",

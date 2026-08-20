@@ -59,22 +59,19 @@ export function PresentToolBlock(props: { block: ToolBlock }) {
             {title() ?? name()}
           </button>
         </Show>
-        <Show when={title()}>
-          <span class="min-w-0 truncate">{name()}</span>
-        </Show>
         <Show when={file()!.size > 0}>
           <span class="shrink-0">{formatAiFileSize(file()!.size)}</span>
         </Show>
         <Show when={href()}>
           {(downloadHref) => (
             <a
-              class="inline-flex shrink-0 items-center gap-1 font-medium text-secondary underline-offset-2 transition-colors hover:text-primary hover:underline"
+              class="group inline-flex shrink-0 items-center gap-1 font-medium text-secondary transition-colors hover:text-primary"
               href={downloadHref()}
               download={name()}
               title={`Download ${name()}`}
             >
               <i class="ti ti-download text-sm leading-none" aria-hidden="true" />
-              Download
+              <span class="underline-offset-2 group-hover:underline">Download</span>
             </a>
           )}
         </Show>

@@ -391,6 +391,32 @@ describe("capability tool presentation", () => {
     expect(html).not.toContain("Download");
   });
 
+  test("shows one presented-file label and underlines only the Download text on hover", () => {
+    const completed: AiTurnBlock = {
+      id: "present-call",
+      kind: "tool",
+      callId: "present-1",
+      name: "present",
+      args: { path: "/testdatei.md", title: "Testdatei.md" },
+      status: "completed",
+      result: { path: "/testdatei.md", size: 120, mediaType: "text/markdown" },
+    };
+
+    const html = renderToString(() =>
+      createComponent(AiChatActionsProvider, {
+        actions: { onOpenFile: () => undefined, fileUrl: () => "/download/testdatei.md" },
+        get children() {
+          return createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" });
+        },
+      }),
+    );
+
+    expect(html.match(/Testdatei\.md/g)).toHaveLength(1);
+    expect(html).toContain('download="testdatei.md"');
+    expect(html).toContain('<span class="underline-offset-2 group-hover:underline">Download</span>');
+    expect(html).not.toMatch(/<a[^>]*hover:underline/);
+  });
+
   test("collapses intermediate text and tools after completion while keeping rich results and the final text visible", () => {
     const blocks: AiTurnBlock[] = [
       { id: "text-before", kind: "text", text: "Before tool" },

@@ -192,10 +192,10 @@ the Assistant; resolving display text does not require another registry call.
 While a loop is active, Assistant renders its blocks in their saved order. Once
 the loop completes, it moves tool calls, reasoning, compaction, and every text
 block except the final response into one collapsed **Worked for ...**
-disclosure. Successful cards and presented files remain directly visible as
-standalone results. Failed work opens the disclosure immediately with danger
-treatment, and an explicit user disclosure choice remains stable across live
-timeline updates.
+disclosure. Presented files remain directly visible as standalone results;
+historical card calls keep their dedicated renderer. Failed work opens the
+disclosure immediately with danger treatment, and an explicit user disclosure
+choice remains stable across live timeline updates.
 
 Generic tool rows and disclosures use `Chat.Activity` from `@k2b/ui`. Cloud
 only supplies protocol-derived labels and specialized bodies such as web search

@@ -9,6 +9,8 @@ import {
   CloudAiCardInputSchema,
   CloudAiTextEditorInputSchema,
   CloudAiTextEditorOutputSchema,
+  CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES,
+  createCloudAiCardTool,
   createCloudAiLocalBashTool,
   createConfiguredDefaultCloudAiTools,
   createDefaultCloudAiTools,
@@ -161,17 +163,16 @@ describe("AI tools", () => {
     expect(prepared.tools[0]?.def.outputSchema).toBe(tool.def.outputSchema);
   });
 
-  test("ships default visual and interaction tools as frontend tools", () => {
+  test("ships default interaction tools without offering Card to the Assistant", () => {
     const prepared = prepareAiTools({ tools: createDefaultCloudAiTools(), actor });
 
-    expect(prepared.tools.map((tool) => tool.def.name)).toEqual(["card", "survey", "text_editor"]);
+    expect(prepared.tools.map((tool) => tool.def.name)).toEqual(["survey", "text_editor"]);
     expect(prepared.tools.every((tool) => tool.kind === "client")).toBe(true);
-    expect(prepared.frontendModes.get("card")).toBe("client_view");
     expect(prepared.frontendModes.get("survey")).toBe("client_interaction");
     expect(prepared.frontendModes.get("text_editor")).toBe("client_interaction");
-    expect(prepared.approvalPolicies.get("card")).toBe("never");
     expect(prepared.approvalPolicies.get("survey")).toBe("never");
     expect(prepared.approvalPolicies.get("text_editor")).toBe("never");
+    expect(CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has("card")).toBe(false);
   });
 
   test("keeps local Bash outside the default toolset", () => {
@@ -189,7 +190,6 @@ describe("AI tools", () => {
     const withWeb = await createConfiguredDefaultCloudAiTools({ firecrawlApiKey: "fc-secret" });
 
     expect(withoutWeb.map((tool) => tool.def.name)).toEqual([
-      "card",
       "survey",
       "text_editor",
       "list_files",
@@ -201,7 +201,6 @@ describe("AI tools", () => {
       "view_image",
     ]);
     expect(withWeb.map((tool) => tool.def.name)).toEqual([
-      "card",
       "survey",
       "text_editor",
       "list_files",
@@ -215,7 +214,6 @@ describe("AI tools", () => {
       "web_extract",
     ]);
     expect(aiToolPromptHints(withoutWeb).map((hint) => hint.name)).toEqual([
-      "card",
       "survey",
       "text_editor",
       "list_files",
@@ -300,7 +298,7 @@ describe("AI tools", () => {
     expect(AiTurnActionSchema.safeParse({ type: "approval_response", result: "wrong" }).success).toBe(false);
   });
 
-  test("default visual tool reaches Nessi client action requests", async () => {
+  test("explicit Card tool reaches Nessi client action requests", async () => {
     const entries: StoreEntry[] = [];
     const provider: Provider = {
       name: "fake",
@@ -322,7 +320,7 @@ describe("AI tools", () => {
         throw new Error("complete should not be used");
       },
     };
-    const prepared = prepareAiTools({ tools: createDefaultCloudAiTools(), actor });
+    const prepared = prepareAiTools({ tools: [createCloudAiCardTool()], actor });
     const loop = nessi({
       agentId: "cloud",
       loopId: "loop-card",
