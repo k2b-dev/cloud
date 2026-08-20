@@ -27,6 +27,7 @@ import { createSettingsAPI, type SettingsAPI } from "../services/settings/api";
 import { registerSettings, toLegacySettingDefs } from "../services/settings/defaults";
 import { cloudMcpResourceUri } from "../shared/app-url";
 import { themeBootstrapScript } from "../shared/theme";
+import { appFaviconHref } from "./app-favicon";
 import { readBoundedJson } from "./bounded-json";
 import { appRuntimeMetadata } from "./build-metadata";
 import { compileCapabilities, invokeCompiledCapability, reviewCompiledCapability, serializeCapabilityProviderResult } from "./capabilities";
@@ -262,7 +263,7 @@ export const defineApp = <
     <meta name="description" content="${description ?? "Cloud workspace"}">
     <meta name="theme-color" content="#09090b">
     <meta name="mobile-web-app-capable" content="yes">
-    <link rel="icon" href="/branding/favicon">
+    <link rel="icon" href="${appFaviconHref(opts.id, v)}">
     <style data-cloud-css-layers>@layer theme, base, components, utilities;</style>
     <link rel="preload" href="/public/tabler-icons.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="/public/fonts.css?v=${v}">

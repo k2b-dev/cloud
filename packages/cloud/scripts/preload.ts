@@ -22,6 +22,7 @@ import { cp, mkdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import tailwind from "bun-plugin-tailwind";
+import { writeAppFavicon } from "./app-favicon";
 
 const appId = process.env.APP_ID ?? "core";
 
@@ -38,7 +39,7 @@ const frameworkDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const appDir = process.env.APP_DIR ? resolve(root, process.env.APP_DIR) : resolve(root, "packages", appId);
 if (!existsSync(appDir)) throw new Error(`Unknown app dir: ${appDir} (set APP_DIR or check APP_ID)`);
 
-const { plugin } = await import(resolve(appDir, "src/config"));
+const { app, plugin } = await import(resolve(appDir, "src/config"));
 Bun.plugin(plugin());
 
 // ── Build CSS ───────────────────────────────────────────────────────────────
@@ -136,6 +137,14 @@ if (appId === "notebooks") {
 // Each app builds its own app.css
 const appPublicDir = resolve(publicDir, appId);
 await mkdir(appPublicDir, { recursive: true });
+
+if (appId !== "core") {
+  await writeAppFavicon({
+    publicDir,
+    appId,
+    icon: app.meta.icon,
+  });
+}
 
 await buildAppCss();
 

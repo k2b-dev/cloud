@@ -36,13 +36,17 @@ export const app = defineApp({
 | --- | --- | --- |
 | `id` | Yes | Stable machine identity |
 | `name` | Yes | Name shown by platform surfaces |
-| `icon` | Yes | Tabler icon class |
+| `icon` | Yes | Tabler icon class used across Cloud and as the favicon on rendered app pages |
 | `description` | Yes | Short application description |
 | `baseUrl` | Yes | Internal address used by the gateway |
 | `routes` | Yes | Public path prefixes routed to the service |
 
 Use an address that resolves from the gateway container for `baseUrl`. Do not
 use the public browser URL.
+
+Cloud generates a transparent favicon with the Cloud blue-white gradient for
+rendered application pages from `icon`. Core pages keep the operator-configured
+Cloud favicon.
 
 Declare only prefixes the application serves. See
 [Routes and discovery](/en/docs/build/routing).

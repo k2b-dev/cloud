@@ -79,6 +79,7 @@
   "dependencies": {
     "@firecrawl/anydoc": "0.1.9",
     "@simplewebauthn/server": "13.3.2",
+    "@tabler/icons": "3.46.0",
     "@tailwindcss/typography": "0.5.20",
     "@k2b/nessi": "0.11.0",
     "@k2b/ssr": "0.12.0",

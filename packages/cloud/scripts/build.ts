@@ -29,6 +29,7 @@ import { promisify } from "node:util";
 import { brotliCompress, gzip, constants as zlibConstants } from "node:zlib";
 import { CryptoHasher, Glob } from "bun";
 import tailwind from "bun-plugin-tailwind";
+import { writeAppFavicon } from "./app-favicon";
 
 const appId = process.env.APP_ID;
 if (!appId) throw new Error("APP_ID env var required");
@@ -103,7 +104,7 @@ async function precompressDistAssets(dir: string): Promise<void> {
 // it resolves via the appDir path (because the script's relative imports
 // only work for monorepo, we use absolute file:// for standalone).
 const configPath = resolve(appDir, "src/config");
-const { plugin } = await import(configPath);
+const { app, plugin } = await import(configPath);
 
 // 1. Server entry — also emits dist/_ssr/<island>.js via the SSR plugin.
 // @peculiar/x509 uses tsyringe, whose decorators require this polyfill before
@@ -180,6 +181,14 @@ if (existsSync(appCss)) {
 const appPublic = resolve(appDir, "public");
 if (existsSync(appPublic)) {
   await cp(appPublic, resolve(distPublic, appId), { recursive: true });
+}
+
+if (appId !== "core") {
+  await writeAppFavicon({
+    publicDir: distPublic,
+    appId,
+    icon: app.meta.icon,
+  });
 }
 
 // 4. Optional app-specific extras (e.g. core's global.css + logo + katex).
