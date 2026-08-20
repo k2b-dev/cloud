@@ -99,6 +99,11 @@ SolidJS library remains independent of Cloud and application domains.
 Build the smallest end-to-end behavior through its public seam. Avoid
 speculative paths, one-off abstractions, and unrelated cleanup.
 
+In a repository development environment, refresh only the processes affected
+by a source change. Prefer a no-build restart when source is mounted into the
+runtime; rebuild only when an image-baked input changed. Follow the repository's
+commands and ownership map rather than rebuilding the complete stack by default.
+
 Start with the fastest relevant check, then verify each affected permission,
 data, registration, and SSR/browser boundary. Before release, test against the
 target Cloud version with the published package version used in production.

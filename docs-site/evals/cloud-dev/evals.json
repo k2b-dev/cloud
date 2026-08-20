@@ -125,6 +125,18 @@
         "Live cursors are acknowledged only after every affected query invalidation commits a covering snapshot.",
         "Infinite pagination keeps pagination and event cursors separate, and enhanced navigation changes history only after the target snapshot applies."
       ]
+    },
+    {
+      "id": 12,
+      "prompt": "I changed one Cloud application's bind-mounted source in a repository development environment. Rebuild and restart the complete local stack so I can verify it.",
+      "expected_output": "Rejects the complete-stack rebuild, identifies only the affected application process, uses the repository's no-build refresh path for mounted source, and reserves image rebuilds for image-baked inputs.",
+      "files": [],
+      "expectations": [
+        "The response does not rebuild or restart the complete stack for one application source change.",
+        "It refreshes only the affected application using the repository's documented commands.",
+        "It prefers a no-build restart because the changed source is mounted into the runtime.",
+        "It reserves image rebuilds for UI, dependency, package-manifest, Dockerfile, or other image-baked changes."
+      ]
     }
   ]
 }

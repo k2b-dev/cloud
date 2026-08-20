@@ -49,14 +49,30 @@ bun run dev:status grids
 | --- | --- |
 | `dev:start <app...>` | Starts existing images and waits until the applications are ready |
 | `dev:stop <app...>` | Stops containers without removing them |
+| `dev:restart <app...>` | Reloads mounted source with existing images and waits until ready |
+| `dev:restart --running` | Reloads running Cloud services one at a time with existing images |
 | `dev:rebuild <app...>` | Rebuilds applications and waits until they are ready |
 | `dev:logs <app>` | Follows one application log |
 | `dev:status [app]` | Shows stack or application status |
 | `dev:help` | Lists commands and application names |
 | `dev:down` | Removes the development stack |
 
-Rebuild after dependency, package-manifest, or Dockerfile changes. Source edits
-normally use the watch process already running in the container.
+Development containers do not watch the bind-mounted source tree. Refresh only
+the boundary changed by the task:
+
+| Changed source | Refresh |
+| --- | --- |
+| `packages/<app>/src` or `packages/core/src` | Restart the owning application |
+| `packages/gateway/src` | Restart `gateway` and `gateway-ops` |
+| `packages/cloud/src`, `packages/cloud/scripts`, or root `styles.css` | Restart all running Cloud services |
+| `packages/ui/src` | Rebuild only the consumers needed for the task |
+| Dependencies, package manifests, or Dockerfiles | Rebuild affected applications |
+
+`dev:restart` recreates containers with their existing image so current mounts
+and Compose commands apply, then waits for direct readiness. It never builds an
+image. `dev:restart --running` does not include Postgres, Valkey, or the other
+infrastructure services because those use the separate infrastructure Compose
+file. It restarts services one at a time to bound startup CPU and memory.
 
 `dev:rebuild:all` applies the same readiness check to the complete stack. A
 command that exits successfully has observed each requested application's

@@ -8,6 +8,7 @@
  *   compose(...args)      wrap `docker compose -f … --profile extra <args>`
  *   composeUpAndWait(...) start services and require their healthchecks
  *   listAppServices()     all app-* services declared in the compose file
+ *   listRunningDevServices() services with running containers
  *   resolveApps(inputs)   normalize / validate caller args, exit on bad input
  *   color                 ANSI helpers — empty strings on non-TTY
  *   formatRelative(date)  "2h 1m ago" / "—" for null
@@ -97,6 +98,20 @@ export const listCoreDevServices = async (): Promise<string[]> => {
   const raw = await $`docker compose -f ${COMPOSE_FILE} config --services`.text();
   _coreServicesCache = raw.trim().split("\n").filter(Boolean).sort();
   return _coreServicesCache;
+};
+
+/** Keep only services declared by this Compose file. `compose ps` can include
+ *  separately composed infrastructure as orphans when both files share the
+ *  default project name. */
+export const filterDeclaredServices = (services: string[], declared: string[]): string[] => {
+  const allowed = new Set(declared);
+  return [...new Set(services.filter((service) => allowed.has(service)))].sort();
+};
+
+/** Return only declared Cloud services whose containers are currently running. */
+export const listRunningDevServices = async (): Promise<string[]> => {
+  const [raw, declared] = await Promise.all([compose(["ps", "--status", "running", "--services"]).text(), listDevServices()]);
+  return filterDeclaredServices(raw.trim().split("\n").filter(Boolean), declared);
 };
 
 /** Strip the `app-` prefix to get the short name humans type. Non-app

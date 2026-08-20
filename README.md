@@ -115,6 +115,8 @@ Dev admin login: open `/auth/login?method=admin` and paste `dev-admin` into the 
 | `bun run dev:infra:down` | Stop the development infrastructure |
 | `bun run dev:start <app...>` | Add one or more extra apps to the running stack |
 | `bun run dev:stop <app...>` | Stop one or more apps |
+| `bun run dev:restart <app...>` | Reload mounted source without rebuilding images |
+| `bun run dev:restart --running` | Reload all currently running app services |
 | `bun run dev:rebuild <app...>` | Rebuild image + restart (parallel for multiple) |
 | `bun run dev:logs <app>` | Follow one app's logs |
 | `bun run dev:status` | Plain-text inventory of all apps (state, uptime, image age) |

@@ -1,7 +1,8 @@
 # Dev containers — run with:
 #   bun run dev          (core set, 6 containers)
 #   bun run dev:full     (core + extras, 23 containers; --profile extra)
-#   bun run dev:start FOO  (ad-hoc: start a single extra app in the running stack)
+#   bun run dev:start FOO    (ad-hoc: start a single extra app in the running stack)
+#   bun run dev:restart FOO  (reload mounted source without rebuilding the image)
 #
 # `bun run dev` and `bun run dev:full` start the infrastructure automatically.
 #
@@ -48,7 +49,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/gateway/src:/app/packages/gateway/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/gateway/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/gateway/src/index.ts
 
   app-gateway-ops:
     <<: *app
@@ -60,7 +61,7 @@ services:
       - ./packages/gateway/src:/app/packages/gateway/src
       - ./packages/gateway-ops/src:/app/packages/gateway-ops/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/gateway-ops/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/gateway-ops/src/index.ts
 
   app-core:
     <<: *app
@@ -73,7 +74,7 @@ services:
       - ./packages/core/src:/app/packages/core/src
       - ./packages/core/scripts:/app/packages/core/scripts
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/core/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/core/src/index.ts
 
   app-dashboard:
     <<: *app
@@ -84,7 +85,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/dashboard/src:/app/packages/dashboard/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/dashboard/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/dashboard/src/index.ts
 
   app-accounts:
     <<: *app
@@ -95,7 +96,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/accounts/src:/app/packages/accounts/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/accounts/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/accounts/src/index.ts
 
   app-assistant:
     <<: *app
@@ -106,7 +107,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/assistant/src:/app/packages/assistant/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/assistant/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/assistant/src/index.ts
 
   # ══════════════════════════════════════════════════════════════════
   # Extras — only started with `--profile extra` or ad-hoc via dev:app
@@ -122,7 +123,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/capabilities/src:/app/packages/capabilities/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/capabilities/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/capabilities/src/index.ts
 
   app-notebooks:
     <<: *app
@@ -134,7 +135,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/notebooks/src:/app/packages/notebooks/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/notebooks/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/notebooks/src/index.ts
 
   app-contacts:
     <<: *app
@@ -146,7 +147,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/contacts/src:/app/packages/contacts/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/contacts/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/contacts/src/index.ts
 
   app-faq:
     <<: *app
@@ -158,7 +159,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/faq/src:/app/packages/faq/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/faq/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/faq/src/index.ts
 
   app-grids:
     <<: *app
@@ -170,7 +171,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/grids/src:/app/packages/grids/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/grids/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/grids/src/index.ts
 
   app-files:
     <<: *app
@@ -182,7 +183,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/files/src:/app/packages/files/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/files/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/files/src/index.ts
 
   app-ipa-hosts:
     <<: *app
@@ -194,7 +195,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/ipa-hosts/src:/app/packages/ipa-hosts/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/ipa-hosts/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/ipa-hosts/src/index.ts
 
   app-mail:
     <<: *app
@@ -206,7 +207,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/mail/src:/app/packages/mail/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/mail/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/mail/src/index.ts
 
   app-oauth:
     <<: *app
@@ -218,7 +219,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/oauth/src:/app/packages/oauth/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/oauth/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/oauth/src/index.ts
 
   app-proxy-auth:
     <<: *app
@@ -230,7 +231,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/proxy-auth/src:/app/packages/proxy-auth/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/proxy-auth/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/proxy-auth/src/index.ts
 
   app-quotes:
     <<: *app
@@ -242,7 +243,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/quotes/src:/app/packages/quotes/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/quotes/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/quotes/src/index.ts
 
   app-pulse:
     <<: *app
@@ -254,7 +255,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/pulse/src:/app/packages/pulse/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/pulse/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/pulse/src/index.ts
 
   app-spaces:
     <<: *app
@@ -266,7 +267,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/spaces/src:/app/packages/spaces/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/spaces/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/spaces/src/index.ts
 
   app-tools:
     <<: *app
@@ -278,7 +279,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/tools/src:/app/packages/tools/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/tools/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/tools/src/index.ts
 
   app-venue:
     <<: *app
@@ -290,7 +291,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/venue/src:/app/packages/venue/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/venue/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/venue/src/index.ts
 
   app-weather:
     <<: *app
@@ -302,7 +303,7 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/weather/src:/app/packages/weather/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/weather/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/weather/src/index.ts
 
   app-api-docs:
     <<: *app
@@ -314,4 +315,4 @@ services:
       - ./packages/cloud/scripts:/app/packages/cloud/scripts
       - ./packages/api-docs/src:/app/packages/api-docs/src
       - ./styles.css:/app/styles.css
-    command: bun run --preload=/app/packages/cloud/scripts/preload.ts --watch packages/api-docs/src/index.ts
+    command: bun run --preload=/app/packages/cloud/scripts/preload.ts packages/api-docs/src/index.ts

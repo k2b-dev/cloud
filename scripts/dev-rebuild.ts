@@ -6,9 +6,8 @@
  * recreates the container, brings it up. Compose builds the services
  * in parallel by default so multiple apps spin up at once.
  *
- * Use this after a Dockerfile change or when you suspect the image is
- * stale. For code changes alone, the container's `--watch` flag
- * already picks them up via the bind mount — no rebuild needed.
+ * Use this after a UI, dependency, package-manifest, or Dockerfile change.
+ * Bind-mounted application and platform source only needs `dev:restart`.
  */
 import { color, composeUpAndWait, helpFor, resolveApps } from "./dev-cli";
 
@@ -17,8 +16,8 @@ const inputs = process.argv.slice(2);
 if (inputs.length === 0) {
   helpFor("bun run dev:rebuild <app...>", [
     "Rebuild image(s) and restart one or more apps.",
-    "Most code changes hot-reload via --watch and don't need this.",
-    "Use it after a Dockerfile / package.json change.",
+    "Use it after UI, dependency, package-manifest, or Dockerfile changes.",
+    "Use dev:restart for bind-mounted application or platform source.",
     "",
     "Examples:",
     "  bun run dev:rebuild notebooks",

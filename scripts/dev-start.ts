@@ -6,9 +6,9 @@
  * started app reaches `ipa_postgres` / `ipa_valkey` / `gateway` without
  * extra config. The gateway picks it up from the Redis registry within ~5s.
  *
- * No --build here — use `dev:rebuild` when you need a fresh image. This
- * keeps `dev:start` snappy for the common "I just stopped it, start it
- * again" loop.
+ * No --build here — use `dev:restart` to reload mounted source and
+ * `dev:rebuild` when you need a fresh image. This keeps `dev:start` snappy
+ * for the common "I just stopped it, start it again" loop.
  */
 import { color, composeUpAndWait, helpFor, resolveApps } from "./dev-cli";
 

@@ -133,8 +133,13 @@ After a fresh clone or lockfile change, run `bun install --frozen-lockfile`.
 
 - `bun run dev` starts the infrastructure and core stack; use `dev:full` only
   when every optional application is needed.
-- Use `dev:start`, `dev:stop`, and `dev:rebuild` for specific applications;
-  use `dev:logs` and `dev:status` to inspect them.
+- Use `dev:start`, `dev:stop`, `dev:restart`, and `dev:rebuild` for specific
+  applications; use `dev:logs` and `dev:status` to inspect them. Application
+  source and `packages/core` changes restart only their owning service;
+  `packages/cloud/src`, `packages/cloud/scripts`, and root `styles.css` changes
+  restart all running Cloud services with `dev:restart --running`. UI,
+  dependency, package-manifest, and Dockerfile changes rebuild only the
+  consumers needed for the task.
 - `dev:down` removes the app stack but keeps its infrastructure available.
   Stop that separately with `dev:infra:down` only when it is no longer needed.
 - Use `dev:fibel`, `dev:fibel:logs`, and `dev:fibel:down` for the isolated

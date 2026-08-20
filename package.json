@@ -82,6 +82,7 @@
     "dev:rebuild:all": "bun run dev:infra && bun run scripts/dev-rebuild-all.ts",
     "dev:start": "bun run scripts/dev-start.ts",
     "dev:stop": "bun run scripts/dev-stop.ts",
+    "dev:restart": "bun run scripts/dev-restart.ts",
     "dev:rebuild": "bun run scripts/dev-rebuild.ts",
     "dev:logs": "bun run scripts/dev-logs.ts",
     "dev:status": "bun run scripts/dev-status.ts",
