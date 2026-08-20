@@ -1,4 +1,14 @@
-type BarcodeOption = { id: string; label: string; description: string; icon: string };
+type BarcodeOption = { id: string; label: string; description: string; icon: string; groups?: readonly string[] };
+
+export const BARCODE_GROUPS = [
+  { value: "recommended", label: "Recommended" },
+  { value: "linear", label: "Linear" },
+  { value: "2d", label: "2D" },
+  { value: "gs1-retail", label: "GS1 & retail" },
+  { value: "postal", label: "Postal" },
+  { value: "healthcare", label: "Healthcare" },
+  { value: "publishing", label: "Publishing" },
+] as const;
 
 export const CURATED_BARCODE_OPTIONS: BarcodeOption[] = [
   { id: "code128", label: "Code 128", description: "General-purpose linear barcode.", icon: "ti ti-barcode" },
@@ -136,6 +146,42 @@ export const BARCODE_SYMBOL_IDS: string[] = [
 export const DEFAULT_BARCODE_BCID = "code128";
 
 const curatedById = new Map(CURATED_BARCODE_OPTIONS.map((option) => [option.id, option]));
+const curatedIds = new Set(curatedById.keys());
+
+const includesAny = (id: string, fragments: readonly string[]) => fragments.some((fragment) => id.includes(fragment));
+
+export const barcodeGroups = (id: string): readonly string[] => {
+  const groups: string[] = [];
+  if (curatedIds.has(id)) groups.push("recommended");
+
+  const is2d = includesAny(id, [
+    "aztec",
+    "codablock",
+    "code16k",
+    "code49",
+    "codeone",
+    "composite",
+    "d3aqr",
+    "datamatrix",
+    "dotcode",
+    "hanxin",
+    "maxicode",
+    "pdf417",
+    "qrcode",
+    "ultracode",
+  ]);
+  groups.push(is2d ? "2d" : "linear");
+
+  if (includesAny(id, ["databar", "ean", "gs1", "isbn", "ismn", "issn", "itf14", "sscc", "upc"])) {
+    groups.push("gs1-retail");
+  }
+  if (includesAny(id, ["auspost", "daft", "flattermarken", "identcode", "japanpost", "kix", "leitcode", "mailmark", "onecode", "planet", "postnet", "royalmail"])) {
+    groups.push("postal");
+  }
+  if (includesAny(id, ["code32", "hibc", "pharmacode", "pzn"])) groups.push("healthcare");
+  if (includesAny(id, ["isbn", "ismn", "issn"])) groups.push("publishing");
+  return groups;
+};
 
 const advancedLabel = (id: string) => id.replace(/([a-z])(\d)/g, "$1 $2").replace(/(\d)([a-z])/g, "$1 $2");
 
@@ -144,13 +190,18 @@ export const barcodeSelectedLabel = (id: string | undefined): string | undefined
   return curatedById.get(id)?.label ?? advancedLabel(id);
 };
 
-export const searchBarcodeOptions = (query: string) => {
+export const searchBarcodeOptions = (query: string, group: string | null = "recommended") => {
   const q = query.trim().toLowerCase();
-  if (!q) return CURATED_BARCODE_OPTIONS;
-  return BARCODE_SYMBOL_IDS.filter((id) => id.includes(q) || (curatedById.get(id)?.label.toLowerCase() ?? "").includes(q))
+  const ids = group === "recommended" ? CURATED_BARCODE_OPTIONS.map((option) => option.id) : BARCODE_SYMBOL_IDS;
+  return ids
+    .filter((id) => group === null || barcodeGroups(id).includes(group))
+    .filter((id) => !q || id.includes(q) || (curatedById.get(id)?.label.toLowerCase() ?? "").includes(q))
     .map((id): BarcodeOption => {
       const known = curatedById.get(id);
-      return known ?? { id, label: advancedLabel(id), description: `Advanced BWIP symbol: ${id}`, icon: "ti ti-barcode" };
+      return {
+        ...(known ?? { id, label: advancedLabel(id), description: `Advanced BWIP symbol: ${id}`, icon: "ti ti-barcode" }),
+        groups: barcodeGroups(id),
+      };
     })
     .slice(0, 60);
 };

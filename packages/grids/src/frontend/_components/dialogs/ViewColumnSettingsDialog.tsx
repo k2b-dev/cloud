@@ -4,7 +4,7 @@ import type { FormatSpec } from "../../../contracts";
 import { effectiveDisplayField } from "../../../lookup-display";
 import type { Field } from "../../../service";
 import { TYPE_LABELS } from "../fields/field-config-editor";
-import { barcodeSelectedLabel, DEFAULT_BARCODE_BCID, searchBarcodeOptions } from "../table/barcode-options";
+import { BARCODE_GROUPS, barcodeSelectedLabel, DEFAULT_BARCODE_BCID, searchBarcodeOptions } from "../table/barcode-options";
 
 type ViewColumnSettingsResult = { action: "save"; label: string | undefined; format: FormatSpec | undefined } | { action: "hide" };
 
@@ -338,7 +338,10 @@ function BarcodeFormatControls(props: {
           if (value !== null) props.setBcid(value);
         }}
         selectedLabel={() => barcodeSelectedLabel(props.bcid())}
-        fetchData={async (query) => searchBarcodeOptions(query)}
+        fetchData={async (query, _signal, group) => searchBarcodeOptions(query, group)}
+        groups={BARCODE_GROUPS}
+        defaultGroup="recommended"
+        groupsAriaLabel="Filter code types"
       />
       <Checkbox
         label="Show encoded text"
