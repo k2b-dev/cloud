@@ -118,6 +118,9 @@ describe("Venue capabilities", () => {
     expect(venueCapabilities.actions?.["assignment.cancel"]?.review).toBeFunction();
     expect(venueCapabilities.actions["assignment.signup"].review).toBeFunction();
     expect(venueCapabilities.actions["assignment.signup_free"].review).toBeFunction();
+    expect(venueCapabilities.queries["venue.list"].description).toContain("Normal entry for permission-scoped Venue work");
+    expect(venueCapabilities.queries["venue.search"].description).toContain("when its ID is unknown");
+    expect(venueCapabilities.queries["shift.list"].description).toContain("assignment.signup");
     expect(
       venueCapabilities.queries["shift.list"].input.safeParse({
         venueId: newShortId(),
@@ -237,6 +240,7 @@ describe("Venue capabilities", () => {
         const publicVenue = await invokeQuery("venue.read", { id: publicVenueShortId }, otherContext);
         expect(publicVenue.ok && publicVenue.data.data).toMatchObject({ id: publicVenueShortId, permission: null, publicEnabled: true });
         if (publicVenue.ok) {
+          expect(publicVenue.data.summary).toContain("Read Venue");
           expect(publicVenue.data.data).not.toHaveProperty("icalToken");
           expect(publicVenue.data.data).not.toHaveProperty("logoBase64");
           expect(publicVenue.data.links).toEqual([{ rel: "open", href: `/app/venue/public/${publicVenueShortId}` }]);
@@ -247,6 +251,7 @@ describe("Venue capabilities", () => {
         expect(missingVenue).toMatchObject({ ok: false, error: { code: "NOT_FOUND", status: 404 } });
         const status = await invokeQuery("venue.status", { venueId: venueShortId }, context);
         expect(status.ok && status.data.data).toMatchObject({ venueId: venueShortId, timezone: "Europe/Berlin" });
+        if (status.ok) expect(status.data.summary).toContain("Agent Venue");
 
         const shifts = await invokeQuery("shift.list", { venueId: venueShortId, startDate: shiftDate, days: 1, limit: 25 }, context);
         expect(shifts.ok && shifts.data.data).toEqual(
@@ -381,7 +386,10 @@ describe("Venue capabilities", () => {
 
         const feedback = await invokeQuery("feedback.summary", { venueId: venueShortId }, context);
         expect(feedback.ok && feedback.data.data).toMatchObject({ venueId: venueShortId, count: 1, averageRating: 5 });
-        if (feedback.ok) expect(feedback.data.data).not.toHaveProperty("entries");
+        if (feedback.ok) {
+          expect(feedback.data.data).not.toHaveProperty("entries");
+          expect(feedback.data.summary).toBe("Read feedback for “Agent Venue”: 5 from 1 rating.");
+        }
 
         const calendar = await venueService.ical.generateUser(user.id, "https://cloud.example");
         expect(calendar).toContain(`URL:https://cloud.example/app/venue/${venueShortId}`);

@@ -158,6 +158,7 @@ const runVenueRead = async (input: z.infer<typeof VenueReadInputSchema>, context
   if (!venue.ok) return venue;
   return ok({
     data: mapVenue(venue.data),
+    summary: `Read Venue “${venue.data.name}”.`,
     refs: [{ type: "venue.venue", id: venue.data.publicId }],
     links: [{ rel: "open" as const, href: openVenueHref(venue.data) }],
   });
@@ -186,6 +187,7 @@ const runVenueStatus = async (input: z.infer<typeof VenueTargetInputSchema>, con
         endsAt: opening.endsAt,
       })),
     },
+    summary: `“${venue.data.name}” is ${status.statusLabel}.`,
     refs: [{ type: "venue.venue", id: venue.data.publicId }],
     links: [{ rel: "status" as const, href: openVenueHref(venue.data) }],
   });
@@ -258,6 +260,7 @@ const runAssignmentRead = async (input: z.infer<typeof AssignmentReadInputSchema
   if (!venue.ok) return venue;
   return ok({
     data: mapPersonalAssignment(publicAssignment),
+    summary: `Read your shift assignment at “${publicAssignment.venueName}”.`,
     refs: [{ type: "venue.assignment", id: publicAssignment.id }],
     links: [{ rel: "open" as const, href: myShiftsHref(publicAssignment.venueId) }],
   });
@@ -318,6 +321,10 @@ const runFeedbackSummary = async (input: z.infer<typeof VenueTargetInputSchema>,
       averageRating: feedback.summary.averageRating,
       buckets: feedback.summary.buckets.slice(0, 31),
     },
+    summary:
+      feedback.summary.count === 0
+        ? `Read feedback for “${venue.data.name}”: no ratings in the last 30 days.`
+        : `Read feedback for “${venue.data.name}”: ${feedback.summary.averageRating} from ${feedback.summary.count} ${feedback.summary.count === 1 ? "rating" : "ratings"}.`,
     refs: [{ type: "venue.venue", id: venue.data.publicId }],
     links: [{ rel: "open" as const, href: `${venueHref(venue.data.publicId)}/feedback` }],
   });
@@ -365,6 +372,7 @@ const runShiftRead = async (input: z.infer<typeof ShiftReadInputSchema>, context
   return shift
     ? ok({
         data: mapShift(shift),
+        summary: `Read shift “${shift.template.title}” at “${venue.data.name}” on ${shift.date}.`,
         refs: [{ type: "venue.venue", id: venue.data.publicId }],
         links: [{ rel: "open" as const, href: shiftHref(venue.data.publicId) }],
       })
@@ -459,7 +467,8 @@ export const venueCapabilities = defineCapabilities({
   queries: {
     "venue.search": {
       title: "Search Venues",
-      description: "Find public or accessible Venues by name, slug, or description.",
+      description:
+        "Find a public or accessible Venue by name, slug, or description when its ID is unknown. Use returned venue.venue refs with venue.read, venue.status, shift.list, or feedback.summary.",
       input: UniversalSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -468,7 +477,8 @@ export const venueCapabilities = defineCapabilities({
     },
     "venue.list": {
       title: "List accessible Venues",
-      description: "Start here to list permission-scoped Venues and obtain item-local venue.venue refs for all Venue operations.",
+      description:
+        "Normal entry for permission-scoped Venue work. List accessible Venues and use returned venue.venue refs or IDs with venue.read, venue.status, shift.list, assignment.mine, or feedback.summary.",
       input: VenueListInputSchema,
       data: VenueListDataSchema,
       openWorld: false,
@@ -476,7 +486,7 @@ export const venueCapabilities = defineCapabilities({
     },
     "venue.read": {
       title: "Read Venue",
-      description: "Read compact metadata from a venue.venue ref or Venue ID, without media or secret calendar tokens.",
+      description: "Read one venue.venue ref returned by venue.list or venue.search, without media or secret calendar tokens.",
       input: VenueReadInputSchema,
       data: VenueDataSchema,
       openWorld: false,
@@ -484,7 +494,8 @@ export const venueCapabilities = defineCapabilities({
     },
     "venue.status": {
       title: "Get Venue status",
-      description: "Get current opening status, today's hours, and the next confirmed openings in the Venue timezone.",
+      description:
+        "Get current opening status, today's hours, and upcoming openings for a known Venue. Get venueId from venue.list or venue.search.",
       input: VenueTargetInputSchema,
       data: VenueStatusDataSchema,
       openWorld: false,
@@ -492,7 +503,8 @@ export const venueCapabilities = defineCapabilities({
     },
     "shift.list": {
       title: "List Venue shifts",
-      description: "Find and list dated Venue shifts for up to 31 days without exposing participant identities.",
+      description:
+        "List dated shifts for a known Venue without participant identities. Get venueId from venue.list or venue.search; use each returned venueId, templateId, and date with shift.read or assignment.signup.",
       input: ShiftListInputSchema,
       data: ShiftListDataSchema,
       openWorld: false,
@@ -509,7 +521,8 @@ export const venueCapabilities = defineCapabilities({
     },
     "assignment.mine": {
       title: "List my assignments",
-      description: "List the current user-backed actor's own assignments with venue.assignment refs in a bounded date range.",
+      description:
+        "List the current user's assignments, optionally for a venueId from venue.list or venue.search. Use returned venue.assignment refs with assignment.read or assignment.cancel.",
       input: AssignmentMineInputSchema,
       data: AssignmentListDataSchema,
       openWorld: false,
@@ -517,7 +530,7 @@ export const venueCapabilities = defineCapabilities({
     },
     "assignment.read": {
       title: "Read my assignment",
-      description: "Read one owned assignment from a venue.assignment ref or assignment ID.",
+      description: "Read one owned venue.assignment ref returned by assignment.mine or an assignment signup Action.",
       input: AssignmentReadInputSchema,
       data: AssignmentDataSchema,
       openWorld: false,
@@ -525,7 +538,8 @@ export const venueCapabilities = defineCapabilities({
     },
     "feedback.summary": {
       title: "Get Venue feedback summary",
-      description: "Read bounded rating aggregates without loading anonymous feedback comments.",
+      description:
+        "Read 30-day rating aggregates for a known Venue without loading anonymous comments. Get venueId from venue.list or venue.search.",
       input: VenueTargetInputSchema,
       data: FeedbackSummaryDataSchema,
       openWorld: false,
