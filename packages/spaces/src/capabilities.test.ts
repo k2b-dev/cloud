@@ -17,6 +17,7 @@ import {
   EventCreateInputSchema,
   EventListDataSchema,
   EventUpdateInputSchema,
+  ItemDataSchema,
   SpaceDetailDataSchema,
   SpaceListInputSchema,
   TaskCreateInputSchema,
@@ -42,6 +43,7 @@ const columnId = "Col001";
 const itemId = "Itm001";
 const commentId = "Com001";
 const tagId = "Tag001";
+const attachmentId = "Att001";
 const createdAt = "2026-08-02T08:00:00.000Z";
 
 test("declares remembered approval for bounded Space changes", () => {
@@ -578,6 +580,50 @@ describe("spaces capabilities", () => {
       ok: true,
       data: { data: { id: spaceId, columns: [{ id: columnId }], tags: [{ id: tagId }] } },
     });
+  });
+
+  test("includes bounded authenticated attachment links when reading a task", async () => {
+    spyOn(spacesService.item, "get").mockResolvedValue(task);
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("read");
+    const listAttachments = spyOn(spacesService.item.attachments, "list").mockResolvedValue([
+      {
+        id: attachmentId,
+        filename: "broken-dialog.webp",
+        mimeType: "image/webp",
+        sizeBytes: 42_000,
+        kind: "image",
+        createdAt,
+      },
+    ]);
+
+    const result = await spacesCapabilities.queries["item.read"].run({ id: itemId }, userContext);
+
+    expect(listAttachments).toHaveBeenCalledWith({ itemId: itemUuid });
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        data: {
+          id: itemId,
+          attachments: [
+            {
+              id: attachmentId,
+              links: [
+                {
+                  rel: "preview",
+                  href: `/api/spaces/${spaceId}/items/${itemId}/attachments/${attachmentId}/content`,
+                },
+                {
+                  rel: "download",
+                  href: `/api/spaces/${spaceId}/items/${itemId}/attachments/${attachmentId}/content?download=true`,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    expect(result.ok && capabilityResultSchema(ItemDataSchema).safeParse(result.data).success).toBeTrue();
   });
 
   test("reviews a calendar response with the public Space item link", async () => {

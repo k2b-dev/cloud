@@ -7,6 +7,7 @@ import {
   ResourceShortIdSchema,
   SpaceCommentSchema,
   SpaceDetailSchema,
+  SpaceItemAttachmentSchema,
   SpaceItemResourceReferenceSchema,
   SpaceItemSchema,
   SpaceTaskDependencySchema,
@@ -70,6 +71,7 @@ export const SpaceItemDetailSchema = z.object({
   }),
   recurringContext: SpaceItemRecurringContextSchema.nullable(),
   references: z.array(SpaceItemResourceReferenceSchema.extend({ resource: CloudResourceViewSchema.nullable() })).max(100),
+  attachments: z.array(SpaceItemAttachmentSchema).max(20),
   blockedBy: z.array(SpaceTaskDependencySchema).max(100),
   blocks: z.array(SpaceTaskDependentSchema).max(100),
 });

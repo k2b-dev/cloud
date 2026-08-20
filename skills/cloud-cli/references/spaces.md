@@ -32,6 +32,17 @@ cld spaces done "Roadmap" "Publish release notes"
 
 Use `cld spaces get <space> --json` to see the available columns and tags before creating or moving an item. Repeat `--tag` or `--assignee` to select several values. Pass long descriptions through `--file` or `--stdin`.
 
+## Attach images to tasks
+
+```bash
+cld spaces attachments "Roadmap" "Fix mobile dialog" --json
+cld spaces add-attachment "Roadmap" "Fix mobile dialog" --file ./bug.png
+cld spaces download-attachment "Roadmap" "Fix mobile dialog" File01 --output ./bug.webp
+cld spaces delete-attachment "Roadmap" "Fix mobile dialog" File01 --yes
+```
+
+`cld spaces item ... --json` includes the task's attachment metadata. CLI uploads use the selected file as-is and therefore remain subject to the 10 MB stored-file limit. Attachment preview and download links returned by `spaces.item.read` require the same current read access as the task; they are not public links.
+
 ## Manage task dependencies
 
 ```bash
@@ -94,6 +105,7 @@ Run `cld spaces <command> --help` for flags and argument order.
 | --- | --- |
 | Spaces | `list`, `use`, `current`, `get`, `create` |
 | Items | `items`, `item`, `add-item`, `update-item`, `blockers`, `blocks`, `block`, `unblock`, `done`, `reopen` |
+| Attachments | `attachments`, `add-attachment`, `download-attachment`, `delete-attachment` |
 | Comments | `comments`, `comment` |
 | Calendar | `calendar`, `overlap`, `invitation context`, `invitation draft`, `mail event-source` |
 | Access | `access list`, `access grant`, `access set`, `access revoke`, `access search-principals` |

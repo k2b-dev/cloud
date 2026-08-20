@@ -13,6 +13,7 @@ import {
 } from "@valentinkolb/cloud/server";
 import { coreSettings } from "@valentinkolb/cloud/services";
 import { type Context, Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import type { MutationResult, PermissionLevel, User } from "@/contracts";
@@ -30,6 +31,7 @@ import {
   GrantAccessSchema,
   ItemFilterSchema,
   ItemListResultSchema,
+  MAX_TASK_ATTACHMENT_SIZE_BYTES,
   MessageResponseSchema,
   MoveItemSchema,
   OverlapItemSchema,
@@ -41,6 +43,7 @@ import {
   SpaceColumnSchema,
   SpaceCommentSchema,
   SpaceDetailSchema,
+  SpaceItemAttachmentSchema,
   SpaceItemResourceReferenceInputSchema,
   SpaceItemResourceReferenceSchema,
   SpaceItemSchema,
@@ -101,6 +104,7 @@ const SpaceListSchema = z.array(SpaceSchema);
 const SpaceItemListSchema = z.array(SpaceItemSchema);
 const SpaceCommentListSchema = z.array(SpaceCommentSchema);
 const SpaceItemResourceReferenceListSchema = z.array(SpaceItemResourceReferenceSchema);
+const SpaceItemAttachmentListSchema = z.array(SpaceItemAttachmentSchema);
 const SpaceTaskDependencyListSchema = z.array(SpaceTaskDependencySchema);
 const SpaceTaskDependentListSchema = z.array(SpaceTaskDependentSchema);
 const ResourceReferenceDeleteSchema = z.object({ ref: SpaceItemResourceReferenceInputSchema.shape.ref }).strict();
@@ -119,6 +123,13 @@ const CommentPageQuerySchema = RecurringOccurrenceQuerySchema.extend({
   page: z.coerce.number().int().min(1).default(1),
   per_page: z.coerce.number().int().min(1).max(100).default(50),
 });
+
+const attachmentTooLarge = (c: Context) =>
+  respond(c, {
+    ok: false,
+    error: `File exceeds ${Math.round(MAX_TASK_ATTACHMENT_SIZE_BYTES / 1024 / 1024)} MB limit`,
+    status: 413,
+  });
 
 const CreateSpaceApiKeySchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -550,6 +561,139 @@ const app = new Hono<AuthContext>()
       if (!item.ok) return respond(c, item);
       if (item.data.startsAt || item.data.endsAt) return respond(c, fail(err.badInput("Item is not a task")));
       return respond(c, ok(await projectTaskDependents(await spacesService.item.dependencies.listBlocks({ blockerItemId: item.data.id }))));
+    },
+  )
+  .get(
+    "/:id/items/:itemId/attachments",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "List task attachments",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(SpaceItemAttachmentListSchema, "Task attachments"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Task not found"),
+      },
+    }),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "read");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      if (item.data.startsAt || item.data.endsAt) return respond(c, fail(err.badInput("Attachments are only available for tasks")));
+      return respond(c, ok(await spacesService.item.attachments.list({ itemId: item.data.id })));
+    },
+  )
+  .post(
+    "/:id/items/:itemId/attachments",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Upload task attachment",
+      description: "Upload one bounded file as multipart form data using the `file` field.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(SpaceItemAttachmentSchema, "Uploaded attachment metadata"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid file or item"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Task not found"),
+        409: jsonResponse(ErrorResponseSchema, "Attachment limit reached"),
+        413: jsonResponse(ErrorResponseSchema, "File too large"),
+      },
+    }),
+    bodyLimit({
+      maxSize: MAX_TASK_ATTACHMENT_SIZE_BYTES + 64 * 1024,
+      onError: attachmentTooLarge,
+    }),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      if (item.data.startsAt || item.data.endsAt) return respond(c, fail(err.badInput("Attachments are only available for tasks")));
+
+      const contentLength = Number(c.req.header("content-length") ?? 0);
+      if (Number.isFinite(contentLength) && contentLength > MAX_TASK_ATTACHMENT_SIZE_BYTES + 64 * 1024) return attachmentTooLarge(c);
+      const form = await c.req.formData().catch(() => null);
+      const file = form?.get("file");
+      if (!(file instanceof File)) return respond(c, fail(err.badInput("Missing 'file' field")));
+      if (file.size > MAX_TASK_ATTACHMENT_SIZE_BYTES) return attachmentTooLarge(c);
+
+      return respond(
+        c,
+        spacesService.item.attachments.upload({
+          itemId: item.data.id,
+          spaceId: access.internalId!,
+          filename: file.name || "untitled",
+          mimeType: file.type || "application/octet-stream",
+          content: new Uint8Array(await file.arrayBuffer()),
+          userId: access.user?.id ?? null,
+        }),
+      );
+    },
+  )
+  .get(
+    "/:id/items/:itemId/attachments/:attachmentId/content",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Download task attachment",
+      ...requiresAuth,
+      responses: {
+        200: { description: "Attachment content" },
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Attachment not found"),
+      },
+    }),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "read");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      const attachment = await spacesService.item.attachments.getContentByShortId({ shortId: c.req.param("attachmentId") ?? "" });
+      if (!attachment || attachment.itemId !== item.data.id) return respond(c, fail(err.notFound("Attachment")));
+
+      const inline = attachment.kind === "image" && c.req.query("download") !== "true";
+      const contentType = inline ? attachment.mimeType : "application/octet-stream";
+      const disposition = `${inline ? "inline" : "attachment"}; filename="${encodeURIComponent(attachment.filename)}"`;
+      const buffer = attachment.content.buffer.slice(
+        attachment.content.byteOffset,
+        attachment.content.byteOffset + attachment.content.byteLength,
+      ) as ArrayBuffer;
+      return new Response(new Blob([buffer], { type: contentType }), {
+        headers: {
+          "Content-Type": contentType,
+          "Content-Disposition": disposition,
+          "X-Content-Type-Options": "nosniff",
+          "Cache-Control": "no-store",
+        },
+      });
+    },
+  )
+  .delete(
+    "/:id/items/:itemId/attachments/:attachmentId",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Delete task attachment",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(MessageResponseSchema, "Attachment deleted"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+        404: jsonResponse(ErrorResponseSchema, "Attachment not found"),
+      },
+    }),
+    async (c) => {
+      const access = await checkSpaceAccess(c, c.req.param("id") ?? "", "write");
+      if (access.error) return access.error;
+      const item = await requireItemInSpace(access.internalId!, c.req.param("itemId") ?? "");
+      if (!item.ok) return respond(c, item);
+      return respondMessage(
+        c,
+        spacesService.item.attachments.remove({
+          shortId: c.req.param("attachmentId") ?? "",
+          itemId: item.data.id,
+          spaceId: access.internalId!,
+        }),
+        "Attachment deleted",
+      );
     },
   )
   .post(

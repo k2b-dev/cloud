@@ -19,6 +19,7 @@ Spaces works best when each item has a clear next action. Keep item titles short
 - **Blocked by:** Add every unfinished task that must be completed first. A blocked task cannot be completed until all active blockers are complete. Dependencies must stay within one Space and cannot form a cycle.
 - **Blocks:** Open the task details to see the reverse direction: every task that currently depends on this task.
 - **Related tasks:** Link tasks that share context but do not depend on each other. A related-task link is not a blocker.
+- **Attachments:** Add screenshots and other images to a task when the work needs visual context, such as a bug report. Spaces downscales large source images before uploading them. Select an existing image to open the attachment gallery, download the stored image, or remove it. Each task supports up to 20 images. Attachments and their automation links follow the task's read and write permissions.
 - **Recurrence:** Use recurring events for repeated appointments or routines. Keep one-off tasks as normal tasks.
 - **Tags:** Use tags for themes that cut across assignees and status, such as frontend, legal, blocked, or meeting.
 :::

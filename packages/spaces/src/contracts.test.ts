@@ -5,9 +5,11 @@ import {
   CreateSpaceSchema,
   CreateWormholeSchema,
   ItemFilterSchema,
+  MAX_TASK_ATTACHMENT_SIZE_BYTES,
   OverlapQuerySchema,
   ReorderColumnsSchema,
   ReorderWormholesSchema,
+  SpaceItemAttachmentSchema,
   UpdateItemSchema,
   UpdateWormholeSchema,
 } from "./contracts";
@@ -52,6 +54,34 @@ describe("Spaces task estimates", () => {
         estimatedDurationMinutes: 30,
       }).success,
     ).toBe(false);
+  });
+});
+
+describe("Spaces task attachment contracts", () => {
+  test("accepts bounded public attachment metadata", () => {
+    expect(
+      SpaceItemAttachmentSchema.safeParse({
+        id: "File01",
+        filename: "broken-dialog.webp",
+        mimeType: "image/webp",
+        sizeBytes: MAX_TASK_ATTACHMENT_SIZE_BYTES,
+        kind: "image",
+        createdAt: START,
+      }).success,
+    ).toBe(true);
+  });
+
+  test("rejects legacy IDs and oversized metadata", () => {
+    const attachment = {
+      id: "File01",
+      filename: "trace.txt",
+      mimeType: "text/plain",
+      sizeBytes: MAX_TASK_ATTACHMENT_SIZE_BYTES + 1,
+      kind: "file",
+      createdAt: START,
+    };
+    expect(SpaceItemAttachmentSchema.safeParse(attachment).success).toBe(false);
+    expect(SpaceItemAttachmentSchema.safeParse({ ...attachment, id: crypto.randomUUID(), sizeBytes: 1 }).success).toBe(false);
   });
 });
 

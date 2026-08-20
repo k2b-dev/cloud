@@ -113,8 +113,9 @@ const projectItemResult = async (result: ItemListResult): Promise<ItemListResult
 });
 
 const projectItemDetail = async (
-  detail: Omit<SpaceItemDetail, "references" | "blockedBy" | "blocks"> & {
+  detail: Omit<SpaceItemDetail, "references" | "attachments" | "blockedBy" | "blocks"> & {
     references?: SpaceItemDetail["references"];
+    attachments?: SpaceItemDetail["attachments"];
     blockedBy?: SpaceItemDetail["blockedBy"];
     blocks?: SpaceItemDetail["blocks"];
   },
@@ -133,6 +134,7 @@ const projectItemDetail = async (
     commentTarget: { ...detail.commentTarget, itemId: seriesItemId },
     recurringContext: detail.recurringContext ? { ...detail.recurringContext, seriesItemId } : null,
     references: detail.references ?? [],
+    attachments: detail.attachments ?? [],
     blockedBy,
     blocks,
   };
@@ -483,8 +485,9 @@ const loadSelectedItemState = async (params: {
     pagination: { page: 1, perPage: COMMENT_PAGE_SIZE },
   });
 
-  const [references, blockedBy, blocks] = await Promise.all([
+  const [references, attachments, blockedBy, blocks] = await Promise.all([
     spacesService.item.references.list({ itemId: detailItem.id }),
+    detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : spacesService.item.attachments.list({ itemId: detailItem.id }),
     spacesService.item.dependencies.list({ itemId: detailItem.id }),
     spacesService.item.dependencies.listBlocks({ blockerItemId: detailItem.id }),
   ]);
@@ -497,6 +500,7 @@ const loadSelectedItemState = async (params: {
       cookie: params.cookieHeader,
       authorization: params.authorizationHeader,
     }),
+    attachments,
     blockedBy,
     blocks,
   });
@@ -756,8 +760,9 @@ export const loadSpaceItemDetail = async (params: {
     viewerUserId: params.user.id,
     pagination: { page: 1, perPage: COMMENT_PAGE_SIZE },
   });
-  const [references, blockedBy, blocks] = await Promise.all([
+  const [references, attachments, blockedBy, blocks] = await Promise.all([
     spacesService.item.references.list({ itemId: detailItem.id }),
+    detailItem.startsAt || detailItem.endsAt ? Promise.resolve([]) : spacesService.item.attachments.list({ itemId: detailItem.id }),
     spacesService.item.dependencies.list({ itemId: detailItem.id }),
     spacesService.item.dependencies.listBlocks({ blockerItemId: detailItem.id }),
   ]);
@@ -772,6 +777,7 @@ export const loadSpaceItemDetail = async (params: {
         cookie: params.cookieHeader,
         authorization: params.authorizationHeader,
       }),
+      attachments,
       blockedBy,
       blocks,
     }),

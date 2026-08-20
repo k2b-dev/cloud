@@ -274,6 +274,31 @@ export const migrate = async (): Promise<void> => {
   console.log("  ✓ spaces.item_dependencies table");
 
   await sql`
+    CREATE TABLE IF NOT EXISTS spaces.item_attachments (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      short_id TEXT NOT NULL,
+      item_id UUID NOT NULL REFERENCES spaces.items(id) ON DELETE CASCADE,
+      filename TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      size_bytes BIGINT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('image', 'file')),
+      content BYTEA NOT NULL,
+      created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT item_attachments_short_id_format CHECK (short_id ~ '^[0-9A-Za-z]{6}$'),
+      CONSTRAINT item_attachments_filename_length CHECK (char_length(filename) BETWEEN 1 AND 255),
+      CONSTRAINT item_attachments_mime_type_length CHECK (char_length(mime_type) BETWEEN 1 AND 255),
+      CONSTRAINT item_attachments_size_check CHECK (size_bytes BETWEEN 0 AND 10485760)
+    )
+  `.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_item_attachments_short_id ON spaces.item_attachments(short_id)`.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_item_attachments_item_created
+    ON spaces.item_attachments(item_id, created_at, id)
+  `.simple();
+  console.log("  ✓ spaces.item_attachments table");
+
+  await sql`
     CREATE TABLE IF NOT EXISTS spaces.calendar_invitation_sources (
       item_id UUID PRIMARY KEY REFERENCES spaces.items(id) ON DELETE CASCADE,
       mailbox_id TEXT NOT NULL CONSTRAINT calendar_invitation_sources_mailbox_id_short_check CHECK (mailbox_id ~ '^[0-9A-Za-z]{6}$'),
@@ -491,7 +516,7 @@ export const migrate = async (): Promise<void> => {
 
   await sql.begin(async (tx) => {
     await tx`SELECT pg_advisory_xact_lock(hashtext('cloud.spaces.short-id-backfill'))`;
-    const shortIdTables: ShortIdTable[] = ["space", "column", "item", "comment", "tag", "wormhole"];
+    const shortIdTables: ShortIdTable[] = ["space", "column", "item", "attachment", "comment", "tag", "wormhole"];
     for (const table of shortIdTables) {
       const filled = await backfillShortIds(table, tx);
       if (filled > 0) console.log(`  ✓ spaces short_id backfill: ${filled} ${table}(s)`);

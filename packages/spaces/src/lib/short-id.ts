@@ -5,7 +5,7 @@ import { sql } from "bun";
 export const SHORT_ID_REGEX = /^[0-9A-Za-z]{6}$/;
 export const SHORT_ID_LENGTH = 6;
 
-export type ShortIdTable = "space" | "column" | "item" | "comment" | "tag" | "wormhole";
+export type ShortIdTable = "space" | "column" | "item" | "attachment" | "comment" | "tag" | "wormhole";
 
 const MAX_ATTEMPTS = 10;
 const BACKFILL_BATCH_SIZE = 500;
@@ -14,6 +14,7 @@ const constraintByTable: Record<ShortIdTable, string> = {
   space: "idx_spaces_short_id",
   column: "idx_columns_short_id",
   item: "idx_items_short_id",
+  attachment: "idx_item_attachments_short_id",
   comment: "idx_comments_short_id",
   tag: "idx_tags_short_id",
   wormhole: "idx_wormholes_short_id",
@@ -53,6 +54,9 @@ const isTaken = async (db: SqlExecutor, table: ShortIdTable, shortId: string): P
     case "item":
       rows = await db`SELECT EXISTS (SELECT 1 FROM spaces.items WHERE short_id = ${shortId}) AS exists`;
       break;
+    case "attachment":
+      rows = await db`SELECT EXISTS (SELECT 1 FROM spaces.item_attachments WHERE short_id = ${shortId}) AS exists`;
+      break;
     case "comment":
       rows = await db`SELECT EXISTS (SELECT 1 FROM spaces.comments WHERE short_id = ${shortId}) AS exists`;
       break;
@@ -82,6 +86,8 @@ const selectMissing = async (db: SqlExecutor, table: ShortIdTable): Promise<{ id
       return db`SELECT id FROM spaces.columns WHERE short_id IS NULL ORDER BY id LIMIT ${BACKFILL_BATCH_SIZE}`;
     case "item":
       return db`SELECT id FROM spaces.items WHERE short_id IS NULL ORDER BY id LIMIT ${BACKFILL_BATCH_SIZE}`;
+    case "attachment":
+      return db`SELECT id FROM spaces.item_attachments WHERE short_id IS NULL ORDER BY id LIMIT ${BACKFILL_BATCH_SIZE}`;
     case "comment":
       return db`SELECT id FROM spaces.comments WHERE short_id IS NULL ORDER BY id LIMIT ${BACKFILL_BATCH_SIZE}`;
     case "tag":
@@ -101,6 +107,9 @@ const updateMissing = async (db: SqlExecutor, table: ShortIdTable, id: string, s
       return;
     case "item":
       await db`UPDATE spaces.items SET short_id = ${shortId} WHERE id = ${id}::uuid AND short_id IS NULL`;
+      return;
+    case "attachment":
+      await db`UPDATE spaces.item_attachments SET short_id = ${shortId} WHERE id = ${id}::uuid AND short_id IS NULL`;
       return;
     case "comment":
       await db`UPDATE spaces.comments SET short_id = ${shortId} WHERE id = ${id}::uuid AND short_id IS NULL`;

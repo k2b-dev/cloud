@@ -208,6 +208,54 @@ describe("Spaces item detail panel", () => {
     expect(html).toContain("Prepare launch notes");
   });
 
+  test("uses wrapped image thumbnails and a detail action picker for task screenshots", () => {
+    const html = renderPanel({
+      item: task,
+      attachments: [
+        {
+          id: "File01",
+          filename: "broken-dialog.webp",
+          mimeType: "image/webp",
+          sizeBytes: 42_000,
+          kind: "image",
+          createdAt: now,
+        },
+      ],
+    });
+
+    expect(html).toContain('aria-label="Content"');
+    expect(html).toContain(">Attachments</h3>");
+    expect(html).toContain("flex flex-wrap gap-2");
+    expect(html).toContain('style="width:5rem;height:5rem;min-width:5rem;min-height:5rem;flex:0 0 5rem"');
+    expect(html).toContain('aria-label="Preview broken-dialog.webp"');
+    expect(html).toContain('aria-label="Delete broken-dialog.webp"');
+    expect(html).toContain(">Add image</span>");
+    expect(html).not.toContain('class="k2b-image-input"');
+    expect(html).not.toContain("Images are optimized");
+    expect(html).toContain("/attachments/File01/content");
+  });
+
+  test("shows existing task images read-only without picker or delete controls", () => {
+    const html = renderPanel({
+      item: task,
+      canWrite: false,
+      attachments: [
+        {
+          id: "File01",
+          filename: "trace.webp",
+          mimeType: "image/webp",
+          sizeBytes: 512,
+          kind: "image",
+          createdAt: now,
+        },
+      ],
+    });
+
+    expect(html).toContain('aria-label="Preview trace.webp"');
+    expect(html).not.toContain(">Add image</span>");
+    expect(html).not.toContain('aria-label="Delete trace.webp"');
+  });
+
   test("omits the reverse Blocks section until the task blocks another task", () => {
     const html = renderPanel({
       item: task,

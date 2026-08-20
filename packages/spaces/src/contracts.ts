@@ -162,6 +162,20 @@ export const SpaceItemResourceReferenceSchema = SpaceItemResourceReferenceInputS
 }).strict();
 export type SpaceItemResourceReference = z.infer<typeof SpaceItemResourceReferenceSchema>;
 
+export const MAX_TASK_ATTACHMENTS = 20;
+export const MAX_TASK_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
+export const SpaceItemAttachmentSchema = z
+  .object({
+    id: ResourceShortIdSchema.describe("Attachment ID"),
+    filename: z.string().min(1).max(255).describe("Original attachment filename"),
+    mimeType: z.string().min(1).max(255).describe("Attachment media type"),
+    sizeBytes: z.number().int().nonnegative().max(MAX_TASK_ATTACHMENT_SIZE_BYTES).describe("Attachment size in bytes"),
+    kind: z.enum(["image", "file"]).describe("Preview category"),
+    createdAt: z.string().datetime().describe("Upload timestamp (ISO)"),
+  })
+  .strict();
+export type SpaceItemAttachment = z.infer<typeof SpaceItemAttachmentSchema>;
+
 export const SpaceCommentSchema = z.object({
   id: ResourceShortIdSchema.describe("Comment ID"),
   itemId: ResourceShortIdSchema.describe("Parent item ID"),

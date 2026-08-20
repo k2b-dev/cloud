@@ -65,8 +65,13 @@ calendar queries. Start with read commands:
 ```bash
 cld spaces list --json
 cld spaces items "Product" --status active --json
+cld spaces attachments "Product" "Fix mobile dialog" --json
 ```
 
 Run `cld spaces help` for the available areas. Run
 `cld spaces <command> --help` before creating or changing work, access, or
 calendar integrations.
+
+The `spaces.item.read` capability includes bounded task attachment metadata
+with authenticated preview and download links. Attachment content remains in
+Spaces rather than being embedded in capability results.

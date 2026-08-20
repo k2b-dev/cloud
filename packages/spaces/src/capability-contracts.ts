@@ -2,8 +2,10 @@ import { CapabilitySemanticLinkSchema, CloudResourceRefSchema, CloudResourceView
 import { z } from "zod";
 import {
   EstimatedDurationMinutesSchema,
+  MAX_TASK_ATTACHMENTS,
   PrioritySchema,
   ResourceShortIdSchema,
+  SpaceItemAttachmentSchema,
   SpaceItemResourceReferenceInputSchema,
   SpaceItemResourceReferenceSchema,
   SpaceTaskDependencySchema,
@@ -138,6 +140,9 @@ const ItemAssigneeDataSchema = z.object({ id: UuidSchema, displayName: z.string(
 const ItemTagDataSchema = z
   .object({ id: ResourceShortIdSchema, name: z.string().min(1).max(100), color: z.string().min(1).max(100) })
   .strict();
+const ItemAttachmentDataSchema = SpaceItemAttachmentSchema.extend({
+  links: z.array(CapabilitySemanticLinkSchema).min(1).max(2),
+}).strict();
 
 const ItemBaseDataShape = {
   id: ResourceShortIdSchema,
@@ -163,6 +168,11 @@ export const TaskDataSchema = z
     estimatedDurationMinutes: EstimatedDurationMinutesSchema.nullable(),
     activeBlockerCount: z.number().int().nonnegative(),
     priority: PrioritySchema.nullable(),
+    attachments: z
+      .array(ItemAttachmentDataSchema)
+      .max(MAX_TASK_ATTACHMENTS)
+      .optional()
+      .describe("Bounded attachment metadata and authenticated links included by item.read."),
   })
   .strict();
 

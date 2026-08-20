@@ -1,9 +1,14 @@
 import { afterEach, expect, test } from "bun:test";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const servers: ReturnType<typeof Bun.serve>[] = [];
+const tempDirs: string[] = [];
 
-afterEach(() => {
+afterEach(async () => {
   for (const server of servers.splice(0)) server.stop(true);
+  await Promise.all(tempDirs.splice(0).map((path) => rm(path, { recursive: true, force: true })));
 });
 
 const runCli = async (server: string, args: string[]) => {
@@ -162,3 +167,118 @@ test("sends task estimates and blocker relationships through the public REST con
     },
   ]);
 }, 10_000);
+
+test("lists, uploads, downloads, and deletes task attachments through the public REST contract", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "spaces-cli-attachments-"));
+  tempDirs.push(directory);
+  const uploadPath = join(directory, "bug.png");
+  const outputPath = join(directory, "downloaded.webp");
+  await Bun.write(uploadPath, new Uint8Array([137, 80, 78, 71]));
+
+  const attachment = {
+    id: "File01",
+    filename: "broken-dialog.webp",
+    mimeType: "image/webp",
+    sizeBytes: 11,
+    kind: "image",
+    createdAt: "2026-08-20T15:00:00.000Z",
+  } as const;
+  const space = {
+    id: "Space1",
+    name: "Roadmap",
+    description: null,
+    color: "#3b82f6",
+    icalToken: null,
+    createdAt: "2026-08-11T08:00:00.000Z",
+    updatedAt: "2026-08-11T09:00:00.000Z",
+    columns: [],
+    tags: [],
+  };
+  const item = {
+    id: "Item01",
+    spaceId: "Space1",
+    columnId: "Col001",
+    title: "Fix screenshot bug",
+    description: null,
+    location: null,
+    url: null,
+    startsAt: null,
+    endsAt: null,
+    allDay: false,
+    deadline: null,
+    estimatedDurationMinutes: null,
+    activeBlockerCount: 0,
+    priority: null,
+    recurrence: null,
+    recurringEventId: null,
+    recurrenceId: null,
+    rank: "1024",
+    completedAt: null,
+    createdBy: null,
+    createdAt: "2026-08-11T08:00:00.000Z",
+    updatedAt: "2026-08-11T09:00:00.000Z",
+    assignees: [],
+    tags: [],
+  };
+  const writes: Array<{ method: string; filename?: string }> = [];
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const url = new URL(request.url);
+      if (url.pathname === "/api/spaces/Space1" && request.method === "GET") return Response.json(space);
+      if (url.pathname === "/api/spaces/Space1/items/Item01" && request.method === "GET") return Response.json(item);
+      if (url.pathname === "/api/spaces/Space1/items/Item01/attachments" && request.method === "GET") {
+        return Response.json([attachment]);
+      }
+      if (url.pathname === "/api/spaces/Space1/items/Item01/attachments" && request.method === "POST") {
+        const file = (await request.formData()).get("file");
+        writes.push({ method: "POST", filename: file instanceof File ? file.name : undefined });
+        return Response.json({ ...attachment, id: "File02", filename: "bug.png", mimeType: "image/png", sizeBytes: 4 });
+      }
+      if (url.pathname === "/api/spaces/Space1/items/Item01/attachments/File01/content" && request.method === "GET") {
+        return new Response("image-bytes");
+      }
+      if (url.pathname === "/api/spaces/Space1/items/Item01/attachments/File01" && request.method === "DELETE") {
+        writes.push({ method: "DELETE" });
+        return Response.json({ message: "Attachment deleted" });
+      }
+      return Response.json({ message: "Not found" }, { status: 404 });
+    },
+  });
+  servers.push(server);
+  const baseUrl = `http://127.0.0.1:${server.port}`;
+
+  const detail = await runCli(baseUrl, ["--json", "spaces", "item", "Space1", "Item01"]);
+  expect(detail.exitCode).toBe(0);
+  expect(detail.stdout).toContain('"attachments"');
+  expect(detail.stdout).toContain('"File01"');
+
+  const listed = await runCli(baseUrl, ["--json", "spaces", "attachments", "Space1", "Item01"]);
+  expect(listed.exitCode).toBe(0);
+  expect(listed.stdout).toContain('"broken-dialog.webp"');
+
+  const uploaded = await runCli(baseUrl, ["--json", "spaces", "add-attachment", "Space1", "Item01", "--file", uploadPath]);
+  expect(uploaded.exitCode).toBe(0);
+  expect(uploaded.stdout).toContain('"File02"');
+
+  const downloaded = await runCli(baseUrl, [
+    "--json",
+    "spaces",
+    "download-attachment",
+    "Space1",
+    "Item01",
+    "File01",
+    "--output",
+    outputPath,
+  ]);
+  expect(downloaded.exitCode).toBe(0);
+  expect(await readFile(outputPath, "utf8")).toBe("image-bytes");
+
+  const refused = await runCli(baseUrl, ["spaces", "delete-attachment", "Space1", "Item01", "File01"]);
+  expect(refused.exitCode).toBe(1);
+  expect(refused.stderr).toContain("without --yes");
+
+  const deleted = await runCli(baseUrl, ["--json", "spaces", "delete-attachment", "Space1", "Item01", "File01", "--yes"]);
+  expect(deleted.exitCode).toBe(0);
+  expect(writes).toEqual([{ method: "POST", filename: "bug.png" }, { method: "DELETE" }]);
+}, 20_000);

@@ -261,6 +261,7 @@ export default function ItemDetailRoute(props: Props) {
               commentTarget={current.commentTarget}
               recurringContext={current.recurringContext}
               references={current.references}
+              attachments={current.attachments}
               blockedBy={current.blockedBy}
               blocks={current.blocks}
               dateConfig={props.dateConfig}

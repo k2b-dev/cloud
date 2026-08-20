@@ -41,6 +41,7 @@ import type { SpaceItemDetail } from "../workspace/workspace-types";
 import { canTransferThroughWormhole, showWormholeTransferToast, transferThroughWormhole } from "../wormhole-transfer";
 import CommentsSection from "./CommentsSection";
 import EventInvitations from "./EventInvitations";
+import TaskAttachmentsSection from "./TaskAttachmentsSection";
 
 type Props = {
   item: SpaceItem;
@@ -57,6 +58,7 @@ type Props = {
   commentTarget: SpaceItemDetail["commentTarget"];
   recurringContext: SpaceItemDetail["recurringContext"];
   references?: SpaceItemDetail["references"];
+  attachments?: SpaceItemDetail["attachments"];
   blockedBy?: SpaceTaskDependency[];
   blocks?: SpaceTaskDependent[];
   dateConfig?: DateContext;
@@ -853,26 +855,42 @@ export default function ItemDetailPanel(props: Props) {
             </DetailPanel.Group>
           </Show>
 
-          <Show when={props.item.description}>
+          <Show
+            when={
+              props.item.description ||
+              (!isEvent() && (canEditItem() || (props.attachments?.some((attachment) => attachment.kind === "image") ?? false)))
+            }
+          >
             <DetailPanel.Group label="Content">
-              <DetailPanel.Section
-                class="[view-transition-name:space-item-detail-description]"
-                title="Description"
-                icon="ti ti-align-left"
-                tone="neutral"
-                actions={
-                  canEditItem() ? (
-                    <IconActionButton
-                      icon="ti ti-pencil"
-                      title="Edit description"
-                      onClick={() => void handleEdit()}
-                      disabled={isLoading()}
-                    />
-                  ) : undefined
-                }
-              >
-                <MarkdownView markdown={props.item.description!} headingScale="compact" class="text-sm" />
-              </DetailPanel.Section>
+              <Show when={props.item.description}>
+                <DetailPanel.Section
+                  class="[view-transition-name:space-item-detail-description]"
+                  title="Description"
+                  icon="ti ti-align-left"
+                  tone="neutral"
+                  actions={
+                    canEditItem() ? (
+                      <IconActionButton
+                        icon="ti ti-pencil"
+                        title="Edit description"
+                        onClick={() => void handleEdit()}
+                        disabled={isLoading()}
+                      />
+                    ) : undefined
+                  }
+                >
+                  <MarkdownView markdown={props.item.description!} headingScale="compact" class="text-sm" />
+                </DetailPanel.Section>
+              </Show>
+              <Show when={!isEvent()}>
+                <TaskAttachmentsSection
+                  spaceId={props.spaceId}
+                  itemId={props.item.id}
+                  attachments={props.attachments ?? []}
+                  canWrite={canEditItem()}
+                  onChanged={reconcileAfterWrite}
+                />
+              </Show>
             </DetailPanel.Group>
           </Show>
 

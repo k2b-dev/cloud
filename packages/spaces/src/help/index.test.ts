@@ -17,6 +17,7 @@ describe("spacesHelp", () => {
     expect(spacesHelp.getMarkdown("spaces-workflow")).toContain("**Blocked by:**");
     expect(spacesHelp.getMarkdown("spaces-workflow")).toContain("**Blocks:**");
     expect(spacesHelp.getMarkdown("spaces-workflow")).toContain("**Related tasks:**");
+    expect(spacesHelp.getMarkdown("spaces-workflow")).toContain("**Attachments:**");
     expect(spacesHelp.getMarkdown("spaces-troubleshooting")).toContain("A task cannot be completed");
   });
 });

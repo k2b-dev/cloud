@@ -1,9 +1,11 @@
 import { readFile } from "node:fs/promises";
+import { basename } from "node:path";
 import {
   arg,
   type CloudCliContext,
   type CloudCliFlags,
   command,
+  confirmFlag,
   createAccessCommands,
   defineCliCommands,
   flag,
@@ -22,6 +24,7 @@ import type {
   SpaceComment,
   SpaceDetail,
   SpaceItem,
+  SpaceItemAttachment,
   SpaceTaskDependency,
   SpaceTaskDependent,
 } from "./contracts";
@@ -92,6 +95,22 @@ const apiPath = (path = "") => `/api/spaces${path === "/" ? "" : path}`;
 
 const readApi = async <T>(ctx: CloudCliContext, path: string, init?: RequestInit): Promise<T> =>
   ctx.readJson<T>(await ctx.fetch(apiPath(path), init));
+
+const attachmentApiPath = (spaceId: string, itemId: string, suffix = "") =>
+  apiPath(`/${encodeURIComponent(spaceId)}/items/${encodeURIComponent(itemId)}/attachments${suffix}`);
+
+const listAttachments = (ctx: CloudCliContext, spaceId: string, itemId: string) =>
+  readApi<SpaceItemAttachment[]>(ctx, `/${encodeURIComponent(spaceId)}/items/${encodeURIComponent(itemId)}/attachments`);
+
+const resolveAttachmentRef = async (ctx: CloudCliContext, spaceId: string, itemId: string, ref: string) => {
+  const attachments = await listAttachments(ctx, spaceId, itemId);
+  const matches = attachments.filter((attachment) => attachment.id === ref || attachment.filename === ref);
+  if (matches.length === 1) return matches[0]!;
+  if (matches.length > 1) {
+    throw new Error(`Attachment "${ref}" is ambiguous. Use one of: ${matches.map((attachment) => attachment.id).join(", ")}`);
+  }
+  throw new Error(`Attachment "${ref}" was not found.`);
+};
 
 const jsonRequest = (method: string, value: unknown): RequestInit => ({
   method,
@@ -236,6 +255,15 @@ const commentRows = (items: SpaceComment[]) =>
     author: comment.userName ?? comment.userId ?? "",
     content: comment.content.replace(/\s+/g, " ").slice(0, 80),
     createdAt: comment.createdAt,
+  }));
+
+const attachmentRows = (items: SpaceItemAttachment[]) =>
+  items.map((attachment) => ({
+    id: attachment.id,
+    filename: attachment.filename,
+    type: attachment.mimeType,
+    bytes: attachment.sizeBytes,
+    createdAt: attachment.createdAt,
   }));
 
 const calendarRows = (items: CalendarItem[]) =>
@@ -503,14 +531,95 @@ export default defineCliCommands({
         const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 1);
         const space = await resolveSpaceRef(ctx, spaceRef);
         const item = await resolveItemRef(ctx, space.id, requireArg(rest, 0, "item"));
-        if (!printStructured(ctx, item)) {
+        const attachments = item.startsAt || item.endsAt ? undefined : await listAttachments(ctx, space.id, item.id);
+        const detail = attachments ? { ...item, attachments } : item;
+        if (!printStructured(ctx, detail)) {
           ctx.print(`${item.title} (${item.id})`);
           if (item.description) ctx.print(item.description);
           ctx.print(`column: ${space.columns.find((column) => column.id === item.columnId)?.name ?? item.columnId}`);
           ctx.print(`status: ${item.completedAt ? "completed" : "active"}`);
           if (item.estimatedDurationMinutes) ctx.print(`estimate: ${item.estimatedDurationMinutes} minutes`);
           if (item.activeBlockerCount > 0) ctx.print(`blocked by: ${item.activeBlockerCount} active task(s)`);
+          if (attachments?.length) ctx.print(`attachments: ${attachments.map((attachment) => attachment.filename).join(", ")}`);
         }
+      },
+    }),
+    command("attachments", {
+      summary: "List task attachments",
+      args: optionalSpaceArgs,
+      flags: spaceFlag,
+      run: async ({ ctx, args }) => {
+        const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 1);
+        const space = await resolveSpaceRef(ctx, spaceRef);
+        const item = await resolveItemRef(ctx, space.id, requireArg(rest, 0, "task"));
+        const attachments = await listAttachments(ctx, space.id, item.id);
+        printJsonOrTable(ctx, attachments, attachmentRows(attachments), [
+          { key: "filename", label: "FILE" },
+          { key: "type", label: "TYPE" },
+          { key: "bytes", label: "BYTES" },
+          { key: "createdAt", label: "CREATED" },
+          { key: "id", label: "ID" },
+        ]);
+      },
+    }),
+    command("add-attachment", {
+      summary: "Upload a task attachment",
+      args: optionalSpaceArgs,
+      flags: {
+        ...spaceFlag,
+        file: flag.string({ required: true, description: "Local image file" }),
+      },
+      run: async ({ ctx, args, flags }) => {
+        const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 1);
+        const space = await resolveSpaceRef(ctx, spaceRef);
+        const item = await resolveItemRef(ctx, space.id, requireArg(rest, 0, "task"));
+        const path = flags.file;
+        if (!path) throw new Error("Missing file. Pass --file <path>.");
+        const file = Bun.file(path);
+        if (!(await file.exists())) throw new Error(`File "${path}" was not found.`);
+        const form = new FormData();
+        form.set("file", file, basename(path));
+        const attachment = await ctx.readJson<SpaceItemAttachment>(
+          await ctx.fetch(attachmentApiPath(space.id, item.id), { method: "POST", body: form }),
+        );
+        if (!printStructured(ctx, attachment)) ctx.print(`Added ${attachment.filename} (${attachment.id}) to ${item.title}.`);
+      },
+    }),
+    command("download-attachment", {
+      summary: "Download a task attachment",
+      args: optionalSpaceArgs,
+      flags: {
+        ...spaceFlag,
+        output: flag.string({ aliases: ["out", "output-file"], description: "Destination file path" }),
+      },
+      run: async ({ ctx, args }) => {
+        const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 2);
+        const space = await resolveSpaceRef(ctx, spaceRef);
+        const item = await resolveItemRef(ctx, space.id, requireArg(rest, 0, "task"));
+        const attachment = await resolveAttachmentRef(ctx, space.id, item.id, requireArg(rest, 1, "attachment"));
+        const output = stringFlag(ctx.flags, "output", "out", "output-file") ?? attachment.filename;
+        const response = await ctx.fetch(
+          attachmentApiPath(space.id, item.id, `/${encodeURIComponent(attachment.id)}/content?download=true`),
+        );
+        if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+        await Bun.write(output, response);
+        if (!printStructured(ctx, { attachment, output })) ctx.print(`Saved ${attachment.filename} to ${output}.`);
+      },
+    }),
+    command("delete-attachment", {
+      summary: "Delete a task attachment",
+      args: optionalSpaceArgs,
+      flags: { ...spaceFlag, yes: confirmFlag("Delete this attachment") },
+      run: async ({ ctx, args }) => {
+        if (!booleanFlag(ctx.flags, "yes")) throw new Error("Refusing to delete an attachment without --yes.");
+        const { spaceRef, rest } = await resolveSpaceArg(ctx, args.args, 2);
+        const space = await resolveSpaceRef(ctx, spaceRef);
+        const item = await resolveItemRef(ctx, space.id, requireArg(rest, 0, "task"));
+        const attachment = await resolveAttachmentRef(ctx, space.id, item.id, requireArg(rest, 1, "attachment"));
+        const result = await ctx.readJson<{ message: string }>(
+          await ctx.fetch(attachmentApiPath(space.id, item.id, `/${encodeURIComponent(attachment.id)}`), { method: "DELETE" }),
+        );
+        if (!printStructured(ctx, { ...result, attachment })) ctx.print(result.message);
       },
     }),
     command("invitation context", {

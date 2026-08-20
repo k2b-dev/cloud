@@ -78,7 +78,7 @@ import {
   TaskSetCompletedInputSchema,
   TaskUpdateInputSchema,
 } from "./capability-contracts";
-import type { MutationResult, SpaceComment, SpaceItem } from "./contracts";
+import type { MutationResult, SpaceComment, SpaceItem, SpaceItemAttachment } from "./contracts";
 import { summarizeRecurrence } from "./presentation/recurrence";
 import { buildSpaceItemHref } from "./routes";
 import type { ItemAcrossKind, SpaceWithPermission } from "./service";
@@ -322,6 +322,17 @@ const mapEvent = (item: SpaceItem & { startsAt: string; endsAt: string }) => {
 };
 
 const mapItem = (item: SpaceItem) => (isEvent(item) ? mapEvent(item) : mapTask(item));
+
+const mapAttachment = (item: SpaceItem, attachment: SpaceItemAttachment) => {
+  const contentHref = `/api/spaces/${encodeURIComponent(item.spaceId)}/items/${encodeURIComponent(item.id)}/attachments/${encodeURIComponent(attachment.id)}/content`;
+  return {
+    ...attachment,
+    links: [
+      ...(attachment.kind === "image" ? [{ rel: "preview" as const, href: contentHref }] : []),
+      { rel: "download" as const, href: `${contentHref}?download=true` },
+    ],
+  };
+};
 
 const mapTaskSummary = (item: SpaceItem) => {
   const description = boundedText(item.description, 1000);
@@ -636,8 +647,16 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
 const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: CapabilityExecutionContext) => {
   const resolved = await requireItem(input.id, context);
   if (!resolved.ok) return resolved;
+  const data = isEvent(resolved.data.item)
+    ? mapEvent(resolved.data.item)
+    : {
+        ...mapTask(resolved.data.item),
+        attachments: (await spacesService.item.attachments.list({ itemId: resolved.data.internalId })).map((attachment) =>
+          mapAttachment(resolved.data.item, attachment),
+        ),
+      };
   return ok({
-    data: mapItem(resolved.data.item),
+    data,
     refs: [{ type: "spaces.item", id: resolved.data.item.id }],
     links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
   });

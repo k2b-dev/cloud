@@ -25,6 +25,13 @@ describe("Spaces short IDs", () => {
     });
     expect(postgresJsAttempts).toBe(2);
 
+    let attachmentAttempts = 0;
+    await withShortIdRetry(["attachment"], async () => {
+      attachmentAttempts++;
+      if (attachmentAttempts === 1) throw { code: "23505", constraint: "idx_item_attachments_short_id" };
+    });
+    expect(attachmentAttempts).toBe(2);
+
     await expect(
       withShortIdRetry(["item"], async () => {
         throw { code: "23505", constraint: "items_pkey" };

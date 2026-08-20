@@ -142,6 +142,7 @@ mock.module("@/service", () => ({
       },
       getRecurringOverride: async () => loadedOverride,
       references: { list: async () => [] },
+      attachments: { list: async () => [] },
       dependencies: { list: async () => [], listBlocks: async () => [] },
       calendar: { list: async () => [] },
     },
@@ -205,6 +206,7 @@ describe("Spaces workspace SSR state", () => {
     expect(state.selectedItemDetail?.comments.items[0]?.id).toBe(COMMENT_SHORT_ID);
     expect(state.selectedItemDetail?.commentTarget).toEqual({ itemId: ITEM_SHORT_ID, recurrenceId: null });
     expect(state.selectedItemDetail?.recurringContext).toBeNull();
+    expect(state.selectedItemDetail?.attachments).toEqual([]);
   });
 
   test("refreshes a view without loading item comments", async () => {
