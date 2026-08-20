@@ -4,10 +4,12 @@ import {
   type AiChatTaskOccurrence,
   type AiConversation,
   type AiInterChatMessage,
+  type AiSkill,
   type AiStoredMessage,
   aiCapabilityToolName,
   aiChatTasks,
   aiConversations,
+  aiSkills,
 } from "@valentinkolb/cloud/ai";
 import { compileCapabilityManifest } from "@valentinkolb/cloud/capabilities/testing";
 import {
@@ -98,6 +100,22 @@ const taskOccurrence: AiChatTaskOccurrence = {
   completedAt: null,
 };
 
+const skill: AiSkill = {
+  id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  shortId: "sKp234",
+  name: "weekly-status",
+  description: "Create a concise weekly status report when the user asks for a progress summary.",
+  instructions: "Summarize wins, blockers, and next steps.",
+  extraFrontmatter: {},
+  references: [{ path: "references/style.md", content: "Keep the report concise." }],
+  permission: "admin",
+  enabled: true,
+  revision: 1,
+  referenceCount: 1,
+  createdAt: chat.createdAt,
+  updatedAt: chat.updatedAt,
+};
+
 const storedMessage = (seq: number, message: AiStoredMessage["message"], overrides: Partial<AiStoredMessage> = {}): AiStoredMessage => ({
   id: `${seq.toString().padStart(8, "0")}-0000-4000-8000-000000000000`,
   shortId: `mSg23${seq + 1}`,
@@ -121,10 +139,36 @@ const storedMessage = (seq: number, message: AiStoredMessage["message"], overrid
 afterEach(() => mock.restore());
 
 describe("Core AI capabilities", () => {
-  test("publishes closed-world chat and scheduled-task capabilities", () => {
+  test("publishes closed-world AI capabilities under the core.ai namespace", () => {
     const manifest = compileCapabilityManifest("core", aiCapabilities);
-    const queries = ["chat.read", "chat.resources", "chat.search", "chats.resources", "chats.search", "task.read", "tasks.list"];
-    const actions = ["chat.message", "task.create", "task.delete", "task.pause", "task.resume", "task.run", "task.update"];
+    const queries = [
+      "ai.chat.read",
+      "ai.chat.resources",
+      "ai.chat.search",
+      "ai.chats.resources",
+      "ai.chats.search",
+      "ai.skill.read",
+      "ai.skill.reference.read",
+      "ai.skills.list",
+      "ai.task.read",
+      "ai.tasks.list",
+    ];
+    const actions = [
+      "ai.chat.message",
+      "ai.skill.create",
+      "ai.skill.delete",
+      "ai.skill.enabled.set",
+      "ai.skill.reference.remove",
+      "ai.skill.reference.set",
+      "ai.skill.update",
+      "ai.task.create",
+      "ai.task.delete",
+      "ai.task.pause",
+      "ai.task.resume",
+      "ai.task.run",
+      "ai.task.update",
+    ];
+    expect(manifest.types.map((type) => `core.${type.localId}`).sort()).toEqual(["core.ai.chat", "core.ai.skill", "core.ai.task"]);
     expect(Object.keys(aiCapabilities.queries).sort()).toEqual(queries);
     expect(manifest.queries.map((query) => query.localId).sort()).toEqual(queries);
     expect(manifest.queries.every((query) => query.openWorld === false)).toBe(true);
@@ -134,39 +178,63 @@ describe("Core AI capabilities", () => {
       (Object.entries(aiCapabilities.actions) as Array<[string, CapabilityActionDefinition]>)
         .filter(([, action]) => action.approval === "rememberable")
         .map(([localId]) => localId),
-    ).toEqual(["task.pause"]);
+    ).toEqual(["ai.task.pause"]);
     expect(
       Object.fromEntries(
         manifest.actions.map((action) => [action.localId, { destructive: action.destructive, idempotency: action.idempotency }]),
       ),
     ).toEqual({
-      "chat.message": { destructive: false, idempotency: "required" },
-      "task.create": { destructive: false, idempotency: "required" },
-      "task.delete": { destructive: true, idempotency: "none" },
-      "task.pause": { destructive: true, idempotency: "none" },
-      "task.resume": { destructive: true, idempotency: "none" },
-      "task.run": { destructive: false, idempotency: "required" },
-      "task.update": { destructive: true, idempotency: "none" },
+      "ai.chat.message": { destructive: false, idempotency: "required" },
+      "ai.skill.create": { destructive: false, idempotency: "none" },
+      "ai.skill.delete": { destructive: true, idempotency: "none" },
+      "ai.skill.enabled.set": { destructive: true, idempotency: "none" },
+      "ai.skill.reference.remove": { destructive: true, idempotency: "none" },
+      "ai.skill.reference.set": { destructive: true, idempotency: "none" },
+      "ai.skill.update": { destructive: true, idempotency: "none" },
+      "ai.task.create": { destructive: false, idempotency: "required" },
+      "ai.task.delete": { destructive: true, idempotency: "none" },
+      "ai.task.pause": { destructive: true, idempotency: "none" },
+      "ai.task.resume": { destructive: true, idempotency: "none" },
+      "ai.task.run": { destructive: false, idempotency: "required" },
+      "ai.task.update": { destructive: true, idempotency: "none" },
     });
-    expect(aiCapabilities.actions["chat.message"].input.safeParse({ chatId: chat.shortId, text: "x".repeat(10_001) }).success).toBe(false);
+    expect(aiCapabilities.actions["ai.chat.message"].input.safeParse({ chatId: chat.shortId, text: "x".repeat(10_001) }).success).toBe(
+      false,
+    );
+    expect(
+      aiCapabilities.actions["ai.skill.create"].input.safeParse({
+        name: "Weekly Status",
+        description: "Create reports.",
+        instructions: "Write the report.",
+      }).success,
+    ).toBe(false);
+    expect(
+      aiCapabilities.actions["ai.skill.reference.set"].input.safeParse({
+        skillId: skill.shortId,
+        expectedRevision: 1,
+        path: "scripts/run.ts",
+        content: "x",
+      }).success,
+    ).toBe(false);
+    expect(aiCapabilities.queries["ai.skills.list"].input.safeParse({ cursor: "1234" }).success).toBe(false);
     const localCursor = encodeURIComponent(JSON.stringify({ at: "2026-08-11T12:00:00.000Z", type: "notebooks.note", id: "nT1234" }));
     const userCursor = encodeURIComponent(
       JSON.stringify({ at: "2026-08-11T12:00:00.000Z", type: "notebooks.note", id: "nT1234", chat: chat.shortId }),
     );
-    expect(aiCapabilities.queries["chat.read"].input.safeParse({ id: chat.shortId, cursor: "42" }).success).toBe(true);
-    expect(aiCapabilities.queries["chat.resources"].input.safeParse({ chatId: chat.shortId, cursor: localCursor }).success).toBe(true);
-    expect(aiCapabilities.queries["chat.resources"].input.safeParse({ chatId: chat.shortId, cursor: userCursor }).success).toBe(false);
-    expect(aiCapabilities.queries["chats.resources"].input.safeParse({ cursor: userCursor }).success).toBe(true);
-    expect(aiCapabilities.queries["chats.resources"].input.safeParse({ cursor: localCursor }).success).toBe(false);
-    expect(aiCapabilities.queries["chats.search"].description).toContain("Normal entry for finding");
-    expect(aiCapabilities.queries["chat.read"].description).toContain("Use chat.search");
-    expect(aiCapabilities.queries["chats.resources"].description).toContain("Direct cross-chat entry");
+    expect(aiCapabilities.queries["ai.chat.read"].input.safeParse({ id: chat.shortId, cursor: "42" }).success).toBe(true);
+    expect(aiCapabilities.queries["ai.chat.resources"].input.safeParse({ chatId: chat.shortId, cursor: localCursor }).success).toBe(true);
+    expect(aiCapabilities.queries["ai.chat.resources"].input.safeParse({ chatId: chat.shortId, cursor: userCursor }).success).toBe(false);
+    expect(aiCapabilities.queries["ai.chats.resources"].input.safeParse({ cursor: userCursor }).success).toBe(true);
+    expect(aiCapabilities.queries["ai.chats.resources"].input.safeParse({ cursor: localCursor }).success).toBe(false);
+    expect(aiCapabilities.queries["ai.chats.search"].description).toContain("Normal entry for finding");
+    expect(aiCapabilities.queries["ai.chat.read"].description).toContain("Use ai.chat.search");
+    expect(aiCapabilities.queries["ai.chats.resources"].description).toContain("Direct cross-chat entry");
   });
 
   test("scopes remembered pause approval to one public task", async () => {
     spyOn(aiChatTasks, "get").mockResolvedValue(scheduledTask);
 
-    const review = await aiCapabilities.actions["task.pause"].review!({ taskId: scheduledTask.shortId }, context);
+    const review = await aiCapabilities.actions["ai.task.pause"].review!({ taskId: scheduledTask.shortId }, context);
     const results = [review];
 
     expect(results).toHaveLength(
@@ -182,12 +250,12 @@ describe("Core AI capabilities", () => {
   test("returns item-local task refs and an unambiguous next page", async () => {
     spyOn(aiChatTasks, "list").mockResolvedValue([scheduledTask, { ...scheduledTask, shortId: "tSk999" }]);
 
-    const result = await aiCapabilities.queries["tasks.list"].run({ limit: 1 }, context);
+    const result = await aiCapabilities.queries["ai.tasks.list"].run({ limit: 1 }, context);
 
     expect(result).toMatchObject({
       ok: true,
       data: {
-        data: [{ id: scheduledTask.shortId, ref: { type: "core.task", id: scheduledTask.shortId } }],
+        data: [{ id: scheduledTask.shortId, ref: { type: "core.ai.task", id: scheduledTask.shortId } }],
         page: { nextCursor: "1", hasMore: true },
       },
     });
@@ -198,7 +266,7 @@ describe("Core AI capabilities", () => {
     const get = spyOn(aiChatTasks, "get").mockResolvedValue(scheduledTask);
     const listOccurrences = spyOn(aiChatTasks, "listOccurrences").mockResolvedValue([taskOccurrence]);
 
-    const result = await aiCapabilities.queries["task.read"].run({ id: scheduledTask.shortId }, context);
+    const result = await aiCapabilities.queries["ai.task.read"].run({ id: scheduledTask.shortId }, context);
 
     expect(get).toHaveBeenCalledTimes(1);
     expect(listOccurrences).toHaveBeenCalledTimes(1);
@@ -206,6 +274,85 @@ describe("Core AI capabilities", () => {
       ok: true,
       data: { summary: "Read active scheduled task in “Release planning”." },
     });
+  });
+
+  test("lists and reads only permission-filtered Skills with stable refs", async () => {
+    const list = spyOn(aiSkills, "list").mockResolvedValue([
+      skill,
+      { ...skill, id: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", shortId: "sKp567", name: "disabled-skill", enabled: false },
+    ]);
+    const get = spyOn(aiSkills, "getByShortId").mockResolvedValue(skill);
+
+    const listed = await aiCapabilities.queries["ai.skills.list"].run({ query: "weekly", enabled: true, limit: 20 }, context);
+    const read = await aiCapabilities.queries["ai.skill.read"].run({ id: skill.shortId }, context);
+    const reference = await aiCapabilities.queries["ai.skill.reference.read"].run(
+      { skillId: skill.shortId, path: "references/style.md" },
+      context,
+    );
+
+    expect(list).toHaveBeenCalledWith(context.accessSubject);
+    expect(listed).toMatchObject({
+      ok: true,
+      data: {
+        data: [{ id: skill.shortId, ref: { type: "core.ai.skill", id: skill.shortId } }],
+        refs: [{ type: "core.ai.skill", id: skill.shortId }],
+      },
+    });
+    expect(read).toMatchObject({ ok: true, data: { data: { id: skill.shortId, references: [{ path: "references/style.md" }] } } });
+    expect(reference).toMatchObject({
+      ok: true,
+      data: { data: { skillId: skill.shortId, path: "references/style.md", content: "Keep the report concise." } },
+    });
+    expect(get).toHaveBeenCalledTimes(2);
+  });
+
+  test("reviews and executes Skill mutations through the permission-aware service", async () => {
+    const get = spyOn(aiSkills, "getByShortId").mockResolvedValue(skill);
+    spyOn(aiSkills, "create").mockResolvedValue(skill);
+    spyOn(aiSkills, "update").mockResolvedValue({ ...skill, description: "Updated description.", revision: 2 });
+    spyOn(aiSkills, "setReference").mockResolvedValue({ ...skill, revision: 2 });
+    spyOn(aiSkills, "removeReference").mockResolvedValue({ ...skill, references: [], referenceCount: 0, revision: 2 });
+    spyOn(aiSkills, "setEnabled").mockResolvedValue(false);
+    spyOn(aiSkills, "delete").mockResolvedValue(true);
+
+    const updateReview = await aiCapabilities.actions["ai.skill.update"].review!(
+      { skillId: skill.shortId, expectedRevision: 1, description: "Updated description." },
+      context,
+    );
+    expect(updateReview).toMatchObject({
+      ok: true,
+      data: { details: [{ label: "Description", value: "Updated description." }] },
+    });
+
+    const results = {
+      "ai.skill.create": await aiCapabilities.actions["ai.skill.create"].run(
+        { name: skill.name, description: skill.description, instructions: skill.instructions },
+        context,
+      ),
+      "ai.skill.update": await aiCapabilities.actions["ai.skill.update"].run(
+        { skillId: skill.shortId, expectedRevision: 1, description: "Updated description." },
+        context,
+      ),
+      "ai.skill.reference.set": await aiCapabilities.actions["ai.skill.reference.set"].run(
+        { skillId: skill.shortId, expectedRevision: 1, path: "references/style.md", content: "Keep it concise." },
+        context,
+      ),
+      "ai.skill.reference.remove": await aiCapabilities.actions["ai.skill.reference.remove"].run(
+        { skillId: skill.shortId, expectedRevision: 1, path: "references/style.md" },
+        context,
+      ),
+      "ai.skill.enabled.set": await aiCapabilities.actions["ai.skill.enabled.set"].run({ skillId: skill.shortId, enabled: false }, context),
+      "ai.skill.delete": await aiCapabilities.actions["ai.skill.delete"].run({ skillId: skill.shortId }, context),
+    };
+
+    for (const [localId, result] of Object.entries(results)) {
+      expect(result.ok).toBeTrue();
+      if (!result.ok) continue;
+      const action = (aiCapabilities.actions as unknown as Record<string, CapabilityActionDefinition>)[localId];
+      if (!action) throw new Error(`Missing Core action ${localId}`);
+      expect(capabilityResultSchema(action.data).safeParse(result.data).success).toBeTrue();
+    }
+    expect(get).toHaveBeenCalledWith(skill.shortId, context.accessSubject, "admin");
   });
 
   test("returns a schema-valid user outcome from every Core action", async () => {
@@ -252,7 +399,7 @@ describe("Core AI capabilities", () => {
 
     const idempotentContext = { ...context, idempotencyKey: "core-summary-test" };
     const results = {
-      "task.create": await aiCapabilities.actions["task.create"].run(
+      "ai.task.create": await aiCapabilities.actions["ai.task.create"].run(
         {
           chatId: chat.shortId,
           prompt: scheduledTask.prompt,
@@ -261,18 +408,21 @@ describe("Core AI capabilities", () => {
         },
         idempotentContext,
       ),
-      "task.update": await aiCapabilities.actions["task.update"].run(
+      "ai.task.update": await aiCapabilities.actions["ai.task.update"].run(
         { taskId: scheduledTask.shortId, prompt: "Updated release instructions." },
         context,
       ),
-      "task.pause": await aiCapabilities.actions["task.pause"].run({ taskId: scheduledTask.shortId }, context),
-      "task.resume": await aiCapabilities.actions["task.resume"].run({ taskId: scheduledTask.shortId }, context),
-      "task.run": await aiCapabilities.actions["task.run"].run({ taskId: scheduledTask.shortId }, idempotentContext),
-      "task.delete": await aiCapabilities.actions["task.delete"].run({ taskId: scheduledTask.shortId }, context),
-      "chat.message": await aiCapabilities.actions["chat.message"].run({ chatId: "cHt567", text: "Please verify it." }, idempotentContext),
+      "ai.task.pause": await aiCapabilities.actions["ai.task.pause"].run({ taskId: scheduledTask.shortId }, context),
+      "ai.task.resume": await aiCapabilities.actions["ai.task.resume"].run({ taskId: scheduledTask.shortId }, context),
+      "ai.task.run": await aiCapabilities.actions["ai.task.run"].run({ taskId: scheduledTask.shortId }, idempotentContext),
+      "ai.task.delete": await aiCapabilities.actions["ai.task.delete"].run({ taskId: scheduledTask.shortId }, context),
+      "ai.chat.message": await aiCapabilities.actions["ai.chat.message"].run(
+        { chatId: "cHt567", text: "Please verify it." },
+        idempotentContext,
+      ),
     };
 
-    expect(Object.keys(results)).toHaveLength(Object.keys(aiCapabilities.actions).length);
+    expect(Object.keys(results)).toHaveLength(7);
     for (const [localId, result] of Object.entries(results)) {
       expect(result.ok).toBeTrue();
       if (!result.ok) continue;
@@ -282,17 +432,17 @@ describe("Core AI capabilities", () => {
       const parsed = capabilityResultSchema(action.data).safeParse(result.data);
       if (!parsed.success) throw new Error(`Invalid Core result for ${localId}: ${JSON.stringify(parsed.error.issues)}`);
     }
-    expect(results["task.update"]).toMatchObject({
+    expect(results["ai.task.update"]).toMatchObject({
       ok: true,
       data: { summary: `Changed the instructions of a task in “${chat.title}”.` },
     });
-    expect(results["chat.message"]).toMatchObject({ ok: true, data: { summary: "Sent a message to “Target chat”." } });
+    expect(results["ai.chat.message"]).toMatchObject({ ok: true, data: { summary: "Sent a message to “Target chat”." } });
   });
 
   test("searches only the current user's chats and returns an open link", async () => {
     const list = spyOn(aiConversations, "listConversations").mockResolvedValue([chat]);
 
-    const result = await aiCapabilities.queries["chats.search"].run({ query: "release", archived: false, limit: 10 }, context);
+    const result = await aiCapabilities.queries["ai.chats.search"].run({ query: "release", archived: false, limit: 10 }, context);
 
     expect(list).toHaveBeenCalledWith({
       ownerUserId: user.id,
@@ -306,7 +456,7 @@ describe("Core AI capabilities", () => {
       data: {
         data: [
           {
-            ref: { type: "core.chat", id: chat.shortId },
+            ref: { type: "core.ai.chat", id: chat.shortId },
             title: chat.title,
             links: [{ rel: "open", href: `/app/assistant?conversation=${chat.shortId}` }],
           },
@@ -334,7 +484,7 @@ describe("Core AI capabilities", () => {
       hasMore: true,
     });
 
-    const result = await aiCapabilities.queries["chat.read"].run({ id: chat.shortId, limit: 20 }, context);
+    const result = await aiCapabilities.queries["ai.chat.read"].run({ id: chat.shortId, limit: 20 }, context);
 
     expect(get).toHaveBeenCalledWith({ shortId: chat.shortId, ownerUserId: user.id, archived: false });
     expect(get).toHaveBeenCalledTimes(1);
@@ -350,7 +500,7 @@ describe("Core AI capabilities", () => {
             { seq: 2, role: "assistant", truncated: true },
           ],
         },
-        refs: [{ type: "core.chat", id: chat.shortId }],
+        refs: [{ type: "core.ai.chat", id: chat.shortId }],
         links: [{ rel: "open", href: `/app/assistant?conversation=${chat.shortId}` }],
         page: { hasMore: true, nextCursor: "1" },
       },
@@ -369,7 +519,7 @@ describe("Core AI capabilities", () => {
       nextCursor: "4",
     });
 
-    const result = await aiCapabilities.queries["chat.search"].run({ chatId: chat.shortId, query: "release", limit: 10 }, context);
+    const result = await aiCapabilities.queries["ai.chat.search"].run({ chatId: chat.shortId, query: "release", limit: 10 }, context);
 
     expect(search).toHaveBeenCalledWith({ conversationId: chat.id, query: "release", beforeSeq: undefined, limit: 10 });
     expect(result).toMatchObject({
@@ -396,8 +546,8 @@ describe("Core AI capabilities", () => {
       resources: [{ ...resource, chat: { shortId: chat.shortId, title: chat.title, updatedAt: chat.updatedAt } }],
     });
 
-    const localResult = await aiCapabilities.queries["chat.resources"].run({ chatId: chat.shortId, limit: 20 }, context);
-    const globalResult = await aiCapabilities.queries["chats.resources"].run({ query: "release", limit: 20 }, context);
+    const localResult = await aiCapabilities.queries["ai.chat.resources"].run({ chatId: chat.shortId, limit: 20 }, context);
+    const globalResult = await aiCapabilities.queries["ai.chats.resources"].run({ query: "release", limit: 20 }, context);
 
     expect(local).toHaveBeenCalledWith({ conversationId: chat.id, search: undefined, before: undefined, limit: 20 });
     expect(global).toHaveBeenCalledWith({ ownerUserId: user.id, search: "release", before: undefined, limit: 20 });
@@ -407,14 +557,14 @@ describe("Core AI capabilities", () => {
 
   test("reviews the exact inter-chat target and refuses untrusted action origins", async () => {
     spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(chat);
-    const review = await aiCapabilities.actions["chat.message"].review!({ chatId: chat.shortId, text: "Please verify it." }, context);
+    const review = await aiCapabilities.actions["ai.chat.message"].review!({ chatId: chat.shortId, text: "Please verify it." }, context);
     expect(review).toMatchObject({
       ok: true,
       data: { message: `Send this message to ${chat.title} (${chat.shortId}).`, details: [{ label: "Target chat" }, { label: "Message" }] },
     });
 
     const origin = spyOn(aiConversations, "getCapabilityInvocationOrigin").mockResolvedValue(null);
-    const result = await aiCapabilities.actions["chat.message"].run(
+    const result = await aiCapabilities.actions["ai.chat.message"].run(
       { chatId: chat.shortId, text: "Please verify it." },
       { ...context, idempotencyKey: "ai-test" },
     );
@@ -424,7 +574,7 @@ describe("Core AI capabilities", () => {
     });
     expect(origin).toHaveBeenCalledWith({
       idempotencyKey: "ai-test",
-      toolName: aiCapabilityToolName("core", "action", "chat.message"),
+      toolName: aiCapabilityToolName("core", "action", "ai.chat.message"),
     });
   });
 
@@ -460,7 +610,7 @@ describe("Core AI capabilities", () => {
     };
     spyOn(aiConversations, "createInterChatMessage").mockResolvedValue({ ok: true, message });
 
-    const result = await aiCapabilities.actions["chat.message"].run(
+    const result = await aiCapabilities.actions["ai.chat.message"].run(
       { chatId: message.targetChatId, text: message.text },
       { ...context, idempotencyKey: "ai-test" },
     );
@@ -474,7 +624,7 @@ describe("Core AI capabilities", () => {
   test("does not reveal missing or other users' chats", async () => {
     spyOn(aiConversations, "getConversationByShortId").mockResolvedValue(null);
 
-    const result = await aiCapabilities.queries["chat.read"].run({ id: chat.shortId, limit: 20 }, context);
+    const result = await aiCapabilities.queries["ai.chat.read"].run({ id: chat.shortId, limit: 20 }, context);
 
     expect(result).toEqual({ ok: false, error: { code: "NOT_FOUND", message: "Chat not found", status: 404 } });
   });
@@ -484,7 +634,7 @@ describe("Core AI capabilities", () => {
     const get = spyOn(aiConversations, "getConversationByShortId").mockResolvedValueOnce(null).mockResolvedValueOnce(archived);
     spyOn(aiConversations, "listMessagesPage").mockResolvedValue({ messages: [], hasMore: false });
 
-    const result = await aiCapabilities.queries["chat.read"].run({ id: chat.shortId, limit: 20 }, context);
+    const result = await aiCapabilities.queries["ai.chat.read"].run({ id: chat.shortId, limit: 20 }, context);
 
     expect(get).toHaveBeenLastCalledWith({ shortId: chat.shortId, ownerUserId: user.id, archived: true });
     expect(result).toMatchObject({ ok: true, data: { data: { chat: { id: chat.shortId, archived: true } } } });
@@ -492,7 +642,10 @@ describe("Core AI capabilities", () => {
 
   test("rejects actors without a delegated user", async () => {
     const list = spyOn(aiConversations, "listConversations");
-    const result = await aiCapabilities.queries["chats.search"].run({ query: "", archived: false, limit: 10 }, { ...context, user: null });
+    const result = await aiCapabilities.queries["ai.chats.search"].run(
+      { query: "", archived: false, limit: 10 },
+      { ...context, user: null },
+    );
 
     expect(result).toEqual({
       ok: false,

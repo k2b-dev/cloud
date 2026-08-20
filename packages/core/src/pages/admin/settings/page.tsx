@@ -2,8 +2,11 @@ import {
   type AiEnrichmentOverview,
   type AiProjectAdminListItem,
   type AiProjectAdminSummary,
+  type AiSkillAdminListItem,
+  type AiSkillAdminSummary,
   aiConversations,
   aiProjects,
+  aiSkills,
   listAiCredentialProfileIds,
 } from "@valentinkolb/cloud/ai";
 import type { AuthContext } from "@valentinkolb/cloud/server";
@@ -11,6 +14,7 @@ import { settingsService } from "@valentinkolb/cloud/services";
 import { AdminLayout, getRuntimeContext, hasDedicatedRuntimeRoute } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../../config";
 import AiProjectsAdminPanel from "./_components/AiProjectsAdminPanel";
+import AiSkillsAdminPanel from "./_components/AiSkillsAdminPanel";
 import CoreSettingsForm, { type SettingFieldDef } from "./_components/CoreSettingsForm.island";
 import LegalSettingsForm, { type LegalInitial } from "./_components/LegalSettingsForm.island";
 
@@ -58,6 +62,13 @@ const TABS = [
     description: "Model and schedule for background AI work like chat enrichment.",
     icon: "ti ti-activity",
     group: "ai" as const,
+  },
+  {
+    id: "ai-skills",
+    title: "AI Skills",
+    description: "Recover and manage access to shared Assistant Skills.",
+    icon: "ti ti-wand",
+    group: null,
   },
   {
     id: "ai-projects",
@@ -170,6 +181,11 @@ export default ssr<AuthContext>(async (c) => {
   let aiProjectTotal = 0;
   let aiProjectPage = 1;
   let aiProjectPerPage = 100;
+  let aiSkillItems: AiSkillAdminListItem[] = [];
+  let aiSkillSummary: AiSkillAdminSummary | null = null;
+  let aiSkillTotal = 0;
+  let aiSkillPage = 1;
+  let aiSkillPerPage = 100;
   const search = (c.req.query("search") ?? "").trim();
   const requestedPage = Number.parseInt(c.req.query("page") ?? "1", 10);
 
@@ -182,6 +198,16 @@ export default ssr<AuthContext>(async (c) => {
   } else if (tab.id === "legal") {
     entries = await buildEntries("legal");
     legalInitial = buildLegalInitial(entries);
+  } else if (tab.id === "ai-skills") {
+    const [skills, summary] = await Promise.all([
+      aiSkills.admin.list({ search: search || undefined, page: Number.isFinite(requestedPage) ? requestedPage : 1, perPage: 100 }),
+      aiSkills.admin.summary({ search: search || undefined }),
+    ]);
+    aiSkillItems = skills.items;
+    aiSkillSummary = summary;
+    aiSkillTotal = skills.total;
+    aiSkillPage = skills.page;
+    aiSkillPerPage = skills.perPage;
   } else if (tab.id === "ai-projects") {
     const [projects, summary] = await Promise.all([
       aiProjects.admin.list({ search: search || undefined, page: Number.isFinite(requestedPage) ? requestedPage : 1, perPage: 100 }),
@@ -225,6 +251,17 @@ export default ssr<AuthContext>(async (c) => {
             total={aiProjectTotal}
             page={aiProjectPage}
             perPage={aiProjectPerPage}
+            search={search}
+          />
+        ) : null}
+
+        {tab.id === "ai-skills" && aiSkillSummary ? (
+          <AiSkillsAdminPanel
+            skills={aiSkillItems}
+            summary={aiSkillSummary}
+            total={aiSkillTotal}
+            page={aiSkillPage}
+            perPage={aiSkillPerPage}
             search={search}
           />
         ) : null}

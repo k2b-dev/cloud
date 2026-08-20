@@ -80,4 +80,16 @@ describe("admin AI Project routes", () => {
     expect(response.status).toBe(409);
     expect(await response.json()).toMatchObject({ message: "A Project must keep at least one admin access entry." });
   });
+
+  test("deletes a Project through the platform recovery surface", async () => {
+    spyOn(aiProjects.admin, "getByShortId").mockResolvedValue(project);
+    spyOn(aiProjects.admin, "delete").mockResolvedValue(true);
+    const routes = createAdminAiProjectsRoutes(pass);
+
+    const response = await routes.request(`/${projectShortId}`, { method: "DELETE" });
+
+    expect(response.status).toBe(200);
+    expect(aiProjects.admin.delete).toHaveBeenCalledWith(projectId);
+    expect(await response.json()).toEqual({ deleted: true });
+  });
 });

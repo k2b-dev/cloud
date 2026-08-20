@@ -55,6 +55,24 @@ export type AiSkillAccess = {
   createdAt: string;
 };
 
+export type AiSkillAdminListItem = {
+  id: string;
+  shortId: string;
+  name: string;
+  description: string;
+  referenceCount: number;
+  accessCount: number;
+  adminCount: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AiSkillAdminSummary = {
+  total: number;
+  unmanaged: number;
+  totalAccess: number;
+};
+
 export type AiLoadedSkillSnapshot = {
   name: string;
   description: string;
@@ -67,6 +85,7 @@ export type AiLoadedSkillSnapshot = {
 type SkillRow = {
   id: string;
   short_id: string;
+  managed_key: string | null;
   name: string;
   description: string;
   instructions: string;
@@ -91,6 +110,12 @@ type SkillSummaryRow = SkillRow & {
   permission: AiSkillPermission;
   reference_count: number;
   enabled: boolean;
+};
+
+type AdminSkillRow = SkillRow & {
+  reference_count: number;
+  access_count: number;
+  admin_count: number;
 };
 
 type SnapshotRow = {
@@ -336,6 +361,27 @@ const validatedFields = (input: {
   }
 };
 
+const sameReferences = (left: readonly AiSkillReference[], right: readonly AiSkillReference[]): boolean =>
+  left.length === right.length &&
+  left.every((reference, index) => reference.path === right[index]?.path && reference.content === right[index]?.content);
+
+const skillSearchPattern = (search?: string): string | null => {
+  const value = search?.trim().toLowerCase();
+  return value ? `%${value.replace(/[\\%_]/g, (char) => `\\${char}`)}%` : null;
+};
+
+const toAdminSkill = (row: AdminSkillRow): AiSkillAdminListItem => ({
+  id: row.id,
+  shortId: row.short_id,
+  name: row.name,
+  description: row.description,
+  referenceCount: Number(row.reference_count),
+  accessCount: Number(row.access_count),
+  adminCount: Number(row.admin_count),
+  createdAt: iso(row.created_at),
+  updatedAt: iso(row.updated_at),
+});
+
 const skillSnapshotFiles = (skill: AiSkill): { path: string; content: string }[] => [
   {
     path: `${skill.name}/SKILL.md`,
@@ -345,6 +391,92 @@ const skillSnapshotFiles = (skill: AiSkill): { path: string; content: string }[]
 ];
 
 export const aiSkills = {
+  async seedOnce(input: {
+    key: string;
+    name: string;
+    description: string;
+    instructions: string;
+    extraFrontmatter?: AiSkillExtraFrontmatter;
+    references?: readonly AiSkillReferenceInput[];
+  }): Promise<void> {
+    const key = input.key.trim();
+    if (!key) throw new AiSkillInputError("Skill seed key is required.");
+    const fields = validatedFields(input);
+    await sql.begin(async (tx) => {
+      const [claimed] = await tx<{ key: string }[]>`
+        INSERT INTO ai.skill_seeds (key) VALUES (${key})
+        ON CONFLICT (key) DO NOTHING
+        RETURNING key
+      `;
+      if (!claimed) return;
+
+      let [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE managed_key = ${key} FOR UPDATE`;
+      if (!row) {
+        const [conflict] = await tx<{ id: string }[]>`SELECT id FROM ai.skills WHERE name = ${fields.name}`;
+        if (conflict) return;
+        const rows = await withAiShortIdForDb(
+          tx,
+          "idx_ai_skills_short_id",
+          (attempt, shortId) => attempt<SkillRow[]>`
+            INSERT INTO ai.skills (short_id, name, description, instructions, extra_frontmatter)
+            VALUES (
+              ${shortId}, ${fields.name}, ${fields.description}, ${fields.instructions},
+              (${JSON.stringify(fields.extraFrontmatter)}::text)::jsonb
+            )
+            RETURNING *
+          `,
+        );
+        row = rows[0]!;
+      } else {
+        const references = await listReferences(row.id, tx);
+        const changed =
+          row.name !== fields.name ||
+          row.description !== fields.description ||
+          row.instructions !== fields.instructions ||
+          JSON.stringify(jsonObject(row.extra_frontmatter)) !== JSON.stringify(fields.extraFrontmatter) ||
+          !sameReferences(references, fields.references);
+        if (changed) {
+          [row] = await tx<SkillRow[]>`
+            UPDATE ai.skills
+            SET name = ${fields.name}, description = ${fields.description}, instructions = ${fields.instructions},
+                extra_frontmatter = (${JSON.stringify(fields.extraFrontmatter)}::text)::jsonb,
+                managed_key = NULL, revision = revision + 1, updated_at = now()
+            WHERE id = ${row.id}::uuid
+            RETURNING *
+          `;
+        } else {
+          [row] = await tx<SkillRow[]>`
+            UPDATE ai.skills SET managed_key = NULL WHERE id = ${row.id}::uuid RETURNING *
+          `;
+        }
+      }
+
+      const currentReferences = await listReferences(row!.id, tx);
+      if (!sameReferences(currentReferences, fields.references)) {
+        await tx`DELETE FROM ai.skill_references WHERE skill_id = ${row!.id}::uuid`;
+        for (const reference of fields.references) {
+          await tx`
+            INSERT INTO ai.skill_references (skill_id, path, content)
+            VALUES (${row!.id}::uuid, ${reference.path}, ${reference.content})
+          `;
+        }
+      }
+
+      const [grant] = await tx<{ id: string; permission: AiSkillPermission }[]>`
+        SELECT access.id, access.permission
+        FROM ai.skill_access skill_access
+        JOIN auth.access access ON access.id = skill_access.access_id
+        WHERE skill_access.skill_id = ${row!.id}::uuid AND access.authenticated_only = true
+        LIMIT 1
+      `;
+      if (!grant) {
+        await createSkillAccess(row!.id, { principal: { type: "authenticated" }, permission: "read" }, tx);
+      } else if (grant.permission !== "read") {
+        await tx`UPDATE auth.access SET permission = 'read' WHERE id = ${grant.id}::uuid`;
+      }
+    });
+  },
+
   async create(input: {
     subject: AccessSubject;
     name: string;
@@ -507,6 +639,124 @@ export const aiSkills = {
     });
   },
 
+  admin: {
+    async list(params: {
+      search?: string;
+      page?: number;
+      perPage?: number;
+    }): Promise<{ items: AiSkillAdminListItem[]; total: number; page: number; perPage: number }> {
+      const perPage = Math.min(Math.max(params.perPage ?? 100, 1), 500);
+      const page = Math.max(params.page ?? 1, 1);
+      const offset = (page - 1) * perPage;
+      const pattern = skillSearchPattern(params.search);
+      const [countRow] = await sql<{ total: number }[]>`
+        SELECT count(*)::int AS total
+        FROM ai.skills skill
+        WHERE ${pattern}::text IS NULL
+          OR lower(skill.name) LIKE ${pattern} ESCAPE '\\'
+          OR lower(skill.description) LIKE ${pattern} ESCAPE '\\'
+          OR lower(skill.short_id) LIKE ${pattern} ESCAPE '\\'
+      `;
+      const rows = await sql<AdminSkillRow[]>`
+        SELECT skill.*,
+               count(DISTINCT reference.path)::int AS reference_count,
+               count(DISTINCT skill_access.access_id)::int AS access_count,
+               count(DISTINCT skill_access.access_id) FILTER (WHERE access.permission = 'admin')::int AS admin_count
+        FROM ai.skills skill
+        LEFT JOIN ai.skill_references reference ON reference.skill_id = skill.id
+        LEFT JOIN ai.skill_access skill_access ON skill_access.skill_id = skill.id
+        LEFT JOIN auth.access access ON access.id = skill_access.access_id
+        WHERE ${pattern}::text IS NULL
+          OR lower(skill.name) LIKE ${pattern} ESCAPE '\\'
+          OR lower(skill.description) LIKE ${pattern} ESCAPE '\\'
+          OR lower(skill.short_id) LIKE ${pattern} ESCAPE '\\'
+        GROUP BY skill.id
+        ORDER BY skill.updated_at DESC, skill.id
+        LIMIT ${perPage} OFFSET ${offset}
+      `;
+      return { items: rows.map(toAdminSkill), total: countRow?.total ?? 0, page, perPage };
+    },
+
+    async summary(params: { search?: string } = {}): Promise<AiSkillAdminSummary> {
+      const pattern = skillSearchPattern(params.search);
+      const [row] = await sql<{ total: number; unmanaged: number; total_access: number }[]>`
+        WITH filtered AS (
+          SELECT skill.id,
+                 count(DISTINCT skill_access.access_id)::int AS access_count,
+                 count(DISTINCT skill_access.access_id) FILTER (WHERE access.permission = 'admin')::int AS admin_count
+          FROM ai.skills skill
+          LEFT JOIN ai.skill_access skill_access ON skill_access.skill_id = skill.id
+          LEFT JOIN auth.access access ON access.id = skill_access.access_id
+          WHERE ${pattern}::text IS NULL
+            OR lower(skill.name) LIKE ${pattern} ESCAPE '\\'
+            OR lower(skill.description) LIKE ${pattern} ESCAPE '\\'
+            OR lower(skill.short_id) LIKE ${pattern} ESCAPE '\\'
+          GROUP BY skill.id
+        )
+        SELECT count(*)::int AS total,
+               count(*) FILTER (WHERE admin_count = 0)::int AS unmanaged,
+               coalesce(sum(access_count), 0)::int AS total_access
+        FROM filtered
+      `;
+      return { total: row?.total ?? 0, unmanaged: row?.unmanaged ?? 0, totalAccess: row?.total_access ?? 0 };
+    },
+
+    async getByShortId(shortId: string): Promise<AiSkillAdminListItem | null> {
+      const rows = await sql<AdminSkillRow[]>`
+        SELECT skill.*,
+               count(DISTINCT reference.path)::int AS reference_count,
+               count(DISTINCT skill_access.access_id)::int AS access_count,
+               count(DISTINCT skill_access.access_id) FILTER (WHERE access.permission = 'admin')::int AS admin_count
+        FROM ai.skills skill
+        LEFT JOIN ai.skill_references reference ON reference.skill_id = skill.id
+        LEFT JOIN ai.skill_access skill_access ON skill_access.skill_id = skill.id
+        LEFT JOIN auth.access access ON access.id = skill_access.access_id
+        WHERE skill.short_id = ${shortId}
+        GROUP BY skill.id
+      `;
+      return rows[0] ? toAdminSkill(rows[0]) : null;
+    },
+
+    listAccess: listSkillAccess,
+
+    async grantAccess(skillId: string, input: { principal: Principal; permission: AiSkillPermission }): Promise<AiSkillAccess | null> {
+      return sql.begin(async (tx) => {
+        const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
+        if (!row) return null;
+        return createSkillAccess(skillId, input, tx);
+      });
+    },
+
+    async updateAccess(skillId: string, accessId: string, permission: AiSkillPermission): Promise<boolean> {
+      return sql.begin(async (tx) => {
+        const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
+        if (!row) return false;
+        return updateSkillAccess(skillId, accessId, permission, tx);
+      });
+    },
+
+    async revokeAccess(skillId: string, accessId: string): Promise<boolean> {
+      return sql.begin(async (tx) => {
+        const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
+        if (!row) return false;
+        return revokeSkillAccess(skillId, accessId, tx);
+      });
+    },
+
+    async delete(skillId: string): Promise<boolean> {
+      return sql.begin(async (tx) => {
+        const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
+        if (!row) return false;
+        const accessIds = (await tx<{ access_id: string }[]>`SELECT access_id FROM ai.skill_access WHERE skill_id = ${skillId}::uuid`).map(
+          (entry) => entry.access_id,
+        );
+        await tx`DELETE FROM ai.skills WHERE id = ${skillId}::uuid`;
+        if (accessIds.length) await tx`DELETE FROM auth.access WHERE id = ANY(${toPgUuidArray(accessIds)}::uuid[])`;
+        return true;
+      });
+    },
+  },
+
   async setEnabled(skillId: string, subject: AccessSubject | null, enabled: boolean): Promise<boolean | null> {
     if (subject?.type !== "user") return null;
     return sql.begin(async (tx) => {
@@ -524,6 +774,52 @@ export const aiSkills = {
         `;
       }
       return enabled;
+    });
+  },
+
+  async setReference(
+    skillId: string,
+    subject: AccessSubject | null,
+    input: { expectedRevision: number; path: string; content: string },
+  ): Promise<AiSkill | null> {
+    const [reference] = validateAiSkillReferences([{ path: input.path, content: input.content }]);
+    return sql.begin(async (tx) => {
+      const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
+      if (!row || !hasPermission(await permissionFor(row.id, subject, tx), "write")) return null;
+      if (Number(row.revision) !== input.expectedRevision) throw new AiSkillRevisionConflictError();
+      await tx`
+        INSERT INTO ai.skill_references (skill_id, path, content)
+        VALUES (${skillId}::uuid, ${reference!.path}, ${reference!.content})
+        ON CONFLICT (skill_id, path) DO UPDATE SET content = EXCLUDED.content
+      `;
+      const [updated] = await tx<SkillRow[]>`
+        UPDATE ai.skills SET revision = revision + 1, updated_at = now()
+        WHERE id = ${skillId}::uuid RETURNING *
+      `;
+      return toSkill(updated!, subject, tx);
+    });
+  },
+
+  async removeReference(
+    skillId: string,
+    subject: AccessSubject | null,
+    input: { expectedRevision: number; path: string },
+  ): Promise<AiSkill | null> {
+    const [reference] = validateAiSkillReferences([{ path: input.path, content: "" }]);
+    return sql.begin(async (tx) => {
+      const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
+      if (!row || !hasPermission(await permissionFor(row.id, subject, tx), "write")) return null;
+      if (Number(row.revision) !== input.expectedRevision) throw new AiSkillRevisionConflictError();
+      const deleted = await tx`
+        DELETE FROM ai.skill_references
+        WHERE skill_id = ${skillId}::uuid AND path = ${reference!.path}
+      `;
+      if (deleted.count === 0) return null;
+      const [updated] = await tx<SkillRow[]>`
+        UPDATE ai.skills SET revision = revision + 1, updated_at = now()
+        WHERE id = ${skillId}::uuid RETURNING *
+      `;
+      return toSkill(updated!, subject, tx);
     });
   },
 

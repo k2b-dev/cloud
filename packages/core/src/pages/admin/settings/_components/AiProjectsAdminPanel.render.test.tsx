@@ -43,10 +43,10 @@ describe("AiProjectsAdminPanel", () => {
     expect(html).toContain("Without admins");
     expect(html).toContain("recovery required");
     expect(html).toContain("No admins");
-    expect(html).toContain('class="k2b-tag');
-    expect(html).toContain("assistant");
+    expect(html).toContain('class="k2b-status-badge');
     expect(html).not.toContain("ti ti-minus");
     expect(html).toContain("Actions for Unclaimed");
+    expect(html).toContain("Delete Project");
     expect(html).not.toContain("Save changes");
   });
 });

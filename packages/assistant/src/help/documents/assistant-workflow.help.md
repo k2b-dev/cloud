@@ -47,7 +47,7 @@ history. It can search the current chat, find and read another owned chat, and
 find structured Cloud resources previously used in either scope.
 
 If you explicitly ask Assistant to tell, ask, notify, forward, or send exact
-text to another chat, it can request the `chat.message` Action. The approval
+text to another chat, it can request the `core.ai.chat.message` Action. The approval
 prompt shows the target and exact text before anything is queued. Delivered
 messages appear in the target history with their source chat; they are not
 shown as messages authored by you.

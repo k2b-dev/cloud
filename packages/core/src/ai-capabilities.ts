@@ -1,14 +1,23 @@
 import { err, fail, ok } from "@k2b/stdlib";
 import {
   AI_SHORT_ID_PATTERN,
+  AI_SKILL_DESCRIPTION_MAX_CHARS,
+  AI_SKILL_NAME_MAX_CHARS,
+  AI_SKILL_NAME_PATTERN,
+  AI_SKILL_REFERENCE_MAX_CHARS,
+  AI_SKILL_REFERENCE_PATH_PATTERN,
   type AiChatTask,
   AiChatTaskIdempotencyConflictError,
   type AiConversation,
   type AiConversationResourceRef,
+  type AiSkill,
+  AiSkillInputError,
+  AiSkillRevisionConflictError,
   type AiStoredMessage,
   aiCapabilityToolName,
   aiChatTasks,
   aiConversations,
+  aiSkills,
   ChatTaskIdSchema,
   ChatTaskOccurrenceIdSchema,
   ChatTaskScheduleInputSchema,
@@ -30,6 +39,7 @@ import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 
 const CORE_APP_ID = "core";
 const MAX_MESSAGE_TEXT_CHARS = 8_000;
+const MAX_CAPABILITY_SKILL_CONTENT_CHARS = 10_000;
 const ChatIdSchema = z.string().regex(AI_SHORT_ID_PATTERN).describe("Readable six-character AI conversation ID.");
 const CursorSchema = z
   .string()
@@ -44,7 +54,7 @@ const resourceCursorSchema = (scope: "conversation" | "user") =>
     .refine((value) => isConversationResourceCursor(value, scope), "Invalid resource cursor")
     .optional()
     .describe("Opaque cursor returned by the previous resource page.");
-const CHAT_MESSAGE_TOOL_NAME = aiCapabilityToolName(CORE_APP_ID, "action", "chat.message");
+const CHAT_MESSAGE_TOOL_NAME = aiCapabilityToolName(CORE_APP_ID, "action", "ai.chat.message");
 const ChatTaskCreateInputSchema = z
   .object({
     chatId: ChatIdSchema,
@@ -71,11 +81,11 @@ const ChatTaskUpdateInputSchema = z
   });
 const ChatTaskIdInputSchema = z.object({ taskId: ChatTaskIdSchema }).strict();
 const ChatTaskReadInputSchema = z
-  .object({ id: ChatTaskIdSchema.describe("Scheduled-task ID returned by List scheduled AI tasks or a core.task ref.") })
+  .object({ id: ChatTaskIdSchema.describe("Scheduled-task ID returned by List scheduled AI tasks or a core.ai.task ref.") })
   .strict();
 const ChatTasksListInputSchema = z
   .object({
-    chatId: ChatIdSchema.optional().describe("Optional AI conversation ID returned by chat search/read or a core.chat ref."),
+    chatId: ChatIdSchema.optional().describe("Optional AI conversation ID returned by chat search/read or a core.ai.chat ref."),
     state: z.enum(["active", "paused", "completed", "needs_attention"]).optional().describe("Optional task lifecycle state."),
     limit: z.number().int().min(1).max(50).default(20).describe("Maximum number of tasks to return."),
     cursor: z.string().regex(/^\d+$/).optional().describe("Opaque cursor returned by the previous task page."),
@@ -112,7 +122,7 @@ const ChatTaskDetailDataSchema = z
   })
   .strict();
 const ChatTaskListItemDataSchema = ChatTaskDataSchema.extend({
-  ref: z.object({ type: z.literal("core.task"), id: ChatTaskIdSchema }).strict(),
+  ref: z.object({ type: z.literal("core.ai.task"), id: ChatTaskIdSchema }).strict(),
 }).strict();
 
 const taskData = (task: AiChatTask): z.infer<typeof ChatTaskDataSchema> => ({
@@ -261,6 +271,135 @@ const ChatMessageDataSchema = z
   })
   .strict();
 
+const SkillIdSchema = z.string().regex(AI_SHORT_ID_PATTERN).describe("Readable six-character Skill ID.");
+const SkillNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(AI_SKILL_NAME_MAX_CHARS)
+  .regex(AI_SKILL_NAME_PATTERN)
+  .describe("Lowercase Skill name with words separated by single hyphens.");
+const SkillDescriptionSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(AI_SKILL_DESCRIPTION_MAX_CHARS)
+  .describe("Short, clear description of what the Skill does and when Assistant should load it.");
+const SkillInstructionsSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_CAPABILITY_SKILL_CONTENT_CHARS)
+  .describe("Complete Markdown instructions for the Skill.");
+const SkillReferencePathSchema = z
+  .string()
+  .trim()
+  .regex(AI_SKILL_REFERENCE_PATH_PATTERN)
+  .describe("Exact Markdown reference path returned by Read Skill, matching references/<name>.md.");
+const SkillPermissionSchema = z.enum(["read", "write", "admin"]);
+const SkillReferenceMetadataSchema = z.object({ path: SkillReferencePathSchema, size: z.number().int().min(0) }).strict();
+const SkillSummaryDataSchema = z
+  .object({
+    id: SkillIdSchema,
+    name: SkillNameSchema,
+    description: SkillDescriptionSchema,
+    permission: SkillPermissionSchema,
+    enabled: z.boolean(),
+    revision: z.number().int().positive(),
+    referenceCount: z.number().int().min(0),
+    updatedAt: z.string(),
+    ref: z.object({ type: z.literal("core.ai.skill"), id: SkillIdSchema }).strict(),
+  })
+  .strict();
+const SkillDetailDataSchema = SkillSummaryDataSchema.omit({ ref: true })
+  .extend({
+    instructions: z.string().max(100_000),
+    extraFrontmatter: z.record(z.string(), z.unknown()),
+    references: z.array(SkillReferenceMetadataSchema),
+  })
+  .strict();
+const SkillsListInputSchema = z
+  .object({
+    query: z.string().trim().max(500).default("").describe("Optional words to match in Skill names and descriptions."),
+    enabled: z.boolean().optional().describe("Optional personal enabled-state filter."),
+    limit: z.number().int().min(1).max(50).default(20).describe("Maximum number of readable Skills to return."),
+    cursor: z
+      .string()
+      .regex(/^\d{1,3}$/)
+      .optional()
+      .describe("Opaque cursor returned by the previous Skill page."),
+  })
+  .strict();
+const SkillReadInputSchema = z.object({ id: SkillIdSchema.describe("Skill ID returned by List Skills or a core.ai.skill ref.") }).strict();
+const SkillReferenceReadInputSchema = z.object({ skillId: SkillIdSchema, path: SkillReferencePathSchema }).strict();
+const SkillCreateInputSchema = z
+  .object({ name: SkillNameSchema, description: SkillDescriptionSchema, instructions: SkillInstructionsSchema })
+  .strict();
+const SkillUpdateInputSchema = z
+  .object({
+    skillId: SkillIdSchema,
+    expectedRevision: z.number().int().positive().describe("Exact revision returned by Read Skill."),
+    name: SkillNameSchema.optional(),
+    description: SkillDescriptionSchema.optional(),
+    instructions: SkillInstructionsSchema.optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.name === undefined && value.description === undefined && value.instructions === undefined) {
+      context.addIssue({ code: "custom", message: "Provide a name, description, or instructions" });
+    }
+  });
+const SkillReferenceSetInputSchema = z
+  .object({
+    skillId: SkillIdSchema,
+    expectedRevision: z.number().int().positive().describe("Exact revision returned by Read Skill."),
+    path: SkillReferencePathSchema,
+    content: z.string().max(MAX_CAPABILITY_SKILL_CONTENT_CHARS).describe("Complete Markdown content for this reference."),
+  })
+  .strict();
+const SkillReferenceRemoveInputSchema = SkillReferenceSetInputSchema.omit({ content: true }).strict();
+const SkillEnabledSetInputSchema = z
+  .object({ skillId: SkillIdSchema, enabled: z.boolean().describe("Whether this Skill should be active for the current user.") })
+  .strict();
+const SkillDeleteInputSchema = z.object({ skillId: SkillIdSchema }).strict();
+const SkillReferenceDataSchema = z
+  .object({
+    skillId: SkillIdSchema,
+    revision: z.number().int().positive(),
+    path: SkillReferencePathSchema,
+    content: z.string().max(AI_SKILL_REFERENCE_MAX_CHARS),
+  })
+  .strict();
+
+const skillData = (skill: AiSkill): z.infer<typeof SkillDetailDataSchema> => ({
+  id: skill.shortId,
+  name: skill.name,
+  description: skill.description,
+  instructions: skill.instructions,
+  extraFrontmatter: skill.extraFrontmatter,
+  permission: skill.permission,
+  enabled: skill.enabled,
+  revision: skill.revision,
+  referenceCount: skill.referenceCount,
+  references: skill.references.map((reference) => ({ path: reference.path, size: reference.content.length })),
+  updatedAt: skill.updatedAt,
+});
+
+const skillRevisionError = (error: unknown) =>
+  error instanceof AiSkillRevisionConflictError
+    ? fail(err.conflict(error.message))
+    : error instanceof AiSkillInputError
+      ? fail(err.badInput(error.message))
+      : typeof error === "object" && error !== null && "code" in error && error.code === "23505"
+        ? fail(err.conflict("A Skill with this name already exists."))
+        : null;
+
+const readableSkill = (
+  skillId: string,
+  context: { accessSubject: Parameters<typeof aiSkills.getByShortId>[1] },
+  permission: "read" | "write" | "admin" = "read",
+) => aiSkills.getByShortId(skillId, context.accessSubject, permission);
+
 const chatHref = (chatId: string): string => `/app/assistant?conversation=${encodeURIComponent(chatId)}`;
 
 const chatSummary = (chat: AiConversation) => ({
@@ -274,7 +413,7 @@ const chatSummary = (chat: AiConversation) => ({
 });
 
 const toResourceView = (chat: AiConversation): CloudResourceView => ({
-  ref: { type: "core.chat", id: chat.shortId },
+  ref: { type: "core.ai.chat", id: chat.shortId },
   title: chat.title,
   ...(chat.description.trim() ? { preview: chat.description } : {}),
   priority: chat.pinnedAt ? 8 : 6,
@@ -326,24 +465,97 @@ const readableOwnedChat = async (chatId: string, userId: string): Promise<AiConv
 export const aiCapabilities = defineCapabilities({
   protocolVersion: 1,
   types: {
-    chat: {
+    "ai.chat": {
       title: "AI conversation",
       description: "A private AI conversation owned by the current user.",
       icon: "ti ti-message-chatbot",
-      reader: "chat.read",
+      reader: "ai.chat.read",
     },
-    task: {
+    "ai.task": {
       title: "Scheduled AI task",
       description: "A one-time or recurring prompt attached to an owned AI conversation.",
       icon: "ti ti-calendar-clock",
-      reader: "task.read",
+      reader: "ai.task.read",
+    },
+    "ai.skill": {
+      title: "Assistant Skill",
+      description: "A permission-managed reusable Assistant workflow.",
+      icon: "ti ti-sparkles",
+      reader: "ai.skill.read",
     },
   },
   queries: {
-    "tasks.list": {
+    "ai.skills.list": {
+      title: "List Assistant Skills",
+      description:
+        "Normal entry for Skill work. List Skills the current actor can read and return core.ai.skill refs for reading or reviewed management Actions.",
+      input: SkillsListInputSchema,
+      data: z.array(SkillSummaryDataSchema),
+      openWorld: false,
+      async run(input, context) {
+        const query = input.query.toLocaleLowerCase();
+        const offset = Number(input.cursor ?? "0");
+        const matches = (await aiSkills.list(context.accessSubject)).filter(
+          (skill) =>
+            (input.enabled === undefined || skill.enabled === input.enabled) &&
+            (!query || skill.name.toLocaleLowerCase().includes(query) || skill.description.toLocaleLowerCase().includes(query)),
+        );
+        const page = matches.slice(offset, offset + input.limit);
+        return ok({
+          data: page.map((skill) => ({
+            id: skill.shortId,
+            name: skill.name,
+            description: skill.description,
+            permission: skill.permission,
+            enabled: skill.enabled,
+            revision: skill.revision,
+            referenceCount: skill.referenceCount,
+            updatedAt: skill.updatedAt,
+            ref: { type: "core.ai.skill" as const, id: skill.shortId },
+          })),
+          refs: page.map((skill) => ({ type: "core.ai.skill", id: skill.shortId })),
+          page: capabilityPage(offset + input.limit < matches.length ? String(offset + input.limit) : undefined),
+        });
+      },
+    },
+    "ai.skill.read": {
+      title: "Read an Assistant Skill",
+      description:
+        "Read one core.ai.skill ref returned by List Assistant Skills or a Skill Action, including its current revision and reference metadata.",
+      input: SkillReadInputSchema,
+      data: SkillDetailDataSchema,
+      openWorld: false,
+      async run(input, context) {
+        const skill = await readableSkill(input.id, context);
+        if (!skill) return fail(err.notFound("Skill"));
+        return ok({
+          data: skillData(skill),
+          summary: `Read Assistant Skill “${skill.name}”.`,
+          refs: [{ type: "core.ai.skill", id: skill.shortId }],
+        });
+      },
+    },
+    "ai.skill.reference.read": {
+      title: "Read an Assistant Skill reference",
+      description: "Read one exact Markdown reference returned by Read Assistant Skill while rechecking current Skill access.",
+      input: SkillReferenceReadInputSchema,
+      data: SkillReferenceDataSchema,
+      openWorld: false,
+      async run(input, context) {
+        const skill = await readableSkill(input.skillId, context);
+        const reference = skill?.references.find((item) => item.path === input.path);
+        if (!skill || !reference) return fail(err.notFound("Skill reference"));
+        return ok({
+          data: { skillId: skill.shortId, revision: skill.revision, path: reference.path, content: reference.content },
+          summary: `Read “${reference.path}” from Assistant Skill “${skill.name}”.`,
+          refs: [{ type: "core.ai.skill", id: skill.shortId }],
+        });
+      },
+    },
+    "ai.tasks.list": {
       title: "List scheduled AI tasks",
       description:
-        "Normal entry for scheduled-task work. List the current user's tasks, optionally for a core.chat ref or state; use returned core.task refs with task.read or task Actions.",
+        "Normal entry for scheduled-task work. List the current user's tasks, optionally for a core.ai.chat ref or state; use returned core.ai.task refs with ai.task.read or task Actions.",
       input: ChatTasksListInputSchema,
       data: z.array(ChatTaskListItemDataSchema),
       openWorld: false,
@@ -353,15 +565,16 @@ export const aiCapabilities = defineCapabilities({
         const tasks = await aiChatTasks.list({ userId: context.user.id, ...input, offset, limit: input.limit + 1 });
         const items = tasks.slice(0, input.limit);
         return ok({
-          data: items.map((task) => ({ ...taskData(task), ref: { type: "core.task" as const, id: task.shortId } })),
-          refs: items.map((task) => ({ type: "core.task", id: task.shortId })),
+          data: items.map((task) => ({ ...taskData(task), ref: { type: "core.ai.task" as const, id: task.shortId } })),
+          refs: items.map((task) => ({ type: "core.ai.task", id: task.shortId })),
           page: capabilityPage(tasks.length > input.limit ? String(offset + input.limit) : undefined),
         });
       },
     },
-    "task.read": {
+    "ai.task.read": {
       title: "Read a scheduled AI task",
-      description: "Read one core.task ref returned by tasks.list or a task Action, including its parent core.chat ref and recent runs.",
+      description:
+        "Read one core.ai.task ref returned by ai.tasks.list or a task Action, including its parent core.ai.chat ref and recent runs.",
       input: ChatTaskReadInputSchema,
       data: ChatTaskDetailDataSchema,
       openWorld: false,
@@ -385,17 +598,17 @@ export const aiCapabilities = defineCapabilities({
           },
           summary: `Read ${task.state} scheduled task in “${task.chatTitle}”.`,
           refs: [
-            { type: "core.task", id: task.shortId },
-            { type: "core.chat", id: task.chatId },
+            { type: "core.ai.task", id: task.shortId },
+            { type: "core.ai.chat", id: task.chatId },
           ],
           links: [{ rel: "open", href: chatHref(task.chatId) }],
         });
       },
     },
-    "chats.search": {
+    "ai.chats.search": {
       title: "Search AI conversations",
       description:
-        "Normal entry for finding the current user's AI conversations by text or exact Cloud resource refs. Use returned core.chat refs with chat.read, chat.search, chat.resources, task creation, or chat.message.",
+        "Normal entry for finding the current user's AI conversations by text or exact Cloud resource refs. Use returned core.ai.chat refs with ai.chat.read, ai.chat.search, ai.chat.resources, task creation, or ai.chat.message.",
       input: ChatsSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -411,10 +624,10 @@ export const aiCapabilities = defineCapabilities({
         return ok({ data: chats.map(toResourceView) });
       },
     },
-    "chat.read": {
+    "ai.chat.read": {
       title: "Read an AI conversation",
       description:
-        "Read visible text from one core.chat ref returned by chats.search, tasks.list, or a Core Action. Use chat.search for text lookup inside the known chat and chat.resources for referenced Cloud resources.",
+        "Read visible text from one core.ai.chat ref returned by ai.chats.search, ai.tasks.list, or a Core Action. Use ai.chat.search for text lookup inside the known chat and ai.chat.resources for referenced Cloud resources.",
       input: ChatReadInputSchema,
       data: ChatMessagesDataSchema,
       openWorld: false,
@@ -429,16 +642,16 @@ export const aiCapabilities = defineCapabilities({
         return ok({
           data: { chat: chatSummary(chat), messages: page.messages.flatMap((message) => visibleMessage(message) ?? []) },
           summary: `Read AI conversation “${chat.title}”.`,
-          refs: [{ type: "core.chat", id: chat.shortId }],
+          refs: [{ type: "core.ai.chat", id: chat.shortId }],
           links: [{ rel: "open", href: chatHref(chat.shortId) }],
           page: capabilityPage(page.hasMore && oldestSeq !== undefined ? String(oldestSeq) : undefined),
         });
       },
     },
-    "chat.search": {
+    "ai.chat.search": {
       title: "Search messages in an AI conversation",
       description:
-        "Search visible text inside one known core.chat ref, including compacted history. Get chatId from chats.search, chat.read, or a core.task ref; use chat.read to browse without a search term.",
+        "Search visible text inside one known core.ai.chat ref, including compacted history. Get chatId from ai.chats.search, ai.chat.read, or a core.ai.task ref; use ai.chat.read to browse without a search term.",
       input: ChatSearchInputSchema,
       data: ChatMessagesDataSchema,
       openWorld: false,
@@ -456,16 +669,16 @@ export const aiCapabilities = defineCapabilities({
         });
         return ok({
           data: { chat: chatSummary(chat), messages: page.messages.flatMap((message) => visibleMessage(message) ?? []) },
-          refs: [{ type: "core.chat", id: chat.shortId }],
+          refs: [{ type: "core.ai.chat", id: chat.shortId }],
           links: [{ rel: "open", href: chatHref(chat.shortId) }],
           page: capabilityPage(page.nextCursor),
         });
       },
     },
-    "chat.resources": {
+    "ai.chat.resources": {
       title: "List resources used in an AI conversation",
       description:
-        "List or search Cloud resource refs observed in one known core.chat. Get chatId from chats.search, chat.read, or a core.task ref; returned refs can be passed directly to their owning app readers.",
+        "List or search Cloud resource refs observed in one known core.ai.chat. Get chatId from ai.chats.search, ai.chat.read, or a core.ai.task ref; returned refs can be passed directly to their owning app readers.",
       input: ChatResourcesInputSchema,
       data: ChatResourcesDataSchema,
       openWorld: false,
@@ -487,10 +700,10 @@ export const aiCapabilities = defineCapabilities({
         });
       },
     },
-    "chats.resources": {
+    "ai.chats.resources": {
       title: "Search resources used across AI conversations",
       description:
-        "Direct cross-chat entry for finding Cloud resources previously used in active AI conversations. Returned refs can be passed to their owning app readers; use chat.resources when one chat is already known.",
+        "Direct cross-chat entry for finding Cloud resources previously used in active AI conversations. Returned refs can be passed to their owning app readers; use ai.chat.resources when one chat is already known.",
       input: ChatsResourcesInputSchema,
       data: ChatsResourcesDataSchema,
       openWorld: false,
@@ -514,7 +727,216 @@ export const aiCapabilities = defineCapabilities({
     },
   },
   actions: {
-    "task.create": {
+    "ai.skill.create": {
+      title: "Create an Assistant Skill",
+      description: "Create one reviewed reusable Skill owned by the current actor.",
+      input: SkillCreateInputSchema,
+      data: SkillDetailDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "none",
+      async review(input, context) {
+        if (!context.accessSubject) return fail(err.forbidden("Creating Skills requires an authenticated actor"));
+        return ok({
+          message: `Create Assistant Skill “${input.name}”.`,
+          details: [
+            { label: "Name", value: input.name },
+            { label: "Description", value: input.description, display: "block" },
+            { label: "Instructions", value: input.instructions, display: "block" },
+          ],
+        });
+      },
+      async run(input, context) {
+        if (!context.accessSubject) return fail(err.forbidden("Creating Skills requires an authenticated actor"));
+        try {
+          const skill = await aiSkills.create({ subject: context.accessSubject, ...input });
+          return ok({
+            data: skillData(skill),
+            summary: `Created Assistant Skill “${skill.name}”.`,
+            refs: [{ type: "core.ai.skill", id: skill.shortId }],
+          });
+        } catch (error) {
+          const result = skillRevisionError(error);
+          if (result) return result;
+          throw error;
+        }
+      },
+    },
+    "ai.skill.update": {
+      title: "Update an Assistant Skill",
+      description: "Update one or more main fields of a writable Skill after reviewing the exact changed content.",
+      input: SkillUpdateInputSchema,
+      data: SkillDetailDataSchema,
+      destructive: true,
+      openWorld: false,
+      idempotency: "none",
+      async review(input, context) {
+        const skill = await readableSkill(input.skillId, context, "write");
+        if (!skill) return fail(err.notFound("Skill"));
+        if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
+        return ok({
+          message: `Update Assistant Skill “${skill.name}”.`,
+          details: [
+            ...(input.name !== undefined ? [{ label: "Name", value: input.name }] : []),
+            ...(input.description !== undefined ? [{ label: "Description", value: input.description, display: "block" as const }] : []),
+            ...(input.instructions !== undefined ? [{ label: "Instructions", value: input.instructions, display: "block" as const }] : []),
+          ],
+        });
+      },
+      async run(input, context) {
+        const skill = await readableSkill(input.skillId, context, "write");
+        if (!skill) return fail(err.notFound("Skill"));
+        try {
+          const updated = await aiSkills.update(skill.id, context.accessSubject, {
+            expectedRevision: input.expectedRevision,
+            name: input.name ?? skill.name,
+            description: input.description ?? skill.description,
+            instructions: input.instructions ?? skill.instructions,
+            extraFrontmatter: skill.extraFrontmatter,
+            references: skill.references,
+          });
+          if (!updated) return fail(err.notFound("Skill"));
+          return ok({
+            data: skillData(updated),
+            summary: `Updated Assistant Skill “${updated.name}”.`,
+            refs: [{ type: "core.ai.skill", id: updated.shortId }],
+          });
+        } catch (error) {
+          const result = skillRevisionError(error);
+          if (result) return result;
+          throw error;
+        }
+      },
+    },
+    "ai.skill.reference.set": {
+      title: "Set an Assistant Skill reference",
+      description: "Add or replace one Markdown reference on a writable Skill after reviewing its complete bounded content.",
+      input: SkillReferenceSetInputSchema,
+      data: SkillDetailDataSchema,
+      destructive: true,
+      openWorld: false,
+      idempotency: "none",
+      async review(input, context) {
+        const skill = await readableSkill(input.skillId, context, "write");
+        if (!skill) return fail(err.notFound("Skill"));
+        if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
+        return ok({
+          message: `Set “${input.path}” on Assistant Skill “${skill.name}”.`,
+          details: [
+            { label: "Reference", value: input.path },
+            { label: "Content", value: input.content, display: "block" },
+          ],
+        });
+      },
+      async run(input, context) {
+        const skill = await readableSkill(input.skillId, context, "write");
+        if (!skill) return fail(err.notFound("Skill"));
+        try {
+          const updated = await aiSkills.setReference(skill.id, context.accessSubject, input);
+          if (!updated) return fail(err.notFound("Skill"));
+          return ok({
+            data: skillData(updated),
+            summary: `Set “${input.path}” on Assistant Skill “${updated.name}”.`,
+            refs: [{ type: "core.ai.skill", id: updated.shortId }],
+          });
+        } catch (error) {
+          const result = skillRevisionError(error);
+          if (result) return result;
+          throw error;
+        }
+      },
+    },
+    "ai.skill.reference.remove": {
+      title: "Remove an Assistant Skill reference",
+      description: "Remove one exact Markdown reference from a writable Skill after review.",
+      input: SkillReferenceRemoveInputSchema,
+      data: SkillDetailDataSchema,
+      destructive: true,
+      openWorld: false,
+      idempotency: "none",
+      async review(input, context) {
+        const skill = await readableSkill(input.skillId, context, "write");
+        if (!skill?.references.some((reference) => reference.path === input.path)) return fail(err.notFound("Skill reference"));
+        if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
+        return ok({
+          message: `Remove “${input.path}” from Assistant Skill “${skill.name}”.`,
+          details: [{ label: "Reference", value: input.path }],
+        });
+      },
+      async run(input, context) {
+        const skill = await readableSkill(input.skillId, context, "write");
+        if (!skill) return fail(err.notFound("Skill"));
+        try {
+          const updated = await aiSkills.removeReference(skill.id, context.accessSubject, input);
+          if (!updated) return fail(err.notFound("Skill reference"));
+          return ok({
+            data: skillData(updated),
+            summary: `Removed “${input.path}” from Assistant Skill “${updated.name}”.`,
+            refs: [{ type: "core.ai.skill", id: updated.shortId }],
+          });
+        } catch (error) {
+          const result = skillRevisionError(error);
+          if (result) return result;
+          throw error;
+        }
+      },
+    },
+    "ai.skill.enabled.set": {
+      title: "Set personal Assistant Skill state",
+      description: "Enable or disable one readable Skill only for the current user after review; Cloud access remains unchanged.",
+      input: SkillEnabledSetInputSchema,
+      data: z.object({ skillId: SkillIdSchema, name: SkillNameSchema, enabled: z.boolean() }).strict(),
+      destructive: true,
+      openWorld: false,
+      idempotency: "none",
+      async review(input, context) {
+        if (!context.user) return fail(err.forbidden("Personal Skill state requires a user-backed actor"));
+        const skill = await readableSkill(input.skillId, context);
+        if (!skill) return fail(err.notFound("Skill"));
+        return ok({
+          message: `${input.enabled ? "Enable" : "Disable"} Assistant Skill “${skill.name}” for ${context.user.displayName}.`,
+          details: [{ label: "Personal state", value: input.enabled ? "Enabled" : "Disabled" }],
+        });
+      },
+      async run(input, context) {
+        if (!context.user) return fail(err.forbidden("Personal Skill state requires a user-backed actor"));
+        const skill = await readableSkill(input.skillId, context);
+        if (!skill) return fail(err.notFound("Skill"));
+        const enabled = await aiSkills.setEnabled(skill.id, context.accessSubject, input.enabled);
+        if (enabled === null) return fail(err.notFound("Skill"));
+        return ok({
+          data: { skillId: skill.shortId, name: skill.name, enabled },
+          summary: `${enabled ? "Enabled" : "Disabled"} Assistant Skill “${skill.name}” for the current user.`,
+          refs: [{ type: "core.ai.skill", id: skill.shortId }],
+        });
+      },
+    },
+    "ai.skill.delete": {
+      title: "Delete an Assistant Skill",
+      description: "Permanently delete one administered Skill, all references, and all access grants after review.",
+      input: SkillDeleteInputSchema,
+      data: z.object({ deleted: z.literal(true) }).strict(),
+      destructive: true,
+      openWorld: false,
+      idempotency: "none",
+      async review(input, context) {
+        const skill = await readableSkill(input.skillId, context, "admin");
+        if (!skill) return fail(err.notFound("Skill"));
+        return ok({
+          message: `Delete Assistant Skill “${skill.name}”.`,
+          details: [
+            { label: "Description", value: skill.description, display: "block" },
+            { label: "References", value: String(skill.referenceCount) },
+          ],
+        });
+      },
+      async run(input, context) {
+        const skill = await readableSkill(input.skillId, context, "admin");
+        if (!skill || !(await aiSkills.delete(skill.id, context.accessSubject))) return fail(err.notFound("Skill"));
+        return ok({ data: { deleted: true as const }, summary: `Deleted Assistant Skill “${skill.name}”.` });
+      },
+    },
+    "ai.task.create": {
       title: "Create a scheduled AI task",
       description:
         "Create one reviewed future prompt in an owned AI conversation. Resolve relative user wording to localAt before calling.",
@@ -556,8 +978,8 @@ export const aiCapabilities = defineCapabilities({
               data: taskData(replay),
               summary: `Scheduled a task in ${taskChatTitle(replay)}.`,
               refs: [
-                { type: "core.task", id: replay.shortId },
-                { type: "core.chat", id: replay.chatId },
+                { type: "core.ai.task", id: replay.shortId },
+                { type: "core.ai.chat", id: replay.chatId },
               ],
             });
         } catch (error) {
@@ -590,13 +1012,13 @@ export const aiCapabilities = defineCapabilities({
           data: taskData(task),
           summary: `Scheduled a task in ${taskChatTitle(task)}.`,
           refs: [
-            { type: "core.task", id: task.shortId },
-            { type: "core.chat", id: task.chatId },
+            { type: "core.ai.task", id: task.shortId },
+            { type: "core.ai.chat", id: task.chatId },
           ],
         });
       },
     },
-    "task.update": {
+    "ai.task.update": {
       title: "Update a scheduled AI task",
       description: "Update the prompt or future schedule of one owned task after reviewing the exact replacement.",
       input: ChatTaskUpdateInputSchema,
@@ -645,11 +1067,11 @@ export const aiCapabilities = defineCapabilities({
         return ok({
           data: taskData(task),
           summary: taskUpdateSummary(input, task),
-          refs: [{ type: "core.task", id: task.shortId }],
+          refs: [{ type: "core.ai.task", id: task.shortId }],
         });
       },
     },
-    "task.pause": {
+    "ai.task.pause": {
       title: "Pause a scheduled AI task",
       description: "Pause one owned scheduled task after review.",
       input: ChatTaskIdInputSchema,
@@ -689,11 +1111,11 @@ export const aiCapabilities = defineCapabilities({
         return ok({
           data: taskData(task),
           summary: `Paused the scheduled task in ${taskChatTitle(task)}.`,
-          refs: [{ type: "core.task", id: task.shortId }],
+          refs: [{ type: "core.ai.task", id: task.shortId }],
         });
       },
     },
-    "task.resume": {
+    "ai.task.resume": {
       title: "Resume a scheduled AI task",
       description: "Resume one owned scheduled task after review.",
       input: ChatTaskIdInputSchema,
@@ -731,11 +1153,11 @@ export const aiCapabilities = defineCapabilities({
         return ok({
           data: taskData(task),
           summary: `Resumed the scheduled task in ${taskChatTitle(task)}.`,
-          refs: [{ type: "core.task", id: task.shortId }],
+          refs: [{ type: "core.ai.task", id: task.shortId }],
         });
       },
     },
-    "task.run": {
+    "ai.task.run": {
       title: "Run a scheduled AI task now",
       description: "Queue one manual occurrence without changing the future schedule.",
       input: ChatTaskIdInputSchema,
@@ -778,11 +1200,11 @@ export const aiCapabilities = defineCapabilities({
         return ok({
           data: { id: occurrence.shortId, state: occurrence.state },
           summary: `Queued a run of the scheduled task in ${taskChatTitle(task)}.`,
-          refs: [{ type: "core.task", id: task.shortId }],
+          refs: [{ type: "core.ai.task", id: task.shortId }],
         });
       },
     },
-    "task.delete": {
+    "ai.task.delete": {
       title: "Delete a scheduled AI task",
       description: "Delete one task and all of its occurrence history after review.",
       input: ChatTaskIdInputSchema,
@@ -812,7 +1234,7 @@ export const aiCapabilities = defineCapabilities({
         return ok({ data: { deleted: true as const }, summary: `Deleted the scheduled task in ${taskChatTitle(task)}.` });
       },
     },
-    "chat.message": {
+    "ai.chat.message": {
       title: "Message another AI conversation",
       description: "Queue one attributable message for another owned AI conversation after reviewing the exact target and text.",
       input: ChatMessageInputSchema,
@@ -867,7 +1289,7 @@ export const aiCapabilities = defineCapabilities({
             status === "delivered"
               ? `Sent a message to “${created.message.targetTitle}”.`
               : `Queued a message for “${created.message.targetTitle}”.`,
-          refs: [{ type: "core.chat", id: created.message.targetChatId }],
+          refs: [{ type: "core.ai.chat", id: created.message.targetChatId }],
           links: [{ rel: "open", href: chatHref(created.message.targetChatId) }],
         });
       },

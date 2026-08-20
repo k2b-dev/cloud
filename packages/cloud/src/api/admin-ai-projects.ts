@@ -65,6 +65,10 @@ export const createAdminAiProjectsRoutes = (authenticate: MiddlewareHandler<Auth
         if (error instanceof AiProjectLastAdminError) return lastAdminConflict(c, error);
         throw error;
       }
+    })
+    .delete("/:projectId", async (c) => {
+      const project = await aiProjects.admin.getByShortId(c.req.param("projectId")!);
+      return project && (await aiProjects.admin.delete(project.id)) ? respond(c, ok({ deleted: true })) : notFound(c, "Project");
     });
 
 export default createAdminAiProjectsRoutes();

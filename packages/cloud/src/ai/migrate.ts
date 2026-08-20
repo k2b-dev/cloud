@@ -999,6 +999,7 @@ export const migrateCloudAi = async (): Promise<void> => {
         IF to_regclass('ai.skill_access') IS NOT NULL THEN
           DELETE FROM auth.access WHERE id IN (SELECT access_id FROM ai.skill_access);
         END IF;
+        DROP TABLE IF EXISTS ai.skill_seeds CASCADE;
         DROP TABLE IF EXISTS ai.skill_access CASCADE;
         DROP TABLE IF EXISTS ai.skill_user_state CASCADE;
         DROP TABLE IF EXISTS ai.skill_files CASCADE;
@@ -1030,6 +1031,14 @@ export const migrateCloudAi = async (): Promise<void> => {
   `.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_skills_short_id ON ai.skills(short_id)`.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_skills_name ON ai.skills(name)`.simple();
+  await sql`ALTER TABLE ai.skills ADD COLUMN IF NOT EXISTS managed_key TEXT`.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_skills_managed_key ON ai.skills(managed_key) WHERE managed_key IS NOT NULL`.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS ai.skill_seeds (
+      key TEXT PRIMARY KEY,
+      seeded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `.simple();
   await backfillAiShortIds(
     "idx_ai_skills_short_id",
     await sql<{ id: string }[]>`SELECT id FROM ai.skills WHERE short_id IS NULL`,

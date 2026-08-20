@@ -3,7 +3,7 @@
  * Migrations, background jobs — nothing generic here.
  */
 
-import { aiChatTasks, aiMaintenanceJobs, migrateCloudAi } from "@valentinkolb/cloud/ai";
+import { aiChatTasks, aiMaintenanceJobs, migrateCloudAi, seedCloudAiSkills } from "@valentinkolb/cloud/ai";
 import { startAiRuntime } from "@valentinkolb/cloud/ai/runtime";
 import {
   browserNotifications,
@@ -38,6 +38,7 @@ export const runCoreSetup = async (): Promise<void> => {
     { name: "workflows", run: migrateWorkflows },
     { name: "weather", run: migrateWeather },
     { name: "ai", run: migrateCloudAi },
+    { name: "ai-skills", run: seedCloudAiSkills },
   ];
   for (const step of steps) {
     console.log(`[setup] core:${step.name}`);

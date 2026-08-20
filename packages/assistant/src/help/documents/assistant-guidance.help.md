@@ -37,6 +37,8 @@ Assistant works best when the request states the outcome, the relevant context, 
 
 Open **Assistant settings > Skills** to create, import, edit, export, or share reusable Assistant workflows. A Skill keeps its instructions in `SKILL.md` and may include Markdown reference files.
 
+You can also ask Assistant to create or improve a Skill. Cloud initially provides **Skill Creator** to every signed-in user. It guides the draft and uses reviewed Skill-management capabilities with your current permissions. Like any shared Skill, it can be disabled for yourself; administrators can grant access, edit it, or delete it.
+
 ### Create a Skill that loads at the right time
 
 :::steps

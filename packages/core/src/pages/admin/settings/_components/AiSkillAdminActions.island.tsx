@@ -2,13 +2,13 @@ import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
 import { Button, Dropdown, Placeholder, prompts, toast } from "@k2b/ui";
 import { PermissionEditor } from "@valentinkolb/cloud/access/ui";
-import type { AiProjectAccess } from "@valentinkolb/cloud/ai";
+import type { AiSkillAccess } from "@valentinkolb/cloud/ai";
 import { coreClient } from "@valentinkolb/cloud/clients/core";
 import { Show } from "solid-js";
 
 type Props = {
-  projectId: string;
-  projectName: string;
+  skillId: string;
+  skillName: string;
 };
 
 const readError = async (response: Response, fallback: string): Promise<string> => {
@@ -18,13 +18,13 @@ const readError = async (response: Response, fallback: string): Promise<string> 
 
 const PermissionDialogBody = (props: Props) => {
   const entries = query.create({
-    source: () => props.projectId,
-    load: async (projectId, { abortSignal }): Promise<AiProjectAccess[]> => {
-      const response = await coreClient.admin.core["ai-projects"][":projectId"].access.$get(
-        { param: { projectId } },
+    source: () => props.skillId,
+    load: async (skillId, { abortSignal }): Promise<AiSkillAccess[]> => {
+      const response = await coreClient.admin.core["ai-skills"][":skillId"].access.$get(
+        { param: { skillId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readError(response, "Failed to load Project permissions."));
+      if (!response.ok) throw new Error(await readError(response, "Failed to load Skill permissions."));
       return (await response.json()).access;
     },
   });
@@ -32,16 +32,16 @@ const PermissionDialogBody = (props: Props) => {
   return (
     <div class="flex w-full max-w-full flex-col gap-2">
       <p class="text-xs text-dimmed">
-        Manage direct Project access. At least one administrator must remain once the Project has been recovered.
+        Manage direct Skill access. At least one administrator must remain once the Skill has been recovered.
       </p>
-      <Show when={!entries.loading()} fallback={<Placeholder state="loading" title="Loading Project access" />}>
+      <Show when={!entries.loading()} fallback={<Placeholder state="loading" title="Loading Skill access" />}>
         <Show
           when={entries.data()}
           keyed
           fallback={
             <Placeholder
               state="error"
-              title="Could not load Project access"
+              title="Could not load Skill access"
               description={entries.error()?.message}
               action={
                 <Button type="button" variant="secondary" size="sm" onClick={() => void entries.refresh()}>
@@ -58,25 +58,25 @@ const PermissionDialogBody = (props: Props) => {
               allowPublic={false}
               allowServiceAccounts
               grantAccess={async (principal, permission) => {
-                const response = await coreClient.admin.core["ai-projects"][":projectId"].access.$post({
-                  param: { projectId: props.projectId },
+                const response = await coreClient.admin.core["ai-skills"][":skillId"].access.$post({
+                  param: { skillId: props.skillId },
                   json: { principal, permission },
                 });
-                if (!response.ok) throw new Error(await readError(response, "Failed to grant Project access."));
+                if (!response.ok) throw new Error(await readError(response, "Failed to grant Skill access."));
                 return (await response.json()).access;
               }}
               updateAccess={async (accessId, permission) => {
-                const response = await coreClient.admin.core["ai-projects"][":projectId"].access[":accessId"].$patch({
-                  param: { projectId: props.projectId, accessId },
+                const response = await coreClient.admin.core["ai-skills"][":skillId"].access[":accessId"].$patch({
+                  param: { skillId: props.skillId, accessId },
                   json: { permission },
                 });
-                if (!response.ok) throw new Error(await readError(response, "Failed to update Project access."));
+                if (!response.ok) throw new Error(await readError(response, "Failed to update Skill access."));
               }}
               revokeAccess={async (accessId) => {
-                const response = await coreClient.admin.core["ai-projects"][":projectId"].access[":accessId"].$delete({
-                  param: { projectId: props.projectId, accessId },
+                const response = await coreClient.admin.core["ai-skills"][":skillId"].access[":accessId"].$delete({
+                  param: { skillId: props.skillId, accessId },
                 });
-                if (!response.ok) throw new Error(await readError(response, "Failed to revoke Project access."));
+                if (!response.ok) throw new Error(await readError(response, "Failed to revoke Skill access."));
               }}
             />
           )}
@@ -88,28 +88,28 @@ const PermissionDialogBody = (props: Props) => {
 
 const openPermissionDialog = async (props: Props) => {
   await prompts.dialog<void>(() => <PermissionDialogBody {...props} />, {
-    title: props.projectName,
+    title: props.skillName,
     icon: "ti ti-shield",
   });
   refreshCurrentPath();
 };
 
-export default function AiProjectAdminActions(props: Props) {
+export default function AiSkillAdminActions(props: Props) {
   const remove = mutations.create<void, void>({
     mutation: async () => {
-      const response = await coreClient.admin.core["ai-projects"][":projectId"].$delete({ param: { projectId: props.projectId } });
-      if (!response.ok) throw new Error(await readError(response, "Failed to delete Project."));
+      const response = await coreClient.admin.core["ai-skills"][":skillId"].$delete({ param: { skillId: props.skillId } });
+      if (!response.ok) throw new Error(await readError(response, "Failed to delete Skill."));
     },
     onSuccess: () => {
-      toast.success("Project deleted.");
+      toast.success("Skill deleted.");
       refreshCurrentPath();
     },
-    onError: (error) => prompts.error(error instanceof Error ? error.message : "Failed to delete Project."),
+    onError: (error) => prompts.error(error instanceof Error ? error.message : "Failed to delete Skill."),
   });
 
   const handleDelete = async () => {
-    const confirmed = await prompts.confirm(`Delete "${props.projectName}"? This permanently removes its instructions and files.`, {
-      title: "Delete Project",
+    const confirmed = await prompts.confirm(`Delete "${props.skillName}"? This permanently removes its instructions and extra info.`, {
+      title: "Delete Skill",
       icon: "ti ti-trash",
       variant: "danger",
       confirmText: "Delete",
@@ -131,7 +131,7 @@ export default function AiProjectAdminActions(props: Props) {
             },
             {
               icon: "ti ti-trash",
-              label: "Delete Project",
+              label: "Delete Skill",
               variant: "danger",
               action: () => void handleDelete(),
             },
@@ -139,7 +139,7 @@ export default function AiProjectAdminActions(props: Props) {
         },
       ]}
     >
-      <Dropdown.Trigger iconOnly label={`Actions for ${props.projectName}`} size="xs" tooltip="Project actions">
+      <Dropdown.Trigger iconOnly label={`Actions for ${props.skillName}`} size="xs" tooltip="Skill actions">
         <i class="ti ti-settings text-sm" />
       </Dropdown.Trigger>
     </Dropdown.Root>

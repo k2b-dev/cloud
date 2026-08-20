@@ -296,6 +296,7 @@ describe.skipIf(!(await canUseAiDatabase()))("aiProjects (integration)", () => {
     const rescuer = { type: "user" as const, userId: rescuerId };
     const name = `Unclaimed ${crypto.randomUUID()}`;
     const project = await aiProjects.create({ subject: creator, name });
+    let deleted = false;
     try {
       await aiProjects.createKnowledge(project.id, creator, { title: "Policy", content: "Keep this." });
       await aiProjects.grantAccess(project.id, creator, {
@@ -325,9 +326,13 @@ describe.skipIf(!(await canUseAiDatabase()))("aiProjects (integration)", () => {
       expect(recovered?.permission).toBe("admin");
       expect(await aiProjects.get(project.id, rescuer, "admin")).not.toBeNull();
       await expect(aiProjects.admin.revokeAccess(project.id, recovered!.id)).rejects.toThrow("at least one admin");
+      expect(await aiProjects.admin.delete(project.id)).toBe(true);
+      deleted = true;
     } finally {
-      if (await aiProjects.get(project.id, rescuer, "admin")) await aiProjects.delete(project.id, rescuer);
-      else await sql`DELETE FROM ai.projects WHERE id = ${project.id}::uuid`;
+      if (!deleted) {
+        if (await aiProjects.get(project.id, rescuer, "admin")) await aiProjects.delete(project.id, rescuer);
+        else await sql`DELETE FROM ai.projects WHERE id = ${project.id}::uuid`;
+      }
       await sql`DELETE FROM auth.users WHERE id IN (${creatorId}::uuid, ${readerId}::uuid, ${rescuerId}::uuid)`;
     }
   });

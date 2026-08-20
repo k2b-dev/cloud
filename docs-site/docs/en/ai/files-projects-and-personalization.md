@@ -93,8 +93,8 @@ changes cannot remove the final admin grant; if an operator deletes the sole
 admin principal outside the Project service, operator recovery is required to
 add a new grant directly. A platform administrator can find Projects without a
 remaining admin and restore their access under **Admin > AI > Projects**. This
-recovery surface manages grants only; it does not expose Project contents or
-private chats.
+recovery surface can also permanently delete obsolete Projects, but it does
+not expose Project contents or private chats.
 
 Project chats remain private to their creator. Sharing a Project does not share
 chat history. A chat has at most one current Project. Its owner may choose,
@@ -132,6 +132,10 @@ below `references/`, export it, or manage its Cloud access. `read` access can
 view and use a Skill, `write` can edit it, and `admin` can also share or delete
 it. The final admin grant cannot be removed.
 
+If the sole Skill administrator is removed outside the Skill service, a
+platform administrator can restore access under **Admin > AI > Skills**. The
+same recovery surface can grant access to or permanently delete any Skill.
+
 `SKILL.md` is the portable source of truth. It starts with YAML frontmatter
 containing a lowercase, hyphenated `name` and a `description`, followed by the
 Markdown instructions. Cloud currently accepts optional `license`,
@@ -153,6 +157,22 @@ The first successful load pins one Skill revision for that turn, including
 retries, so an edit cannot change an in-progress result. A later turn sees the
 new revision. Reading a mounted file still checks current Cloud access; revoked
 access takes effect immediately.
+
+Cloud seeds a `skill-creator` Skill once with `read` access for every
+authenticated user. It explains how to draft a concise Skill and names the
+`core.ai.skill` Capabilities Assistant can use to list, read, create, update,
+manage references, personally enable or disable, and delete Skills. After that
+initial seed it is an ordinary permission-owned Skill: platform administrators
+can grant themselves access, and Skill administrators can edit, share, or
+delete it. A deleted seed is not recreated during later starts. Like every
+readable Skill, it starts enabled and can be disabled personally.
+
+The Skill management Actions are reviewed and recheck the current actor's
+Cloud permission. Updates and reference changes require the exact revision
+returned by `core.ai.skill.read`; a stale revision fails instead of overwriting
+another edit. Capability-authored instructions and individual references are
+limited to 10,000 characters so the complete proposed trusted content fits in
+the review. Larger imports and exports remain UI and CLI workflows.
 
 ## Use personalization for durable user context
 

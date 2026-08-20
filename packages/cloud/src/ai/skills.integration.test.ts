@@ -28,6 +28,50 @@ const insertUser = async (label: string): Promise<string> => {
 };
 
 describe.skipIf(!(await canUseAiDatabase()))("aiSkills (integration)", () => {
+  test("seeds one ordinary Skill once, then leaves permissions, edits, and deletion to admins", async () => {
+    const userId = await insertUser("seeded");
+    const subject = { type: "user" as const, userId };
+    const suffix = crypto.randomUUID().slice(0, 8);
+    const key = `test:seeded-${suffix}`;
+    const name = `seeded-${suffix}`;
+    let skillId: string | undefined;
+
+    try {
+      const seed = {
+        key,
+        name,
+        description: "Create a seeded test workflow when integration coverage needs it.",
+        instructions: "Follow the seeded workflow.",
+      };
+      await aiSkills.seedOnce(seed);
+      const first = await aiSkills.getByName(name, subject);
+      expect(first).toMatchObject({ permission: "read", enabled: true, revision: 1 });
+      skillId = first!.id;
+
+      await aiSkills.seedOnce(seed);
+      expect((await aiSkills.getByName(name, subject))?.revision).toBe(1);
+
+      await aiSkills.seedOnce({ ...seed, instructions: "Do not reconcile this later change." });
+      expect((await aiSkills.getByName(name, subject))?.instructions).toBe("Follow the seeded workflow.");
+      expect(await aiSkills.admin.summary({ search: name })).toEqual({ total: 1, unmanaged: 1, totalAccess: 1 });
+
+      expect(await aiSkills.setEnabled(skillId, subject, false)).toBe(false);
+      expect((await aiSkills.getByName(name, subject))?.enabled).toBe(false);
+
+      await aiSkills.admin.grantAccess(skillId, { principal: { type: "user", userId }, permission: "admin" });
+      expect(await aiSkills.get(skillId, subject, "admin")).not.toBeNull();
+      expect(await aiSkills.admin.delete(skillId)).toBe(true);
+      skillId = undefined;
+
+      await aiSkills.seedOnce(seed);
+      expect(await aiSkills.getByName(name, subject)).toBeNull();
+    } finally {
+      if (skillId) await aiSkills.admin.delete(skillId);
+      await sql`DELETE FROM ai.skill_seeds WHERE key = ${key}`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("shares through Cloud access, pins one turn revision, and rechecks access for mounted files", async () => {
     const ownerId = await insertUser("owner");
     const memberId = await insertUser("member");
@@ -92,6 +136,43 @@ describe.skipIf(!(await canUseAiDatabase()))("aiSkills (integration)", () => {
       if (skillId) await aiSkills.delete(skillId, owner);
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id IN (${ownerId}::uuid, ${memberId}::uuid)`;
+    }
+  });
+
+  test("recovers and deletes a Skill after its sole administrator account disappears", async () => {
+    const ownerId = await insertUser("orphan-owner");
+    const rescuerId = await insertUser("orphan-rescuer");
+    const owner = { type: "user" as const, userId: ownerId };
+    const rescuer = { type: "user" as const, userId: rescuerId };
+    const name = `orphan-${crypto.randomUUID().slice(0, 8)}`;
+    let skillId: string | undefined;
+
+    try {
+      const skill = await aiSkills.create({
+        subject: owner,
+        name,
+        description: "Exercise platform administrator recovery.",
+        instructions: "Recover this Skill.",
+      });
+      skillId = skill.id;
+      await sql`DELETE FROM auth.users WHERE id = ${ownerId}::uuid`;
+
+      expect((await aiSkills.admin.list({ search: name })).items).toMatchObject([{ id: skill.id, shortId: skill.shortId, adminCount: 0 }]);
+      expect(await aiSkills.admin.summary({ search: name })).toEqual({ total: 1, unmanaged: 1, totalAccess: 0 });
+
+      const recovered = await aiSkills.admin.grantAccess(skill.id, {
+        principal: { type: "user", userId: rescuerId },
+        permission: "admin",
+      });
+      expect(recovered?.permission).toBe("admin");
+      expect(await aiSkills.get(skill.id, rescuer, "admin")).not.toBeNull();
+
+      expect(await aiSkills.admin.delete(skill.id)).toBe(true);
+      skillId = undefined;
+      expect((await aiSkills.admin.list({ search: name })).items).toEqual([]);
+    } finally {
+      if (skillId) await aiSkills.admin.delete(skillId);
+      await sql`DELETE FROM auth.users WHERE id IN (${ownerId}::uuid, ${rescuerId}::uuid)`;
     }
   });
 });

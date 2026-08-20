@@ -696,6 +696,19 @@ export const aiProjects = {
         return project ? revokeProjectAccess(projectId, accessId, tx) : false;
       });
     },
+
+    async delete(projectId: string): Promise<boolean> {
+      return sql.begin(async (tx) => {
+        const [project] = await tx<ProjectRow[]>`SELECT * FROM ai.projects WHERE id = ${projectId}::uuid FOR UPDATE`;
+        if (!project) return false;
+        const accessIds = (
+          await tx<{ access_id: string }[]>`SELECT access_id FROM ai.project_access WHERE project_id = ${projectId}::uuid`
+        ).map((row) => row.access_id);
+        await tx`DELETE FROM ai.projects WHERE id = ${projectId}::uuid`;
+        if (accessIds.length) await tx`DELETE FROM auth.access WHERE id = ANY(${toPgUuidArray(accessIds)}::uuid[])`;
+        return true;
+      });
+    },
   },
 
   async listKnowledge(projectId: string, subject: AccessSubject | null, query?: string): Promise<AiProjectKnowledge[]> {

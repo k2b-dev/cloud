@@ -38,6 +38,7 @@ export {
 export { parseAiSse } from "./client/transport";
 export { listAiCredentialProfileIds } from "./credentials";
 export {
+  CLOUD_AI_TEXT_EDITOR_MAX_CHARS,
   type CloudAiCardInput,
   CloudAiCardInputSchema,
   type CloudAiCardOutput,
@@ -50,7 +51,6 @@ export {
   CloudAiSurveyInputSchema,
   type CloudAiSurveyOutput,
   CloudAiSurveyOutputSchema,
-  CLOUD_AI_TEXT_EDITOR_MAX_CHARS,
   type CloudAiTextEditorInput,
   CloudAiTextEditorInputSchema,
   type CloudAiTextEditorOutput,
@@ -177,39 +177,6 @@ export {
   aiProjectsRoutes,
 } from "./projects-routes";
 export {
-  AI_SKILL_DESCRIPTION_MAX_CHARS,
-  AI_SKILL_EXTRA_FRONTMATTER_MAX_CHARS,
-  AI_SKILL_INSTRUCTIONS_MAX_CHARS,
-  AI_SKILL_INSTRUCTIONS_MAX_LINES,
-  AI_SKILL_NAME_MAX_CHARS,
-  AI_SKILL_NAME_PATTERN,
-  AI_SKILL_REFERENCE_MAX_CHARS,
-  AI_SKILL_REFERENCE_MAX_ITEMS,
-  AI_SKILL_REFERENCES_MAX_CHARS,
-  type AiSkillDocument,
-  type AiSkillExtraFrontmatter,
-  type AiSkillReferenceInput,
-  parseAiSkillMarkdown,
-  serializeAiSkillMarkdown,
-  validateAiSkillDescription,
-  validateAiSkillExtraFrontmatter,
-  validateAiSkillInstructions,
-  validateAiSkillName,
-  validateAiSkillReferences,
-} from "./skill-format";
-export {
-  type AiLoadedSkillSnapshot,
-  type AiSkill,
-  type AiSkillAccess,
-  AiSkillLastAdminError,
-  type AiSkillPermission,
-  type AiSkillReference,
-  AiSkillRevisionConflictError,
-  type AiSkillSummary,
-  aiSkills,
-} from "./skills";
-export { type AiSkillsRoutes, aiSkillsRoutes } from "./skills-routes";
-export {
   AI_WIRE_VERSION,
   type AiStreamSseEvent,
   type AiStreamState,
@@ -234,6 +201,44 @@ export {
   toPublicAiSettingsState,
 } from "./settings";
 export { AI_SHORT_ID_PATTERN, createAiShortId } from "./short-id";
+export {
+  AI_SKILL_DESCRIPTION_MAX_CHARS,
+  AI_SKILL_EXTRA_FRONTMATTER_MAX_CHARS,
+  AI_SKILL_INSTRUCTIONS_MAX_CHARS,
+  AI_SKILL_INSTRUCTIONS_MAX_LINES,
+  AI_SKILL_NAME_MAX_CHARS,
+  AI_SKILL_NAME_PATTERN,
+  AI_SKILL_REFERENCE_MAX_CHARS,
+  AI_SKILL_REFERENCE_MAX_ITEMS,
+  AI_SKILL_REFERENCE_PATH_PATTERN,
+  AI_SKILL_REFERENCES_MAX_CHARS,
+  type AiSkillDocument,
+  type AiSkillExtraFrontmatter,
+  type AiSkillReferenceInput,
+  parseAiSkillMarkdown,
+  serializeAiSkillMarkdown,
+  validateAiSkillDescription,
+  validateAiSkillExtraFrontmatter,
+  validateAiSkillInstructions,
+  validateAiSkillName,
+  validateAiSkillReferences,
+} from "./skill-format";
+export { seedCloudAiSkills } from "./skill-seeds";
+export {
+  type AiLoadedSkillSnapshot,
+  type AiSkill,
+  type AiSkillAccess,
+  type AiSkillAdminListItem,
+  type AiSkillAdminSummary,
+  AiSkillInputError,
+  AiSkillLastAdminError,
+  type AiSkillPermission,
+  type AiSkillReference,
+  AiSkillRevisionConflictError,
+  type AiSkillSummary,
+  aiSkills,
+} from "./skills";
+export { type AiSkillsRoutes, aiSkillsRoutes } from "./skills-routes";
 export { aiConversations } from "./store";
 export {
   aiStreamTopic,

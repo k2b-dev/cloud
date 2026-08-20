@@ -87,10 +87,10 @@ cld assistant turns stop <chat-id> <turn-id>
 Chat management includes `chats create`, `update`, `pin`, `unpin`, `archive`, `restore`, `mark-read`, `compact`, `reindex`, and `index-status`. Message operations include `messages search`, `messages retry`, and `messages fork`. `resources list` inspects structured refs attached to or observed in one chat; `resources search` finds their occurrences across active owned chats. Resource results are based on schema-valid refs from conversation drafts, Project context, and capability calls, not IDs guessed from prose. A ref and its optional app link are presentation and identity, not authorization. Archiving requires `--yes`.
 
 Assistant agents can discover previous conversations through the closed-world
-`chats.search`, `chat.read`, and `chat.search` Queries. They can inspect
-structured refs through `chat.resources` and `chats.resources`. When the user
+`core.ai.chats.search`, `core.ai.chat.read`, and `core.ai.chat.search` Queries. They can inspect
+structured refs through `core.ai.chat.resources` and `core.ai.chats.resources`. When the user
 explicitly asks to send exact text to another owned chat, the agent may request
-the reviewed `chat.message` Action. The approval names the target and text;
+the reviewed `core.ai.chat.message` Action. The approval names the target and text;
 delivery is durable, attributable to the source chat, same-user only, and
 asynchronous when the target is busy.
 
