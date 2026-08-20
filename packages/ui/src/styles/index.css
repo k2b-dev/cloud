@@ -5226,7 +5226,7 @@
 }
 
 .k2b-ui .k2b-data-table :is(th, td)[data-highlighted="true"] {
-  background: color-mix(in srgb, var(--k2b-hover) 55%, transparent);
+  background: color-mix(in srgb, var(--k2b-hover) 30%, transparent);
 }
 
 .k2b-ui .k2b-data-table__head[data-sticky="true"],
@@ -5301,12 +5301,16 @@
   border-bottom: 0;
 }
 
-.k2b-ui .k2b-data-table__row[data-hover="true"]:hover {
-  background: var(--k2b-hover);
+.k2b-ui .k2b-data-table__row[data-hover="true"]:not([data-selected="true"]):hover {
+  background: color-mix(in srgb, var(--k2b-hover) 50%, transparent);
 }
 
 .k2b-ui .k2b-data-table__row[data-selected="true"] {
   background: var(--k2b-selected);
+}
+
+.k2b-ui .k2b-data-table__row[data-selected="true"] > td[data-highlighted="true"] {
+  background: transparent;
 }
 
 .k2b-ui .k2b-data-table__row[data-clickable="true"] {

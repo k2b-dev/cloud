@@ -27,6 +27,7 @@ const { default: PdfPreview } = await import("./PdfPreview");
 const { default: RangePicker } = await import("./RangePicker");
 const { default: StructuredDataPreview } = await import("./StructuredDataPreview");
 const contentCss = await Bun.file(resolve(import.meta.dir, "../styles/content-parity.css")).text();
+const uiCss = await Bun.file(resolve(import.meta.dir, "../styles/index.css")).text();
 
 describe("@k2b/ui Cloud content contract", () => {
   test("keeps the complete calendar event and view contract on the server", () => {
@@ -263,6 +264,19 @@ describe("@k2b/ui Cloud content contract", () => {
     expect(html).toContain('data-selected="true"');
     expect(html).toContain('data-has-footer="true"');
     expect(html).toContain("Total");
+  });
+
+  test("keeps table hover subtle without weakening the selected row", () => {
+    expect(uiCss).toMatch(
+      /\.k2b-data-table :is\(th, td\)\[data-highlighted="true"\] \{[^}]*var\(--k2b-hover\) 30%, transparent/s,
+    );
+    expect(uiCss).toMatch(
+      /\.k2b-data-table__row\[data-hover="true"\]:not\(\[data-selected="true"\]\):hover \{[^}]*var\(--k2b-hover\) 50%, transparent/s,
+    );
+    expect(uiCss).toMatch(/\.k2b-data-table__row\[data-selected="true"\] \{[^}]*background: var\(--k2b-selected\)/s);
+    expect(uiCss).toMatch(
+      /\.k2b-data-table__row\[data-selected="true"\] > td\[data-highlighted="true"\] \{[^}]*background: transparent/s,
+    );
   });
 
   test("composes a labelled professional DataTable panel without component-valued props", () => {
