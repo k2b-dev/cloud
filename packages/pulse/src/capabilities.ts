@@ -142,6 +142,7 @@ const runBaseList = async (input: z.infer<typeof BaseListInputSchema>, context: 
   const page = pageResult(
     (await projectBases(result.data)).map((base) => ({
       ...mapBase(base),
+      ref: { type: "pulse.base" as const, id: base.id },
       links: [{ rel: "open" as const, href: pulseBaseHref(base.id) }],
     })),
     cursor.data,
@@ -181,7 +182,14 @@ const runSourceList = async (input: z.infer<typeof SourceListInputSchema>, conte
     offset: cursor.data,
   });
   if (!result.ok) return result;
-  const page = pageResult((await projectSources(result.data)).map(mapSource), cursor.data, input.limit);
+  const page = pageResult(
+    (await projectSources(result.data)).map((source) => ({
+      ...mapSource(source),
+      ref: { type: "pulse.source" as const, id: source.id },
+    })),
+    cursor.data,
+    input.limit,
+  );
   return ok({
     ...page,
     refs: page.data.map((source) => ({ type: "pulse.source" as const, id: source.id })),
@@ -473,7 +481,14 @@ const runSavedQueryList = async (input: z.infer<typeof SavedQueryListInputSchema
     offset: cursor.data,
   });
   if (!result.ok) return result;
-  const page = pageResult((await projectSavedQueries(result.data)).map(mapSavedQuery), cursor.data, input.limit);
+  const page = pageResult(
+    (await projectSavedQueries(result.data)).map((query) => ({
+      ...mapSavedQuery(query),
+      ref: { type: "pulse.saved_query" as const, id: query.id },
+    })),
+    cursor.data,
+    input.limit,
+  );
   return ok({
     ...page,
     refs: page.data.map((query) => ({ type: "pulse.saved_query" as const, id: query.id })),
@@ -538,7 +553,8 @@ export const pulseCapabilities = defineCapabilities({
     },
     "base.list": {
       title: "List Pulse Bases",
-      description: "Start here to list accessible Pulse Bases and obtain a baseId for catalog or query calls.",
+      description:
+        "Start here to list accessible Pulse Bases and obtain item-local pulse.base refs for readers, catalog searches, or query calls.",
       input: BaseListInputSchema,
       data: BaseListDataSchema,
       openWorld: false,
@@ -546,7 +562,7 @@ export const pulseCapabilities = defineCapabilities({
     },
     "base.read": {
       title: "Read Pulse Base",
-      description: "Read one accessible Pulse Base by stable ID.",
+      description: "Read one accessible Pulse Base from a pulse.base ref or Base ID.",
       input: BaseReadInputSchema,
       data: BaseDataSchema,
       openWorld: false,
@@ -554,7 +570,7 @@ export const pulseCapabilities = defineCapabilities({
     },
     "source.list": {
       title: "List Pulse Sources",
-      description: "List bounded source health for one readable Base without exposing credentials.",
+      description: "List bounded source health with pulse.source refs for one readable Base, without exposing credentials.",
       input: SourceListInputSchema,
       data: SourceListDataSchema,
       openWorld: false,
@@ -562,7 +578,7 @@ export const pulseCapabilities = defineCapabilities({
     },
     "source.read": {
       title: "Read Pulse Source",
-      description: "Read one accessible Pulse Source by stable ID.",
+      description: "Read one accessible Pulse Source from a pulse.source ref or Source ID.",
       input: SourceReadInputSchema,
       data: SourceDataSchema,
       openWorld: false,
@@ -583,7 +599,7 @@ export const pulseCapabilities = defineCapabilities({
     },
     "resource.read": {
       title: "Read Pulse Resource",
-      description: "Read one accessible observed Pulse Resource by stable ID.",
+      description: "Read one observed Pulse Resource by passing the composite id from a pulse.resource search ref unchanged.",
       input: ResourceReadInputSchema,
       data: ResourceDataSchema,
       openWorld: false,
@@ -624,7 +640,7 @@ export const pulseCapabilities = defineCapabilities({
     },
     "saved_query.list": {
       title: "List saved Pulse Queries",
-      description: "List bounded named queries in one readable Base.",
+      description: "List bounded named queries with pulse.saved_query refs in one readable Base.",
       input: SavedQueryListInputSchema,
       data: SavedQueryListDataSchema,
       openWorld: false,
@@ -632,7 +648,7 @@ export const pulseCapabilities = defineCapabilities({
     },
     "saved_query.read": {
       title: "Read saved Pulse Query",
-      description: "Read one accessible saved Pulse Query by stable ID.",
+      description: "Read one accessible saved Pulse Query from a pulse.saved_query ref or saved-query ID.",
       input: SavedQueryReadInputSchema,
       data: SavedQueryDataSchema,
       openWorld: false,

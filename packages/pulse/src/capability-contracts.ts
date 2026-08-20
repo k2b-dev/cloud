@@ -13,6 +13,8 @@ const ResourceRefIdSchema = z
   .string()
   .regex(/^[0-9A-Za-z]{6}\/[\s\S]+$/)
   .max(512);
+const resourceRef = <Type extends string>(type: Type, id: z.ZodType = ShortIdSchema) =>
+  z.object({ type: z.literal(type), id }).strict();
 
 export const BaseDataSchema = z
   .object({
@@ -24,9 +26,12 @@ export const BaseDataSchema = z
     links: ResourceLinksSchema,
   })
   .strict();
-export const BaseListDataSchema = z.array(BaseDataSchema).max(100);
+const BaseListItemDataSchema = BaseDataSchema.extend({ ref: resourceRef("pulse.base") }).strict();
+export const BaseListDataSchema = z.array(BaseListItemDataSchema).max(100);
 export const BaseListInputSchema = z.object({ query: QuerySchema, ...PageInputShape }).strict();
-export const BaseReadInputSchema = z.object({ id: ShortIdSchema.describe("Stable readable Pulse Base ID.") }).strict();
+export const BaseReadInputSchema = z
+  .object({ id: ShortIdSchema.describe("Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref.") })
+  .strict();
 
 export const SourceDataSchema = z
   .object({
@@ -42,11 +47,18 @@ export const SourceDataSchema = z
     links: ResourceLinksSchema,
   })
   .strict();
-export const SourceListDataSchema = z.array(SourceDataSchema).max(100);
+const SourceListItemDataSchema = SourceDataSchema.extend({ ref: resourceRef("pulse.source") }).strict();
+export const SourceListDataSchema = z.array(SourceListItemDataSchema).max(100);
 export const SourceListInputSchema = z
-  .object({ baseId: ShortIdSchema.describe("Readable Pulse Base ID."), query: QuerySchema, ...PageInputShape })
+  .object({
+    baseId: ShortIdSchema.describe("Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."),
+    query: QuerySchema,
+    ...PageInputShape,
+  })
   .strict();
-export const SourceReadInputSchema = z.object({ id: ShortIdSchema.describe("Stable readable Pulse Source ID.") }).strict();
+export const SourceReadInputSchema = z
+  .object({ id: ShortIdSchema.describe("Pulse Source ID returned by List Pulse Sources or a pulse.source ref.") })
+  .strict();
 
 export const ResourceDataSchema = z
   .object({
@@ -61,7 +73,13 @@ export const ResourceDataSchema = z
     links: ResourceLinksSchema,
   })
   .strict();
-export const ResourceReadInputSchema = z.object({ id: ResourceRefIdSchema.describe("Stable Base ID and resource key.") }).strict();
+export const ResourceReadInputSchema = z
+  .object({
+    id: ResourceRefIdSchema.describe(
+      "Composite Base-ID/resource-key value returned by Search Pulse Resources in a pulse.resource ref; pass the ref id unchanged.",
+    ),
+  })
+  .strict();
 
 const MetricDataSchema = z
   .object({
@@ -76,7 +94,7 @@ const MetricDataSchema = z
 export const MetricSearchDataSchema = z.array(MetricDataSchema).max(100);
 export const MetricSearchInputSchema = z
   .object({
-    baseId: ShortIdSchema.describe("Readable Pulse Base ID."),
+    baseId: ShortIdSchema.describe("Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."),
     query: QuerySchema,
     type: z.enum(METRIC_TYPES).optional().describe("Optional metric type filter."),
     ...PageInputShape,
@@ -100,7 +118,7 @@ const FieldDataSchema = z
 export const FieldSearchDataSchema = z.array(FieldDataSchema).max(100);
 export const FieldSearchInputSchema = z
   .object({
-    baseId: ShortIdSchema.describe("Readable Pulse Base ID."),
+    baseId: ShortIdSchema.describe("Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."),
     query: QuerySchema,
     scope: z.enum(["metric", "event", "state"]).optional().describe("Optional signal kind filter."),
     role: z.enum(["dimension", "attribute"]).default("dimension").describe("Field role to discover; sensitive fields are excluded."),
@@ -110,7 +128,7 @@ export const FieldSearchInputSchema = z
 
 export const QueryTextInputSchema = z
   .object({
-    baseId: ShortIdSchema.describe("Readable Pulse Base ID."),
+    baseId: ShortIdSchema.describe("Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."),
     query: z.string().trim().min(1).max(2_000).describe("Pulse query DSL text."),
   })
   .strict();
@@ -175,14 +193,21 @@ export const SavedQueryDataSchema = z
     updatedAt: TimestampSchema,
   })
   .strict();
-export const SavedQueryListDataSchema = z.array(SavedQueryDataSchema).max(100);
+const SavedQueryListItemDataSchema = SavedQueryDataSchema.extend({ ref: resourceRef("pulse.saved_query") }).strict();
+export const SavedQueryListDataSchema = z.array(SavedQueryListItemDataSchema).max(100);
 export const SavedQueryListInputSchema = z
-  .object({ baseId: ShortIdSchema.describe("Readable Pulse Base ID."), query: QuerySchema, ...PageInputShape })
+  .object({
+    baseId: ShortIdSchema.describe("Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."),
+    query: QuerySchema,
+    ...PageInputShape,
+  })
   .strict();
-export const SavedQueryReadInputSchema = z.object({ id: ShortIdSchema.describe("Stable saved-query ID.") }).strict();
+export const SavedQueryReadInputSchema = z
+  .object({ id: ShortIdSchema.describe("Saved-query ID returned by List saved Pulse Queries or a pulse.saved_query ref.") })
+  .strict();
 export const SavedQueryExecuteInputSchema = z
   .object({
-    baseId: ShortIdSchema.describe("Readable Pulse Base ID."),
-    queryId: ShortIdSchema.describe("Stable saved-query ID returned by saved_query.list."),
+    baseId: ShortIdSchema.describe("Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."),
+    queryId: ShortIdSchema.describe("Saved-query ID returned by List saved Pulse Queries or a pulse.saved_query ref."),
   })
   .strict();

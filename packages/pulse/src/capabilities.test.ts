@@ -117,6 +117,7 @@ describe("Pulse capabilities", () => {
       BaseListDataSchema.safeParse([
         {
           id: "Base01",
+          ref: { type: "pulse.base", id: "Base01" },
           name: "Telemetry",
           description: null,
           createdAt: "2026-08-04T00:00:00.000Z",
