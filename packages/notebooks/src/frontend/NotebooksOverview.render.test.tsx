@@ -63,6 +63,9 @@ describe("Notebooks overview", () => {
     expect(html).toContain("Launch plan");
     expect(html).toContain("Sofie");
     expect(html).toContain("Edited “Launch plan” in Product");
+    expect(html).toMatch(/class="k2b-paper notebooks-overview-activity-paper /);
+    expect(html).toContain("notebooks-overview-activity-list");
+    expect(html).toContain('datetime="2026-08-20T10:00:00.000Z"');
     expect(html).toMatch(/<aside[^>]*id="k2b-workspace-detail-notebooks-overview-activity"(?![^>]*hidden)/);
   });
 

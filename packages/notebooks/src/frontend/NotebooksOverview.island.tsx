@@ -14,6 +14,7 @@ import {
   openSpotlightSearch,
   PanelDialog,
   panelDialogOptions,
+  Paper,
   Placeholder,
   prompts,
 } from "@k2b/ui";
@@ -104,6 +105,17 @@ const activityDescription = (item: ActivityItem): string => {
 
 const activityHref = (item: ActivityItem): string =>
   item.note ? `/app/notebooks/${item.notebook.id}/notes/${item.note.id}` : `/app/notebooks/${item.notebook.id}`;
+
+const activityAvatarSource = (item: ActivityItem): string | undefined =>
+  item.actor.kind === "user" && item.actor.id && item.actor.avatarHash
+    ? `/api/accounts/users/${encodeURIComponent(item.actor.id)}/avatar?rev=${encodeURIComponent(item.actor.avatarHash)}`
+    : undefined;
+
+const activityAvatarIcon = (item: ActivityItem): string | undefined => {
+  if (item.actor.kind === "service_account") return "ti ti-api";
+  if (item.actor.kind === "system") return "ti ti-settings-automation";
+  return undefined;
+};
 
 export default function NotebooksOverview(props: Props) {
   const [pinnedNotebookIds, setPinnedNotebookIds] = createSignal(props.initialPinnedNotebookIds);
@@ -262,23 +274,25 @@ export default function NotebooksOverview(props: Props) {
           />
         }
       >
-        <DetailPanel.Group label="Recent notebook activity">
+        <ol class="notebooks-overview-activity-list" aria-label="Recent notebook activity">
           <For each={activityItems()}>
             {(item) => (
-              <DetailPanel.Action
-                href={activityHref(item)}
-                title={item.actor.displayName}
-                description={activityDescription(item)}
-                leading={<Avatar name={item.actor.displayName} size="xs" />}
-                trailing={
-                  <time datetime={item.lastOccurredAt} title={dates.formatDateTime(item.lastOccurredAt, props.dateConfig)}>
-                    {dates.formatDateTimeRelative(item.lastOccurredAt, props.dateConfig)}
-                  </time>
-                }
-              />
+              <li class="notebooks-overview-activity-item">
+                <Avatar name={item.actor.displayName} src={activityAvatarSource(item)} icon={activityAvatarIcon(item)} size="sm" />
+                <Paper as="a" href={activityHref(item)} interactive class="notebooks-overview-activity-paper">
+                  <span class="notebooks-overview-activity-meta">
+                    <strong>{item.actor.displayName}</strong>
+                    <span aria-hidden="true">·</span>
+                    <time datetime={item.lastOccurredAt} title={dates.formatDateTime(item.lastOccurredAt, props.dateConfig)}>
+                      {dates.formatDateTimeRelative(item.lastOccurredAt, props.dateConfig)}
+                    </time>
+                  </span>
+                  <span class="notebooks-overview-activity-description">{activityDescription(item)}</span>
+                </Paper>
+              </li>
             )}
           </For>
-        </DetailPanel.Group>
+        </ol>
         <Show when={activityResults.hasMore()}>
           <Button
             size="sm"
