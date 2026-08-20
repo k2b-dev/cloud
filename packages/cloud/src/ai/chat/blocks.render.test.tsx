@@ -17,11 +17,17 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { AiTurnBlockList, AiTurnBlockView } = await import("./blocks");
 const { AiChatActionsProvider } = await import("./message-actions");
-const { AiAssistantContent, createAiChatTimeline } = await import("./presentation");
+const { AiAssistantContent, createAiChatTimeline, partitionCompletedAssistantBlocks } = await import("./presentation");
 const { createAiToolDisclosureState } = await import("./tool-disclosure");
 const { CloudSurveyBlock, CloudTextEditorBlock } = await import("./visual-tools");
 
 const hasOpenDetails = (html: string): boolean => /<details\b[^>]*\sopen(?:=""|(?=[\s>]))/.test(html);
+const hasOpenDetailsContaining = (html: string, text: string): boolean => {
+  const textIndex = html.indexOf(text);
+  const detailsIndex = html.lastIndexOf("<details", textIndex);
+  const tagEnd = html.indexOf(">", detailsIndex);
+  return detailsIndex >= 0 && tagEnd > detailsIndex && /\sopen(?:=""|(?=[\s>]))/.test(html.slice(detailsIndex, tagEnd + 1));
+};
 
 const block = (status: "running" | "awaiting_approval" | "completed" | "failed"): AiTurnBlock => ({
   id: "tool-call-1",
@@ -385,7 +391,7 @@ describe("capability tool presentation", () => {
     expect(html).not.toContain("Download");
   });
 
-  test("keeps stored and live block presentation in the same order", () => {
+  test("collapses intermediate text and tools after completion while keeping rich results and the final text visible", () => {
     const blocks: AiTurnBlock[] = [
       { id: "text-before", kind: "text", text: "Before tool" },
       {
@@ -395,6 +401,24 @@ describe("capability tool presentation", () => {
         name: "unknown_tool",
         status: "completed",
         result: { ok: true },
+      },
+      {
+        id: "card-middle",
+        kind: "tool",
+        callId: "card-1",
+        name: "card",
+        args: { title: "Useful card", value: "42" },
+        status: "completed",
+        result: { ok: true },
+      },
+      {
+        id: "present-middle",
+        kind: "tool",
+        callId: "present-1",
+        name: "present",
+        args: { path: "/report.pdf", title: "Useful report" },
+        status: "completed",
+        result: { path: "/report.pdf", size: 12, mediaType: "application/pdf" },
       },
       { id: "text-after", kind: "text", text: "After tool" },
     ];
@@ -407,15 +431,60 @@ describe("capability tool presentation", () => {
       actionEntry: null,
       workedMs: 1_000,
     };
+    const partitioned = partitionCompletedAssistantBlocks(blocks);
+    expect(partitioned.worked.map((candidate) => candidate.id)).toEqual(["text-before", "tool-middle"]);
+    expect(partitioned.visible.map((candidate) => candidate.id)).toEqual(["card-middle", "present-middle", "text-after"]);
+
     const storedHtml = renderToString(() => createComponent(AiAssistantContent, { item }));
     const liveHtml = renderToString(() => createComponent(AiTurnBlockList, { blocks, turnId: "turn-1" }));
 
-    for (const html of [storedHtml, liveHtml]) {
-      expect(html.indexOf("Before tool")).toBeLessThan(html.indexOf("Unknown tool"));
-      expect(html.indexOf("Unknown tool")).toBeLessThan(html.indexOf("After tool"));
-      expect(html).not.toContain("unknown_tool");
-      expect(html).not.toContain("Worked for");
-    }
+    expect(storedHtml).toContain("Worked for 1s");
+    expect(hasOpenDetails(storedHtml)).toBe(false);
+    expect(storedHtml.indexOf("Worked for 1s")).toBeLessThan(storedHtml.indexOf("Before tool"));
+    expect(storedHtml.indexOf("Before tool")).toBeLessThan(storedHtml.indexOf("Unknown tool"));
+    expect(storedHtml.indexOf("Unknown tool")).toBeLessThan(storedHtml.indexOf("Useful card"));
+    expect(storedHtml.indexOf("Useful card")).toBeLessThan(storedHtml.indexOf("Useful report"));
+    expect(storedHtml.indexOf("Useful report")).toBeLessThan(storedHtml.indexOf("After tool"));
+    expect(storedHtml).not.toContain("unknown_tool");
+
+    expect(liveHtml.indexOf("Before tool")).toBeLessThan(liveHtml.indexOf("Unknown tool"));
+    expect(liveHtml.indexOf("Unknown tool")).toBeLessThan(liveHtml.indexOf("Useful card"));
+    expect(liveHtml.indexOf("Useful card")).toBeLessThan(liveHtml.indexOf("Useful report"));
+    expect(liveHtml.indexOf("Useful report")).toBeLessThan(liveHtml.indexOf("After tool"));
+    expect(liveHtml).not.toContain("Worked for");
+  });
+
+  test("opens failed completed work immediately and preserves an explicit Worked disclosure choice", () => {
+    const item: AiAssistantTimelineItem = {
+      type: "assistant",
+      id: "stored-failure",
+      loopId: "turn-failure",
+      entries: [],
+      blocks: [
+        {
+          id: "failed-tool",
+          kind: "tool",
+          callId: "failed-1",
+          name: "unknown_tool",
+          status: "failed",
+          result: { code: "VALIDATION_FAILED", message: "Mailbox is required" },
+          isError: true,
+        },
+        { id: "final-text", kind: "text", text: "I could not finish that." },
+      ],
+      actionEntry: null,
+      workedMs: 2_000,
+    };
+
+    const failedHtml = renderToString(() => createComponent(AiAssistantContent, { item }));
+    expect(hasOpenDetailsContaining(failedHtml, "Worked for 2s")).toBe(true);
+    expect(failedHtml).toContain('data-tone="danger"');
+    expect(failedHtml).toContain("Mailbox is required");
+
+    const disclosureState = createAiToolDisclosureState();
+    disclosureState.set("worked:turn-failure", false);
+    const collapsedHtml = renderToString(() => createComponent(AiAssistantContent, { item: { ...item }, disclosureState }));
+    expect(hasOpenDetailsContaining(collapsedHtml, "Worked for 2s")).toBe(false);
   });
 
   test("keeps the app identity on approval prompts", () => {

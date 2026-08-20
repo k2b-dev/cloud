@@ -1,4 +1,4 @@
-import type { ChatTimelineItem } from "@k2b/ui";
+import { Chat, type ChatTimelineItem } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, createSignal, type JSX, onCleanup, Show } from "solid-js";
 import type { AiActiveTurn } from "../client/projection";
 import { type AiActiveTurnSegment, isRenderableTurnBlock, splitActiveTurnBlocks } from "../protocol";
@@ -6,7 +6,7 @@ import { type AiAssistantTimelineItem, buildAiMessageTimeline, copyTextFromAssis
 import type { AiConversationTimelineEntry, AiStoredMessage } from "../types";
 import { AiTurnBlockList } from "./blocks";
 import { type AiChatActions, AiChatActionsProvider, createAssistantMessageActions, useAiChatActions } from "./message-actions";
-import { textFromMessage } from "./message-utils";
+import { formatWorkedDuration, isCardToolName, textFromMessage } from "./message-utils";
 import { type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
 import { TurnNavigator } from "./turn-navigator";
 import { activeTimelineSeq } from "./turn-navigator-utils";
@@ -27,13 +27,48 @@ export { type AiChatActions, AiChatActionsProvider };
 
 const isWideBlock = (block: AiAssistantTimelineItem["blocks"][number]) => block.kind === "tool";
 
+type AssistantBlock = AiAssistantTimelineItem["blocks"][number];
+
+const isDirectCompletedResult = (block: AssistantBlock): boolean =>
+  block.kind === "tool" && block.status === "completed" && !block.isError && (isCardToolName(block.name) || block.name === "present");
+
+const isFailedBlock = (block: AssistantBlock): boolean =>
+  (block.kind === "tool" && (block.isError || block.status === "failed" || block.status === "rejected")) ||
+  (block.kind === "compaction" && block.status === "failed");
+
+export const partitionCompletedAssistantBlocks = (blocks: AssistantBlock[]) => {
+  const renderable = blocks.filter(isRenderableTurnBlock);
+  const finalTextIndex = renderable.findLastIndex((block) => block.kind === "text");
+  return {
+    worked: renderable.filter((block, index) => index !== finalTextIndex && !isDirectCompletedResult(block)),
+    visible: renderable.filter((block, index) => index === finalTextIndex || isDirectCompletedResult(block)),
+  };
+};
+
 export function AiAssistantContent(props: { item: AiAssistantTimelineItem; disclosureState?: AiToolDisclosureState }): JSX.Element {
-  const renderable = createMemo(() => props.item.blocks.filter(isRenderableTurnBlock));
+  const blocks = createMemo(() => partitionCompletedAssistantBlocks(props.item.blocks));
   const turnId = () => props.item.loopId ?? props.item.id;
+  const workedDisclosureId = () => `worked:${turnId()}`;
+  const workedOpen = () => props.disclosureState?.get(workedDisclosureId());
+  const setWorkedOpen = (open: boolean) => props.disclosureState?.set(workedDisclosureId(), open);
+  const workedFailed = () => blocks().worked.some(isFailedBlock);
 
   return (
     <div class="flex flex-col gap-2">
-      <AiTurnBlockList blocks={renderable()} turnId={turnId()} disclosureState={props.disclosureState} />
+      <Show when={blocks().worked.length > 0}>
+        <Chat.Activity
+          icon="ti ti-route"
+          label={`Worked for ${formatWorkedDuration(props.item.workedMs)}`}
+          tone={workedFailed() ? "danger" : undefined}
+          bodyInset={false}
+          defaultOpen={workedFailed()}
+          open={workedOpen()}
+          onOpenChange={setWorkedOpen}
+        >
+          <AiTurnBlockList blocks={blocks().worked} turnId={turnId()} compact disclosureState={props.disclosureState} />
+        </Chat.Activity>
+      </Show>
+      <AiTurnBlockList blocks={blocks().visible} turnId={turnId()} disclosureState={props.disclosureState} />
     </div>
   );
 }

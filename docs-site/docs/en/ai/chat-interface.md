@@ -189,7 +189,13 @@ Discovery result disclosures use flat, single-line rows with a readable title,
 truncated description, and app label instead of enclosing the list in another
 surface. Loaded tools use titles from the catalog snapshot already available to
 the Assistant; resolving display text does not require another registry call.
-Persisted and active turns render their blocks in the same saved order.
+While a loop is active, Assistant renders its blocks in their saved order. Once
+the loop completes, it moves tool calls, reasoning, compaction, and every text
+block except the final response into one collapsed **Worked for ...**
+disclosure. Successful cards and presented files remain directly visible as
+standalone results. Failed work opens the disclosure immediately with danger
+treatment, and an explicit user disclosure choice remains stable across live
+timeline updates.
 
 Generic tool rows and disclosures use `Chat.Activity` from `@k2b/ui`. Cloud
 only supplies protocol-derived labels and specialized bodies such as web search
