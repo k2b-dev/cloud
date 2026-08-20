@@ -1,4 +1,5 @@
-import type { PublicTable } from "../../../api/public-dto";
+import type { PublicField, PublicTable } from "../../../api/public-dto";
+import type { GridsWorkflowLauncherConfig } from "../../../workflows/contracts";
 
 export type WorkflowStarter = {
   name: string;
@@ -7,11 +8,7 @@ export type WorkflowStarter = {
   source: string;
   launcher: {
     name: string;
-    config: {
-      kind: "bulk";
-      input: string;
-      profile: "closeSelection";
-    };
+    config: GridsWorkflowLauncherConfig;
   };
 };
 
@@ -45,6 +42,37 @@ steps:
       kind: "bulk",
       input: "records",
       profile: "closeSelection",
+    },
+  },
+});
+
+export const correctionDraftWorkflowStarter = (params: {
+  table: Pick<PublicTable, "id" | "name">;
+  typeField: Pick<PublicField, "id">;
+  typeValue: string;
+  originalField: Pick<PublicField, "id">;
+}): WorkflowStarter => ({
+  name: `Create ${params.table.name} correction Draft`,
+  description: "Create one Draft linked to an unchanged finalized original Record.",
+  enabled: true,
+  source: `inputs:
+  original:
+    type: record
+    table: ${JSON.stringify(params.table.id)}
+    required: true
+steps:
+  - createCorrectionDraft:
+      original: inputs.original
+      typeField: ${JSON.stringify(params.typeField.id)}
+      typeValue: ${JSON.stringify(params.typeValue)}
+      originalField: ${JSON.stringify(params.originalField.id)}
+`,
+  launcher: {
+    name: "Create correction",
+    config: {
+      kind: "record",
+      input: "original",
+      profile: "correctionDraft",
     },
   },
 });

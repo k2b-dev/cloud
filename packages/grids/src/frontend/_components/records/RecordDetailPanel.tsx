@@ -1,6 +1,6 @@
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, DescriptionList, DetailPanel, Dropdown, IconButton, NoticeCard, prompts, Tooltip } from "@k2b/ui";
+import { Button, DescriptionList, DetailPanel, Dropdown, IconButton, NoticeCard, prompts, Tooltip, toast } from "@k2b/ui";
 import { Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
@@ -10,7 +10,10 @@ import { recordAuditRequirementFor } from "../../../record-audit-policy";
 import type { PublicDocumentTemplateSummary } from "../documents/public-document-types";
 import { isUserEditable } from "../fields/field-prompt-schema";
 import { errorMessage } from "../utils/api-helpers";
-import type { PublicWorkspaceRecordDetail as WorkspaceRecordDetail } from "../workspace/workspace-public-state-model";
+import type {
+  PublicWorkspaceRecordDetail as WorkspaceRecordDetail,
+  PublicWorkspaceRecordLauncher as WorkspaceRecordLauncher,
+} from "../workspace/workspace-public-state-model";
 import { openRecordAuditDialog } from "./RecordAuditDialog";
 import RecordComments from "./RecordComments.island";
 import RecordDocumentsSection from "./RecordDocumentsSection";
@@ -20,6 +23,7 @@ import RecordReadView from "./RecordReadView";
 import RecordReferencedBy from "./RecordReferencedBy.island";
 import { openRecordUpsertDialog } from "./RecordUpsertDialog";
 import RecordVersions from "./RecordVersions.island";
+import { CorrectionDraftInvocationError, createCorrectionDraft } from "./record-correction";
 import { recordDisplayTitle } from "./record-display";
 
 type Props = {
@@ -40,6 +44,7 @@ type Props = {
   mode: () => "live" | "trash";
   /** True if the user can edit/delete records on this table. */
   canWrite: boolean;
+  canRunWorkflows: boolean;
   /** Pre-resolved labels for linked records (target id → display label).
    *  Built SSR-side; used by relation cells to render presentable
    *  values instead of raw UUIDs. */
@@ -55,9 +60,12 @@ type Props = {
   /** Emitted after a successful delete or restore. RecordsView closes
    *  the panel + refetches. */
   onRemoved: () => void;
+  recordActionLaunchers: WorkspaceRecordLauncher[];
+  onOpenRecord: (recordId: string) => void;
 };
 
 export default function RecordDetailPanel(props: Props) {
+  let correctionOperation: { key: string; id: string } | null = null;
   const record = () => props.record();
   const mode = () => props.mode();
   const finalizationQueryEnabled = () => {
@@ -154,6 +162,32 @@ export default function RecordDetailPanel(props: Props) {
     },
     onSuccess: () => props.onRemoved(),
     onError: (e) => prompts.error(e.message),
+  });
+
+  const createCorrectionMut = mutations.create<
+    { recordId: string; tableId: string },
+    { rec: GridRecord; launcher: WorkspaceRecordLauncher; operationId: string }
+  >({
+    mutation: async ({ rec, launcher, operationId }, { abortSignal }) => {
+      const result = await createCorrectionDraft({
+        launcherId: launcher.id,
+        expectedRevision: launcher.workflowRevision,
+        recordId: rec.id,
+        operationId,
+        signal: abortSignal,
+      });
+      if (result.tableId !== props.tableId) throw new Error("The correction workflow returned a Record from another Table.");
+      return result;
+    },
+    onSuccess: (result) => {
+      correctionOperation = null;
+      props.onOpenRecord(result.recordId);
+      toast.success("The linked correction Draft is ready.", { title: "Correction created" });
+    },
+    onError: (error) => {
+      if (error instanceof CorrectionDraftInvocationError && !error.retrySameOperation) correctionOperation = null;
+      prompts.error(error.message);
+    },
   });
 
   const finalizeMut = mutations.create<GridRecord, GridRecord>({
@@ -327,6 +361,23 @@ export default function RecordDetailPanel(props: Props) {
     restoreMut.mutate({ rec, audit: audit ?? undefined });
   };
 
+  const handleCreateCorrection = async (rec: GridRecord, launcher: WorkspaceRecordLauncher) => {
+    if (createCorrectionMut.loading()) return;
+    const confirmed = await prompts.confirm(
+      `Create a new editable Draft linked to this finalized Record?\n\nThe original remains unchanged and locked. The new Draft uses the Table's normal defaults and numbering rules; values are not copied automatically.`,
+      {
+        title: launcher.name,
+        icon: "ti ti-file-pencil",
+        confirmText: "Create correction Draft",
+      },
+    );
+    if (confirmed) {
+      const key = `${launcher.id}:${rec.id}`;
+      if (correctionOperation?.key !== key) correctionOperation = { key, id: crypto.randomUUID() };
+      createCorrectionMut.mutate({ rec, launcher, operationId: correctionOperation.id });
+    }
+  };
+
   const handleFinalize = async (rec: GridRecord) => {
     if (finalizeMut.loading()) return;
     let readiness = finalization();
@@ -484,6 +535,32 @@ export default function RecordDetailPanel(props: Props) {
           }
           quickActions={
             <>
+              <Show when={props.canRunWorkflows && mode() === "live" && rec.finalizedAt && props.recordActionLaunchers.length > 0}>
+                <Dropdown.Root
+                  position="bottom-left"
+                  items={[
+                    {
+                      items: props.recordActionLaunchers.map((launcher) => ({
+                        label: launcher.name,
+                        icon: "ti ti-file-pencil",
+                        description: "Create a linked editable Draft without changing this final Record.",
+                        action: () => void handleCreateCorrection(rec, launcher),
+                      })),
+                    },
+                  ]}
+                >
+                  <Dropdown.Trigger
+                    variant="secondary"
+                    size="sm"
+                    type="button"
+                    disabled={createCorrectionMut.loading()}
+                    loading={createCorrectionMut.loading()}
+                    loadingLabel="Creating correction Draft"
+                  >
+                    <i class="ti ti-file-pencil" /> Create correction
+                  </Dropdown.Trigger>
+                </Dropdown.Root>
+              </Show>
               <Show when={props.canWrite && mode() === "live" && !rec.finalizedAt}>
                 <Button
                   variant="secondary"

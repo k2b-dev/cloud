@@ -45,6 +45,26 @@ describe("workflow launcher validation", () => {
 
   const closeSelectionConfig = { kind: "bulk", input: "records", profile: "closeSelection" } as const;
 
+  const correctionWorkflow = (): GridsWorkflow =>
+    ({
+      plan: {
+        inputs: [{ name: "original", type: "record", config: { required: true } }],
+        triggers: [],
+        steps: [
+          {
+            kind: "action",
+            action: "createCorrectionDraft",
+            config: { original: "inputs.original", typeField: "type", typeValue: "correction", originalField: "original" },
+          },
+        ],
+        bindings: {
+          "inputs.original.table": "10000000-0000-4000-8000-000000000001",
+          "steps.0.createCorrectionDraft.typeField": "20000000-0000-4000-8000-000000000001",
+          "steps.0.createCorrectionDraft.originalField": "30000000-0000-4000-8000-000000000001",
+        },
+      },
+    }) as unknown as GridsWorkflow;
+
   test("keeps normal bulk launchers compatible and rejects the former combinable Close selection flags", () => {
     expect(GridsWorkflowLauncherConfigSchema.safeParse({ kind: "bulk", input: "records" }).success).toBe(true);
     expect(GridsWorkflowLauncherConfigSchema.safeParse(closeSelectionConfig).success).toBe(true);
@@ -63,24 +83,28 @@ describe("workflow launcher validation", () => {
     expect(validateLauncherConfig(closeSelectionWorkflow(), closeSelectionConfig)).toEqual([]);
   });
 
+  test("accepts only the canonical correction Draft plan", () => {
+    const config = { kind: "record", input: "original", profile: "correctionDraft" } as const;
+    expect(validateLauncherConfig(correctionWorkflow(), config)).toEqual([]);
+    const extended = correctionWorkflow();
+    extended.plan.steps.push({ kind: "action", action: "succeed", config: { message: "extra" }, sourcePath: ["steps", 1] });
+    expect(validateLauncherConfig(extended, config)).toEqual([expect.objectContaining({ code: "launcher.profile.plan" })]);
+  });
+
   test("rejects an arbitrary workflow labeled as Close selection", () => {
     const candidate = closeSelectionWorkflow();
     const loop = candidate.plan.steps[0];
     if (loop?.kind !== "forEach" || loop.steps[0]?.kind !== "action") throw new Error("invalid fixture");
     loop.steps[0].action = "finalizeRecord";
 
-    expect(validateLauncherConfig(candidate, closeSelectionConfig)).toEqual([
-      expect.objectContaining({ code: "launcher.profile.plan" }),
-    ]);
+    expect(validateLauncherConfig(candidate, closeSelectionConfig)).toEqual([expect.objectContaining({ code: "launcher.profile.plan" })]);
   });
 
   test("rejects an extended Close selection workflow", () => {
     const candidate = closeSelectionWorkflow();
     candidate.plan.inputs.push({ name: "note", type: "text", config: {} });
 
-    expect(validateLauncherConfig(candidate, closeSelectionConfig)).toEqual([
-      expect.objectContaining({ code: "launcher.profile.plan" }),
-    ]);
+    expect(validateLauncherConfig(candidate, closeSelectionConfig)).toEqual([expect.objectContaining({ code: "launcher.profile.plan" })]);
   });
 
   test("rejects a Close selection workflow whose policy inputs are not bound to the action", () => {
@@ -89,9 +113,7 @@ describe("workflow launcher validation", () => {
     if (loop?.kind !== "forEach" || loop.steps[0]?.kind !== "action") throw new Error("invalid fixture");
     loop.steps[0].config.expectedPolicyRevision = "inputs.closeMode";
 
-    expect(validateLauncherConfig(candidate, closeSelectionConfig)).toEqual([
-      expect.objectContaining({ code: "launcher.profile.plan" }),
-    ]);
+    expect(validateLauncherConfig(candidate, closeSelectionConfig)).toEqual([expect.objectContaining({ code: "launcher.profile.plan" })]);
   });
 
   test("rejects launchers that cannot supply another required input", () => {

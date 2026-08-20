@@ -7,6 +7,7 @@ import {
   PublicGridsWorkflowEmailDeliveryListSchema,
   PublicGridsWorkflowRunSchema,
   PublicWorkflowInvocationReceiptSchema,
+  RecordLauncherRequestSchema,
   toPublicWorkflowRuns,
   WorkflowRunsQuerySchema,
 } from "./workflow-api-shared";
@@ -45,15 +46,27 @@ describe("workflow route contracts", () => {
           inputs: {},
         }),
       }),
+      app().request("/workflows/launchers/not-a-uuid/invoke/record", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          operationId: "invalid-id-test",
+          mode: "execute",
+          expectedRevision: 1,
+          recordId: "Rec001",
+          inputs: {},
+        }),
+      }),
       app().request("/workflows/runs/not-a-uuid"),
       app().request("/workflows/runs/not-a-uuid/cancel", { method: "POST" }),
     ];
 
     const responses = await Promise.all(requests);
-    expect(responses.map((response) => response.status)).toEqual([400, 400, 400, 400, 400]);
+    expect(responses.map((response) => response.status)).toEqual([400, 400, 400, 400, 400, 400]);
     expect(await Promise.all(responses.map((response) => response.json()))).toEqual([
       { message: "Invalid base id" },
       { message: "Invalid workflow id" },
+      { message: "Invalid workflow launcher id" },
       { message: "Invalid workflow launcher id" },
       { message: "Invalid workflow run id" },
       { message: "Invalid workflow run id" },
@@ -66,6 +79,7 @@ describe("workflow route contracts", () => {
     const internalUserId = "33333333-3333-4333-8333-333333333333";
     const internalRecordId = "44444444-4444-4444-8444-444444444444";
     const internalBaseId = "55555555-5555-4555-8555-555555555555";
+    const internalTableId = "66666666-6666-4666-8666-666666666666";
     const run = {
       id: internalRunId,
       workflowId: internalWorkflowId,
@@ -78,7 +92,7 @@ describe("workflow route contracts", () => {
       serviceAccountId: null,
       inputs: { recordId: internalRecordId },
       status: "queued",
-      result: null,
+      result: { kind: "record", tableId: internalTableId, recordId: internalRecordId },
       error: null,
       resultMessage: null,
       createdAt: "2026-08-15T12:00:00.000Z",
@@ -92,6 +106,7 @@ describe("workflow route contracts", () => {
         workflow: { [internalWorkflowId]: "work01" },
         record: { [internalRecordId]: "rec001" },
         base: { [internalBaseId]: "base01" },
+        table: { [internalTableId]: "tabl01" },
       };
       return new Map(ids.flatMap((id) => (values[type]?.[id] ? [[id, values[type]![id]!]] : [])));
     });
@@ -102,9 +117,19 @@ describe("workflow route contracts", () => {
       baseId: "base01",
       actorUserId: internalUserId,
       inputs: { recordId: "rec001" },
+      result: { kind: "record", tableId: "tabl01", recordId: "rec001" },
     });
     expect(PublicGridsWorkflowRunSchema.safeParse(projected[0]).success).toBe(true);
     expect(PublicGridsWorkflowRunSchema.safeParse({ ...projected[0], id: internalRunId }).success).toBe(false);
+    expect(
+      RecordLauncherRequestSchema.safeParse({
+        operationId: "correction-1",
+        mode: "execute",
+        expectedRevision: 3,
+        recordId: "Rec001",
+        inputs: {},
+      }).success,
+    ).toBe(true);
     expect(
       PublicWorkflowInvocationReceiptSchema.safeParse({
         runId: "run001",
@@ -176,6 +201,14 @@ describe("workflow route contracts", () => {
       "500",
     ]);
     expect(Object.keys(spec.paths?.["/workflows/launchers/{launcherId}/invoke/scanner"]?.post?.responses ?? {})).toEqual([
+      "200",
+      "400",
+      "403",
+      "404",
+      "409",
+      "500",
+    ]);
+    expect(Object.keys(spec.paths?.["/workflows/launchers/{launcherId}/invoke/record"]?.post?.responses ?? {})).toEqual([
       "200",
       "400",
       "403",

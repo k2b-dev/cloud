@@ -218,7 +218,7 @@ export const workflowCommands = [
           "",
           "Workflow name and description are resource fields. YAML defines inputs, optional automatic triggers, and steps.",
           "Everything that starts a run is an event: grids.invoked for a direct invocation, grids.launcherPressed for a",
-          "scanner, bulk, or customApp launcher, grids.scheduleTick and grids.recordChanged for the YAML triggers below.",
+          "scanner, bulk, record, or customApp launcher, grids.scheduleTick and grids.recordChanged for the YAML triggers below.",
           "Only schedule and recordEvent are written in YAML; direct and launcher invocation are API/CLI operations.",
           "A dry run is not an event: it is created against the workflow's newest version and plans its effects",
           "instead of performing them.",
@@ -566,7 +566,7 @@ export const workflowCommands = [
   command("workflow-launchers create", {
     summary: "Create and validate a workflow launcher",
     description:
-      'Pass one JSON object: scanner {"name":"Scan","config":{"kind":"scanner","input":"item","resolve":{"by":"scanCode"}},"enabled":true}; bulk {"name":"Bulk","config":{"kind":"bulk","input":"items"}}; fixed customApp {"name":"Refresh","config":{"kind":"customApp","inputMode":"fixed","inputBindings":{"range":"30d"}}}; prompt customApp {"name":"Run","config":{"kind":"customApp","inputMode":"prompt"}}. Run `cld grids workflows reference` for all shapes.',
+      'Pass one JSON object: scanner {"name":"Scan","config":{"kind":"scanner","input":"item","resolve":{"by":"scanCode"}},"enabled":true}; bulk {"name":"Bulk","config":{"kind":"bulk","input":"items"}}; correction {"name":"Create correction","config":{"kind":"record","input":"original","profile":"correctionDraft"}}; fixed customApp {"name":"Refresh","config":{"kind":"customApp","inputMode":"fixed","inputBindings":{"range":"30d"}}}; prompt customApp {"name":"Run","config":{"kind":"customApp","inputMode":"prompt"}}. Run `cld grids workflows reference` for all shapes.',
     args: baseArgs,
     flags: { ...baseFlag, ...workflowFlag, body: WORKFLOW_LAUNCHER_BODY_INPUT },
     examples: ["cld grids workflow-launchers create Bookshop 'Check in' --body-file launcher.json"],
@@ -620,9 +620,9 @@ export const workflowCommands = [
     },
   }),
   command("workflow-launchers invoke", {
-    summary: "Invoke a scanner, bulk, or customApp launcher",
+    summary: "Invoke a scanner, bulk, record, or customApp launcher",
     description:
-      'The saved launcher kind selects the endpoint. Pass the exact JSON body: scanner {"operationId":"scan-42","mode":"execute","expectedRevision":3,"scannedText":"gsc_opaque","inputs":{}}; bulk uses either "recordIds":[public-id,...] or "query":{...}; customApp uses {"operationId":"customApp-42","mode":"execute","expectedRevision":3,"inputs":{...}}. Run `cld grids workflows reference` for complete shapes.',
+      'The saved launcher kind selects the endpoint. Pass the exact JSON body: scanner {"operationId":"scan-42","mode":"execute","expectedRevision":3,"scannedText":"gsc_opaque","inputs":{}}; bulk uses either "recordIds":[public-id,...] or "query":{...}; record uses {"operationId":"record-42","mode":"execute","expectedRevision":3,"recordId":"Rec001","inputs":{}}; customApp uses {"operationId":"customApp-42","mode":"execute","expectedRevision":3,"inputs":{...}}. Run `cld grids workflows reference` for complete shapes.',
     args: baseArgs,
     flags: { ...baseFlag, ...workflowFlag, ...workflowLauncherFlag, body: WORKFLOW_LAUNCHER_BODY_INPUT },
     examples: ["cld grids workflow-launchers invoke Bookshop 'Check in' Scanner --body-file invocation.json"],

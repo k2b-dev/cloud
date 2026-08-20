@@ -140,12 +140,20 @@ const BulkQueryLauncherInvocationSchema = z
 
 export const BulkLauncherInvocationSchema = z.union([BulkRecordIdsLauncherInvocationSchema, BulkQueryLauncherInvocationSchema]);
 
+export const RecordLauncherInvocationSchema = z
+  .object({
+    ...invocationFields,
+    recordId: z.string().uuid(),
+  })
+  .strict();
+
 export const CustomAppLauncherInvocationSchema = z.object(invocationFields).strict();
 
 const StrictLauncherConfigSchema = GridsWorkflowLauncherConfigSchema;
 
 export type ScannerLauncherInvocation = z.infer<typeof ScannerLauncherInvocationSchema>;
 export type BulkLauncherInvocation = z.infer<typeof BulkLauncherInvocationSchema>;
+export type RecordLauncherInvocation = z.infer<typeof RecordLauncherInvocationSchema>;
 export type CustomAppLauncherInvocation = z.infer<typeof CustomAppLauncherInvocationSchema>;
 
 type LauncherKind = GridsWorkflowLauncherConfig["kind"];
@@ -403,12 +411,13 @@ const loadLauncherContext = async (
       tableId = boundTableId(workflow, inputName);
       if (!tableId) return fail(err.badInput("scanner launcher input has no bound table"));
     }
-  } else if (config.data.kind === "bulk") {
+  } else if (config.data.kind === "bulk" || config.data.kind === "record") {
     const bulkInputName = config.data.input;
     const input = workflow.plan.inputs.find((candidate) => candidate.name === bulkInputName);
-    if (!input || input.type !== "recordList") return fail(err.badInput("bulk launcher input contract is invalid"));
+    const expectedType = config.data.kind === "bulk" ? "recordList" : "record";
+    if (!input || input.type !== expectedType) return fail(err.badInput(`${config.data.kind} launcher input contract is invalid`));
     tableId = boundTableId(workflow, bulkInputName);
-    if (!tableId) return fail(err.badInput("bulk launcher input has no bound table"));
+    if (!tableId) return fail(err.badInput(`${config.data.kind} launcher input has no bound table`));
   } else {
     const inputNames = new Set(workflow.plan.inputs.map((input) => input.name));
     const unknownBinding = Object.keys(config.data.inputBindings ?? {}).find((name) => !inputNames.has(name));
@@ -566,6 +575,47 @@ export const admitBulkLauncher = async (
   deps: WorkflowLauncherInvocationDeps = defaultDeps,
 ): Promise<Result<void>> => {
   const loaded = await loadLauncherContext(input.launcherId, "bulk", input.expectedRevision, deps);
+  if (!loaded.ok) return loaded;
+  const ctx = loaded.data;
+  const authorized = await deps.authorize({
+    launcherId: ctx.launcher.id,
+    workflow: ctx.workflow,
+    principal: input.principal,
+    tableId: ctx.tableId,
+  });
+  return authorized.ok ? ok() : authorized;
+};
+
+export const invokeRecordLauncher = async (
+  rawInput: unknown,
+  deps: WorkflowLauncherInvocationDeps = defaultDeps,
+): Promise<Result<WorkflowInvocationReceipt>> => {
+  const input = RecordLauncherInvocationSchema.safeParse(rawInput);
+  if (!input.success) return fail(err.badInput(`invalid record launcher invocation: ${formatZodError(input.error)}`));
+  const loaded = await loadLauncherContext(input.data.launcherId, "record", input.data.expectedRevision, deps);
+  if (!loaded.ok) return loaded;
+  const ctx = loaded.data;
+  if (ctx.config.kind !== "record" || !ctx.tableId) return fail(err.internal("record launcher context is invalid"));
+  if (Object.keys(input.data.inputs).length > 0) return fail(err.badInput("record actions do not accept additional workflow inputs"));
+  const authorized = await deps.authorize({
+    launcherId: ctx.launcher.id,
+    workflow: ctx.workflow,
+    principal: input.data.principal,
+    tableId: ctx.tableId,
+    authorization: input.data.authorization,
+  });
+  if (!authorized.ok) return authorized;
+  if (!authorized.data) return fail(err.internal("record launcher input has no record access policy"));
+  const recordIds = await deps.resolveExplicitRecordIds(ctx.workflow.baseId, ctx.tableId, [input.data.recordId], authorized.data);
+  if (!recordIds.ok) return recordIds;
+  return invoke(ctx, { ...input.data, inputs: { [ctx.config.input]: recordIds.data[0]! } }, deps);
+};
+
+export const admitRecordLauncher = async (
+  input: { launcherId: string; expectedRevision?: number; principal: GridsWorkflowPrincipal },
+  deps: WorkflowLauncherInvocationDeps = defaultDeps,
+): Promise<Result<void>> => {
+  const loaded = await loadLauncherContext(input.launcherId, "record", input.expectedRevision, deps);
   if (!loaded.ok) return loaded;
   const ctx = loaded.data;
   const authorized = await deps.authorize({

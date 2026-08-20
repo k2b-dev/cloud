@@ -27,6 +27,7 @@ import { logAudit, type SqlClient } from "./service/audit";
 import { summarizeDocumentRun } from "./service/document-mappers";
 import { createDocumentLink, createRunForRecord, getDocumentRun, getTemplate, publicDocumentLinkBaseUrl } from "./service/documents";
 import { get as getEmailTemplate } from "./service/email-templates";
+import { listByTable as listFields } from "./service/field-read";
 import { assertMutationAllowed } from "./service/mutation-policy";
 import {
   finalizeInTransaction as finalizeRecordInTransaction,
@@ -211,6 +212,36 @@ const fieldPayload = (
   key: "set" | "values",
   values: Record<string, WorkflowJsonValue>,
 ): Record<string, unknown> => fieldPayloadAt(ctx, [key], values);
+
+const correctionDraftValues = async (
+  client: SqlClient,
+  tableId: string,
+  typeFieldId: string,
+  typeValue: string,
+  originalFieldId: string,
+  originalRecordId: string,
+): Promise<Record<string, unknown>> => {
+  const fields = await listFields(tableId, false, client);
+  const typeField = fields.find((field) => field.id === typeFieldId);
+  const originalField = fields.find((field) => field.id === originalFieldId);
+  const typeConfig = typeField?.config as { multiple?: unknown; options?: unknown } | undefined;
+  const options = Array.isArray(typeConfig?.options) ? typeConfig.options : [];
+  const typeValueExists = options.some(
+    (option) => option && typeof option === "object" && !Array.isArray(option) && (option as { id?: unknown }).id === typeValue,
+  );
+  if (typeField?.type !== "select" || typeConfig?.multiple === true || !typeValueExists) {
+    throw actionError("WORKFLOW_BINDING_INVALID", "Correction type must use a current single-select option on the original Table");
+  }
+  const relationConfig = originalField?.config as { targetTableId?: unknown; cardinality?: unknown } | undefined;
+  if (
+    originalField?.type !== "relation" ||
+    relationConfig?.targetTableId !== tableId ||
+    (relationConfig.cardinality ?? "multiple") !== "single"
+  ) {
+    throw actionError("WORKFLOW_BINDING_INVALID", "Original Record must use a current single self-relation on the original Table");
+  }
+  return { [typeFieldId]: [typeValue], [originalFieldId]: originalRecordId };
+};
 
 const auditAnswerPayload = (answers: Record<string, WorkflowJsonValue> | undefined): RecordMutationAudit | undefined => {
   if (answers === undefined) return undefined;
@@ -533,6 +564,109 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         return {
           summary: readiness.mode === "fourEyes" ? "Request Four-eyes Finalization" : "Finalize one record permanently",
           output: record as unknown as WorkflowJsonValue,
+        };
+      }),
+  }),
+
+  createCorrectionDraft: workflowAction.transactional({
+    label: "Create correction draft",
+    description: "Creates one Draft linked to an unchanged finalized Record in the same Table.",
+    outputType: "grids.record",
+    config: {
+      kind: "object",
+      properties: {
+        original: { kind: "string", minLength: 1, maxLength: 500, description: "Finalized original Record reference." },
+        typeField: { kind: "string", minLength: 1, maxLength: 200, description: "Single-select field used for the correction type." },
+        typeValue: { kind: "string", minLength: 1, maxLength: 200, description: "Existing select-option ID for a correction." },
+        originalField: {
+          kind: "string",
+          minLength: 1,
+          maxLength: 200,
+          description: "Single self-relation that links the correction to its original Record.",
+        },
+      },
+    },
+
+    run: (ctx, config) =>
+      attempt(async () => {
+        const tx = transaction(ctx);
+        const scope = await workflowRunScope(ctx, tx);
+        await requireExecution(scope, tx);
+        const original = await recordReference(ctx, config.original, "original");
+        if (original.planned) throw actionError("WORKFLOW_VALUE_INVALID", "original must reference an existing finalized Record");
+        await currentTable(scope, original.tableId);
+        const recordAccess = await requireRecordAccess(scope, original.tableId, "write", tx);
+        const readiness = requireOk(
+          await inspectRecordFinalization({
+            tableId: original.tableId,
+            recordId: original.recordId,
+            actorId: actorId(scope),
+            recordAccess,
+            client: tx,
+          }),
+        );
+        if (!readiness.finalized) throw actionError("CONFLICT", "Only a finalized Record can be corrected");
+        const values = await correctionDraftValues(
+          tx,
+          original.tableId,
+          boundId(ctx, "typeField"),
+          config.typeValue,
+          boundId(ctx, "originalField"),
+          original.recordId,
+        );
+        const created = requireOk(
+          await createRecordInTransaction(tx, original.tableId, values, actorId(scope), "workflow", {
+            dateConfig: await dateContext(),
+            recordAccess,
+            viewer: viewerForScope(scope),
+          }),
+        );
+        await logAudit(
+          {
+            baseId: scope.baseId,
+            tableId: original.tableId,
+            recordId: created.record.id,
+            userId: actorId(scope),
+            action: "workflow.record.created",
+            diff: { workflowCorrectionDraft: { old: null, new: workflowAuditMeta(scope) } },
+          },
+          tx,
+        );
+        return {
+          state: "succeeded",
+          output: { kind: "record", tableId: created.record.tableId, recordId: created.record.id } as WorkflowJsonValue,
+          message: "Correction Draft created",
+        };
+      }),
+
+    plan: (ctx, config) =>
+      planned(async () => {
+        const scope = await workflowRunScope(ctx);
+        await requireExecution(scope);
+        const original = await recordReference(ctx, config.original, "original");
+        await readableRecord(scope, original, "write");
+        requireOk(await assertMutationAllowed(sql, original.tableId, "workflow"));
+        const recordAccess = await requireRecordAccess(scope, original.tableId, "write");
+        const readiness = requireOk(
+          await inspectRecordFinalization({
+            tableId: original.tableId,
+            recordId: original.recordId,
+            actorId: actorId(scope),
+            recordAccess,
+          }),
+        );
+        if (!readiness.finalized) throw actionError("CONFLICT", "Only a finalized Record can be corrected");
+        await correctionDraftValues(
+          sql,
+          original.tableId,
+          boundId(ctx, "typeField"),
+          config.typeValue,
+          boundId(ctx, "originalField"),
+          original.recordId,
+        );
+        return {
+          summary: "Create one correction Draft linked to the finalized original Record",
+          output: { kind: "record", tableId: original.tableId, recordId: `dry-run:${ctx.stepKey}`, planned: true },
         };
       }),
   }),

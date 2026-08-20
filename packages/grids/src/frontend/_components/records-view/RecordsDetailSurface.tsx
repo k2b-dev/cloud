@@ -7,7 +7,10 @@ import type { PublicDocumentTemplateSummary } from "../documents/public-document
 import RecordDetailPanel from "../records/RecordDetailPanel";
 import GroupDetailPanel from "../table/GroupDetailPanel";
 import type { GroupBucket } from "../table/GroupedTable";
-import type { PublicWorkspaceRecordDetail as WorkspaceRecordDetail } from "../workspace/workspace-public-state-model";
+import type {
+  PublicWorkspaceRecordDetail as WorkspaceRecordDetail,
+  PublicWorkspaceRecordLauncher as WorkspaceRecordLauncher,
+} from "../workspace/workspace-public-state-model";
 
 type Props = {
   cloudUrl: string;
@@ -26,6 +29,7 @@ type Props = {
   documentTemplates: PublicDocumentTemplateSummary[];
   mode: () => "live" | "trash";
   canWrite: boolean;
+  canRunWorkflows: boolean;
   relationLabels: Record<string, string>;
   fieldsByTable: Record<string, Field[]>;
   viewColumns: ColumnSpec[] | undefined;
@@ -34,6 +38,8 @@ type Props = {
   onRetryRecord: () => void;
   onRecordUpdated: (record: GridRecord) => void;
   onRecordRemoved: () => void;
+  recordActionLaunchers: WorkspaceRecordLauncher[];
+  onOpenRecord: (recordId: string) => void;
   onCloseGroup: () => void;
   onOpenGroupedRecord: (record: GridRecord) => void;
 };
@@ -83,12 +89,15 @@ export default function RecordsDetailSurface(props: Props) {
               documentTemplates={props.documentTemplates}
               mode={props.mode}
               canWrite={props.canWrite}
+              canRunWorkflows={props.canRunWorkflows}
               relationLabels={props.relationLabels}
               fieldsByTable={fieldsByTable()}
               viewColumns={props.viewColumns}
               onClose={props.onCloseRecord}
               onUpdated={props.onRecordUpdated}
               onRemoved={props.onRecordRemoved}
+              recordActionLaunchers={props.recordActionLaunchers}
+              onOpenRecord={props.onOpenRecord}
               dateConfig={props.dateConfig}
             />
           </Show>

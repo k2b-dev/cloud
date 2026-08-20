@@ -8,7 +8,12 @@ import type {
   GridsWorkflowLauncherConfig,
   UpdateGridsWorkflowLauncherInput,
 } from "../workflows/contracts";
-import { GridsWorkflowLauncherConfigSchema, isCanonicalCloseSelectionPlan, scannerLauncherInputSources } from "../workflows/contracts";
+import {
+  GridsWorkflowLauncherConfigSchema,
+  isCanonicalCloseSelectionPlan,
+  isCanonicalCorrectionDraftPlan,
+  scannerLauncherInputSources,
+} from "../workflows/contracts";
 import { logAudit, type SqlClient } from "./audit";
 import { parseJsonbRow } from "./jsonb";
 import { insertWithShortId } from "./short-id";
@@ -68,6 +73,14 @@ export const validateLauncherConfig = (workflow: GridsWorkflow, config: GridsWor
       }
     } else if (config.profile === "closeSelection" && !isCanonicalCloseSelectionPlan(workflow.plan, config.input)) {
       add("launcher.profile.plan", "Close selection requires its canonical exact-selection workflow plan", ["config", "profile"]);
+    }
+  }
+  if (config.kind === "record") {
+    const input = inputByName(workflow, config.input);
+    if (!input) add("launcher.input.unknown", `Unknown workflow input "${config.input}"`, ["config", "input"]);
+    else if (input.type !== "record") add("launcher.input.type", "record actions require a record input", ["config", "input"]);
+    if (config.profile === "correctionDraft" && !isCanonicalCorrectionDraftPlan(workflow.plan, config.input)) {
+      add("launcher.profile.plan", "Create correction requires its canonical finalized-Record workflow plan", ["config", "profile"]);
     }
   }
   if (config.kind === "scanner") {

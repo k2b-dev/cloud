@@ -122,8 +122,8 @@ const migrateKernelProfile = async (sql: SQL): Promise<void> => {
       base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE CASCADE,
       workflow_id UUID NOT NULL,
       launcher_id UUID,
-      launcher_kind TEXT CHECK (launcher_kind IS NULL OR launcher_kind IN ('scanner', 'bulk', 'customApp')),
-      channel TEXT NOT NULL CHECK (channel IN ('api', 'customApp', 'scanner', 'bulk', 'schedule', 'recordEvent')),
+      launcher_kind TEXT CHECK (launcher_kind IS NULL OR launcher_kind IN ('scanner', 'bulk', 'record', 'customApp')),
+      channel TEXT NOT NULL CHECK (channel IN ('api', 'customApp', 'scanner', 'bulk', 'record', 'schedule', 'recordEvent')),
       actor_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
       service_account_id UUID REFERENCES auth.service_accounts(id) ON DELETE SET NULL,
       -- Detects "same idempotency key, different request". The kernel answers a
@@ -141,10 +141,10 @@ const migrateKernelProfile = async (sql: SQL): Promise<void> => {
     UPDATE grids.workflow_run_profile SET channel = 'customApp' WHERE channel = 'dashboard';
     ALTER TABLE grids.workflow_run_profile
       ADD CONSTRAINT workflow_run_profile_launcher_kind_check
-      CHECK (launcher_kind IS NULL OR launcher_kind IN ('scanner', 'bulk', 'customApp'));
+      CHECK (launcher_kind IS NULL OR launcher_kind IN ('scanner', 'bulk', 'record', 'customApp'));
     ALTER TABLE grids.workflow_run_profile
       ADD CONSTRAINT workflow_run_profile_channel_check
-      CHECK (channel IN ('api', 'customApp', 'scanner', 'bulk', 'schedule', 'recordEvent'));
+      CHECK (channel IN ('api', 'customApp', 'scanner', 'bulk', 'record', 'schedule', 'recordEvent'));
   `.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_workflow_run_profile_workflow
@@ -170,7 +170,7 @@ const migrateDefinitionLinks = async (sql: SQL): Promise<void> => {
       base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE CASCADE,
       workflow_id UUID NOT NULL REFERENCES grids.workflow_profile(id) ON DELETE CASCADE,
       name TEXT NOT NULL,
-      kind TEXT NOT NULL CHECK (kind IN ('scanner', 'bulk', 'customApp')),
+      kind TEXT NOT NULL CHECK (kind IN ('scanner', 'bulk', 'record', 'customApp')),
       config JSONB NOT NULL,
       enabled BOOLEAN NOT NULL DEFAULT TRUE,
       -- The revision this launcher's config was checked against. Publishing a
@@ -190,7 +190,7 @@ const migrateDefinitionLinks = async (sql: SQL): Promise<void> => {
     SET kind = 'customApp', config = jsonb_set(config, '{kind}', '"customApp"'::jsonb)
     WHERE kind = 'dashboard';
     ALTER TABLE grids.workflow_launchers
-      ADD CONSTRAINT workflow_launchers_kind_check CHECK (kind IN ('scanner', 'bulk', 'customApp'));
+      ADD CONSTRAINT workflow_launchers_kind_check CHECK (kind IN ('scanner', 'bulk', 'record', 'customApp'));
   `.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_workflow_launchers_workflow

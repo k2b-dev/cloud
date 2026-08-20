@@ -102,6 +102,14 @@ describe("grids schema migration", () => {
             AND column_info.column_name = 'short_id'
         `;
         expect(requestPublicId).toEqual({ nullable: "NO", indexReady: true });
+        const workflowConstraints = await database<Array<{ name: string; definition: string }>>`
+          SELECT conname AS name, pg_get_constraintdef(oid) AS definition
+          FROM pg_constraint
+          WHERE conname IN ('workflow_launchers_kind_check', 'workflow_run_profile_launcher_kind_check', 'workflow_run_profile_channel_check')
+          ORDER BY conname
+        `;
+        expect(workflowConstraints).toHaveLength(3);
+        for (const constraint of workflowConstraints) expect(constraint.definition).toContain("'record'::text");
       });
     },
     120_000,

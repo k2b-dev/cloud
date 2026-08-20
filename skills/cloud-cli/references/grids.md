@@ -29,7 +29,7 @@ Grids stores structured operational data in bases made of tables, fields, record
 - A **form** writes records through a configured set of fields. A table also has a virtual default form.
 - A **Grids App** is an independently shared, Base-owned published capability surface. Its readers do not need raw Base access, and it may be public.
 - A **document template** renders GQL data through Liquid HTML and Gotenberg. A generated document keeps a recursive record snapshot.
-- A **workflow** is validated YAML with inputs, optional triggers, and steps. Launchers adapt workflows to scanner, bulk, and Grids App
+- A **workflow** is validated YAML with inputs, optional triggers, and steps. Launchers adapt workflows to scanner, bulk, Record, and Grids App
   interactions. Grids contributes the actions and the events; the runs themselves live in Cloud's shared workflow kernel, so
   `cld grids workflow-runs` reads one base while `cld admin workflows` reads every app.
 
@@ -779,7 +779,7 @@ Workflow YAML stores `inputs`, optional `triggers`, and `steps`; name and descri
 cld grids workflows reference --json
 ```
 
-The shipped inputs are `record`, `recordList`, `text`, `number`, `boolean`, `date`, `dateTime`, and `select`. Triggers are `schedule` and `recordEvent`. Actions are `updateRecord`, `createRecord`, `atomicRecords`, `generateDocument`, `createDocumentLink`, `sendEmail`, `httpRequest`, `setVariable`, `fail`, and `succeed`. Control flow supports `if/then/else`, `switch/cases/default`, and `forEach/as/do`.
+The shipped inputs are `record`, `recordList`, `text`, `number`, `boolean`, `date`, `dateTime`, and `select`. Triggers are `schedule` and `recordEvent`. Actions are `closeRecord`, `createCorrectionDraft`, `finalizeRecord`, `updateRecord`, `createRecord`, `atomicRecords`, `generateDocument`, `createDocumentLink`, `sendEmail`, `httpRequest`, `setVariable`, `fail`, and `succeed`. Control flow supports `if/then/else`, `switch/cases/default`, and `forEach/as/do`.
 
 `schedule` and `recordEvent` are the only triggers written in YAML. A direct invocation and a launcher press are API and CLI operations, not
 YAML — but they are still events, and a workflow is always listening for them, so nothing has to be declared to make it invocable.
@@ -829,6 +829,7 @@ Action fields are:
 | Action | Required | Optional and defaults | Saved output |
 | --- | --- | --- | --- |
 | `closeRecord` | `record` | `expectedMode`, `expectedPolicyRevision` | none |
+| `createCorrectionDraft` | `original`, `typeField`, `typeValue`, `originalField` | none | created correction Draft |
 | `finalizeRecord` | `record` | none | none |
 | `updateRecord` | `record`, non-empty `set` | `audit` answers by question UUID | none |
 | `createRecord` | `table`, non-empty `values` | `saveAs` | created record |
@@ -961,8 +962,8 @@ Saved document outputs expose `id`, `templateId`, `workflowRunId`, `snapshotId`,
 and `status`. HTTP outputs expose `status`, `ok`, and `body`.
 
 Limits are 100 inputs, 1,000 total steps, nesting depth 20, 1,000 conditions, condition depth 20, 10,000 loop or record-list items, and
-200,000 YAML characters. Run modes are `execute` and `dryRun`. Invocation channels are `api`, `customApp`, `scanner`, `bulk`, `schedule`,
-and `recordEvent`.
+200,000 YAML characters. Run modes are `execute` and `dryRun`. Invocation channels are `api`, `customApp`, `scanner`, `bulk`, `record`,
+`schedule`, and `recordEvent`.
 
 A run and a step do not share a vocabulary, and reading one as the other is how a finished step gets reported as still going:
 
@@ -1012,7 +1013,7 @@ Restore copies the selected definition into a new current revision. It uses the 
 
 ### Invoke and inspect runs
 
-Everything that starts a run is an event. A direct invocation records `grids.invoked`; a scanner, bulk, or Grids App launcher records
+Everything that starts a run is an event. A direct invocation records `grids.invoked`; a scanner, bulk, Record, or Grids App launcher records
 `grids.launcherPressed`, a schedule slot records `grids.scheduleTick`, and a watched row records `grids.recordChanged`. The kernel matches
 the event against the workflow's activations and materializes the run, so a run has an inspectable cause rather than only a channel label.
 A dry run is deliberately not an event: nothing happened, somebody is asking what would, so it is created directly against the workflow's
@@ -1069,7 +1070,7 @@ happened. Run commands are `workflow-runs list|get|cancel|steps|documents|downlo
 
 ### Run options and email templates
 
-Run options expose a workflow as a scanner, bulk, or Grids App interaction. The API and CLI call these resources launchers. The **Close selected Records** starter installs the dedicated bulk profile `closeSelection`; it accepts only exact public Record IDs and is rejected if the workflow no longer has the canonical close-only plan. The browser reviews up to 100 Records and supplies the current Finalization mode and policy revision. API and CLI callers must review and provide those two inputs themselves; every action verifies them again before changing anything. Ordinary bulk options may use explicit IDs or a row-shaped query. A Grids App option uses `inputMode: "fixed"` with complete `inputBindings` for a one-click action, or `inputMode: "prompt"` to request the workflow's declared inputs when it runs. Fixed options reject runtime inputs; prompt options do not store fixed bindings. Their complete JSON shapes and invocation bodies are part of `workflows reference`.
+Run options expose a workflow as a scanner, bulk, Record, or Grids App interaction. The API and CLI call these resources launchers. The **Close selected Records** starter installs the dedicated bulk profile `closeSelection`; it accepts only exact public Record IDs and is rejected if the workflow no longer has the canonical close-only plan. The browser reviews up to 100 Records and supplies the current Finalization mode and policy revision. API and CLI callers must review and provide those two inputs themselves; every action verifies them again before changing anything. The **Create correction Draft** starter installs the Record profile `correctionDraft`; callers supply one finalized Record public ID, and the canonical action creates one normal Draft linked through the configured existing fields. Ordinary bulk options may use explicit IDs or a row-shaped query. A Grids App option uses `inputMode: "fixed"` with complete `inputBindings` for a one-click action, or `inputMode: "prompt"` to request the workflow's declared inputs when it runs. Fixed options reject runtime inputs; prompt options do not store fixed bindings. Their complete JSON shapes and invocation bodies are part of `workflows reference`.
 
 A Grids App definition may also embed an enabled Scanner run option as a `scanner` block. Embedded scanners require a signed-in App reader and pin the exact launcher configuration and workflow revision at publish time. They accept scalar session and after-scan prompts; use the full Workflow scanner when those prompts must select records.
 

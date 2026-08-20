@@ -6,8 +6,10 @@ import { describeRoute } from "hono-openapi";
 import type { z } from "zod";
 import {
   admitBulkLauncher,
+  admitRecordLauncher,
   invokeBulkLauncher,
   invokeCustomAppLauncher,
+  invokeRecordLauncher,
   invokeScannerLauncher,
 } from "../service/workflow-launcher-invocations";
 import { invokeGridsWorkflow } from "../service/workflow-runtime";
@@ -17,6 +19,7 @@ import {
   BulkLauncherRequestSchema,
   CustomAppLauncherRequestSchema,
   PublicWorkflowInvocationReceiptSchema,
+  RecordLauncherRequestSchema,
   resolveBulkRecordIds,
   ScannerLauncherRequestSchema,
   toPublicWorkflowReceipt,
@@ -168,6 +171,42 @@ export const createWorkflowTriggerRoutes = () =>
               ...body,
               ...(resolved ? { recordIds: resolved } : {}),
               launcherId,
+              principal,
+            }),
+          ),
+        );
+      },
+    )
+    .post(
+      "/launchers/:launcherId/invoke/record",
+      describeRoute({
+        tags: ["Grids:Workflow"],
+        summary: "Invoke a single-Record workflow launcher",
+        responses: {
+          200: jsonResponse(PublicWorkflowInvocationReceiptSchema, "Invocation accepted"),
+          400: jsonResponse(ErrorResponseSchema, "Invalid invocation"),
+          403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+          404: jsonResponse(ErrorResponseSchema, "Not found"),
+          409: jsonResponse(ErrorResponseSchema, "Revision or idempotency conflict"),
+          500: jsonResponse(ErrorResponseSchema, "Invocation failed"),
+        },
+      }),
+      v("json", RecordLauncherRequestSchema),
+      async (c) => {
+        const launcherId = await resolvePublicIdParam(c, "launcherId", "workflowLauncher");
+        if (!launcherId) return c.json({ message: "Invalid workflow launcher id" }, 400);
+        const body = c.req.valid("json");
+        const principal = workflowPrincipal(c);
+        const admission = await admitRecordLauncher({ launcherId, expectedRevision: body.expectedRevision, principal });
+        if (!admission.ok) return respond(c, () => Promise.resolve(admission));
+        const [recordId] = (await resolveBulkRecordIds([body.recordId])) ?? [];
+        if (!recordId) return c.json({ message: "Record not found" }, 404);
+        return respond(c, async () =>
+          publicReceipt(
+            await invokeRecordLauncher({
+              ...body,
+              launcherId,
+              recordId,
               principal,
             }),
           ),

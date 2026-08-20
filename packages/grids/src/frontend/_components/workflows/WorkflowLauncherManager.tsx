@@ -19,7 +19,7 @@ import { apiClient } from "../../../api/client";
 import type { PublicTable } from "../../../api/public-dto";
 import { PublicGridsWorkflowLauncherListSchema, PublicGridsWorkflowLauncherSchema } from "../../../api/workflow-public-contracts";
 import type { CreateGridsWorkflowLauncherInput, GridsScannerInputSource, GridsWorkflowLauncherKind } from "../../../workflows/contracts";
-import { isCanonicalCloseSelectionPlan, scannerLauncherInputSources } from "../../../workflows/contracts";
+import { isCanonicalCloseSelectionPlan, isCanonicalCorrectionDraftPlan, scannerLauncherInputSources } from "../../../workflows/contracts";
 import { errorMessage } from "../utils/api-helpers";
 import type { PublicWorkflow, PublicWorkflowLauncher } from "../workspace/workspace-public-state-model";
 import { WorkflowInputFields } from "./WorkflowInputFields";
@@ -55,6 +55,7 @@ type LauncherDraft = CreateGridsWorkflowLauncherInput;
 const launcherKindOptions = [
   { id: "scanner", label: "Scanner" },
   { id: "bulk", label: "Bulk selection" },
+  { id: "record", label: "Record action" },
   { id: "customApp", label: "App action" },
 ];
 
@@ -70,6 +71,7 @@ const launcherConfigurationSummary = (launcher: PublicWorkflowLauncher): string 
   if (launcher.config.kind === "bulk") {
     return "profile" in launcher.config ? "Exact Close selection" : `Supplies ${launcher.config.input}`;
   }
+  if (launcher.config.kind === "record") return "Create correction Draft";
   return launcher.config.inputMode === "prompt" ? "Asks for input when run" : "Uses fixed input values";
 };
 
@@ -155,10 +157,13 @@ function LauncherEditor(props: {
   );
   const inputOptions = createMemo(() =>
     props.workflow.plan.inputs
-      .filter((candidate) => candidate.type === "recordList")
+      .filter((candidate) => candidate.type === (kind() === "record" ? "record" : "recordList"))
       .map((candidate) => ({ id: candidate.name, label: candidate.config.label?.toString() || candidate.name })),
   );
   const closeSelectionProfile = createMemo(() => (kind() === "bulk" ? isCanonicalCloseSelectionPlan(props.workflow.plan, input()) : false));
+  const correctionDraftProfile = createMemo(() =>
+    kind() === "record" ? isCanonicalCorrectionDraftPlan(props.workflow.plan, input()) : false,
+  );
   const missingRequiredInputs = createMemo(() => missingLauncherRequiredInputs(props.workflow.plan.inputs, kind(), input()));
   const customAppValidation = createMemo(() => buildWorkflowRunInput(props.workflow.plan.inputs, customAppBindings()));
   const fixedScannerInputs = createMemo(() =>
@@ -187,7 +192,9 @@ function LauncherEditor(props: {
             missingScannerInputs().length === 0 &&
             fixedScannerValuesComplete() &&
             (Object.values(scannerSources()).includes("scanRecord") ? resolveBy() !== "field" || field().trim().length > 0 : true)
-          : input().length > 0 && (closeSelectionProfile() || missingRequiredInputs().length === 0)),
+          : kind() === "record"
+            ? input().length > 0 && correctionDraftProfile()
+            : input().length > 0 && (closeSelectionProfile() || missingRequiredInputs().length === 0)),
   );
   const customAppErrors = () => {
     const validation = customAppValidation();
@@ -239,7 +246,9 @@ function LauncherEditor(props: {
               input: input(),
               ...(closeSelectionProfile() ? { profile: "closeSelection" as const } : {}),
             }
-          : { kind: "scanner", inputSources: scannerInputSources() };
+          : kind() === "record"
+            ? { kind: "record", input: input(), profile: "correctionDraft" }
+            : { kind: "scanner", inputSources: scannerInputSources() };
     props.close({ name: name().trim(), enabled: enabled(), config });
   };
 
@@ -264,15 +273,16 @@ function LauncherEditor(props: {
               setKind(next);
               if (next !== "customApp") {
                 setInput(
-                  props.workflow.plan.inputs.find((candidate) => candidate.type === (next === "scanner" ? "record" : "recordList"))?.name ??
-                    "",
+                  props.workflow.plan.inputs.find(
+                    (candidate) => candidate.type === (next === "scanner" || next === "record" ? "record" : "recordList"),
+                  )?.name ?? "",
                 );
               }
             }}
           />
-          <Show when={kind() === "bulk"}>
+          <Show when={kind() === "bulk" || kind() === "record"}>
             <Select
-              label="Record-list input"
+              label={kind() === "record" ? "Record input" : "Record-list input"}
               description="The run option supplies this workflow input."
               required
               options={inputOptions()}
@@ -284,7 +294,12 @@ function LauncherEditor(props: {
                 This run option closes only the exact Records a person selects and confirms.
               </NoticeCard>
             </Show>
-            <Show when={!closeSelectionProfile() && missingRequiredInputs().length > 0}>
+            <Show when={correctionDraftProfile()}>
+              <NoticeCard tone="info" icon="ti ti-file-pencil">
+                This action creates one correction Draft from the finalized Record a person opens.
+              </NoticeCard>
+            </Show>
+            <Show when={!closeSelectionProfile() && !correctionDraftProfile() && missingRequiredInputs().length > 0}>
               <NoticeCard tone="danger" icon={false} role="alert">
                 This surface cannot supply the required {missingRequiredInputs().length === 1 ? "input" : "inputs"}:{" "}
                 {missingRequiredInputs().join(", ")}. Use a App run option or make the inputs optional.
@@ -505,7 +520,7 @@ export function WorkflowLauncherManager(props: {
       <PanelDialog.Body>
         <div class="flex flex-col gap-2">
           <div class="flex items-center justify-between gap-2">
-            <p class="text-sm text-dimmed">Make this workflow available as a scanner, bulk action, or App action.</p>
+            <p class="text-sm text-dimmed">Make this workflow available as a scanner, Record action, bulk action, or App action.</p>
             <Button variant="primary" size="sm" type="button" disabled={mutationsBlocked()} onClick={() => void edit()}>
               <i class="ti ti-plus" /> Add run option
             </Button>
@@ -536,7 +551,7 @@ export function WorkflowLauncherManager(props: {
                     <div class="paper flex items-start gap-3 px-3 py-2">
                       <span class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] text-secondary">
                         <i
-                          class={`ti ${launcher.config.kind === "scanner" ? "ti-barcode" : launcher.config.kind === "bulk" ? "ti-list-check" : "ti-app-window"}`}
+                          class={`ti ${launcher.config.kind === "scanner" ? "ti-barcode" : launcher.config.kind === "bulk" ? "ti-list-check" : launcher.config.kind === "record" ? "ti-file-pencil" : "ti-app-window"}`}
                         />
                       </span>
                       <span class="min-w-0 flex-1">

@@ -154,7 +154,7 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
           })}
           {state.adminModeRequested && state.canManageBase && (
             <>
-              <CreateWorkflowButton baseId={state.base.id} tables={state.catalog.tables} />
+              <CreateWorkflowButton baseId={state.base.id} tables={state.catalog.tables} fieldsByTable={state.catalog.fieldsByTable} />
               <EmailTemplatesButton baseId={state.base.id} />
             </>
           )}

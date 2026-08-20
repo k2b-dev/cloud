@@ -171,7 +171,9 @@ const projectRoute = async (state: OkWorkspaceState, catalog: PublicWorkspaceCat
     const initialData = await toPublicTableQueryResponse(route.initialData, route.fields);
     const records = await toPublicRecords(route.initialSelectedRecord ? [route.initialSelectedRecord] : [], route.fields);
     const templates = await projectDocumentTemplateSummaries(route.documentTemplates);
-    const launchers = await toPublicWorkflowLaunchers(route.bulkSelectionLaunchers);
+    const launchers = await toPublicWorkflowLaunchers([...route.bulkSelectionLaunchers, ...route.recordActionLaunchers]);
+    const bulkLaunchers = launchers.slice(0, route.bulkSelectionLaunchers.length);
+    const recordLaunchers = launchers.slice(route.bulkSelectionLaunchers.length);
     const otherTableIds = await projectPublicIds(
       "table",
       route.otherTables.map((table) => table.id),
@@ -214,9 +216,13 @@ const projectRoute = async (state: OkWorkspaceState, catalog: PublicWorkspaceCat
       ),
       activeRecordQuery: publicActiveQuery,
       displayConfig: activeView?.ui.displayConfig ?? publicActiveTable.displayConfig,
-      bulkSelectionLaunchers: launchers.map((launcher, index) => ({
+      bulkSelectionLaunchers: bulkLaunchers.map((launcher, index) => ({
         ...launcher,
         workflowRevision: route.bulkSelectionLaunchers[index]!.workflowRevision,
+      })),
+      recordActionLaunchers: recordLaunchers.map((launcher, index) => ({
+        ...launcher,
+        workflowRevision: route.recordActionLaunchers[index]!.workflowRevision,
       })),
     };
   }

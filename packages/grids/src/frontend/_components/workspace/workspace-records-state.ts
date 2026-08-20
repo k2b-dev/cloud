@@ -21,26 +21,36 @@ import type {
   WorkspaceCatalog,
   WorkspaceCommon,
   WorkspaceQueryResultViewRoute,
+  WorkspaceRecordLauncher,
   WorkspaceRecordsRoute,
 } from "./workspace-state-model";
 
 const diagnosticsMessage = (diagnostics: Array<Pick<DslResolverDiagnostic, "message">>) =>
   diagnostics.map((diagnostic) => diagnostic.message).join("; ") || "invalid GQL source";
 
-const bulkSelectionLaunchersForTable = async (user: AuthUser, baseId: string, tableId: string): Promise<WorkspaceBulkLauncher[]> => {
-  if (!gridsService.workflow?.listEnabledForBase) return [];
+const workflowLaunchersForTable = async (
+  user: AuthUser,
+  baseId: string,
+  tableId: string,
+): Promise<{ bulk: WorkspaceBulkLauncher[]; record: WorkspaceRecordLauncher[] }> => {
+  if (!gridsService.workflow?.listEnabledForBase) return { bulk: [], record: [] };
   const level = await resolveBaseLevel(user, baseId);
-  if (!gridsService.permission.hasAtLeast(level, "write")) return [];
+  if (!gridsService.permission.hasAtLeast(level, "write")) return { bulk: [], record: [] };
   const workflows = await gridsService.workflow.listEnabledForBase(baseId);
-  const matches: WorkspaceBulkLauncher[] = [];
+  const bulk: WorkspaceBulkLauncher[] = [];
+  const record: WorkspaceRecordLauncher[] = [];
   for (const workflow of workflows) {
     for (const launcher of await gridsService.workflow.launcher.list(workflow.id, true)) {
-      if (launcher.config.kind !== "bulk") continue;
+      if (launcher.config.kind !== "bulk" && launcher.config.kind !== "record") continue;
       if (workflow.plan.bindings[`inputs.${launcher.config.input}.table`] !== tableId) continue;
-      matches.push({ ...launcher, workflowRevision: workflow.revision, workflowShortId: workflow.shortId });
+      const projected = { ...launcher, workflowRevision: workflow.revision, workflowShortId: workflow.shortId };
+      if (launcher.config.kind === "bulk") bulk.push(projected);
+      else record.push(projected);
     }
   }
-  return matches.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  const byName = (a: WorkspaceBulkLauncher | WorkspaceRecordLauncher, b: WorkspaceBulkLauncher | WorkspaceRecordLauncher) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  return { bulk: bulk.sort(byName), record: record.sort(byName) };
 };
 
 const selectedRecordMeta = (
@@ -265,6 +275,7 @@ const buildRecordsRoute = async (params: {
           })
         : emptyRecordDetail(selectedRecord.id)
     : null;
+  const workflowLaunchers = await workflowLaunchersForTable(common.params.user, common.base.id, activeTable.id);
   return {
     kind: "records",
     activeTable,
@@ -313,7 +324,8 @@ const buildRecordsRoute = async (params: {
     groupedExplode: initial.groupedExplode,
     activeRecordQuery: view.activeViewForQuery?.query ?? null,
     displayConfig,
-    bulkSelectionLaunchers: await bulkSelectionLaunchersForTable(common.params.user, common.base.id, activeTable.id),
+    bulkSelectionLaunchers: workflowLaunchers.bulk,
+    recordActionLaunchers: workflowLaunchers.record,
   };
 };
 

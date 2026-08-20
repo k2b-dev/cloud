@@ -34,6 +34,7 @@ import { workspaceMainClass } from "../workspace/workspace-layout";
 import type {
   PublicWorkspaceBulkLauncher as WorkspaceBulkLauncher,
   PublicWorkspaceRecordDetail as WorkspaceRecordDetail,
+  PublicWorkspaceRecordLauncher as WorkspaceRecordLauncher,
 } from "../workspace/workspace-public-state-model";
 import { activeDisplayConfig, calendarQueryFilter, cardImageFieldIds, removeCalendarQueryFilter } from "./display-mode";
 import type { CardSize, RecordsState } from "./query-url";
@@ -117,6 +118,7 @@ type Props = {
   activeRecordQuery: RecordQuery | null;
   displayConfig: RecordDisplayConfig;
   bulkSelectionLaunchers: WorkspaceBulkLauncher[];
+  recordActionLaunchers: WorkspaceRecordLauncher[];
   dateConfig?: DateContext;
   workspaceRouteKey: string;
 };
@@ -134,6 +136,7 @@ export default function RecordsView(props: Props) {
     return policy.mode === "all" || policy.sources.includes(source);
   };
   const canDirectWrite = () => props.canWrite && mutationSourceAllowed("direct");
+  const canRunWorkflows = () => props.canWrite && mutationSourceAllowed("workflow");
   const [tableDisplayConfig, setTableDisplayConfig] = createSignal<RecordDisplayConfig>(
     props.activeView ? { mode: "table" } : props.displayConfig,
   );
@@ -857,6 +860,7 @@ export default function RecordsView(props: Props) {
             documentTemplates={props.documentTemplates}
             mode={detailMode}
             canWrite={canDirectWrite()}
+            canRunWorkflows={canRunWorkflows()}
             relationLabels={mergedRelationLabels()}
             fieldsByTable={props.fieldsByTable}
             viewColumns={effectiveViewColumns()}
@@ -865,6 +869,8 @@ export default function RecordsView(props: Props) {
             onRetryRecord={retrySelectedRecord}
             onRecordUpdated={onRecordUpdated}
             onRecordRemoved={onRecordRemoved}
+            recordActionLaunchers={props.recordActionLaunchers}
+            onOpenRecord={(recordId) => openRecordById(recordId, false)}
             onCloseGroup={onCloseGroupDetail}
             onOpenGroupedRecord={onOpenGroupedRecord}
           />

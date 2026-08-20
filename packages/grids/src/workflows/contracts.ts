@@ -8,7 +8,7 @@ import type {
 } from "@valentinkolb/cloud/workflows";
 import { z } from "zod";
 
-export const GRIDS_WORKFLOW_CHANNELS = ["api", "customApp", "scanner", "bulk", "schedule", "recordEvent"] as const;
+export const GRIDS_WORKFLOW_CHANNELS = ["api", "customApp", "scanner", "bulk", "record", "schedule", "recordEvent"] as const;
 
 export type GridsWorkflowChannel = (typeof GRIDS_WORKFLOW_CHANNELS)[number];
 
@@ -59,7 +59,7 @@ export const WORKFLOW_REVISION_HEADER = "X-Workflow-Revision";
 
 export const toWorkflowRevision = (revision: number): WorkflowRevision => String(revision);
 
-export const GRIDS_WORKFLOW_LAUNCHER_KINDS = ["scanner", "bulk", "customApp"] as const;
+export const GRIDS_WORKFLOW_LAUNCHER_KINDS = ["scanner", "bulk", "record", "customApp"] as const;
 
 export type GridsWorkflowLauncherKind = (typeof GRIDS_WORKFLOW_LAUNCHER_KINDS)[number];
 
@@ -181,11 +181,40 @@ export const isCanonicalCloseSelectionPlan = (plan: WorkflowBoundPlan, recordLis
   );
 };
 
+export const isCanonicalCorrectionDraftPlan = (plan: WorkflowBoundPlan, recordInput: string): boolean => {
+  const input = plan.inputs.find((candidate) => candidate.name === recordInput);
+  if (
+    plan.inputs.length !== 1 ||
+    !input ||
+    input.type !== "record" ||
+    input.config.required !== true ||
+    plan.triggers.length !== 0 ||
+    plan.steps.length !== 1 ||
+    typeof plan.bindings[`inputs.${recordInput}.table`] !== "string"
+  ) {
+    return false;
+  }
+  const action = plan.steps[0];
+  if (action?.kind !== "action" || action.action !== "createCorrectionDraft") return false;
+  return (
+    Object.keys(action.config).sort().join(",") === "original,originalField,typeField,typeValue" &&
+    action.config.original === `inputs.${recordInput}` &&
+    typeof action.config.typeField === "string" &&
+    typeof action.config.typeValue === "string" &&
+    typeof action.config.originalField === "string" &&
+    typeof plan.bindings["steps.0.createCorrectionDraft.typeField"] === "string" &&
+    typeof plan.bindings["steps.0.createCorrectionDraft.originalField"] === "string"
+  );
+};
+
 export type GridsBulkLauncherConfig = { kind: "bulk"; input: string } | { kind: "bulk"; input: string; profile: "closeSelection" };
+
+export type GridsRecordLauncherConfig = { kind: "record"; input: string; profile: "correctionDraft" };
 
 export type GridsWorkflowLauncherConfig =
   | GridsScannerLauncherConfig
   | GridsBulkLauncherConfig
+  | GridsRecordLauncherConfig
   | {
       kind: "customApp";
       label?: string;
@@ -442,6 +471,14 @@ const CloseSelectionBulkLauncherConfigSchema = z
 
 const BulkLauncherConfigSchema = z.union([StandardBulkLauncherConfigSchema, CloseSelectionBulkLauncherConfigSchema]);
 
+const CorrectionDraftRecordLauncherConfigSchema = z
+  .object({
+    kind: z.literal("record"),
+    input: z.string().trim().min(1).max(120),
+    profile: z.literal("correctionDraft"),
+  })
+  .strict();
+
 const CustomAppLauncherConfigSchema = z
   .object({
     kind: z.literal("customApp"),
@@ -463,6 +500,7 @@ const CustomAppLauncherConfigSchema = z
 export const GridsWorkflowLauncherConfigSchema = z.union([
   ScannerLauncherConfigSchema,
   BulkLauncherConfigSchema,
+  CorrectionDraftRecordLauncherConfigSchema,
   CustomAppLauncherConfigSchema,
 ]);
 

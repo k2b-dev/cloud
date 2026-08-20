@@ -28,7 +28,7 @@ const workflow = {
   updatedAt: "2026-07-15T00:00:00.000Z",
 };
 
-const launcher = (kind: "scanner" | "bulk" | "customApp") => ({
+const launcher = (kind: "scanner" | "bulk" | "record" | "customApp") => ({
   id: launcherId,
   baseId,
   workflowId,
@@ -38,7 +38,9 @@ const launcher = (kind: "scanner" | "bulk" | "customApp") => ({
       ? { kind, input: "item", resolve: { by: "scanCode" } }
       : kind === "bulk"
         ? { kind, input: "items" }
-        : { kind, label: "Run" },
+        : kind === "record"
+          ? { kind, input: "original", profile: "correctionDraft" }
+          : { kind, label: "Run" },
   enabled: true,
   validatedRevision: 3,
   diagnostics: [],
@@ -246,10 +248,11 @@ describe("Grids workflow CLI", () => {
     const bodies = {
       scanner: { operationId: "scan-1", mode: "execute", expectedRevision: 3, scannedText: "gsc_opaque", inputs: {} },
       bulk: { operationId: "bulk-1", mode: "dryRun", expectedRevision: 3, recordIds: [baseId], inputs: {} },
+      record: { operationId: "record-1", mode: "execute", expectedRevision: 3, recordId: itemRecordId, inputs: {} },
       customApp: { operationId: "app-1", mode: "execute", expectedRevision: 3, inputs: { range: "30d" } },
     } as const;
 
-    for (const kind of ["scanner", "bulk", "customApp"] as const) {
+    for (const kind of ["scanner", "bulk", "record", "customApp"] as const) {
       const { ctx, calls } = createContext(
         ["workflow-launchers", "invoke", baseId, workflowId, launcherId],
         { body: JSON.stringify(bodies[kind]) },

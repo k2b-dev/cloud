@@ -14,6 +14,7 @@ const ids = {
   email: "77777777-7777-4777-8777-777777777777",
   current: "88888888-8888-4888-8888-888888888888",
   related: "99999999-9999-4999-8999-999999999999",
+  corrects: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
 } as const;
 
 const catalog = (): WorkflowCatalog =>
@@ -39,6 +40,12 @@ const catalog = (): WorkflowCatalog =>
             shortId: "FLD004",
             name: "Related archives",
             relation: { targetTableId: ids.archive, cardinality: "multiple" },
+          },
+          {
+            id: ids.corrects,
+            shortId: "FLD006",
+            name: "Corrects",
+            relation: { targetTableId: ids.items, cardinality: "single" },
           },
         ],
       ],
@@ -77,6 +84,32 @@ steps:
     if (!result.ok) return;
     expect(result.plan.bindings["inputs.records.table"]).toBe(ids.items);
     expect(result.plan.steps[0]).toMatchObject({ kind: "forEach", alias: "record" });
+  });
+
+  test("binds a correction Draft to its existing type and self-relation fields", async () => {
+    const result = await compileAndBindGridsWorkflowSource(
+      `inputs:
+  original:
+    type: record
+    table: TBL001
+    required: true
+steps:
+  - createCorrectionDraft:
+      original: inputs.original
+      typeField: FLD002
+      typeValue: correction
+      originalField: FLD006
+`,
+      catalog(),
+    );
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.bindings).toMatchObject({
+      "inputs.original.table": ids.items,
+      "steps.0.createCorrectionDraft.typeField": ids.status,
+      "steps.0.createCorrectionDraft.originalField": ids.corrects,
+    });
   });
 
   test("rejects private UUID references and canonicalizes author references to public IDs", async () => {

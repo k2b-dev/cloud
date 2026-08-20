@@ -5,8 +5,10 @@ import type { GridsWorkflow, GridsWorkflowLauncher, GridsWorkflowLauncherConfig 
 import { ALL_RECORD_ACCESS } from "./record-access";
 import {
   admitBulkLauncher,
+  admitRecordLauncher,
   invokeBulkLauncher,
   invokeCustomAppLauncher,
+  invokeRecordLauncher,
   invokeScannerLauncher,
   type WorkflowLauncherInvocationDeps,
 } from "./workflow-launcher-invocations";
@@ -113,6 +115,17 @@ const customAppInput = (overrides: Record<string, unknown> = {}) => ({
   expectedRevision: 3,
   principal,
   inputs: {},
+  ...overrides,
+});
+
+const recordInput = (overrides: Record<string, unknown> = {}) => ({
+  launcherId,
+  operationId: "record-1",
+  mode: "execute",
+  expectedRevision: 3,
+  principal,
+  inputs: {},
+  recordId,
   ...overrides,
 });
 
@@ -453,6 +466,40 @@ describe("workflow kernel bulk launchers", () => {
     expect(tooMany.ok).toBe(false);
     if (!tooMany.ok) expect(tooMany.error.message).toContain("10000");
     expect(item.resolveExplicitRecordIds).not.toHaveBeenCalled();
+    expect(item.invokeWorkflow).not.toHaveBeenCalled();
+  });
+});
+
+describe("workflow kernel Record launchers", () => {
+  test("admits access before Record resolution and invokes with only the controlled Record", async () => {
+    const item = setup(launcher({ kind: "record", input: "record", profile: "correctionDraft" }), workflow());
+
+    const admission = await admitRecordLauncher({ launcherId, expectedRevision: 3, principal }, item.deps);
+    const result = await invokeRecordLauncher(recordInput(), item.deps);
+
+    expect(admission.ok).toBe(true);
+    expect(result.ok).toBe(true);
+    expect(item.resolveExplicitRecordIds).toHaveBeenCalledWith(baseId, tableId, [recordId], ALL_RECORD_ACCESS);
+    expect(item.invokeWorkflow).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "record",
+        idempotencyKey: `launcher:${launcherId}:record-1`,
+        inputs: { record: recordId },
+      }),
+    );
+  });
+
+  test("rejects extra inputs and inaccessible Records before invocation", async () => {
+    const item = setup(launcher({ kind: "record", input: "record", profile: "correctionDraft" }), workflow(), {
+      resolveExplicitRecordIds: mock(async () => fail(err.notFound("Record"))),
+    });
+
+    const extra = await invokeRecordLauncher(recordInput({ inputs: { forged: "value" } }), item.deps);
+    const missing = await invokeRecordLauncher(recordInput(), item.deps);
+
+    expect(extra.ok).toBe(false);
+    expect(missing.ok).toBe(false);
+    if (!missing.ok) expect(missing.error.status).toBe(404);
     expect(item.invokeWorkflow).not.toHaveBeenCalled();
   });
 });

@@ -117,6 +117,7 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
         activeRecordQuery={records.activeRecordQuery}
         displayConfig={records.displayConfig}
         bulkSelectionLaunchers={records.bulkSelectionLaunchers}
+        recordActionLaunchers={records.recordActionLaunchers}
         dateConfig={state.dateConfig}
         workspaceRouteKey={`records:${records.activeTable.id}:${records.activeView?.id ?? ""}:${state.adminModeRequested}`}
       />

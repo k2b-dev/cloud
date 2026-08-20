@@ -403,6 +403,12 @@ const bindAction = (step: Extract<WorkflowIrStep, { kind: "action" }>, scope: Ma
         context,
       );
     }
+  } else if (step.action === "createCorrectionDraft") {
+    const original = expectReference(config.original, "grids.record", "original", [...path, "original"], scope, context);
+    if (original?.tableId) {
+      if (typeof config.typeField === "string") bindField(context, original.tableId, config.typeField, [...path, "typeField"]);
+      if (typeof config.originalField === "string") bindField(context, original.tableId, config.originalField, [...path, "originalField"]);
+    }
   } else if (step.action === "updateRecord") {
     const record = expectReference(config.record, "grids.record", "record", [...path, "record"], scope, context);
     bindFieldMap(config.set, record?.tableId, [...path, "set"], scope, context);

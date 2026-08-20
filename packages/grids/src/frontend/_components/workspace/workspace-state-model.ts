@@ -67,6 +67,7 @@ export type RuntimeView = View & {
 };
 
 export type WorkspaceBulkLauncher = GridsWorkflowLauncher & { workflowRevision: number; workflowShortId: string };
+export type WorkspaceRecordLauncher = GridsWorkflowLauncher & { workflowRevision: number; workflowShortId: string };
 
 export type WorkspaceRecordsRoute = {
   kind: "records";
@@ -101,6 +102,7 @@ export type WorkspaceRecordsRoute = {
   activeRecordQuery: RecordQuery | null;
   displayConfig: RecordDisplayConfig;
   bulkSelectionLaunchers: WorkspaceBulkLauncher[];
+  recordActionLaunchers: WorkspaceRecordLauncher[];
 };
 
 export type WorkspaceQueryResultViewRoute = {

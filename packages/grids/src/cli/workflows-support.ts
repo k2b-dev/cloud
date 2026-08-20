@@ -126,6 +126,13 @@ export const WORKFLOW_REFERENCE = {
       recordIds: ["Rec001"],
       inputs: { closeMode: "fourEyes", closePolicyRevision: 2 },
     },
+    correctionDraftRecord: {
+      operationId: "correction-42",
+      mode: "execute",
+      expectedRevision: 3,
+      recordId: "Rec001",
+      inputs: {},
+    },
     bulkQuery: {
       operationId: "bulk-query-42",
       mode: "dryRun",
@@ -165,6 +172,11 @@ export const WORKFLOW_REFERENCE = {
         input: "records",
         profile: "closeSelection",
       },
+      enabled: true,
+    },
+    correctionDraft: {
+      name: "Create correction",
+      config: { kind: "record", input: "original", profile: "correctionDraft" },
       enabled: true,
     },
     customApp: {

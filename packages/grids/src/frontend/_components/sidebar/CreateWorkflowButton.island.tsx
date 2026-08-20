@@ -2,22 +2,55 @@ import { navigateTo } from "@k2b/ssr/nav";
 import { AppWorkspace, Button, dialogCore, NoticeCard, PanelDialog, panelDialogWorkspaceOptions, prompts, Select } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
-import type { PublicTable as Table } from "../../../api/public-dto";
+import type { PublicField as Field, PublicTable as Table } from "../../../api/public-dto";
 import { errorMessage } from "../utils/api-helpers";
 import { WorkflowEditor } from "../workflows/WorkflowEditor";
-import { closeSelectionWorkflowStarter, type WorkflowStarter } from "../workflows/workflow-starters";
+import { closeSelectionWorkflowStarter, correctionDraftWorkflowStarter, type WorkflowStarter } from "../workflows/workflow-starters";
 import type { PublicWorkflow } from "../workspace/workspace-public-state-model";
 
-type StarterChoice = { kind: "blank" } | { kind: "closeSelection"; tableId: string };
+type StarterChoice =
+  | { kind: "blank" }
+  | { kind: "closeSelection"; tableId: string }
+  | { kind: "correctionDraft"; tableId: string; typeFieldId: string; typeValue: string; originalFieldId: string };
 
-function WorkflowStarterDialog(props: { tables: Table[]; close: (choice?: StarterChoice) => void }) {
+const selectOptions = (field: Field | undefined): Array<{ id: string; label: string }> => {
+  if (field?.type !== "select" || field.config.multiple === true || !Array.isArray(field.config.options)) return [];
+  return field.config.options.flatMap((option) =>
+    option && typeof option === "object" && typeof option.id === "string" && typeof option.label === "string"
+      ? [{ id: option.id, label: option.label }]
+      : [],
+  );
+};
+
+function WorkflowStarterDialog(props: {
+  tables: Table[];
+  fieldsByTable: Record<string, Field[]>;
+  close: (choice?: StarterChoice) => void;
+}) {
   const storedTables = () => props.tables.filter((table) => table.kind === "stored");
   const [tableId, setTableId] = createSignal(storedTables()[0]?.id ?? "");
+  const tableFields = () => props.fieldsByTable[tableId()] ?? [];
+  const typeFields = () => tableFields().filter((field) => selectOptions(field).length > 0);
+  const relationFields = () =>
+    tableFields().filter(
+      (field) =>
+        field.type === "relation" && field.config.targetTableId === tableId() && (field.config.cardinality ?? "multiple") === "single",
+    );
+  const [typeFieldId, setTypeFieldId] = createSignal("");
+  const [typeValue, setTypeValue] = createSignal("");
+  const [originalFieldId, setOriginalFieldId] = createSignal("");
+  const typeValues = () => selectOptions(typeFields().find((field) => field.id === typeFieldId()));
+  const chooseTable = (nextTableId: string | null) => {
+    setTableId(nextTableId ?? "");
+    setTypeFieldId("");
+    setTypeValue("");
+    setOriginalFieldId("");
+  };
   return (
     <PanelDialog>
       <PanelDialog.Header
         title="New workflow"
-        subtitle="Start blank or install a bounded Record-closing action."
+        subtitle="Start blank or install a guided Record action."
         icon="ti ti-route"
         close={() => props.close()}
       />
@@ -35,7 +68,7 @@ function WorkflowStarterDialog(props: { tables: Table[]; close: (choice?: Starte
               description="Durable History and Finalization must be enabled for this stored Table."
               options={storedTables().map((table) => ({ id: table.id, label: table.name }))}
               value={tableId}
-              onValueChange={setTableId}
+              onValueChange={chooseTable}
               required
             />
             <Show when={storedTables().length === 0}>
@@ -51,6 +84,68 @@ function WorkflowStarterDialog(props: { tables: Table[]; close: (choice?: Starte
                 onClick={() => props.close({ kind: "closeSelection", tableId: tableId() })}
               >
                 <i class="ti ti-list-check" /> Use starter
+              </Button>
+            </div>
+          </section>
+          <section class="paper flex flex-col gap-3 p-4">
+            <div>
+              <h3 class="font-semibold">Create correction Draft</h3>
+              <p class="text-sm text-dimmed">Adds a finalized-Record action that creates one linked Draft without changing the original.</p>
+            </div>
+            <Select
+              label="Table"
+              options={storedTables().map((table) => ({ id: table.id, label: table.name }))}
+              value={tableId}
+              onValueChange={chooseTable}
+              required
+            />
+            <Select
+              label="Correction type field"
+              description="Choose an existing single-select field."
+              options={typeFields().map((field) => ({ id: field.id, label: field.name }))}
+              value={typeFieldId}
+              onValueChange={(value) => {
+                setTypeFieldId(value ?? "");
+                setTypeValue("");
+              }}
+              required
+            />
+            <Select
+              label="Correction value"
+              options={typeValues()}
+              value={typeValue}
+              onValueChange={(value) => setTypeValue(value ?? "")}
+              required
+            />
+            <Select
+              label="Original Record field"
+              description="Choose an existing single relation back to this Table."
+              options={relationFields().map((field) => ({ id: field.id, label: field.name }))}
+              value={originalFieldId}
+              onValueChange={(value) => setOriginalFieldId(value ?? "")}
+              required
+            />
+            <Show when={tableId() && (typeFields().length === 0 || relationFields().length === 0)}>
+              <NoticeCard tone="warning" icon="ti ti-alert-triangle">
+                This Table needs a single-select correction type and a single self-relation before this starter can be installed.
+              </NoticeCard>
+            </Show>
+            <div class="flex justify-end">
+              <Button
+                variant="primary"
+                type="button"
+                disabled={!tableId() || !typeFieldId() || !typeValue() || !originalFieldId()}
+                onClick={() =>
+                  props.close({
+                    kind: "correctionDraft",
+                    tableId: tableId(),
+                    typeFieldId: typeFieldId(),
+                    typeValue: typeValue(),
+                    originalFieldId: originalFieldId(),
+                  })
+                }
+              >
+                <i class="ti ti-file-delta" /> Use starter
               </Button>
             </div>
           </section>
@@ -79,7 +174,7 @@ type LauncherApi = {
 
 const launcherApi = apiClient.workflows as unknown as LauncherApi;
 
-export default function CreateWorkflowButton(props: { baseId: string; tables: Table[] }) {
+export default function CreateWorkflowButton(props: { baseId: string; tables: Table[]; fieldsByTable: Record<string, Field[]> }) {
   const installLauncher = async (workflow: PublicWorkflow, starter: WorkflowStarter) => {
     try {
       const response = await launcherApi[":workflowId"].launchers.$post({
@@ -106,12 +201,22 @@ export default function CreateWorkflowButton(props: { baseId: string; tables: Ta
 
   const openEditor = async () => {
     const choice = await dialogCore.open<StarterChoice | undefined>(
-      (close) => <WorkflowStarterDialog tables={props.tables} close={close} />,
+      (close) => <WorkflowStarterDialog tables={props.tables} fieldsByTable={props.fieldsByTable} close={close} />,
       { ...panelDialogWorkspaceOptions, cancelBehavior: "ignore" },
     );
     if (!choice) return;
-    const table = choice.kind === "closeSelection" ? props.tables.find((candidate) => candidate.id === choice.tableId) : undefined;
-    const starter = table ? closeSelectionWorkflowStarter(table) : undefined;
+    const table = "tableId" in choice ? props.tables.find((candidate) => candidate.id === choice.tableId) : undefined;
+    const starter =
+      choice.kind === "closeSelection" && table
+        ? closeSelectionWorkflowStarter(table)
+        : choice.kind === "correctionDraft" && table
+          ? correctionDraftWorkflowStarter({
+              table,
+              typeField: { id: choice.typeFieldId },
+              typeValue: choice.typeValue,
+              originalField: { id: choice.originalFieldId },
+            })
+          : undefined;
     await dialogCore.open<void>(
       (close) => (
         <WorkflowEditor

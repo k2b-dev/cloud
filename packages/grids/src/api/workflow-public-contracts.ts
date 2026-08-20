@@ -76,6 +76,10 @@ const BulkLauncherRecordIdsRequestSchema = LauncherInvocationBaseSchema.extend({
 const BulkLauncherQueryRequestSchema = LauncherInvocationBaseSchema.extend({ query: RecordQuerySchema.strict() }).strict();
 
 export const BulkLauncherRequestSchema = z.union([BulkLauncherRecordIdsRequestSchema, BulkLauncherQueryRequestSchema]);
+export const RecordLauncherRequestSchema = LauncherInvocationBaseSchema.extend({
+  expectedRevision: z.number().int().positive(),
+  recordId: ShortIdSchema,
+}).strict();
 export const CustomAppLauncherRequestSchema = LauncherInvocationBaseSchema.strict();
 
 export const PublicGridsWorkflowSchema = z

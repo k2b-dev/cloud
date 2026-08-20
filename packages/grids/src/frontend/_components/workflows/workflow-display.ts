@@ -6,6 +6,7 @@ export const channelLabels: Record<PublicWorkflowRun["channel"], string> = {
   customApp: "App",
   scanner: "Scanner",
   bulk: "Bulk",
+  record: "Record action",
   schedule: "Schedule",
   recordEvent: "Record event",
 };

@@ -78,7 +78,7 @@ This is why an occurrence that nothing is listening for produces no run at all r
 
 A **dry run is not an event**. Nothing happened; somebody is asking what would. It is created directly against the workflow's newest published revision and never consults a trigger, which is why a disabled workflow can still be dry-run while its execute runs are refused.
 
-Scanner, bulk, and Grids App run options are saved separately and remain outside workflow YAML. One workflow can therefore have several named surfaces without duplicating its executable definition. A scanner maps one input to scanned text or a resolved record and can collect other inputs once before scanning, after every scan, or from fixed values. Bulk supplies one record-list input, and a Grids App option either keeps fixed values for one-click use or asks for the declared inputs when it runs.
+Scanner, bulk, Record, and Grids App run options are saved separately and remain outside workflow YAML. One workflow can therefore have several named surfaces without duplicating its executable definition. A scanner maps one input to scanned text or a resolved record and can collect other inputs once before scanning, after every scan, or from fixed values. Bulk supplies one record-list input. A Record option runs from one open Record. A Grids App option either keeps fixed values for one-click use or asks for the declared inputs when it runs.
 
 ## Understand a run {icon="layout-grid"}
 
@@ -232,12 +232,13 @@ Direct callers can provide every declared input. Run options accept only the inp
 :::reference
 - **Scanner:** Maps exactly one text or record input to the scan. Record scans resolve by generated scan code or a configured unique field. Any other workflow input can be asked once before scanning, asked after every scan, or fixed by the run option.
 - **Bulk:** Binds one recordList input from explicit record IDs or a row-shaped table query, with at most 10,000 records per run. The **Close selected Records** starter installs a protected exact-selection profile; ordinary bulk options keep their normal query behavior.
+- **Record:** Binds the currently open Record. The **Create correction Draft** starter exposes this only on finalized Records and accepts only its one linked-Draft plan.
 - **Grids App:** Exposes the workflow as a Grids App action and may save input bindings such as a fixed reporting range.
 - **Lifecycle:** Each option has its own name, enabled state, validated workflow revision, and diagnostics. Source changes can make an option unavailable until it is reviewed and saved again.
 :::
 
 :::note Outside YAML
-Run options are configured separately from the workflow source. One workflow can therefore support multiple named scanner, bulk, or Grids App actions without changing its YAML.
+Run options are configured separately from the workflow source. One workflow can therefore support multiple named scanner, bulk, Record, or Grids App actions without changing its YAML.
 :::
 
 ## Step reference {icon="book-2"}
@@ -245,6 +246,7 @@ Run options are configured separately from the workflow source. One workflow can
 | Step | Required fields | Optional fields and defaults | Dry run |
 | --- | --- | --- | --- |
 | `closeRecord` | `record` | `expectedMode`, `expectedPolicyRevision` | Predicts Direct Finalization or a Four-eyes request from the Table's current policy |
+| `createCorrectionDraft` | `original`, `typeField`, `typeValue`, `originalField` | None | Validates the finalized original and predicts one linked Draft |
 | `finalizeRecord` | `record` | None | Validates Write access and predicts one permanent finalization |
 | `updateRecord` | `record`, non-empty `set` | `audit` answers keyed by audit-question UUID | Validates and predicts the record update |
 | `createRecord` | `table`, non-empty `values` | `saveAs` | Validates and predicts the new record |
@@ -258,6 +260,8 @@ Run options are configured separately from the workflow source. One workflow can
 | `fail` | `message` | None | Stops planning with the failure that execution would produce |
 
 `closeRecord` follows the Table's current Finalization mode: Direct mode finalizes the Record, while Four-eyes mode creates an exact request for another eligible person. The optional expected mode and policy revision can pin a prior review. The **Close selected Records** starter reviews and closes up to 100 exact Records at once. Its protected profile ensures that the confirmed public Record IDs are never replaced by a later View or query result and a policy change stops later steps. Records are rechecked when each step runs; a changed or incomplete Record stops the run and remains editable. Open the run to see completed steps and the exact failure.
+
+`createCorrectionDraft` keeps the finalized original unchanged and creates one normal editable Record in the same Table. It sets one existing single-select value and one existing single self-relation to the original. Other values are not copied. Normal defaults, Number Series, mutation policy, access, Durable History, Documents, and later Finalization still apply. Replaying the same workflow operation returns the same Draft instead of creating a duplicate.
 
 `finalizeRecord` uses the table's generic Finalization contract: it validates the complete record, assigns final IDs, stores the final Durable History version, and permanently locks the record atomically. Retrying the same workflow step is safe. `updateRecord` and `createRecord` field keys accept exact field names or public IDs. If a table requires change context, `updateRecord.audit` must answer the applicable questions by their question UUID. `generateDocument.template` and `sendEmail.template` accept an enabled template exact name or public ID. Ambiguous and inaccessible references are rejected during validation.
 

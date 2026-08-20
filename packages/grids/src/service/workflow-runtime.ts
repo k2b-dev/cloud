@@ -132,6 +132,7 @@ const EVENT_TYPE_BY_CHANNEL: Record<GridsWorkflowChannel, string> = {
   customApp: GRIDS_EVENT.launcherPressed,
   scanner: GRIDS_EVENT.launcherPressed,
   bulk: GRIDS_EVENT.launcherPressed,
+  record: GRIDS_EVENT.launcherPressed,
   schedule: GRIDS_EVENT.scheduleTick,
   recordEvent: GRIDS_EVENT.recordChanged,
 };
@@ -140,6 +141,7 @@ const LAUNCHER_KIND_BY_CHANNEL: Partial<Record<GridsWorkflowChannel, GridsWorkfl
   customApp: "customApp",
   scanner: "scanner",
   bulk: "bulk",
+  record: "record",
 };
 
 /**
