@@ -384,6 +384,7 @@ describe("Grids capabilities", () => {
       if (!created.ok) throw new Error(created.error.message);
       const record = created.data.data as { id: string; version: number };
       expect(record).toMatchObject({ id: expect.stringMatching(/^[A-Za-z0-9]{6}$/), version: 1 });
+      expect(created.data.summary).toBe(`Created record ${record.id} in “Items”.`);
       expect(record).not.toHaveProperty("data");
 
       const loadedRecord = await invoke("query", "record.read", { id: record.id }, context);
@@ -426,6 +427,11 @@ describe("Grids capabilities", () => {
         context,
       );
       expect(relationUpdated.ok && relationUpdated.data.data).toMatchObject({ version: 2 });
+      if (relationUpdated.ok) {
+        expect(relationUpdated.data.summary).toBe(
+          `Updated 2 fields on record ${relationCreated.data.data.id} in “Items”; the record is now version 2.`,
+        );
+      }
 
       const [relatedInternal] = await sql<{ id: string }[]>`
         SELECT id::text AS id FROM grids.records WHERE short_id = ${relatedAId}

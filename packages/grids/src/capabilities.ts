@@ -747,10 +747,11 @@ const recordValuesReview = (
   ];
 };
 
-const recordResult = async (record: GridRecord, table: Table) => {
+const recordResult = async (record: GridRecord, table: Table, summary?: string) => {
   const base = await gridsService.base.get(table.baseId);
   return ok({
     data: mapRecord(record, table),
+    ...(summary ? { summary } : {}),
     refs: [{ type: "grids.record", id: record.shortId }],
     ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table, record.shortId) }] } : {}),
   });
@@ -814,7 +815,9 @@ const runRecordCreate = async (input: z.infer<typeof RecordCreateInputSchema>, c
     viewer: actorViewerFor(access),
     recordAccess: table.data.recordAccess,
   });
-  return result.ok ? recordResult(result.data, table.data.table) : result;
+  return result.ok
+    ? recordResult(result.data, table.data.table, `Created record ${result.data.shortId} in “${table.data.table.name}”.`)
+    : result;
 };
 
 const runRecordUpdate = async (input: z.infer<typeof RecordUpdateInputSchema>, context: CapabilityExecutionContext) => {
@@ -836,7 +839,14 @@ const runRecordUpdate = async (input: z.infer<typeof RecordUpdateInputSchema>, c
     input.ifVersion,
     { dateConfig, viewer: actorViewerFor(access), audit: input.audit, recordAccess: table.data.recordAccess },
   );
-  return result.ok ? recordResult(result.data, table.data.table) : result;
+  const fieldCount = Object.keys(input.values).length;
+  return result.ok
+    ? recordResult(
+        result.data,
+        table.data.table,
+        `Updated ${fieldCount} ${fieldCount === 1 ? "field" : "fields"} on record ${result.data.shortId} in “${table.data.table.name}”; the record is now version ${result.data.version}.`,
+      )
+    : result;
 };
 
 export const gridsCapabilities = defineCapabilities({
