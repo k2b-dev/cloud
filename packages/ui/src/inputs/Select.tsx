@@ -9,6 +9,8 @@ export type SelectGroup = {
   value: string;
   label: string;
 };
+export type SelectView = "list" | "grid";
+export type SelectGridSize = "sm" | "md" | "lg";
 export type SelectSourceOption =
   | string
   | {
@@ -41,6 +43,12 @@ export type SelectProps = ValueFieldProps<string | null> & {
   defaultGroup?: string;
   groupsAriaLabel?: string;
   allGroupLabel?: string;
+  /** Show a local list/grid layout toggle in the dropdown. */
+  viewToggle?: boolean;
+  /** Initial dropdown layout when `viewToggle` is enabled. */
+  defaultView?: SelectView;
+  /** Tile density for the grid layout. */
+  gridSize?: SelectGridSize;
   searchPlaceholder?: string;
   clearable?: boolean;
   name?: string;
@@ -61,6 +69,7 @@ export function Select(props: SelectProps): JSX.Element {
   const [focusedIndex, setFocusedIndex] = createSignal(-1);
   const [cache, setCache] = createSignal<Record<string, NormalizedOption>>({});
   const [selectedGroup, setSelectedGroup] = createSignal<string | null>(props.defaultGroup ?? null);
+  const [selectedView, setSelectedView] = createSignal<SelectView>(props.defaultView ?? "list");
   let searchRef: HTMLInputElement | undefined;
   let optionRefs: HTMLButtonElement[] = [];
   let groupRefs: HTMLButtonElement[] = [];
@@ -70,10 +79,8 @@ export function Select(props: SelectProps): JSX.Element {
     const current = selectedGroup();
     return current && props.groups?.some((group) => group.value === current) ? current : null;
   });
-  const groupChoices = createMemo(() => [
-    { value: null, label: props.allGroupLabel ?? "All" },
-    ...(props.groups ?? []),
-  ]);
+  const groupChoices = createMemo(() => [{ value: null, label: props.allGroupLabel ?? "All" }, ...(props.groups ?? [])]);
+  const activeView = () => (props.viewToggle ? selectedView() : "list");
 
   const loader = createChoiceLoader(
     () =>
@@ -166,7 +173,8 @@ export function Select(props: SelectProps): JSX.Element {
     commitFieldValue(props, option.value);
   };
   const onKeyDown = (event: KeyboardEvent) => {
-    if ((event.target as HTMLElement | null)?.closest?.(".k2b-choice-groups")) return;
+    const inToolbar = Boolean((event.target as HTMLElement | null)?.closest?.(".k2b-choice-toolbar"));
+    if (inToolbar && event.key !== "Escape" && event.key !== "Tab") return;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       if (!popover.open()) open();
@@ -269,38 +277,59 @@ export function Select(props: SelectProps): JSX.Element {
               />
             </div>
           </Show>
-          <Show when={(props.groups?.length ?? 0) > 0}>
-            <div class="k2b-choice-groups" role="radiogroup" aria-label={props.groupsAriaLabel ?? "Filter options"}>
-              <For each={groupChoices()}>
-                {(group, index) => (
-                  <button
-                    ref={(element) => (groupRefs[index()] = element)}
-                    type="button"
-                    role="radio"
-                    aria-checked={activeGroup() === group.value}
-                    aria-controls={listboxId}
-                    tabIndex={activeGroup() === group.value ? 0 : -1}
-                    onClick={() => chooseGroup(group.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "ArrowRight" || event.key === "ArrowDown") {
-                        event.preventDefault();
-                        moveGroupFocus(index(), 1);
-                      } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
-                        event.preventDefault();
-                        moveGroupFocus(index(), -1);
-                      } else if (event.key === "Home" || event.key === "End") {
-                        event.preventDefault();
-                        focusGroupEdge(event.key === "End");
-                      }
-                    }}
-                  >
-                    {group.label}
-                  </button>
-                )}
-              </For>
+          <Show when={(props.groups?.length ?? 0) > 0 || props.viewToggle}>
+            <div class="k2b-choice-toolbar">
+              <Show when={(props.groups?.length ?? 0) > 0}>
+                <div class="k2b-choice-groups" role="radiogroup" aria-label={props.groupsAriaLabel ?? "Filter options"}>
+                  <For each={groupChoices()}>
+                    {(group, index) => (
+                      <button
+                        ref={(element) => (groupRefs[index()] = element)}
+                        type="button"
+                        role="radio"
+                        aria-checked={activeGroup() === group.value}
+                        aria-controls={listboxId}
+                        tabIndex={activeGroup() === group.value ? 0 : -1}
+                        onClick={() => chooseGroup(group.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                            event.preventDefault();
+                            moveGroupFocus(index(), 1);
+                          } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                            event.preventDefault();
+                            moveGroupFocus(index(), -1);
+                          } else if (event.key === "Home" || event.key === "End") {
+                            event.preventDefault();
+                            focusGroupEdge(event.key === "End");
+                          }
+                        }}
+                      >
+                        {group.label}
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </Show>
+              <Show when={props.viewToggle}>
+                <button
+                  type="button"
+                  class="k2b-choice-view-toggle"
+                  aria-label={activeView() === "list" ? "Show grid view" : "Show list view"}
+                  aria-controls={listboxId}
+                  onClick={() => setSelectedView(activeView() === "list" ? "grid" : "list")}
+                >
+                  <i class={activeView() === "list" ? "ti ti-category-2" : "ti ti-list-details"} aria-hidden="true" />
+                </button>
+              </Show>
             </div>
           </Show>
-          <div id={listboxId} class="k2b-choice-options" role="listbox">
+          <div
+            id={listboxId}
+            class="k2b-choice-options"
+            role="listbox"
+            data-view={activeView()}
+            data-grid-size={activeView() === "grid" ? (props.gridSize ?? "md") : undefined}
+          >
             <Show when={loader.error()}>
               {(message) => (
                 <div class="k2b-choice-status" data-tone="danger">

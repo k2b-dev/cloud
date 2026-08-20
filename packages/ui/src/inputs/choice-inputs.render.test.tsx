@@ -185,6 +185,49 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(cssRule(".k2b-ui .k2b-choice-groups")).toContain("overflow-x: auto");
   });
 
+  test("renders an optional grid view toggle with a configurable default and tile size", () => {
+    const html = renderToString(() =>
+      createComponent(Select, {
+        label: "Icon",
+        value: "coffee",
+        viewToggle: true,
+        defaultView: "grid",
+        gridSize: "sm",
+        options: [
+          { value: "coffee", label: "Coffee", description: "Drinks and breaks", icon: "ti ti-coffee" },
+          { value: "pizza", label: "Pizza", description: "Meals and restaurants", icon: "ti ti-pizza" },
+        ],
+      }),
+    );
+
+    expect(html).toContain("k2b-choice-toolbar");
+    expect(html).toContain('aria-label="Show list view"');
+    expect(html).toContain("ti ti-list-details");
+    expect(html).not.toContain("ti ti-category-2");
+    expect(html).toContain('data-view="grid" data-grid-size="sm"');
+    expect(cssRule('.k2b-ui .k2b-choice-options[data-view="grid"]')).toContain("grid-template-columns");
+    expect(cssRule('.k2b-ui .k2b-choice-options[data-view="grid"] > .k2b-choice-option strong')).toContain(
+      "color: var(--k2b-text-muted)",
+    );
+    expect(cssRule('.k2b-ui .k2b-choice-options[data-view="grid"] > .k2b-choice-option strong')).toContain("font-weight: 400");
+    expect(cssRule(".k2b-ui .k2b-choice-view-toggle")).toContain("margin-left: auto");
+    expect(cssRule(".k2b-ui .k2b-choice-view-toggle")).toContain("background: transparent");
+    expect(cssRule(".k2b-ui .k2b-choice-view-toggle:hover")).toContain("color: var(--k2b-action)");
+  });
+
+  test("keeps the existing list view free of layout controls by default", () => {
+    const html = renderToString(() =>
+      createComponent(Select, {
+        label: "Status",
+        value: "open",
+        options: [{ value: "open", label: "Open" }],
+      }),
+    );
+
+    expect(html).toContain('data-view="list"');
+    expect(html).not.toContain("k2b-choice-view-toggle");
+  });
+
   test("does not render a stale selectedOption for a different controlled value", () => {
     const html = renderToString(() =>
       createComponent(Select, {

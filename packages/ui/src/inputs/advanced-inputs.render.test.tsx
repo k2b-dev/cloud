@@ -207,6 +207,8 @@ describe("@k2b/ui complete advanced input migrations", () => {
     expect(cropper).toContain("k2b-image-cropper");
     expect(icon).toContain('role="combobox"');
     expect(icon).toContain('role="radiogroup"');
+    expect(icon).toContain('aria-label="Show list view"');
+    expect(icon).toContain('data-view="grid" data-grid-size="sm"');
     expect(icon).toContain('aria-label="Filter icons"');
     expect(icon).toContain("Recommended");
     expect(icon).toContain("Home");

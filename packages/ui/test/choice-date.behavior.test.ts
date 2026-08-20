@@ -333,6 +333,64 @@ describe("@k2b/ui choice and date browser behavior", () => {
     dom.cleanup();
   });
 
+  test("toggles Select option layout without changing groups, search, or selection", async () => {
+    const dom = createDomTestHarness();
+    const popover = installPopoverApi(dom);
+    const { Select } = await import("../src/inputs/Select");
+    const dispose = render(
+      () =>
+        createComponent(Select, {
+          label: "Icon",
+          value: null,
+          searchable: true,
+          viewToggle: true,
+          defaultView: "grid",
+          gridSize: "lg",
+          groups: [
+            { value: "recommended", label: "Recommended" },
+            { value: "food", label: "Food" },
+          ],
+          defaultGroup: "recommended",
+          options: [
+            { value: "coffee", label: "Coffee", groups: ["recommended", "food"] },
+            { value: "pizza", label: "Pizza", groups: ["food"] },
+          ],
+        }),
+      dom.root,
+    );
+
+    dom.root.querySelector<HTMLButtonElement>(".k2b-choice-trigger")?.click();
+    const options = dom.root.querySelector<HTMLElement>(".k2b-choice-options")!;
+    expect(options.dataset.view).toBe("grid");
+    expect(options.dataset.gridSize).toBe("lg");
+
+    dom.root.querySelector<HTMLButtonElement>('[aria-label="Show list view"]')?.click();
+    expect(options.dataset.view).toBe("list");
+    expect(options.dataset.gridSize).toBeUndefined();
+    expect(dom.root.querySelector(".k2b-choice-view-toggle")?.getAttribute("aria-label")).toBe("Show grid view");
+
+    Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role='radio']"))
+      .find((radio) => radio.textContent === "Food")
+      ?.click();
+    const search = dom.root.querySelector<HTMLInputElement>(".k2b-choice-search input")!;
+    setSolidInputValue(search, "piz");
+    expect(Array.from(dom.root.querySelectorAll<HTMLElement>("[role='option'] strong"), (option) => option.textContent)).toEqual(["Pizza"]);
+
+    dom.root.querySelector<HTMLButtonElement>('[aria-label="Show grid view"]')?.click();
+    expect(options.dataset.view).toBe("grid");
+    expect(options.dataset.gridSize).toBe("lg");
+    expect(dom.root.querySelector(".k2b-choice-view-toggle i")?.className).toBe("ti ti-list-details");
+
+    dom.root
+      .querySelector<HTMLButtonElement>('[aria-label="Show list view"]')
+      ?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(dom.root.querySelector(".k2b-choice-trigger")?.getAttribute("aria-expanded")).toBe("false");
+
+    dispose();
+    popover.restore();
+    dom.cleanup();
+  });
+
   test("keeps IconInput fuzzy search inside the active default group", async () => {
     const dom = createDomTestHarness();
     const popover = installPopoverApi(dom);

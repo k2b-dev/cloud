@@ -45,6 +45,13 @@ asynchronous option transition is involved.
 Relevant properties are `label`, `description`, `placeholder`, `value`,
 `onValueChange`, `error`, `required`, `clearable`, `disabled`, `options`,
 `groups`, `defaultGroup`, `groupsAriaLabel`, `allGroupLabel`, and `searchLimit`.
+`viewToggle`, `defaultView`, and `gridSize` expose the same optional list/tile
+switch as `Select`.
+
+Unlike the generic `Select`, `IconInput` enables the switch by default and
+starts in the compact `"grid"` view with `gridSize="sm"`. Pass
+`viewToggle={false}` to keep a fixed list, or set `defaultView="list"` when the
+switch should open in the detailed view.
 
 ## Accessibility
 

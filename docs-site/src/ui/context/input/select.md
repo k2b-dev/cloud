@@ -96,6 +96,44 @@ the browser.
 />;
 ```
 
+### Switch between list and tile views
+
+Set `viewToggle` when visual options benefit from both detailed rows and a
+compact tile overview. One transparent icon button appears at the right edge
+of the group filters, or right-aligned below the search field when no groups
+are present. It shows the available alternative: `ti-category-2` in list view
+and `ti-list-details` in tile view. Hover changes only the icon color.
+
+`defaultView` accepts `"list"` or `"grid"` and defaults to `"list"`.
+`gridSize` accepts `"sm"`, `"md"`, or `"lg"` and defaults to `"md"`:
+
+| Size | Tile content                  | Minimum tile width |
+| ---- | ----------------------------- | ------------------ |
+| `sm` | icon or color plus label      | `4.5rem`           |
+| `md` | icon, label, and description  | `7rem`             |
+| `lg` | roomier label and description | `9rem`             |
+
+The switch changes presentation only. Search, groups, remote loading,
+disabled options, keyboard focus, and selection continue to use the same
+option list. The chosen view stays local to the mounted `Select`; remounting
+starts from `defaultView`. Without `viewToggle`, `Select` always keeps the
+existing list layout.
+
+```tsx
+<Select
+  label="Icon"
+  value={icon()}
+  onValueChange={setIcon}
+  options={icons}
+  groups={iconGroups}
+  defaultGroup="recommended"
+  viewToggle
+  defaultView="grid"
+  gridSize="md"
+  searchable
+/>;
+```
+
 ## MultiSelectInput
 
 Pass the selected array directly or through a Solid accessor. Every selection
@@ -141,7 +179,7 @@ const [permission, setPermission] = createSignal("read");
 
 ## Accessibility
 
-Use visible labels on `Select` and `MultiSelectInput`. Their triggers expose combobox, listbox, expanded, selected, required, disabled, description, and error state. Select groups use a labelled radio group; arrow keys, Home, and End change the active group.
+Use visible labels on `Select` and `MultiSelectInput`. Their triggers expose combobox, listbox, expanded, selected, required, disabled, description, and error state. Select groups use a labelled radio group; arrow keys, Home, and End change the active group. The optional layout button names the view it will open and does not change the listbox semantics.
 
 Option labels must remain clear without icons or colors. If the surrounding
 toolbar already names a `SelectChip`, use the native `"aria-label"` property

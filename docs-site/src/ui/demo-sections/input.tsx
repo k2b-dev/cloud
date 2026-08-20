@@ -520,6 +520,44 @@ const GroupedSelectDemo = () => {
   );
 };
 
+const SelectViewsDemo = () => {
+  const [value, setValue] = createSignal("coffee");
+  return (
+    <DemoCard
+      id="select-views"
+      chip={{ kind: "component", name: "Select", from: "@k2b/ui" }}
+      description="An optional, local layout switch keeps the same filtered options and selection semantics while moving between detailed rows and compact tiles. The tile size is a bounded density choice, not consumer-owned CSS."
+      code={`<Select
+  label="Icon"
+  value={icon}
+  onValueChange={setIcon}
+  options={options}
+  groups={groups}
+  defaultGroup="recommended"
+  viewToggle
+  defaultView="grid"
+  gridSize="md"
+  searchable
+/>`}
+    >
+      <Select
+        label="Icon"
+        description="Use the icon beside the groups to switch between detailed rows and compact tiles."
+        value={value}
+        onValueChange={setValue}
+        options={groupedOptions}
+        groups={selectGroups}
+        defaultGroup="recommended"
+        viewToggle
+        defaultView="grid"
+        gridSize="md"
+        searchable
+        clearable
+      />
+    </DemoCard>
+  );
+};
+
 const ComboboxDemo = () => (
   <DemoCard
     id="combobox"
@@ -887,6 +925,7 @@ const demos: DemoSection = {
     <DemoGrid columns="one">
       <SelectDemo />
       <GroupedSelectDemo />
+      <SelectViewsDemo />
     </DemoGrid>
   ),
   combobox: () => (

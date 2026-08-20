@@ -1,9 +1,9 @@
 import { fuzzy } from "@k2b/stdlib";
 import { createMemo, type JSX } from "solid-js";
-import { Select, type SelectGroup, type SelectOption } from "./Select";
 import type { ValueFieldProps } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
 import { DEFAULT_ICON_GROUPS, DEFAULT_ICON_OPTIONS } from "./icon-options";
+import { Select, type SelectGridSize, type SelectGroup, type SelectOption, type SelectView } from "./Select";
 
 export type IconOption = SelectOption & { keywords?: readonly string[] };
 export type IconInputProps = ValueFieldProps<string | null> & {
@@ -15,6 +15,9 @@ export type IconInputProps = ValueFieldProps<string | null> & {
   defaultGroup?: string;
   groupsAriaLabel?: string;
   allGroupLabel?: string;
+  viewToggle?: boolean;
+  defaultView?: SelectView;
+  gridSize?: SelectGridSize;
   name?: string;
 };
 
@@ -66,6 +69,9 @@ export function IconInput(props: IconInputProps): JSX.Element {
       defaultGroup={props.defaultGroup ?? (props.options === undefined ? "recommended" : undefined)}
       groupsAriaLabel={props.groupsAriaLabel ?? "Filter icons"}
       allGroupLabel={props.allGroupLabel}
+      viewToggle={props.viewToggle ?? true}
+      defaultView={props.defaultView ?? "grid"}
+      gridSize={props.gridSize ?? "sm"}
       searchable
       filterOptions={filterOptions}
       searchPlaceholder="Search icons…"
