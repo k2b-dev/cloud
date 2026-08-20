@@ -334,7 +334,7 @@ export default function HomePage(props: HomePageProps) {
           <nav aria-label="Footer navigation">
             <a href="https://github.com/ValentinKolb/cloud">Source</a>
             <a href="https://github.com/ValentinKolb/cloud/blob/main/LICENSE">AGPL-3.0</a>
-            <a href="https://impressum.valentin-kolb.com">Imprint</a>
+            <a href="https://impressum.k2b.dev">Imprint</a>
           </nav>
         </div>
       </footer>

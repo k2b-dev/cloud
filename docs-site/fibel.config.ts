@@ -73,7 +73,7 @@ export default defineFibel({
     mcpPlugin(),
     agentSkillsPlugin({ directory: "agent-skills" }),
     ...assistantPlugins,
-    imprintPlugin({ url: "https://impressum.valentin-kolb.com" }),
+    imprintPlugin({ url: "https://impressum.k2b.dev" }),
     cloudSitePlugin(
       [
         "homepage.css",
