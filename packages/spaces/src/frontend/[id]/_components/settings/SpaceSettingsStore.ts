@@ -20,6 +20,7 @@ const WIDGET_SETTINGS_COOKIE = "settings-widgets";
 /** Wrapper that holds per-space settings + global last-opened id */
 export type AllSpacesSettings = {
   lastSpaceId: string | null;
+  pinnedSpaceIds: string[];
   spaces: Record<string, SpaceUserSettings>;
 };
 
@@ -35,18 +36,28 @@ export const isValidView = (view: string | undefined): view is ViewType =>
 
 const DEFAULT_ALL: AllSpacesSettings = {
   lastSpaceId: null,
+  pinnedSpaceIds: [],
   spaces: {},
 };
+
+const normalizePinnedSpaceIds = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? [...new Set(value.filter((id): id is string => typeof id === "string" && /^[0-9A-Za-z]{6}$/.test(id)))].slice(0, 200)
+    : [];
 
 /** Migrate old flat Record format to new wrapper format */
 const migrateSettings = (raw: unknown): AllSpacesSettings => {
   if (!raw || typeof raw !== "object") return DEFAULT_ALL;
   const obj = raw as Record<string, unknown>;
   // New format has "spaces" key
-  if ("spaces" in obj) return { ...DEFAULT_ALL, ...(obj as AllSpacesSettings) };
+  if ("spaces" in obj) {
+    const parsed = obj as Partial<AllSpacesSettings>;
+    return { ...DEFAULT_ALL, ...parsed, pinnedSpaceIds: normalizePinnedSpaceIds(parsed.pinnedSpaceIds) };
+  }
   // Old format: flat Record<string, SpaceUserSettings> — migrate
   return {
     lastSpaceId: null,
+    pinnedSpaceIds: [],
     spaces: obj as Record<string, SpaceUserSettings>,
   };
 };
@@ -84,6 +95,10 @@ export const setLastSpaceId = (id: string) => {
   writeAllSettings(all);
 };
 
+export const setPinnedSpaceIds = (ids: string[]) => {
+  writeAllSettings({ ...readAllSettings(), pinnedSpaceIds: normalizePinnedSpaceIds(ids) });
+};
+
 /** Parse raw cookie into AllSpacesSettings (server-side helper) */
 const parseCookie = (cookieHeader: string | undefined): AllSpacesSettings => {
   if (!cookieHeader) return DEFAULT_ALL;
@@ -106,6 +121,8 @@ export const parseSpaceSettings = (cookieHeader: string | undefined, spaceId: st
 
 /** Parse the last opened space id from cookie string (for server-side use) */
 export const parseLastSpaceId = (cookieHeader: string | undefined): string | null => parseCookie(cookieHeader).lastSpaceId;
+
+export const parsePinnedSpaceIds = (cookieHeader: string | undefined): string[] => parseCookie(cookieHeader).pinnedSpaceIds;
 
 // =============================================================================
 // Global Widget Settings (applies across all spaces)

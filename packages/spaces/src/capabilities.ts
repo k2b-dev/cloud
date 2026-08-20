@@ -722,6 +722,11 @@ const capabilityAuditActor = (context: CapabilityExecutionContext): AuditActor =
         roles: context.actor.scopes,
       };
 
+const spaceActivityActor = (context: CapabilityExecutionContext) =>
+  context.actor.kind === "user"
+    ? ({ kind: "user", id: context.actor.user.id } as const)
+    : ({ kind: "service_account", id: context.actor.serviceAccount.id } as const);
+
 const actionAudit = (context: CapabilityExecutionContext, actionId: string, targetType: string, targetId: string) => ({
   action: `spaces.capability.${actionId}`,
   actor: capabilityAuditActor(context),
@@ -875,8 +880,9 @@ const runItemTagsSet = async (input: z.infer<typeof ItemTagsSetInputSchema>, con
     if (!resolved.ok) return resolved;
     const tagIds = await spacesPublicResources.resolveSpacePublicIds("tags", resolved.data.internalSpaceId, input.tagIds);
     if (!tagIds) return fail(err.badInput("Unknown Space tag"));
-    return itemMutationResult(await spacesService.item.update({ id: resolved.data.internalId, data: { tagIds } }), (item) =>
-      tagSetSummary(resolved.data.item, item),
+    return itemMutationResult(
+      await spacesService.item.update({ id: resolved.data.internalId, data: { tagIds }, actor: spaceActivityActor(context) }),
+      (item) => tagSetSummary(resolved.data.item, item),
     );
   });
 
@@ -992,6 +998,7 @@ const runTaskCreate = async (input: z.infer<typeof TaskCreateInputSchema>, conte
         spaceId: access.data.internalId,
         data: { ...data, columnId, tagIds },
         createdBy: context.user?.id ?? null,
+        actor: spaceActivityActor(context),
       }),
       (item) => `Created ${itemTitle(item.title)} in ${access.data.space.name}.`,
     );
@@ -1006,7 +1013,11 @@ const runTaskUpdate = async (input: z.infer<typeof TaskUpdateInputSchema>, conte
     const tagIds = await spacesPublicResources.resolveSpacePublicIds("tags", resolved.data.internalSpaceId, data.tagIds ?? []);
     if (!tagIds) return fail(err.badInput("Unknown Space tag"));
     return itemMutationResult(
-      await spacesService.item.update({ id: resolved.data.internalId, data: { ...data, ...(data.tagIds ? { tagIds } : {}) } }),
+      await spacesService.item.update({
+        id: resolved.data.internalId,
+        data: { ...data, ...(data.tagIds ? { tagIds } : {}) },
+        actor: spaceActivityActor(context),
+      }),
       (item) => itemUpdateSummary(resolved.data.item, item, input),
     );
   });
@@ -1017,7 +1028,11 @@ const runTaskSetCompleted = async (input: z.infer<typeof TaskSetCompletedInputSc
     if (!resolved.ok) return resolved;
     if (isEvent(resolved.data.item)) return fail(err.badInput("Item is not a task"));
     return itemMutationResult(
-      await spacesService.item.setCompleted({ id: resolved.data.internalId, completed: input.completed }),
+      await spacesService.item.setCompleted({
+        id: resolved.data.internalId,
+        completed: input.completed,
+        actor: spaceActivityActor(context),
+      }),
       (item) => `${input.completed ? "Completed" : "Reopened"} ${itemTitle(item.title)}.`,
     );
   });
@@ -1038,6 +1053,7 @@ const runEventCreate = async (input: z.infer<typeof EventCreateInputSchema>, con
         spaceId: access.data.internalId,
         data: { ...data, columnId, tagIds },
         createdBy: context.user?.id ?? null,
+        actor: spaceActivityActor(context),
       }),
       (item) => `Created ${itemTitle(item.title)} in ${access.data.space.name}.`,
     );
@@ -1052,7 +1068,11 @@ const runEventUpdate = async (input: z.infer<typeof EventUpdateInputSchema>, con
     const tagIds = await spacesPublicResources.resolveSpacePublicIds("tags", resolved.data.internalSpaceId, data.tagIds ?? []);
     if (!tagIds) return fail(err.badInput("Unknown Space tag"));
     return itemMutationResult(
-      await spacesService.item.update({ id: resolved.data.internalId, data: { ...data, ...(data.tagIds ? { tagIds } : {}) } }),
+      await spacesService.item.update({
+        id: resolved.data.internalId,
+        data: { ...data, ...(data.tagIds ? { tagIds } : {}) },
+        actor: spaceActivityActor(context),
+      }),
       (item) => itemUpdateSummary(resolved.data.item, item, input),
     );
   });
@@ -1061,7 +1081,7 @@ const runItemDelete = async (input: z.infer<typeof ItemDeleteInputSchema>, conte
   audited(actionAudit(context, "item.delete", "space_item", input.itemId), async () => {
     const resolved = await requireItem(input.itemId, context, "write");
     if (!resolved.ok) return resolved;
-    const result = await spacesService.item.remove({ id: resolved.data.internalId });
+    const result = await spacesService.item.remove({ id: resolved.data.internalId, actor: spaceActivityActor(context) });
     return result.ok
       ? ok({
           data: { itemId: input.itemId, deleted: true as const },

@@ -871,6 +871,7 @@ describe("spaces capabilities", () => {
       spaceId: spaceUuid,
       data: { columnId: columnUuid, title: task.title, priority: "high", tagIds: [] },
       createdBy: userId,
+      actor: { kind: "user", id: userId },
     });
     expect(result).toMatchObject({
       ok: true,
@@ -892,7 +893,7 @@ describe("spaces capabilities", () => {
 
     const result = await spacesCapabilities.actions["item.tags.set"].run({ itemId, tagIds: [tagId] }, userContext);
 
-    expect(update).toHaveBeenCalledWith({ id: itemUuid, data: { tagIds: [tagUuid] } });
+    expect(update).toHaveBeenCalledWith({ id: itemUuid, data: { tagIds: [tagUuid] }, actor: { kind: "user", id: userId } });
     expect(result).toMatchObject({
       ok: true,
       data: {

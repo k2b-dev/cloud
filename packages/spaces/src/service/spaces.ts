@@ -12,6 +12,8 @@ import {
   SPACE_RESOURCE_TYPE,
   SPACES_APP_ID,
 } from "./access";
+import * as activity from "./activity";
+import type { SpaceActivityIdentity } from "./activity";
 import { publishSpaceEvent } from "./events";
 import { rank } from "./rank";
 
@@ -385,7 +387,11 @@ export const getDetail = async (params: { id: string }): Promise<SpaceDetail | n
  * Create a new space with default columns.
  * Automatically grants admin access to the creator.
  */
-export const create = async (params: { data: CreateSpace; creatorId: string }): Promise<MutationResult<Space>> => {
+export const create = async (params: {
+  data: CreateSpace;
+  creatorId: string;
+  actor?: SpaceActivityIdentity;
+}): Promise<MutationResult<Space>> => {
   const { data, creatorId } = params;
   const columns = STARTER_COLUMNS[data.starter ?? "blank"];
 
@@ -427,13 +433,19 @@ export const create = async (params: { data: CreateSpace; creatorId: string }): 
     return { ok: false, error: access.error.message, status: access.error.status };
   }
 
-  return { ok: true, data: mapToSpace(row) };
+  const space = mapToSpace(row);
+  await activity.record({
+    spaceId: space.id,
+    actor: params.actor ?? { kind: "user", id: creatorId },
+    action: "space.created",
+  });
+  return { ok: true, data: space };
 };
 
 /**
  * Update a space
  */
-export const update = async (params: { id: string; data: UpdateSpace }): Promise<MutationResult<Space>> => {
+export const update = async (params: { id: string; data: UpdateSpace; actor?: SpaceActivityIdentity }): Promise<MutationResult<Space>> => {
   const { id, data } = params;
 
   const existing = await get({ id });
@@ -457,6 +469,12 @@ export const update = async (params: { id: string; data: UpdateSpace }): Promise
   }
 
   await publishSpaceEvent({ type: "space.updated", spaceId: id });
+  await activity.record({
+    spaceId: id,
+    actor: params.actor ?? { kind: "system", id: null },
+    action: "space.updated",
+    bucketStartedAt: new Date(new Date().setUTCMinutes(0, 0, 0)),
+  });
   return { ok: true, data: mapToSpace(row) };
 };
 

@@ -5,7 +5,7 @@ section: Work
 order: 130
 description: Shared boards for tasks, events, comments, views, and calendar planning.
 tags: [spaces, tasks, calendar]
-updated: 2026-08-02
+updated: 2026-08-20
 ---
 
 # Spaces
@@ -23,6 +23,16 @@ or calendar without copying the work into separate systems.
 - Filter and group the same items by state, person, priority, tag, or time.
 - Import an invitation from Mail into a chosen writable Space, or publish an
   enabled calendar feed to another calendar client.
+
+The Spaces start page brings accessible work together without changing its
+owning Space. Pin frequently used Spaces, search Spaces, tasks, and events,
+and switch between **For me**, **Today**, and **Upcoming**. On larger screens,
+the Activity panel shows recent Space and item changes; on mobile it opens
+from the Activity button.
+
+Activity is recorded by the Spaces service, so authorized changes made through
+the web interface, CLI, or capabilities appear consistently. Repeated edits
+to the same item are grouped to keep the feed useful.
 
 Use one Space for work that shares a team and access boundary. Create another
 when the audience or lifecycle is different.

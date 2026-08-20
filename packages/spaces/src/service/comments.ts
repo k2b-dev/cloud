@@ -1,5 +1,6 @@
 import { type DateContext, type PageParams, type Paginated, paginate } from "@k2b/stdlib";
 import { sql } from "bun";
+import * as activity from "./activity";
 import type { MutationResult, SpaceComment } from "@/contracts";
 import { withShortId } from "../lib/short-id";
 import { resolveRecurringOccurrence } from "./recurrence";
@@ -185,6 +186,18 @@ export const create = async (params: {
   if (!inserted.ok) return inserted;
 
   const row = inserted.data;
+  const [item] = await sql<{ space_id: string; title: string }[]>`
+    SELECT space_id, title FROM spaces.items WHERE id = ${itemId}
+  `;
+  if (item) {
+    await activity.record({
+      spaceId: item.space_id,
+      itemId,
+      actor: { kind: "user", id: userId },
+      action: "comment.created",
+      metadata: { itemTitle: item.title },
+    });
+  }
   // Get user name
   const [user] = await sql<{ display_name: string; avatar_hash: string | null }[]>`
     SELECT display_name, avatar_hash FROM auth.users WHERE id = ${userId}
@@ -231,6 +244,19 @@ export const update = async (params: { id: string; content: string; userId: stri
   if (!row) {
     return { ok: false, error: "Comments can only be edited within 10 minutes", status: 403 };
   }
+  const [item] = await sql<{ space_id: string; title: string }[]>`
+    SELECT space_id, title FROM spaces.items WHERE id = ${existing.itemId}
+  `;
+  if (item) {
+    await activity.record({
+      spaceId: item.space_id,
+      itemId: existing.itemId,
+      actor: { kind: "user", id: userId },
+      action: "comment.updated",
+      metadata: { itemTitle: item.title },
+      bucketStartedAt: new Date(new Date().setUTCMinutes(0, 0, 0)),
+    });
+  }
 
   return {
     ok: true,
@@ -262,6 +288,10 @@ export const remove = async (params: { id: string; userId: string }): Promise<Mu
     return { ok: false, error: "Comments can only be deleted within 10 minutes", status: 403 };
   }
 
+  const [item] = await sql<{ space_id: string; title: string }[]>`
+    SELECT space_id, title FROM spaces.items WHERE id = ${existing.itemId}
+  `;
+
   const [deleted] = await sql<{ id: string }[]>`
     DELETE FROM spaces.comments
     WHERE id = ${id}
@@ -270,6 +300,16 @@ export const remove = async (params: { id: string; userId: string }): Promise<Mu
     RETURNING id
   `;
   if (!deleted) return { ok: false, error: "Comments can only be deleted within 10 minutes", status: 403 };
+
+  if (item) {
+    await activity.record({
+      spaceId: item.space_id,
+      itemId: existing.itemId,
+      actor: { kind: "user", id: userId },
+      action: "comment.deleted",
+      metadata: { itemTitle: item.title },
+    });
+  }
 
   return { ok: true, data: undefined };
 };

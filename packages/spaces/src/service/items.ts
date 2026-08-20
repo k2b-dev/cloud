@@ -22,6 +22,8 @@ import type {
 } from "@/contracts";
 import { withShortId } from "../lib/short-id";
 import { buildSpacePrincipalCondition, isSpaceResourceId } from "./access";
+import * as activity from "./activity";
+import type { SpaceActivityIdentity } from "./activity";
 import { descriptionPreview } from "./description-preview";
 import { publishSpaceEvent } from "./events";
 import { insertMany as insertItemResourceReferences } from "./item-resource-references";
@@ -43,6 +45,12 @@ import {
 
 type SqlExecutor = typeof sql;
 const log = logger("spaces:items");
+const systemActor: SpaceActivityIdentity = { kind: "system", id: null };
+const hourBucket = () => {
+  const value = new Date();
+  value.setUTCMinutes(0, 0, 0);
+  return value;
+};
 
 type CalendarEventPersistence = {
   title: string;
@@ -614,7 +622,9 @@ const deadlineWindow = (dateConfig?: DateContext) => {
  */
 export type DashboardItem = {
   id: string;
+  shortId: string;
   spaceId: string;
+  spaceShortId: string;
   spaceName: string;
   spaceColor: string | null;
   spaceIcalToken: string | null;
@@ -629,15 +639,45 @@ export const dashboardSnapshot = async (params: {
   userId: string;
   todoLimit: number;
   dateConfig?: DateContext;
-}): Promise<{ openTodoCount: number; urgentCount: number; events: DashboardItem[]; todos: DashboardItem[] }> => {
+}): Promise<{
+  openTodoCount: number;
+  assignedToMeCount: number;
+  urgentCount: number;
+  todayCount: number;
+  upcomingCount: number;
+  events: DashboardItem[];
+  todos: DashboardItem[];
+}> => {
   const principalMatch = buildSpacePrincipalCondition({ type: "user", userId: params.userId });
   const { todayStart, tomorrowStart } = deadlineWindow(params.dateConfig);
 
   // Open-todo aggregate (count + urgent-count) across all reachable spaces.
-  const [agg] = await sql<{ open_count: number; urgent_count: number }[]>`
+  const [agg] = await sql<
+    {
+      open_count: number;
+      assigned_count: number;
+      urgent_count: number;
+      today_count: number;
+      upcoming_count: number;
+    }[]
+  >`
     SELECT
       COUNT(*) FILTER (WHERE i.completed_at IS NULL AND c.is_done = false)::int AS open_count,
-      COUNT(*) FILTER (WHERE i.completed_at IS NULL AND c.is_done = false AND i.priority = 'urgent')::int AS urgent_count
+      COUNT(*) FILTER (
+        WHERE i.completed_at IS NULL AND c.is_done = false
+          AND EXISTS (SELECT 1 FROM spaces.item_assignees ia WHERE ia.item_id = i.id AND ia.user_id = ${params.userId}::uuid)
+      )::int AS assigned_count,
+      COUNT(*) FILTER (WHERE i.completed_at IS NULL AND c.is_done = false AND i.priority = 'urgent')::int AS urgent_count,
+      COUNT(*) FILTER (
+        WHERE i.completed_at IS NULL AND (
+          (i.starts_at IS NOT NULL AND i.starts_at >= ${todayStart}::timestamptz AND i.starts_at < ${tomorrowStart}::timestamptz)
+          OR (i.deadline IS NOT NULL AND i.deadline >= ${todayStart}::timestamptz AND i.deadline < ${tomorrowStart}::timestamptz)
+        )
+      )::int AS today_count,
+      COUNT(*) FILTER (
+        WHERE i.completed_at IS NULL AND c.is_done = false
+          AND (i.starts_at IS NULL OR i.starts_at < ${todayStart}::timestamptz OR i.starts_at >= ${tomorrowStart}::timestamptz)
+      )::int AS upcoming_count
     FROM spaces.items i
     JOIN spaces.columns c ON c.id = i.column_id
     JOIN spaces.spaces s ON s.id = i.space_id
@@ -652,7 +692,9 @@ export const dashboardSnapshot = async (params: {
 
   type DbWidget = {
     id: string;
+    short_id: string;
     space_id: string;
+    space_short_id: string;
     space_name: string;
     space_color: string | null;
     space_ical: string | null;
@@ -665,7 +707,7 @@ export const dashboardSnapshot = async (params: {
 
   // Today's events: starts_at within today's window OR deadline within today.
   const eventRows = await sql<DbWidget[]>`
-    SELECT i.id, i.space_id, s.name AS space_name, s.color AS space_color, s.ical_token AS space_ical,
+    SELECT i.id, i.short_id, i.space_id, s.short_id AS space_short_id, s.name AS space_name, s.color AS space_color, s.ical_token AS space_ical,
            i.title, i.priority,
            i.starts_at::text AS starts_at, i.ends_at::text AS ends_at, i.deadline::text AS deadline
     FROM spaces.items i
@@ -688,7 +730,7 @@ export const dashboardSnapshot = async (params: {
 
   // Next-up todos: open, not in is_done columns, ordered by deadline.
   const todoRows = await sql<DbWidget[]>`
-    SELECT i.id, i.space_id, s.name AS space_name, s.color AS space_color, s.ical_token AS space_ical,
+    SELECT i.id, i.short_id, i.space_id, s.short_id AS space_short_id, s.name AS space_name, s.color AS space_color, s.ical_token AS space_ical,
            i.title, i.priority,
            i.starts_at::text AS starts_at, i.ends_at::text AS ends_at, i.deadline::text AS deadline
     FROM spaces.items i
@@ -710,7 +752,9 @@ export const dashboardSnapshot = async (params: {
 
   const map = (r: DbWidget): DashboardItem => ({
     id: r.id,
+    shortId: r.short_id,
     spaceId: r.space_id,
+    spaceShortId: r.space_short_id,
     spaceName: r.space_name,
     spaceColor: r.space_color,
     spaceIcalToken: r.space_ical,
@@ -723,7 +767,10 @@ export const dashboardSnapshot = async (params: {
 
   return {
     openTodoCount: agg?.open_count ?? 0,
+    assignedToMeCount: agg?.assigned_count ?? 0,
     urgentCount: agg?.urgent_count ?? 0,
+    todayCount: agg?.today_count ?? 0,
+    upcomingCount: agg?.upcoming_count ?? 0,
     events: eventRows.map(map),
     todos: todoRows.map(map),
   };
@@ -1179,6 +1226,7 @@ export const create = async (params: {
   data: CreateItem;
   createdBy: string | null;
   dateConfig?: DateContext;
+  actor?: SpaceActivityIdentity;
 }): Promise<MutationResult<SpaceItem>> => {
   const { spaceId, data, createdBy } = params;
 
@@ -1287,13 +1335,25 @@ export const create = async (params: {
   }
 
   await publishSpaceEvent({ type: "item.created", spaceId, itemId: item.id });
+  await activity.record({
+    spaceId,
+    itemId: item.id,
+    actor: params.actor ?? (createdBy ? { kind: "user", id: createdBy } : systemActor),
+    action: item.startsAt && item.endsAt ? "event.created" : "task.created",
+    metadata: { itemTitle: item.title },
+  });
   return { ok: true, data: item };
 };
 
 /**
  * Update an item
  */
-export const update = async (params: { id: string; data: UpdateItem; dateConfig?: DateContext }): Promise<MutationResult<SpaceItem>> => {
+export const update = async (params: {
+  id: string;
+  data: UpdateItem;
+  dateConfig?: DateContext;
+  actor?: SpaceActivityIdentity;
+}): Promise<MutationResult<SpaceItem>> => {
   const { id, data } = params;
 
   const existing = await get({ id });
@@ -1462,6 +1522,14 @@ export const update = async (params: { id: string; data: UpdateItem; dateConfig?
   }
 
   await publishSpaceEvent({ type: "item.updated", spaceId: item.spaceId, itemId: item.id });
+  await activity.record({
+    spaceId: item.spaceId,
+    itemId: item.id,
+    actor: params.actor ?? systemActor,
+    action: item.startsAt && item.endsAt ? "event.updated" : "task.updated",
+    metadata: { itemTitle: item.title },
+    bucketStartedAt: hourBucket(),
+  });
   return { ok: true, data: item };
 };
 
@@ -1645,7 +1713,7 @@ export const splitRecurring = async (params: {
 /**
  * Delete an item
  */
-export const remove = async (params: { id: string }): Promise<MutationResult<void>> => {
+export const remove = async (params: { id: string; actor?: SpaceActivityIdentity }): Promise<MutationResult<void>> => {
   const existing = await get({ id: params.id });
   const rows = await sql<{ short_id: string }[]>`
     DELETE FROM spaces.items
@@ -1659,6 +1727,12 @@ export const remove = async (params: { id: string }): Promise<MutationResult<voi
   }
 
   if (existing) {
+    await activity.record({
+      spaceId: existing.spaceId,
+      actor: params.actor ?? systemActor,
+      action: existing.startsAt && existing.endsAt ? "event.deleted" : "task.deleted",
+      metadata: { itemTitle: existing.title },
+    });
     await publishSpaceEvent({ type: "item.deleted", spaceId: existing.spaceId, itemId: existing.id }, { itemId: deleted.short_id });
   }
   return { ok: true, data: undefined };
@@ -1672,6 +1746,7 @@ export const move = async (params: {
   columnId: string;
   rank: string;
   completed?: boolean;
+  actor?: SpaceActivityIdentity;
 }): Promise<MutationResult<SpaceItem>> => {
   const { id, columnId } = params;
   let targetRank: bigint;
@@ -1741,13 +1816,25 @@ export const move = async (params: {
   }
 
   await publishSpaceEvent({ type: "item.moved", spaceId: item.spaceId, itemId: item.id });
+  await activity.record({
+    spaceId: item.spaceId,
+    itemId: item.id,
+    actor: params.actor ?? systemActor,
+    action: "item.moved",
+    metadata: { itemTitle: item.title },
+    bucketStartedAt: hourBucket(),
+  });
   return { ok: true, data: item };
 };
 
 /**
  * Set completion status of an item
  */
-export const setCompleted = async (params: { id: string; completed: boolean }): Promise<MutationResult<SpaceItem>> => {
+export const setCompleted = async (params: {
+  id: string;
+  completed: boolean;
+  actor?: SpaceActivityIdentity;
+}): Promise<MutationResult<SpaceItem>> => {
   const { id, completed } = params;
   const completedAt = completed ? new Date() : null;
   const result = await sql.begin(async (tx): Promise<MutationResult<{ id: string }>> => {
@@ -1818,13 +1905,25 @@ export const setCompleted = async (params: { id: string; completed: boolean }): 
   }
 
   await publishSpaceEvent({ type: "item.completed", spaceId: item.spaceId, itemId: item.id });
+  const activityKind = item.startsAt && item.endsAt ? "event" : "task";
+  await activity.record({
+    spaceId: item.spaceId,
+    itemId: item.id,
+    actor: params.actor ?? systemActor,
+    action: `${activityKind}.${completed ? "completed" : "reopened"}`,
+    metadata: { itemTitle: item.title },
+  });
   return { ok: true, data: item };
 };
 
 /**
  * Set assignees for an item
  */
-export const setAssignees = async (params: { id: string; userIds: string[] }): Promise<MutationResult<void>> => {
+export const setAssignees = async (params: {
+  id: string;
+  userIds: string[];
+  actor?: SpaceActivityIdentity;
+}): Promise<MutationResult<void>> => {
   const { id, userIds } = params;
 
   // Verify item exists
@@ -1839,13 +1938,20 @@ export const setAssignees = async (params: { id: string; userIds: string[] }): P
   await sql.begin((tx) => replaceItemAssignees(tx, id, userIds));
 
   await publishSpaceEvent({ type: "item.updated", spaceId: existing.spaceId, itemId: existing.id });
+  await activity.record({
+    spaceId: existing.spaceId,
+    itemId: existing.id,
+    actor: params.actor ?? systemActor,
+    action: "item.assignees.updated",
+    metadata: { itemTitle: existing.title },
+  });
   return { ok: true, data: undefined };
 };
 
 /**
  * Set tags for an item
  */
-export const setTags = async (params: { id: string; tagIds: string[] }): Promise<MutationResult<void>> => {
+export const setTags = async (params: { id: string; tagIds: string[]; actor?: SpaceActivityIdentity }): Promise<MutationResult<void>> => {
   const { id, tagIds } = params;
 
   // Verify item exists
@@ -1859,6 +1965,13 @@ export const setTags = async (params: { id: string; tagIds: string[] }): Promise
   await sql.begin((tx) => replaceItemTags(tx, id, tagIds));
 
   await publishSpaceEvent({ type: "item.updated", spaceId: existing.spaceId, itemId: existing.id });
+  await activity.record({
+    spaceId: existing.spaceId,
+    itemId: existing.id,
+    actor: params.actor ?? systemActor,
+    action: "item.tags.updated",
+    metadata: { itemTitle: existing.title },
+  });
   return { ok: true, data: undefined };
 };
 
@@ -2027,7 +2140,9 @@ export const listCalendar = async (
 /** Task item for widget display */
 export type TaskItem = {
   id: string;
+  shortId: string;
   spaceId: string;
+  spaceShortId: string;
   spaceName: string;
   spaceColor: string;
   title: string;
@@ -2057,7 +2172,9 @@ export const listMyTasks = async (params: { userId: string; minPriority?: Priori
   const rows = await sql<
     {
       id: string;
+      short_id: string;
       space_id: string;
+      space_short_id: string;
       space_name: string;
       space_color: string;
       title: string;
@@ -2073,7 +2190,7 @@ export const listMyTasks = async (params: { userId: string; minPriority?: Priori
       WHERE a.permission <> 'none'
         AND ${principalMatch}
     )
-    SELECT i.id, i.space_id, s.name as space_name, s.color as space_color,
+    SELECT i.id, i.short_id, i.space_id, s.short_id AS space_short_id, s.name as space_name, s.color as space_color,
            i.title, i.deadline, i.priority
     FROM spaces.items i
     JOIN spaces.spaces s ON i.space_id = s.id
@@ -2100,7 +2217,9 @@ export const listMyTasks = async (params: { userId: string; minPriority?: Priori
 
   return rows.map((r) => ({
     id: r.id,
+    shortId: r.short_id,
     spaceId: r.space_id,
+    spaceShortId: r.space_short_id,
     spaceName: r.space_name,
     spaceColor: r.space_color,
     title: r.title,

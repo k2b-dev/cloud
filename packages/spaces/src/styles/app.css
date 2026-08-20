@@ -4,3 +4,62 @@
 @import "tailwindcss/utilities.css" layer(utilities);
 @source "../**/*.{ts,tsx}";
 @custom-variant dark (&:where(.dark, .dark *));
+
+.k2b-ui .spaces-overview-workspace { border-color: transparent; border-radius: 0; background: var(--ui-surface); box-shadow: none; }
+.k2b-ui .spaces-overview-main { gap: clamp(2rem, 4vw, 3.5rem); padding: clamp(1rem, 3vw, 2.5rem); overflow-y: auto; background: var(--ui-surface); }
+.spaces-overview-spaces, .spaces-overview-focus { display: flex; min-width: 0; flex-direction: column; gap: 1rem; }
+.spaces-overview-heading { display: flex; min-width: 0; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: .75rem 1rem; }
+.spaces-overview-heading h2 { color: var(--color-zinc-950); font-size: 1rem; font-weight: 650; }
+.spaces-overview-heading p { margin-top: .125rem; color: var(--color-zinc-500); font-size: .8125rem; }
+.spaces-overview-actions, .spaces-overview-space-list { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.spaces-overview-space-list > :is(a, button, .k2b-dropdown, .spaces-overview-space-item) { min-width: 0; max-width: min(100%, 20rem); }
+.spaces-overview-space-item { position: relative; display: inline-flex; }
+.k2b-ui .spaces-overview-space-button { width: 100%; max-width: 100%; padding-right: 2.125rem; overflow: hidden; }
+.k2b-ui .spaces-overview-space-button > .k2b-button__label { width: 100%; min-width: 0; flex: 1 1 auto; justify-content: flex-start; overflow: hidden; }
+.spaces-overview-space-dot, .spaces-overview-space-mark { width: .45rem; height: .45rem; flex: 0 0 auto; border-radius: 999px; }
+.k2b-ui .spaces-overview-space-pin { position: absolute; z-index: 1; top: 50%; right: .25rem; translate: 0 -50%; opacity: 0; pointer-events: none; }
+.spaces-overview-space-item:hover .spaces-overview-space-pin, .spaces-overview-space-item:focus-within .spaces-overview-space-pin { opacity: 1; pointer-events: auto; }
+.spaces-overview-space-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k2b-ui .spaces-overview-stats { min-width: 0; }
+.spaces-overview-tab-count { margin-left: .2rem; color: var(--color-zinc-500); font-variant-numeric: tabular-nums; }
+.spaces-overview-work-list { display: flex; flex-direction: column; }
+.spaces-overview-work-row { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr) auto auto auto; align-items: center; gap: .75rem; padding: .85rem .35rem; color: inherit; text-decoration: none; border-bottom: 1px solid var(--ui-border-subtle); }
+.spaces-overview-work-row:hover { background: color-mix(in srgb, var(--ui-accent) 5%, transparent); }
+.spaces-overview-work-copy { display: flex; min-width: 0; flex-direction: column; gap: .1rem; }
+.spaces-overview-work-copy strong { overflow: hidden; color: var(--color-zinc-900); font-size: .8125rem; text-overflow: ellipsis; white-space: nowrap; }
+.spaces-overview-work-copy span, .spaces-overview-work-row time { color: var(--color-zinc-500); font-size: .6875rem; white-space: nowrap; }
+.spaces-overview-priority { padding: .15rem .4rem; border-radius: 999px; background: var(--ui-surface-muted); color: var(--color-zinc-600); font-size: .625rem; text-transform: capitalize; }
+.spaces-overview-priority.is-urgent { color: var(--color-red-600); background: color-mix(in srgb, var(--color-red-500) 10%, transparent); }
+.spaces-overview-priority.is-high { color: var(--color-orange-600); background: color-mix(in srgb, var(--color-orange-500) 10%, transparent); }
+.k2b-ui .spaces-overview-activity { padding: 0; }
+.spaces-overview-activity .k2b-detail-panel { min-height: 0; }
+.spaces-overview-activity-list { display: flex; flex-direction: column; gap: .625rem; margin: 0; padding: 0; list-style: none; }
+.spaces-overview-activity-item { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: .625rem; }
+.k2b-ui .spaces-overview-activity-paper { position: relative; display: flex; min-width: 0; flex-direction: column; gap: .1875rem; padding: .625rem 2.125rem .625rem .75rem; color: inherit; text-decoration: none; }
+.spaces-overview-activity-icon { position: absolute; top: .6875rem; right: .75rem; font-size: .875rem; }
+.spaces-overview-activity-meta { display: flex; min-width: 0; align-items: baseline; gap: .375rem; color: var(--color-zinc-500); font-size: .6875rem; line-height: 1rem; }
+.spaces-overview-activity-meta strong { min-width: 0; overflow: hidden; color: var(--color-zinc-900); font-size: .75rem; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.spaces-overview-activity-meta time { white-space: nowrap; }
+.spaces-overview-activity-description { color: var(--color-zinc-700); font-size: .75rem; line-height: 1.125rem; overflow-wrap: anywhere; }
+.k2b-ui .spaces-overview-mobile-activity { display: none !important; }
+.dark .spaces-overview-heading h2, .dark .spaces-overview-work-copy strong, .dark .spaces-overview-activity-meta strong { color: var(--color-zinc-50); }
+.dark .spaces-overview-activity-description { color: var(--color-zinc-300); }
+@media (hover: none) { .k2b-ui .spaces-overview-space-pin { opacity: 1; pointer-events: auto; } }
+@media (min-width: 48rem) and (max-width: 63.999rem) {
+  .k2b-ui .spaces-overview-workspace .k2b-app-workspace__content { flex-direction: row; }
+  .k2b-ui .spaces-overview-workspace .spaces-overview-main { display: flex !important; }
+  .k2b-ui .spaces-overview-workspace .spaces-overview-activity { display: flex !important; width: 20rem; flex: 0 0 20rem; }
+}
+@media (max-width: 47.999rem) {
+  .k2b-ui .spaces-overview-workspace .spaces-overview-main { display: flex !important; }
+  .k2b-ui .spaces-overview-workspace .spaces-overview-activity { display: none !important; }
+  .k2b-ui .spaces-overview-mobile-activity { display: inline-flex !important; }
+  .spaces-overview-work-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .spaces-overview-work-row :is(.spaces-overview-priority, time) { display: none; }
+}
+@media (max-width: 39.999rem) {
+  .spaces-overview-heading, .spaces-overview-actions { align-items: stretch; }
+  .spaces-overview-actions { width: 100%; }
+  .spaces-overview-actions > button { min-width: 0; flex: 1 1 8rem; }
+  .spaces-overview-space-list > :is(a, .k2b-dropdown, .spaces-overview-space-item) { flex: 1 1 10rem; }
+}

@@ -139,6 +139,32 @@ export const migrate = async (): Promise<void> => {
   `.simple();
   await sql`ALTER TABLE spaces.items DROP COLUMN IF EXISTS email_thread_id`.simple();
   await sql`
+    CREATE TABLE IF NOT EXISTS spaces.activity_events (
+      id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      space_id UUID NOT NULL REFERENCES spaces.spaces(id) ON DELETE CASCADE,
+      item_id UUID REFERENCES spaces.items(id) ON DELETE SET NULL,
+      actor_kind TEXT NOT NULL CHECK (actor_kind IN ('user', 'service_account', 'system')),
+      actor_id UUID,
+      action TEXT NOT NULL CHECK (char_length(action) BETWEEN 1 AND 200),
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(metadata) = 'object'),
+      bucket_started_at TIMESTAMPTZ,
+      occurrence_count INTEGER NOT NULL DEFAULT 1 CHECK (occurrence_count > 0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      last_occurred_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT activity_events_actor_shape CHECK (
+        (actor_kind = 'system' AND actor_id IS NULL) OR (actor_kind <> 'system' AND actor_id IS NOT NULL)
+      )
+    )
+  `.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_spaces_activity_space ON spaces.activity_events(space_id, last_occurred_at DESC, id DESC)`.simple();
+  await sql`CREATE INDEX IF NOT EXISTS idx_spaces_activity_item ON spaces.activity_events(item_id, last_occurred_at DESC, id DESC) WHERE item_id IS NOT NULL`.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_spaces_activity_bucket
+    ON spaces.activity_events(item_id, actor_kind, actor_id, action, bucket_started_at)
+    WHERE bucket_started_at IS NOT NULL
+  `.simple();
+  console.log("  ✓ spaces.activity_events table");
+  await sql`
     CREATE TABLE IF NOT EXISTS spaces.item_resource_refs (
       item_id UUID NOT NULL REFERENCES spaces.items(id) ON DELETE CASCADE,
       resource_type TEXT NOT NULL,

@@ -2,6 +2,7 @@ import { type PageParams, type Paginated, paginate } from "@k2b/stdlib";
 import type { AccessSubject } from "@valentinkolb/cloud/server";
 import type { AccessEntry, Space, SpaceColumn, SpaceComment, SpaceItem, SpaceTag } from "@/contracts";
 import * as access from "./access";
+import * as activity from "./activity";
 import * as apiKeys from "./api-keys";
 import * as calendarInvitations from "./calendar-invitations";
 import * as columns from "./columns";
@@ -38,6 +39,7 @@ const paginateItems = <T>(items: T[], pagination?: PageParams): Paginated<T> => 
 };
 
 export const spacesService = {
+  activity,
   calendarInvitations,
   space: {
     listWithPermission: spaces.listPage,
@@ -261,4 +263,4 @@ export const spacesService = {
 // Re-export types needed by widgets
 export type { ItemAcrossKind, ItemAcrossResult, TaskItem } from "./items";
 export type { SpaceAdminListItem, SpaceWithPermission } from "./spaces";
-export { access, calendarInvitations, columns, comments, ical, items, spaces, tags, wormholes };
+export { access, activity, calendarInvitations, columns, comments, ical, items, spaces, tags, wormholes };

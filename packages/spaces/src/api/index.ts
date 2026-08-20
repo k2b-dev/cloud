@@ -123,6 +123,30 @@ const CommentPageQuerySchema = RecurringOccurrenceQuerySchema.extend({
   page: z.coerce.number().int().min(1).default(1),
   per_page: z.coerce.number().int().min(1).max(100).default(50),
 });
+const OverviewActivityQuerySchema = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(30),
+});
+const OverviewSearchQuerySchema = z.object({
+  q: z.string().trim().min(1).max(300),
+  limit: z.coerce.number().int().min(1).max(50).default(20),
+});
+const SpaceActivitySchema = z.object({
+  id: z.string(),
+  space: z.object({ id: z.string(), name: z.string(), color: z.string() }),
+  item: z.object({ id: z.string(), title: z.string() }).nullable(),
+  actor: z.object({
+    kind: z.enum(["user", "service_account", "system"]),
+    id: z.string().nullable(),
+    displayName: z.string(),
+    avatarHash: z.string().nullable(),
+  }),
+  action: z.string(),
+  metadata: z.record(z.string(), z.unknown()),
+  occurrenceCount: z.number().int(),
+  createdAt: z.string(),
+  lastOccurredAt: z.string(),
+});
 
 const attachmentTooLarge = (c: Context) =>
   respond(c, {
@@ -159,6 +183,13 @@ const parseUuidCsv = (value: string | undefined, label: string): Result<string[]
 const getUserBackedActor = (c: Context<AuthContext>): User | null => {
   const actor = c.get("actor");
   return actor.kind === "user" ? actor.user : actor.delegatedUser;
+};
+
+const getSpaceActivityActor = (c: Context<AuthContext>) => {
+  const actor = c.get("actor");
+  return actor.kind === "user"
+    ? ({ kind: "user", id: actor.user.id } as const)
+    : ({ kind: "service_account", id: actor.serviceAccount.id } as const);
 };
 
 const requireUserBackedActor = (c: Context<AuthContext>): Result<User> => {
@@ -420,6 +451,78 @@ const app = new Hono<AuthContext>()
   .route("/widget", widgetRoutes)
   .route("/ws", wsRoutes)
   .use(auth.requireRole("authenticated"))
+
+  .get(
+    "/overview/activity",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "List Spaces activity",
+      description: "List durable activity across every Space the current actor can access.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(z.object({ data: z.array(SpaceActivitySchema), nextCursor: z.string().nullable() }), "Spaces activity"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid cursor"),
+        403: jsonResponse(ErrorResponseSchema, "Access denied"),
+      },
+    }),
+    v("query", OverviewActivityQuerySchema),
+    async (c) => {
+      const access = getScopedSpaceAccess(c);
+      if (!access.ok) return respond(c, access);
+      try {
+        const page = await spacesService.activity.list({
+          subject: access.data.subject,
+          boundSpaceId: access.data.boundSpaceId,
+          cursor: c.req.valid("query").cursor,
+          limit: c.req.valid("query").limit,
+        });
+        return respond(
+          c,
+          ok({
+            data: page.items.map((item) => ({
+              ...item,
+              space: { id: item.space.shortId, name: item.space.name, color: item.space.color },
+              item: item.item ? { id: item.item.shortId, title: item.item.title } : null,
+            })),
+            nextCursor: page.nextCursor,
+          }),
+        );
+      } catch (error) {
+        if (error instanceof Error && error.message === "Invalid activity cursor") return respond(c, fail(err.badInput(error.message)));
+        throw error;
+      }
+    },
+  )
+
+  .get(
+    "/overview/search",
+    describeRoute({
+      tags: ["Spaces"],
+      summary: "Search Spaces and items",
+      description: "Search accessible Space items for the overview Spotlight.",
+      ...requiresAuth,
+      responses: {
+        200: jsonResponse(
+          z.array(z.object({ space: z.object({ id: z.string(), name: z.string() }), item: SpaceItemSchema })),
+          "Spaces search results",
+        ),
+      },
+    }),
+    v("query", OverviewSearchQuerySchema),
+    async (c) => {
+      const access = getScopedSpaceAccess(c);
+      if (!access.ok) return respond(c, access);
+      const hits = await spacesService.item.searchAcross({
+        subject: access.data.subject,
+        boundSpaceId: access.data.boundSpaceId,
+        query: c.req.valid("query").q,
+        kinds: "all",
+        limit: c.req.valid("query").limit,
+      });
+      const [items, spaces] = await Promise.all([projectItems(hits.map((hit) => hit.item)), projectSpaces(hits.map((hit) => hit.space))]);
+      return respond(c, ok(hits.map((_, index) => ({ item: items[index]!, space: spaces[index]! }))));
+    },
+  )
 
   .get(
     "/workspace/view",
@@ -935,7 +1038,10 @@ const app = new Hono<AuthContext>()
       if (!userResult.ok) return respond(c, userResult);
       const user = userResult.data;
       const data = c.req.valid("json");
-      return respond(c, projectMutation(spacesService.space.create({ data, creatorId: user.id }), projectSpaces));
+      return respond(
+        c,
+        projectMutation(spacesService.space.create({ data, creatorId: user.id, actor: getSpaceActivityActor(c) }), projectSpaces),
+      );
     },
   )
 
@@ -994,7 +1100,10 @@ const app = new Hono<AuthContext>()
 
       const { internalId, error } = await checkSpaceAccess(c, id, "write");
       if (error) return error;
-      return respond(c, projectMutation(spacesService.space.update({ id: internalId!, data }), projectSpaces));
+      return respond(
+        c,
+        projectMutation(spacesService.space.update({ id: internalId!, data, actor: getSpaceActivityActor(c) }), projectSpaces),
+      );
     },
   )
 
@@ -1592,6 +1701,7 @@ const app = new Hono<AuthContext>()
             data: resolvedData.data,
             createdBy: user?.id ?? null,
             dateConfig: getDateConfig(c),
+            actor: getSpaceActivityActor(c),
           }),
           projectItems,
         ),
@@ -1655,7 +1765,12 @@ const app = new Hono<AuthContext>()
       return respond(
         c,
         projectMutation(
-          spacesService.item.update({ id: itemCheck.data.id, data: resolvedData.data, dateConfig: getDateConfig(c) }),
+          spacesService.item.update({
+            id: itemCheck.data.id,
+            data: resolvedData.data,
+            dateConfig: getDateConfig(c),
+            actor: getSpaceActivityActor(c),
+          }),
           projectItems,
         ),
       );
@@ -1724,7 +1839,7 @@ const app = new Hono<AuthContext>()
       if (error) return error;
       const itemCheck = await requireItemInSpace(spaceId!, itemId);
       if (!itemCheck.ok) return respond(c, itemCheck);
-      return respondMessage(c, spacesService.item.remove({ id: itemCheck.data.id }), "Item deleted");
+      return respondMessage(c, spacesService.item.remove({ id: itemCheck.data.id, actor: getSpaceActivityActor(c) }), "Item deleted");
     },
   )
 
@@ -1757,7 +1872,10 @@ const app = new Hono<AuthContext>()
       if (!column.ok) return respond(c, column);
       return respond(
         c,
-        projectMutation(spacesService.item.move({ id: itemCheck.data.id, columnId: column.data.id, rank, completed }), projectItems),
+        projectMutation(
+          spacesService.item.move({ id: itemCheck.data.id, columnId: column.data.id, rank, completed, actor: getSpaceActivityActor(c) }),
+          projectItems,
+        ),
       );
     },
   )
@@ -1830,7 +1948,13 @@ const app = new Hono<AuthContext>()
       if (error) return error;
       const itemCheck = await requireItemInSpace(spaceId!, itemId);
       if (!itemCheck.ok) return respond(c, itemCheck);
-      return respond(c, projectMutation(spacesService.item.setCompleted({ id: itemCheck.data.id, completed }), projectItems));
+      return respond(
+        c,
+        projectMutation(
+          spacesService.item.setCompleted({ id: itemCheck.data.id, completed, actor: getSpaceActivityActor(c) }),
+          projectItems,
+        ),
+      );
     },
   )
 
