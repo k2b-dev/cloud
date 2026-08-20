@@ -212,6 +212,7 @@ describe("weather capabilities", () => {
         data: [
           {
             ...location,
+            ref: { type: "weather.location", id: locationId },
             links: [{ rel: "open", href: `/app/weather/${locationId}` }],
           },
         ],

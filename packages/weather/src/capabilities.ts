@@ -42,6 +42,9 @@ const LocationSchema = z
     links: z.array(CapabilitySemanticLinkSchema).min(1).max(10).optional(),
   })
   .strict();
+const LocationListItemSchema = LocationSchema.extend({
+  ref: z.object({ type: z.literal("weather.location"), id: WeatherLocationIdSchema }).strict(),
+}).strict();
 
 const LocationListInputSchema = z
   .object({
@@ -52,13 +55,13 @@ const LocationListInputSchema = z
 
 const LocationReadInputSchema = z
   .object({
-    id: WeatherLocationIdSchema.describe("Stable readable ID of the saved weather location."),
+    id: WeatherLocationIdSchema.describe("Saved-location ID returned by saved-location search/list or a weather.location ref."),
   })
   .strict();
 
 const LocationTargetInputSchema = z
   .object({
-    locationId: WeatherLocationIdSchema.describe("Stable readable ID of the saved weather location."),
+    locationId: WeatherLocationIdSchema.describe("Saved-location ID returned by saved-location search/list or a weather.location ref."),
   })
   .strict();
 
@@ -66,7 +69,7 @@ const ForecastSourceSchema = z.discriminatedUnion("kind", [
   z
     .object({
       kind: z.literal("saved").describe("Use a saved location owned by the current user."),
-      locationId: WeatherLocationIdSchema.describe("Stable readable ID of the saved weather location."),
+      locationId: WeatherLocationIdSchema.describe("Saved-location ID returned by saved-location search/list or a weather.location ref."),
     })
     .strict(),
   z
@@ -86,7 +89,7 @@ const ForecastInputSchema = z
 
 const CitySearchInputSchema = z
   .object({
-    query: z.string().trim().min(1).max(120).describe("German city name to search for."),
+    query: z.string().trim().min(1).max(120).describe("German city name to geocode; this searches city candidates, not saved locations."),
     limit: z.number().int().min(1).max(25).default(10).describe("Maximum number of city candidates to return."),
   })
   .strict();
@@ -107,10 +110,16 @@ const CitySearchDataSchema = z
 
 const LocationCreateInputSchema = z
   .object({
-    name: z.string().trim().min(1).max(120).describe("Display name for the saved location."),
-    state: z.string().trim().min(1).max(120).optional().describe("Optional state or region used to distinguish the location."),
-    lat: z.number().min(-90).max(90).describe("Latitude in decimal degrees from -90 to 90."),
-    lon: z.number().min(-180).max(180).describe("Longitude in decimal degrees from -180 to 180."),
+    name: z.string().trim().min(1).max(120).describe("Display name; normally copy name from the chosen Search German cities result."),
+    state: z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .optional()
+      .describe("Optional state or region; normally copy state from the chosen city result when present."),
+    lat: z.number().min(-90).max(90).describe("Latitude copied from the chosen city result, or another trusted coordinate source."),
+    lon: z.number().min(-180).max(180).describe("Longitude copied from the chosen city result, or another trusted coordinate source."),
   })
   .strict();
 
@@ -201,7 +210,11 @@ const runLocationList = async (input: z.infer<typeof LocationListInputSchema>, c
   }
   const locations = page.items.map((location) => {
     const data = mapLocation(location);
-    return { ...data, links: [{ rel: "open" as const, href: locationHref(data.id) }] };
+    return {
+      ...data,
+      ref: { type: "weather.location" as const, id: data.id },
+      links: [{ rel: "open" as const, href: locationHref(data.id) }],
+    };
   });
   return locationPageResult(
     page,
@@ -438,7 +451,7 @@ export const weatherCapabilities = defineCapabilities({
   queries: {
     "location.search": {
       title: "Search saved weather locations",
-      description: "Find saved weather locations owned by the current user by name or state.",
+      description: "Normal discovery path for saved weather locations: find owned locations by name or state and return weather.location refs.",
       input: UniversalSearchInputSchema,
       data: UniversalSearchDataSchema,
       openWorld: false,
@@ -456,15 +469,15 @@ export const weatherCapabilities = defineCapabilities({
     },
     "location.list": {
       title: "List my saved weather locations",
-      description: "List the current user's saved weather locations with bounded pagination.",
+      description: "List the current user's saved weather locations with bounded pagination and item-local weather.location refs.",
       input: LocationListInputSchema,
-      data: z.array(LocationSchema).max(100),
+      data: z.array(LocationListItemSchema).max(100),
       openWorld: false,
       run: runLocationList,
     },
     "location.read": {
       title: "Read saved weather location",
-      description: "Read one saved weather location owned by the current user by stable readable ID.",
+      description: "Read one owned saved weather location from a weather.location ref or saved-location ID.",
       input: LocationReadInputSchema,
       data: LocationSchema,
       openWorld: false,
@@ -490,7 +503,8 @@ export const weatherCapabilities = defineCapabilities({
     },
     "city.search": {
       title: "Search German cities",
-      description: "Find bounded German city candidates and coordinates for forecasts or saved locations.",
+      description:
+        "Specialized geocoding path: find German city candidates and coordinates. To save one, copy the chosen name, optional state, lat, and lon into Save weather location; city results are not weather.location refs.",
       input: CitySearchInputSchema,
       data: CitySearchDataSchema,
       openWorld: true,
@@ -500,7 +514,7 @@ export const weatherCapabilities = defineCapabilities({
   actions: {
     "location.create": {
       title: "Save weather location",
-      description: "Save one weather location for the current user.",
+      description: "Save one weather location for the current user from explicit coordinates, commonly copied from Search German cities.",
       input: LocationCreateInputSchema,
       data: LocationSchema,
       destructive: false,
