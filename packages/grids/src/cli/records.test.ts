@@ -27,6 +27,24 @@ describe("record CLI structured body precedence", () => {
     expect(composeRecordListBody({}, {})).toEqual({ query: { limit: 100 }, cursor: undefined });
   });
 
+  test("adds a friendly Finalization state without replacing other metadata", () => {
+    expect(
+      composeRecordListBody(
+        { recordMeta: { users: { createdBy: ["11111111-1111-4111-8111-111111111111"] } } },
+        { finalization: "awaiting-review" },
+      ),
+    ).toEqual({
+      query: {
+        limit: 100,
+        recordMeta: {
+          users: { createdBy: ["11111111-1111-4111-8111-111111111111"] },
+          finalizationStates: ["awaitingReview"],
+        },
+      },
+      cursor: undefined,
+    });
+  });
+
   test("preserves export body format and nested settings without explicit flags", () => {
     expect(
       composeRecordExportBody({ format: "json", csv: { delimiter: ";", quote: "'" }, query: { limit: 500, includeDeleted: true } }, {}),

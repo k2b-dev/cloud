@@ -1,5 +1,5 @@
 import { type AccessUser, listUsersWithAccess } from "@valentinkolb/cloud/server";
-import { sql } from "bun";
+import { type SQLQuery, sql } from "bun";
 import type { RecordMetaQuery, RecordMetaUserKey } from "../contracts";
 
 type RecordActor = {
@@ -14,6 +14,7 @@ const nonEmpty = (ids: string[] | undefined): string[] => [...new Set((ids ?? []
 export const cleanRecordMeta = (meta: RecordMetaQuery | null | undefined): RecordMetaQuery | undefined => {
   if (!meta) return undefined;
   const ids = nonEmpty(meta.ids);
+  const finalizationStates = [...new Set(meta.finalizationStates ?? [])];
   const createdBy = nonEmpty(meta.users?.createdBy);
   const updatedBy = nonEmpty(meta.users?.updatedBy);
   const deletedBy = nonEmpty(meta.users?.deletedBy);
@@ -25,7 +26,9 @@ export const cleanRecordMeta = (meta: RecordMetaQuery | null | undefined): Recor
           ...(deletedBy.length ? { deletedBy } : {}),
         }
       : undefined;
-  return ids.length || users ? { ...(ids.length ? { ids } : {}), ...(users ? { users } : {}) } : undefined;
+  return ids.length || finalizationStates.length || users
+    ? { ...(ids.length ? { ids } : {}), ...(finalizationStates.length ? { finalizationStates } : {}), ...(users ? { users } : {}) }
+    : undefined;
 };
 
 export const recordMetaRequiresDeletedRows = (meta: RecordMetaQuery | null | undefined): boolean => {
@@ -35,10 +38,39 @@ export const recordMetaRequiresDeletedRows = (meta: RecordMetaQuery | null | und
 
 export const compileRecordMetaFilter = (meta: RecordMetaQuery | null | undefined): any => {
   const cleaned = cleanRecordMeta(meta);
-  const parts: any[] = [];
+  const parts: SQLQuery[] = [];
 
   const ids = cleaned?.ids ?? [];
   if (ids.length > 0) parts.push(sql`r.id = ANY(${sql.array(ids, "UUID")})`);
+
+  const finalizationStates = cleaned?.finalizationStates ?? [];
+  if (finalizationStates.length > 0) {
+    const validPending = sql`EXISTS (
+      SELECT 1
+      FROM grids.record_finalization_requests finalization_request
+      JOIN grids.table_finalization_activations finalization_activation
+        ON finalization_activation.table_id = finalization_request.table_id
+       AND finalization_activation.mode = 'four_eyes'
+       AND finalization_activation.policy_revision = finalization_request.policy_revision
+      WHERE finalization_request.record_id = r.id
+        AND finalization_request.record_version = r.version
+        AND finalization_request.status = 'pending'
+    )`;
+    const finalizationEnabled = sql`EXISTS (
+      SELECT 1
+      FROM grids.records finalization_record
+      JOIN grids.table_finalization_activations finalization_activation
+        ON finalization_activation.table_id = finalization_record.table_id
+      WHERE finalization_record.id = r.id
+    )`;
+    const stateParts: SQLQuery[] = [];
+    if (finalizationStates.includes("finalized")) stateParts.push(sql`r.finalized_at IS NOT NULL`);
+    if (finalizationStates.includes("awaitingReview")) stateParts.push(sql`r.finalized_at IS NULL AND ${validPending}`);
+    if (finalizationStates.includes("draft")) {
+      stateParts.push(sql`r.finalized_at IS NULL AND ${finalizationEnabled} AND NOT (${validPending})`);
+    }
+    parts.push(stateParts.slice(1).reduce((acc, cur) => sql`${acc} OR (${cur})`, sql`(${stateParts[0]})`));
+  }
 
   const createdBy = cleaned?.users?.createdBy ?? [];
   if (createdBy.length > 0) parts.push(sql`r.created_by = ANY(${sql.array(createdBy, "UUID")})`);

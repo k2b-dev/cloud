@@ -126,7 +126,7 @@ Built-in templates create complete example bases with schema, views, Grids Apps,
 records are included by default; pass `--empty` to keep the complete configuration without those records. Commands are
 `templates list|instantiate`.
 
-Base commands are `list`, `use`, `current`, and `bases list|get|create|update|delete|restore|trash|retention|preservation-holds|destruction`. Table commands are `tables list|get|create|update|delete|restore|mutation-policy|mutation-policy impact|mutation-policy set|history|history enable|finalization|finalization enable|finalization disable`.
+Base commands are `list`, `use`, `current`, and `bases list|get|create|update|delete|restore|trash|retention|preservation-holds|destruction`. Table commands are `tables list|get|create|update|delete|restore|mutation-policy|mutation-policy impact|mutation-policy set|history|history enable|finalization|finalization enable|finalization disable|finalization policy`.
 
 A Base Admin can configure a technical minimum age for trashed Records. Read and preview it before changing it:
 
@@ -243,6 +243,7 @@ Read and transfer records with:
 
 ```bash
 cld grids records list Authors --q Butler --limit 100 --json
+cld grids records list Authors --finalization awaiting-review --json
 cld grids records export Authors --format csv --out authors.csv
 cld grids records audit Authors <record-id> --json
 ```
@@ -254,8 +255,12 @@ continues the initial baseline in bounded server-side batches until every existi
 cld grids tables history Authors --json
 cld grids tables history enable Authors --yes --json
 cld grids tables finalization Authors --json
-cld grids tables finalization enable Authors --yes --json
+cld grids tables finalization enable Authors --mode direct --yes --json
+cld grids tables finalization enable Authors --mode four-eyes --approver-group <group-uuid> --yes --json
 cld grids records finalize Authors <record-id> --yes --json
+cld grids records finalization request Authors <record-id> --comment "Ready for review" --json
+cld grids records finalization approve Authors <record-id> --request <request-id> --yes --json
+cld grids records finalization reject Authors <record-id> --request <request-id> --comment "Missing review" --yes --json
 cld grids records versions Authors <record-id> --limit 20 --json
 cld grids records versions download Authors <record-id> <revision-id> <file-id> --out historical-file.bin
 ```
@@ -268,7 +273,7 @@ provide legal or regulatory compliance.
 entire Combined table and accepts record, source, action, time-range, cursor, and limit filters. Combined audit entries expose only
 canonical included fields, declared audit answers such as required deletion comments, and safe source labels.
 
-Record commands are `records shape|list|query|get|create|import|export|update|finalize|delete|restore|audit|audit list|versions|versions download`.
+Record commands are `records shape|list|query|get|create|import|export|update|finalize|finalization request|finalization approve|finalization reject|delete|restore|audit|audit list|versions|versions download`.
 
 ### Files and snapshots
 
@@ -494,8 +499,11 @@ Grids App GQL receives typed request context automatically:
 
 Use `@auth.id != null` for authenticated-only data and `@auth.id = null` for anonymous data. Unknown namespaces and undeclared parameters fail compilation. Context values are bound separately from query text; Grids App GQL has no `inputs` map or `param()` helper. Grids App Markdown may insert the same names as safe text placeholders, such as `Hello @auth.name`; it does not support Liquid control flow or executable templates.
 
-Record metadata filters are `record.id`, `record.createdBy`, `record.updatedBy`, and `record.deletedBy`; they accept `=` or `oneof(...)` with
-record public IDs or user UUIDs and may be combined only with `and`. Metadata sorts are `record.createdAt`, `record.updatedAt`, and `record.deletedAt`.
+Record metadata filters are `record.id`, `record.createdBy`, `record.updatedBy`, `record.deletedBy`, and `record.finalizationState`; they accept
+`=` or `oneof(...)` and may be combined only with `and`. Record IDs are public IDs, user values are UUIDs, and Finalization values are `draft`,
+`awaitingReview`, or `finalized`. `awaitingReview` means a current Four-eyes request, not that the current caller may approve it. Metadata sorts are
+`record.createdAt`, `record.updatedAt`, and `record.deletedAt`. The `records list --finalization` shortcut accepts `draft`, `awaiting-review`, or
+`finalized` and composes with the other list filters.
 
 Aggregates are:
 
@@ -1098,11 +1106,11 @@ bases preservation-holds list|create|release
 bases destruction preview|run|status|cancel
 access reference|list|grant|set|revoke|search-principals
 tables list|get|create|update|delete|restore|history|finalization|mutation-policy
-tables history enable|finalization enable|finalization disable
+tables history enable|finalization enable|finalization disable|finalization policy
 tables mutation-policy impact|set
 tables combined get|candidates|publications|validate|draft|publish|revoke
 fields types|type|list|get|create|update|delete|restore|dependents|reorder
-records shape|list|query|get|create|import|export|update|finalize|delete|restore|audit|audit list|versions
+records shape|list|query|get|create|import|export|update|finalize|finalization request|finalization approve|finalization reject|delete|restore|audit|audit list|versions
 records versions download
 records files list|upload|download|delete
 snapshots list|create|get

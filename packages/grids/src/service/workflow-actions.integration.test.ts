@@ -20,7 +20,7 @@ import { gridsWorkflows } from "../workflows/module";
 import { enable as enableDurableHistory, listRecordRevisions } from "./durable-history";
 import { update as updateMutationPolicy } from "./mutation-policy";
 import { provisionFieldNumberSeries } from "./number-series";
-import { enable as enableFinalization } from "./record-finalization";
+import { enable as enableFinalization, setPolicy as setFinalizationPolicy } from "./record-finalization";
 import { GRIDS_APP_ID, gridsAuthorizationSnapshot } from "./workflow-runs";
 import { dryRunGridsWorkflowRun, runGridsWorkflowRun } from "./workflow-runtime";
 import { deleteTestWorkflowScope, insertTestWorkflow, publishTestWorkflowVersion } from "./workflow-test-fixture";
@@ -121,6 +121,7 @@ const cleanupFixture = async (fixture: Fixture): Promise<void> => {
     WHERE table_id = ${fixture.tableId}::uuid
   `;
   await sql`DELETE FROM grids.record_revisions WHERE table_id = ${fixture.tableId}::uuid`;
+  await sql`DELETE FROM grids.record_finalization_requests WHERE table_id = ${fixture.tableId}::uuid`;
   await sql`DELETE FROM grids.table_finalization_activations WHERE table_id = ${fixture.tableId}::uuid`;
   await sql`DELETE FROM grids.durable_history_activations WHERE table_id = ${fixture.tableId}::uuid`;
   await sql`DELETE FROM grids.table_schema_revisions WHERE table_id = ${fixture.tableId}::uuid`;
@@ -370,7 +371,7 @@ describe("declared Grids workflow actions", () => {
       await insertFixture(fixture);
       const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
       if (!history.ok) throw history.error;
-      const activation = await enableFinalization(fixture.tableId, fixture.actorId);
+      const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
       if (!activation.ok) throw activation.error;
       const runId = await queueRun(fixture, {
         plan: boundPlan([actionStep(0, "finalizeRecord", { record: "inputs.record" })], {}),
@@ -389,6 +390,37 @@ describe("declared Grids workflow actions", () => {
       expect(revisions.ok && revisions.data.items.filter((revision) => revision.action === "finalized")).toHaveLength(1);
     } finally {
       await cleanupFixture(fixture);
+    }
+  });
+
+  postgresTest("finalizeRecord cannot bypass a Table's Four-eyes policy", async () => {
+    const fixture = createFixture();
+    const groupId = uuid();
+    try {
+      await insertFixture(fixture);
+      await sql`INSERT INTO auth.groups (id, cn, provider, name) VALUES (${groupId}::uuid, ${`workflow-approvers-${groupId}`}, 'local', 'Workflow approvers')`;
+      await sql`INSERT INTO auth.user_groups_v2 (user_id, group_id) VALUES (${fixture.actorId}::uuid, ${groupId}::uuid)`;
+      const history = await enableDurableHistory(fixture.tableId, fixture.actorId);
+      if (!history.ok) throw history.error;
+      const activation = await enableFinalization(fixture.tableId, { mode: "direct" }, fixture.actorId);
+      if (!activation.ok) throw activation.error;
+      const policy = await setFinalizationPolicy(fixture.tableId, { mode: "fourEyes", approverGroupId: groupId }, fixture.actorId);
+      if (!policy.ok) throw policy.error;
+      const runId = await queueRun(fixture, {
+        plan: boundPlan([actionStep(0, "finalizeRecord", { record: "inputs.record" })], {}),
+        inputs: { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } },
+      });
+
+      expect(await drive(runId)).toBe("failed");
+      const [record] = await sql<Array<{ finalized_at: Date | null }>>`
+        SELECT finalized_at FROM grids.records WHERE id = ${fixture.recordId}::uuid
+      `;
+      expect(record?.finalized_at).toBeNull();
+      expect((await runRow(runId)).error).toMatchObject({ code: "CONFLICT" });
+    } finally {
+      await cleanupFixture(fixture);
+      await sql`DELETE FROM auth.user_groups_v2 WHERE group_id = ${groupId}::uuid`;
+      await sql`DELETE FROM auth.groups WHERE id = ${groupId}::uuid`;
     }
   });
 

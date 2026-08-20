@@ -1,10 +1,10 @@
 import type { DateContext } from "@k2b/stdlib";
-import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, DescriptionList, DetailPanel, Dropdown, IconButton, prompts, Tooltip } from "@k2b/ui";
-import { createEffect, createSignal, Show } from "solid-js";
+import { mutation as mutations, query } from "@k2b/stdlib/solid";
+import { Button, DescriptionList, DetailPanel, Dropdown, IconButton, NoticeCard, prompts, Tooltip } from "@k2b/ui";
+import { Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicField as Field, PublicGridRecord as GridRecord } from "../../../api/public-dto";
-import type { PublicRecordFinalizationReadiness } from "../../../api/record-finalization";
+import type { PublicRecordFinalizationReadiness, PublicRecordFinalizationRequest } from "../../../api/record-finalization";
 import type { ColumnSpec, RecordMutationAudit, TableAuditPolicy } from "../../../contracts";
 import { recordAuditRequirementFor } from "../../../record-audit-policy";
 import type { PublicDocumentTemplateSummary } from "../documents/public-document-types";
@@ -60,7 +60,25 @@ type Props = {
 export default function RecordDetailPanel(props: Props) {
   const record = () => props.record();
   const mode = () => props.mode();
-  const [finalization, setFinalization] = createSignal<PublicRecordFinalizationReadiness | null>(null);
+  const finalizationQueryEnabled = () => {
+    const rec = record();
+    return Boolean(rec && props.canWrite && mode() === "live" && !rec.finalizedAt);
+  };
+  const finalizationQuery = query.create({
+    source: record,
+    enabled: finalizationQueryEnabled,
+    load: async (rec, { abortSignal }) => {
+      if (!rec) throw new Error("No Record is selected.");
+      const response = await apiClient.records[":tableId"][":recordId"].finalization.$get(
+        { param: { tableId: props.tableId, recordId: rec.id } },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw new Error(await errorMessage(response, "Could not refresh Finalization status"));
+      return response.json();
+    },
+  });
+  const finalization = () =>
+    !finalizationQueryEnabled() || finalizationQuery.stale() || finalizationQuery.error() ? null : (finalizationQuery.data() ?? null);
 
   const visibleFields = () => props.fields.filter((f) => !f.deletedAt);
   const formatDateTime = (value: string) =>
@@ -69,6 +87,31 @@ export default function RecordDetailPanel(props: Props) {
       timeStyle: "short",
       timeZone: props.dateConfig?.timeZone,
     }).format(new Date(value));
+
+  async function refreshFinalization(rec: GridRecord): Promise<PublicRecordFinalizationReadiness> {
+    if (record()?.id !== rec.id) throw new Error("The selected Record changed.");
+    await finalizationQuery.refresh();
+    const refreshError = finalizationQuery.error();
+    if (refreshError) throw refreshError;
+    const readiness = finalization();
+    if (!readiness) throw new Error("Could not refresh Finalization status");
+    return readiness;
+  }
+
+  const reportFinalizationError = (error: Error) => {
+    prompts.error(error.message);
+    const rec = record();
+    if (!rec) return;
+    void refreshFinalization(rec).catch(() =>
+      prompts.error("The action failed, and the current Finalization status could not be refreshed."),
+    );
+  };
+  const refreshAfterFinalizationMutation = () => {
+    void (async () => {
+      await finalizationQuery.refresh();
+      if (finalizationQuery.error()) throw finalizationQuery.error();
+    })().catch(() => prompts.error("The action succeeded, but the current Finalization status could not be refreshed."));
+  };
 
   // ---- Mutations ---------------------------------------------------------
   const updateMut = mutations.create<GridRecord, { rec: GridRecord; payload: Record<string, unknown>; audit?: RecordMutationAudit }>({
@@ -122,23 +165,74 @@ export default function RecordDetailPanel(props: Props) {
       return res.json();
     },
     onSuccess: (updated) => {
-      setFinalization((state) => (state ? { ...state, finalized: true, finalizedAt: updated.finalizedAt ?? null } : state));
       props.onUpdated(updated);
     },
-    onError: (error) => prompts.error(error.message),
+    onError: reportFinalizationError,
   });
 
-  createEffect(() => {
-    const rec = record();
-    setFinalization(null);
-    if (!rec || !props.canWrite || mode() !== "live" || rec.finalizedAt) return;
-    void (async () => {
-      const response = await apiClient.records[":tableId"][":recordId"].finalization.$get({
+  const requestFinalizationMut = mutations.create<
+    PublicRecordFinalizationRequest,
+    { rec: GridRecord; comment: string | null },
+    { rec: GridRecord }
+  >({
+    onBefore: ({ rec }) => ({ rec }),
+    mutation: async ({ rec, comment }) => {
+      const response = await apiClient.records[":tableId"][":recordId"].finalization.request.$post({
         param: { tableId: props.tableId, recordId: rec.id },
+        json: { comment },
       });
-      if (response.ok && record()?.id === rec.id) setFinalization(await response.json());
-    })();
+      if (!response.ok) throw new Error(await errorMessage(response, "Failed to request Finalization"));
+      return response.json();
+    },
+    onSuccess: (_request, context) => {
+      if (context) props.onUpdated(context.rec);
+      refreshAfterFinalizationMutation();
+    },
+    onError: reportFinalizationError,
   });
+
+  const approveFinalizationMut = mutations.create<GridRecord, { rec: GridRecord; requestId: string; comment: string | null }>({
+    mutation: async ({ rec, requestId, comment }) => {
+      const response = await apiClient.records[":tableId"][":recordId"].finalization.approve.$post({
+        param: { tableId: props.tableId, recordId: rec.id },
+        json: { requestId, comment },
+      });
+      if (!response.ok) throw new Error(await errorMessage(response, "Failed to approve Finalization"));
+      return response.json();
+    },
+    onSuccess: (updated) => {
+      props.onUpdated(updated);
+    },
+    onError: reportFinalizationError,
+  });
+
+  const rejectFinalizationMut = mutations.create<
+    PublicRecordFinalizationRequest,
+    { rec: GridRecord; requestId: string; comment: string | null },
+    { rec: GridRecord }
+  >({
+    onBefore: ({ rec }) => ({ rec }),
+    mutation: async ({ rec, requestId, comment }) => {
+      const response = await apiClient.records[":tableId"][":recordId"].finalization.reject.$post({
+        param: { tableId: props.tableId, recordId: rec.id },
+        json: { requestId, comment },
+      });
+      if (!response.ok) throw new Error(await errorMessage(response, "Failed to reject Finalization"));
+      return response.json();
+    },
+    onSuccess: (_request, context) => {
+      if (context) props.onUpdated(context.rec);
+      refreshAfterFinalizationMutation();
+    },
+    onError: reportFinalizationError,
+  });
+
+  const resolutionLoading = () =>
+    approveFinalizationMut.loading() ||
+    rejectFinalizationMut.loading() ||
+    finalizationQuery.refreshing() ||
+    finalizationQuery.stale() ||
+    Boolean(finalizationQuery.error());
 
   // ---- Handlers ----------------------------------------------------------
   const handleEdit = async (rec: GridRecord) => {
@@ -237,15 +331,12 @@ export default function RecordDetailPanel(props: Props) {
     if (finalizeMut.loading()) return;
     let readiness = finalization();
     if (!readiness) {
-      const response = await apiClient.records[":tableId"][":recordId"].finalization.$get({
-        param: { tableId: props.tableId, recordId: rec.id },
-      });
-      if (!response.ok) {
-        prompts.error(await errorMessage(response, "Could not check finalization requirements"));
+      try {
+        readiness = await refreshFinalization(rec);
+      } catch (error) {
+        prompts.error(error instanceof Error ? error.message : "Could not check Finalization requirements");
         return;
       }
-      readiness = await response.json();
-      setFinalization(readiness);
     }
     if (!readiness.enabled) {
       prompts.error("Finalization is not enabled for this table.");
@@ -257,12 +348,72 @@ export default function RecordDetailPanel(props: Props) {
       );
       return;
     }
+    if (readiness.mode === "fourEyes") {
+      const result = await prompts.form({
+        title: "Request Finalization",
+        icon: "ti ti-user-check",
+        confirmText: "Request Finalization",
+        fields: {
+          info: {
+            type: "info" as const,
+            content:
+              "A different current member of the Table's approver group must review this exact Record version before it can be finalized.",
+          },
+          comment: {
+            type: "text" as const,
+            label: "Comment",
+            description: "Optional context for the reviewer.",
+            multiline: true,
+            lines: 3,
+            maxLength: 2_000,
+          },
+        },
+      });
+      if (result) requestFinalizationMut.mutate({ rec, comment: result.comment?.trim() || null });
+      return;
+    }
     const assigned = readiness.assignedOnFinalization.map((item) => item.fieldName);
     const confirmed = await prompts.confirm(
       `${recordDisplayTitle({ fields: props.fields, record: rec, fieldsByTable: props.fieldsByTable, relationLabels: props.relationLabels, dateConfig: props.dateConfig, viewColumns: props.viewColumns })}\n\n${assigned.length ? `IDs assigned now: ${assigned.join(", ")}\n\n` : ""}After finalization, this record and its files and relations can no longer be changed or removed.`,
       { title: "Finalize record?", confirmText: "Finalize", variant: "danger" },
     );
     if (confirmed) finalizeMut.mutate(rec);
+  };
+
+  const resolveFinalizationRequest = async (rec: GridRecord, operation: "approve" | "reject") => {
+    if (resolutionLoading()) return;
+    const requestId = finalization()?.request?.id;
+    if (!requestId) {
+      prompts.error("The Finalization request changed. Refresh and review the current request.");
+      return;
+    }
+    const result = await prompts.form({
+      title: operation === "approve" ? "Approve and finalize Record?" : "Reject Finalization request?",
+      icon: operation === "approve" ? "ti ti-lock-check" : "ti ti-user-x",
+      confirmText: operation === "approve" ? "Approve and finalize" : "Reject request",
+      ...(operation === "approve" ? { variant: "danger" as const } : {}),
+      fields: {
+        info: {
+          type: "info" as const,
+          content:
+            operation === "approve"
+              ? "Approval immediately finalizes this exact Record version. Its values, files, and relations can no longer be changed or removed."
+              : "The Record remains editable and can be submitted again later.",
+        },
+        comment: {
+          type: "text" as const,
+          label: "Comment",
+          description: "Optional context recorded with this decision.",
+          multiline: true,
+          lines: 3,
+          maxLength: 2_000,
+        },
+      },
+    });
+    if (!result) return;
+    const input = { rec, requestId, comment: result.comment?.trim() || null };
+    if (operation === "approve") approveFinalizationMut.mutate(input);
+    else rejectFinalizationMut.mutate(input);
   };
 
   return (
@@ -289,6 +440,7 @@ export default function RecordDetailPanel(props: Props) {
               field={field}
               canWrite={props.canWrite && mode() === "live" && !record.finalizedAt}
               initialFiles={props.detail()?.filesByField[field.id] ?? []}
+              onChanged={refreshAfterFinalizationMutation}
             />
           )}
           headerActions={
@@ -344,16 +496,47 @@ export default function RecordDetailPanel(props: Props) {
                   <i class="ti ti-pencil" /> Edit
                 </Button>
                 <Show when={finalization()?.enabled}>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    type="button"
-                    onClick={() => void handleFinalize(rec)}
-                    loading={finalizeMut.loading()}
-                    loadingLabel="Finalizing record"
+                  <Show
+                    when={finalization()?.request?.status === "pending"}
+                    fallback={
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        type="button"
+                        onClick={() => void handleFinalize(rec)}
+                        loading={finalizeMut.loading() || requestFinalizationMut.loading()}
+                        loadingLabel={finalization()?.mode === "fourEyes" ? "Requesting Finalization" : "Finalizing Record"}
+                      >
+                        <i class={finalization()?.mode === "fourEyes" ? "ti ti-user-check" : "ti ti-lock"} />
+                        {finalization()?.mode === "fourEyes" ? "Request Finalization" : "Finalize"}
+                      </Button>
+                    }
                   >
-                    <i class="ti ti-lock" /> Finalize
-                  </Button>
+                    <Show when={finalization()?.canResolveRequest}>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        type="button"
+                        onClick={() => void resolveFinalizationRequest(rec, "reject")}
+                        loading={rejectFinalizationMut.loading()}
+                        disabled={resolutionLoading()}
+                        loadingLabel="Rejecting request"
+                      >
+                        <i class="ti ti-x" /> Reject
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        type="button"
+                        onClick={() => void resolveFinalizationRequest(rec, "approve")}
+                        loading={approveFinalizationMut.loading()}
+                        disabled={resolutionLoading()}
+                        loadingLabel="Finalizing Record"
+                      >
+                        <i class="ti ti-lock-check" /> Approve and finalize
+                      </Button>
+                    </Show>
+                  </Show>
                 </Show>
               </Show>
               <Show when={props.canWrite && mode() === "trash"}>
@@ -369,6 +552,68 @@ export default function RecordDetailPanel(props: Props) {
             </Show>
           }
         >
+          <Show
+            when={
+              finalizationQueryEnabled() &&
+              (finalizationQuery.loading() || finalizationQuery.stale()) &&
+              !finalization() &&
+              !finalizationQuery.error()
+            }
+          >
+            <NoticeCard
+              tone="neutral"
+              title="Loading Finalization status"
+              detail="Checking whether this Record needs Finalization review."
+            />
+          </Show>
+          <Show when={finalizationQueryEnabled() && finalizationQuery.error()}>
+            {(error) => (
+              <NoticeCard tone="danger" title="Finalization status unavailable" detail={error().message}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  onClick={() => void refreshFinalization(rec).catch(() => undefined)}
+                  loading={finalizationQuery.loading() || finalizationQuery.refreshing()}
+                  loadingLabel="Refreshing Finalization"
+                >
+                  <i class="ti ti-refresh" /> Retry
+                </Button>
+              </NoticeCard>
+            )}
+          </Show>
+          <Show when={finalization()?.request?.status === "pending"}>
+            <NoticeCard
+              tone="info"
+              title="Finalization requested"
+              detail={`${finalization()!.request!.requestedByDisplayName} requested review on ${formatDateTime(finalization()!.request!.requestedAt)}.${
+                finalization()!.request!.requestComment ? ` ${finalization()!.request!.requestComment}` : ""
+              }${finalization()!.resolutionDisabledReason ? ` ${finalization()!.resolutionDisabledReason}` : ""}`}
+            />
+          </Show>
+          <Show when={finalization()?.enabled && finalization()?.mode === "fourEyes" && !finalizationQuery.error()}>
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              onClick={() => void refreshFinalization(rec).catch(() => undefined)}
+              loading={finalizationQuery.loading() || finalizationQuery.refreshing()}
+              loadingLabel="Refreshing Finalization"
+            >
+              <i class="ti ti-refresh" /> Refresh Finalization
+            </Button>
+          </Show>
+          <Show when={finalization()?.request?.status === "rejected" || finalization()?.request?.status === "superseded"}>
+            <NoticeCard
+              tone="neutral"
+              title={
+                finalization()!.request!.status === "rejected" ? "Finalization request rejected" : "Previous request no longer applies"
+              }
+              detail={`${finalization()!.request!.resolvedByDisplayName ?? "The system"} resolved the request${
+                finalization()!.request!.resolvedAt ? ` on ${formatDateTime(finalization()!.request!.resolvedAt!)}` : ""
+              }.${finalization()!.request!.resolutionComment ? ` ${finalization()!.request!.resolutionComment}` : ""}`}
+            />
+          </Show>
           <Show when={props.detail()?.combinedOrigin}>
             {(origin) => (
               <DetailPanel.Group label="Combined record source">

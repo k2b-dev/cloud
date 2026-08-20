@@ -138,6 +138,18 @@ describe("GQL source builder", () => {
     });
   });
 
+  test("converts Finalization state metadata to reserved Record refs", () => {
+    expect(
+      simpleQueryToGqlSource({
+        tableId,
+        query: { recordMeta: { finalizationStates: ["draft", "awaitingReview"] } },
+      }),
+    ).toEqual({
+      ok: true,
+      source: [`from table {${tableId}}`, "where oneof(record.finalizationState, 'draft', 'awaitingReview')"].join("\n"),
+    });
+  });
+
   test("refuses unsupported legacy-only filter operators", () => {
     expect(filterToGqlWhere({ fieldId: customerId, op: "regex", value: "^A" })).toEqual({
       ok: false,

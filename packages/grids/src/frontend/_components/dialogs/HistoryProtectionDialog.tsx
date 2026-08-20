@@ -1,9 +1,11 @@
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, dialogCore, InlineGuidance, NoticeCard, PanelDialog, Placeholder, panelDialogOptions, prompts } from "@k2b/ui";
-import { Show } from "solid-js";
+import { Button, dialogCore, InlineGuidance, NoticeCard, PanelDialog, Placeholder, panelDialogOptions, prompts, Select } from "@k2b/ui";
+import { createEffect, createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicDurableHistoryStatus } from "../../../api/durable-history";
 import type { PublicRecordFinalizationStatus } from "../../../api/record-finalization";
+import type { PrincipalReference } from "../../../field-types/principal";
+import PrincipalInput from "../forms/PrincipalInput";
 import { errorMessage } from "../utils/api-helpers";
 
 export const openHistoryProtectionDialog = (args: { tableId: string; tableName: string }) =>
@@ -43,6 +45,29 @@ function HistoryProtectionBody(props: { tableId: string }) {
     const status = finalizationStatus();
     return status?.enabled ? status : null;
   };
+  const [policyMode, setPolicyMode] = createSignal<"direct" | "fourEyes">("direct");
+  const [approverGroup, setApproverGroup] = createSignal<PrincipalReference | null>(null);
+  const refreshAfterChange = async (message: string) => {
+    try {
+      await statusQuery.refresh();
+    } catch {
+      prompts.error(message);
+    }
+  };
+  let synchronizedPolicyRevision = 0;
+  createEffect(() => {
+    const status = enabledFinalizationStatus();
+    if (!status) {
+      synchronizedPolicyRevision = 0;
+      setPolicyMode("direct");
+      setApproverGroup(null);
+      return;
+    }
+    if (status.policyRevision === synchronizedPolicyRevision) return;
+    synchronizedPolicyRevision = status.policyRevision;
+    setPolicyMode(status.mode);
+    setApproverGroup(status.approverGroupId ? { type: "group", id: status.approverGroupId } : null);
+  });
 
   const historyMut = mutations.create<PublicDurableHistoryStatus, "enable" | "continue">({
     mutation: async (operation) => {
@@ -63,7 +88,7 @@ function HistoryProtectionBody(props: { tableId: string }) {
       }
       return status;
     },
-    onSuccess: () => void statusQuery.refresh(),
+    onSuccess: () => refreshAfterChange("Durable history changed, but the current status could not be refreshed."),
     onError: (error) => {
       void statusQuery.refresh();
       prompts.error(error.message);
@@ -82,16 +107,23 @@ function HistoryProtectionBody(props: { tableId: string }) {
     mutation: async (operation) => {
       const response =
         operation === "enable"
-          ? await apiClient.tables[":tableId"].finalization.enable.$post({ param: { tableId: props.tableId } })
+          ? await apiClient.tables[":tableId"].finalization.enable.$post({
+              param: { tableId: props.tableId },
+              json: policyMode() === "fourEyes" ? { mode: "fourEyes", approverGroupId: approverGroup()!.id } : { mode: "direct" },
+            })
           : await apiClient.tables[":tableId"].finalization.disable.$post({ param: { tableId: props.tableId } });
       if (!response.ok) throw new Error(await errorMessage(response, `Could not ${operation} finalization`));
       return response.json();
     },
-    onSuccess: () => void statusQuery.refresh(),
+    onSuccess: () => refreshAfterChange("Finalization changed, but the current status could not be refreshed."),
     onError: (error) => prompts.error(error.message),
   });
 
   const changeFinalization = async (operation: "enable" | "disable") => {
+    if (operation === "enable" && policyMode() === "fourEyes" && !approverGroup()) {
+      prompts.error("Choose an approver group before enabling Four-eyes Finalization.");
+      return;
+    }
     const confirmed = await prompts.confirm(
       operation === "enable"
         ? "Records stay drafts until someone finalizes them. A finalized record, its files and relations can never be changed or removed."
@@ -103,6 +135,52 @@ function HistoryProtectionBody(props: { tableId: string }) {
       },
     );
     if (confirmed) finalizationMut.mutate(operation);
+  };
+
+  const policyMut = mutations.create<PublicRecordFinalizationStatus, { mode: "direct" } | { mode: "fourEyes"; approverGroupId: string }>({
+    mutation: async (policy) => {
+      const response = await apiClient.tables[":tableId"].finalization.policy.$put({
+        param: { tableId: props.tableId },
+        json: policy,
+      });
+      if (!response.ok) throw new Error(await errorMessage(response, "Could not update the Finalization policy"));
+      return response.json();
+    },
+    onSuccess: () => refreshAfterChange("The Finalization policy was saved, but the current status could not be refreshed."),
+    onError: (error) => {
+      void statusQuery.refresh();
+      prompts.error(error.message);
+    },
+  });
+
+  const policyChanged = () => {
+    const current = enabledFinalizationStatus();
+    if (!current) return false;
+    return (
+      current.mode !== policyMode() || current.approverGroupId !== (policyMode() === "fourEyes" ? (approverGroup()?.id ?? null) : null)
+    );
+  };
+
+  const savePolicy = async () => {
+    const group = approverGroup();
+    if (policyMode() === "fourEyes" && (!group || group.type !== "group")) {
+      prompts.error("Choose the group whose members may approve Finalization requests.");
+      return;
+    }
+    const current = enabledFinalizationStatus();
+    const weakening = current?.mode === "fourEyes" && policyMode() === "direct";
+    const confirmed = await prompts.confirm(
+      policyMode() === "fourEyes"
+        ? "People with Write access will only be able to request Finalization. A different current member of the selected group must approve before the Record is locked. Open requests become invalid when this policy changes."
+        : "People with Write access will be able to finalize Records themselves. Open Four-eyes requests become invalid.",
+      {
+        title: policyMode() === "fourEyes" ? "Require Four-eyes Finalization?" : "Allow Direct Finalization?",
+        confirmText: "Change Finalization mode",
+        ...(weakening ? { variant: "danger" as const } : {}),
+      },
+    );
+    if (!confirmed) return;
+    policyMut.mutate(policyMode() === "fourEyes" ? { mode: "fourEyes", approverGroupId: group!.id } : { mode: "direct" });
   };
 
   return (
@@ -158,6 +236,7 @@ function HistoryProtectionBody(props: { tableId: string }) {
                 {(status) => (
                   <div class="flex flex-col items-start gap-3">
                     <NoticeCard
+                      class="w-full"
                       tone={status().status === "active" ? "success" : "warning"}
                       title={status().status === "active" ? "Durable history is on" : "Preparing durable history"}
                       detail={
@@ -195,11 +274,47 @@ function HistoryProtectionBody(props: { tableId: string }) {
                             ? "Finalization is off. Records remain editable until you explicitly finalize them."
                             : "Turn on Durable History before enabling finalization."}
                         </InlineGuidance>
+                        <div class="flex w-full flex-col gap-3">
+                          <Select
+                            label="Finalization mode"
+                            description="Choose whether a writer may finalize directly or needs approval from another person."
+                            options={[
+                              {
+                                id: "direct",
+                                label: "Direct",
+                                description: "People with Write access can finalize Records themselves.",
+                                icon: "ti ti-lock",
+                              },
+                              {
+                                id: "fourEyes",
+                                label: "Four-eyes",
+                                description: "One person requests Finalization; a different approver reviews it.",
+                                icon: "ti ti-users-group",
+                              },
+                            ]}
+                            value={policyMode}
+                            onValueChange={(value) => {
+                              if (value === "direct" || value === "fourEyes") setPolicyMode(value);
+                            }}
+                            disabled={status().durableHistory !== "active" || finalizationMut.loading()}
+                          />
+                          <Show when={policyMode() === "fourEyes"}>
+                            <PrincipalInput
+                              label="Approver group"
+                              description="A different current member of this group must also have Write access to approve. Selecting a group does not grant access."
+                              value={approverGroup() ? [approverGroup()!] : null}
+                              multi={false}
+                              types={["group"]}
+                              disabled={status().durableHistory !== "active" || finalizationMut.loading()}
+                              onChange={(value) => setApproverGroup(value?.[0] ?? null)}
+                            />
+                          </Show>
+                        </div>
                         <Button
                           variant="secondary"
                           size="sm"
                           type="button"
-                          disabled={status().durableHistory !== "active"}
+                          disabled={status().durableHistory !== "active" || (policyMode() === "fourEyes" && !approverGroup())}
                           onClick={() => void changeFinalization("enable")}
                           loading={finalizationMut.loading()}
                           loadingLabel="Enabling finalization"
@@ -212,26 +327,83 @@ function HistoryProtectionBody(props: { tableId: string }) {
                     {(enabled) => (
                       <div class="flex flex-col items-start gap-3">
                         <NoticeCard
+                          class="w-full"
                           tone="success"
                           title="Finalization is on"
                           detail={
                             enabled().finalizedCount === 0
-                              ? "Records stay editable until someone explicitly finalizes them."
+                              ? enabled().mode === "fourEyes"
+                                ? `People request Finalization; a different member of ${enabled().approverGroupName ?? "the approver group"} approves it.`
+                                : "People with Write access can finalize Records directly."
                               : `${enabled().finalizedCount} record(s) are finalized and can no longer be changed.`
                           }
                         />
-                        <Show when={enabled().canDisable}>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            type="button"
-                            onClick={() => void changeFinalization("disable")}
-                            loading={finalizationMut.loading()}
-                            loadingLabel="Disabling finalization"
-                          >
-                            Disable finalization
-                          </Button>
-                        </Show>
+                        <div class="flex w-full flex-col gap-3">
+                          <div class="flex flex-col gap-3">
+                            <Select
+                              label="Finalization mode"
+                              description="Choose whether a writer may finalize directly or needs approval from another person."
+                              options={[
+                                {
+                                  id: "direct",
+                                  label: "Direct",
+                                  description: "People with Write access can finalize Records themselves.",
+                                  icon: "ti ti-lock",
+                                },
+                                {
+                                  id: "fourEyes",
+                                  label: "Four-eyes",
+                                  description: "One person requests Finalization; a different approver reviews it.",
+                                  icon: "ti ti-users-group",
+                                },
+                              ]}
+                              value={policyMode}
+                              onValueChange={(value) => {
+                                if (value === "direct" || value === "fourEyes") setPolicyMode(value);
+                              }}
+                              disabled={policyMut.loading()}
+                            />
+                            <Show when={policyMode() === "fourEyes"}>
+                              <PrincipalInput
+                                label="Approver group"
+                                description="A different current member of this group must also have Write access to approve. Selecting a group does not grant access."
+                                value={approverGroup() ? [approverGroup()!] : null}
+                                multi={false}
+                                types={["group"]}
+                                disabled={policyMut.loading()}
+                                onChange={(value) => setApproverGroup(value?.[0] ?? null)}
+                              />
+                            </Show>
+                          </div>
+                        </div>
+                        <div class="flex w-full flex-wrap items-center gap-2">
+                          <Show when={enabled().canDisable}>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              type="button"
+                              onClick={() => void changeFinalization("disable")}
+                              loading={finalizationMut.loading()}
+                              loadingLabel="Disabling finalization"
+                            >
+                              Disable finalization
+                            </Button>
+                          </Show>
+                          <Show when={policyChanged()}>
+                            <Button
+                              class="ml-auto"
+                              variant="primary"
+                              size="sm"
+                              type="button"
+                              onClick={() => void savePolicy()}
+                              loading={policyMut.loading()}
+                              loadingLabel="Saving Finalization mode"
+                              disabled={policyMode() === "fourEyes" && !approverGroup()}
+                            >
+                              <i class="ti ti-device-floppy" aria-hidden="true" /> Save Finalization mode
+                            </Button>
+                          </Show>
+                        </div>
                       </div>
                     )}
                   </Show>

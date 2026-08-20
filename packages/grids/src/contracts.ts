@@ -719,8 +719,12 @@ export type SearchSpec = z.infer<typeof SearchSpecSchema>;
 export const RecordMetaUserKeySchema = z.enum(["createdBy", "updatedBy", "deletedBy"]);
 export type RecordMetaUserKey = z.infer<typeof RecordMetaUserKeySchema>;
 
+export const RecordFinalizationStateSchema = z.enum(["draft", "awaitingReview", "finalized"]);
+export type RecordFinalizationState = z.infer<typeof RecordFinalizationStateSchema>;
+
 const RecordMetaQuerySchema = z.object({
   ids: z.array(z.string().uuid()).max(100).optional(),
+  finalizationStates: z.array(RecordFinalizationStateSchema).max(3).optional(),
   users: z
     .object({
       createdBy: z.array(z.string().uuid()).max(50).optional(),

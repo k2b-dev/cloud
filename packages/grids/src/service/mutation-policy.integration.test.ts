@@ -257,7 +257,7 @@ describe("mutation policy integration", () => {
       if (!uploaded.ok) throw uploaded.error;
       const history = await enableDurableHistory(item.tableId, null);
       if (!history.ok) throw history.error;
-      const finalization = await enableFinalization(item.tableId, null);
+      const finalization = await enableFinalization(item.tableId, { mode: "direct" }, null);
       if (!finalization.ok) throw finalization.error;
       const restricted = await updateMutationPolicy(item.tableId, { mode: "selected", sources: ["form"] }, null);
       if (!restricted.ok) throw restricted.error;

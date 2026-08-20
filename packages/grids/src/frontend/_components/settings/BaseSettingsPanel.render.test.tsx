@@ -39,6 +39,7 @@ describe("Grids Base settings composition", () => {
     for (const group of ["Base", "Sharing", "Recovery", "Lifecycle"]) expect(html).toContain(group);
     for (const tab of [
       "General",
+      "Tables",
       "Documents",
       "Access",
       "Trash",
@@ -53,6 +54,26 @@ describe("Grids Base settings composition", () => {
     expect(html).toContain("Describe this Base wherever it appears in Grids.");
     expect(html.match(/<footer class="k2b-settings__footer">/g)).toHaveLength(1);
     expect(html).toContain('aria-describedby="k2b-settings-field-');
+  });
+
+  test("opens the server-filtered Tables overview in its own workspace dialog", () => {
+    const panel = readFileSync(join(import.meta.dir, "BaseSettingsPanel.tsx"), "utf8");
+    const source = readFileSync(join(import.meta.dir, "TablesOverviewSection.tsx"), "utf8");
+    expect(panel).toContain('id="tables"');
+    expect(source).toContain("query.create");
+    expect(source).toContain("admin-overview");
+    expect(source).toContain("dialogCore.open");
+    expect(source).toContain("panelDialogWorkspaceOptions");
+    expect(source).toContain("<PanelDialog>");
+    expect(source).toContain("Review Tables");
+    expect(source).toContain("Durable History");
+    expect(source).toContain("Finalization");
+    expect(source).toContain("indexedFieldCount");
+    expect(source).toContain("<DataTable.Controls>");
+    expect(source).toContain('<div class="w-full">');
+    expect(source).not.toContain('class="min-w-64 flex-1"');
+    expect(source).not.toContain("onRowClick");
+    expect(source).not.toContain("recordCount");
   });
 
   test("keeps scoped holds in their own lifecycle category with explicit consequences", () => {

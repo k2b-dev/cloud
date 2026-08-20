@@ -14,6 +14,7 @@ import {
 import { gridsService } from "../service";
 import { projectPublicIds, resolvePublicIds } from "../service/public-resources";
 import { ALL_RECORD_ACCESS } from "../service/record-access";
+import * as recordFinalizationService from "../service/record-finalization";
 import { PublicDurableHistoryStatusSchema, toPublicDurableHistoryStatus } from "./durable-history";
 import { currentAccessSubject, currentActorUserId, currentCredentialPermission, currentResourceBoundBaseId, gateAt } from "./permissions";
 import {
@@ -42,8 +43,17 @@ import {
   toPublicTable,
   toPublicTables,
 } from "./public-dto";
-import { PublicRecordFinalizationStatusSchema, toPublicRecordFinalizationStatus } from "./record-finalization";
+import {
+  PublicFinalizationPolicyInputSchema,
+  PublicRecordFinalizationStatusSchema,
+  toPublicRecordFinalizationStatus,
+} from "./record-finalization";
 import { internalIdParam, requirePublicIdParam, requireStoredPublicIdParam } from "./route-params";
+import {
+  PublicTableAdminOverviewPageSchema,
+  PublicTableAdminOverviewQuerySchema,
+  toPublicTableAdminOverview,
+} from "./table-admin-overview";
 import { tableQueryRoutes } from "./table-query-routes";
 
 const PublicRelationLookupResponseSchema = z.object({
@@ -104,8 +114,7 @@ const retainUnadministeredDraftSources = (
   return retainedSourceIds.length > 0 ? { ...input, retainedSourceIds } : input;
 };
 
-const app = new Hono<AuthContext>()
-  .use(auth.requireRole("authenticated"))
+export const tablesRoutes = new Hono<AuthContext>()
 
   .get(
     "/:tableId/federation/publications",
@@ -354,6 +363,28 @@ const app = new Hono<AuthContext>()
 
   // List tables of a base.
   .get(
+    "/by-base/:baseId/admin-overview",
+    requirePublicIdParam("baseId", "base", "Base"),
+    describeRoute({
+      tags: ["Grids:Table"],
+      summary: "List Table administration summaries for a Base",
+      responses: {
+        200: jsonResponse(PublicTableAdminOverviewPageSchema, "Table administration summaries"),
+        403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+        404: jsonResponse(ErrorResponseSchema, "Not found"),
+      },
+    }),
+    v("query", PublicTableAdminOverviewQuerySchema),
+    async (c) => {
+      const baseId = internalIdParam(c, "baseId")!;
+      const gate = await gateAt(c, { baseId }, "admin");
+      if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+      return c.json(await toPublicTableAdminOverview(await gridsService.table.adminOverview.list(baseId, c.req.valid("query"))));
+    },
+  )
+
+  // List tables of a base.
+  .get(
     "/by-base/:baseId",
     requirePublicIdParam("baseId", "base", "Base"),
     describeRoute({
@@ -566,6 +597,7 @@ const app = new Hono<AuthContext>()
   .post(
     "/:tableId/finalization/enable",
     requirePublicIdParam("tableId", "table", "Table"),
+    v("json", PublicFinalizationPolicyInputSchema),
     describeRoute({
       tags: ["Grids:Table"],
       summary: "Enable record finalization",
@@ -574,6 +606,7 @@ const app = new Hono<AuthContext>()
         400: jsonResponse(ErrorResponseSchema, "Durable History prerequisite not met"),
         403: jsonResponse(ErrorResponseSchema, "Forbidden"),
         404: jsonResponse(ErrorResponseSchema, "Not found"),
+        409: jsonResponse(ErrorResponseSchema, "Already enabled with another policy"),
       },
     }),
     async (c) => {
@@ -582,7 +615,7 @@ const app = new Hono<AuthContext>()
       if (!table) return c.json({ message: "Table not found" }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-      const result = await gridsService.table.finalization.enable(tableId, currentActorUserId(c));
+      const result = await recordFinalizationService.enable(tableId, c.req.valid("json"), currentActorUserId(c));
       return result.ok ? c.json(toPublicRecordFinalizationStatus(result.data)) : respond(c, () => Promise.resolve(result));
     },
   )
@@ -606,7 +639,32 @@ const app = new Hono<AuthContext>()
       if (!table) return c.json({ message: "Table not found" }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "admin");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-      const result = await gridsService.table.finalization.disable(tableId, currentActorUserId(c));
+      const result = await recordFinalizationService.disable(tableId, currentActorUserId(c));
+      return result.ok ? c.json(toPublicRecordFinalizationStatus(result.data)) : respond(c, () => Promise.resolve(result));
+    },
+  )
+
+  .put(
+    "/:tableId/finalization/policy",
+    requirePublicIdParam("tableId", "table", "Table"),
+    v("json", PublicFinalizationPolicyInputSchema),
+    describeRoute({
+      tags: ["Grids:Table"],
+      summary: "Choose Direct or Four-eyes Record Finalization",
+      responses: {
+        200: jsonResponse(PublicRecordFinalizationStatusSchema, "Record finalization status"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid Finalization policy"),
+        403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+        404: jsonResponse(ErrorResponseSchema, "Not found"),
+      },
+    }),
+    async (c) => {
+      const tableId = internalIdParam(c, "tableId")!;
+      const table = await gridsService.table.get(tableId);
+      if (!table) return c.json({ message: "Table not found" }, 404);
+      const gate = await gateAt(c, { baseId: table.baseId }, "admin");
+      if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+      const result = await recordFinalizationService.setPolicy(tableId, c.req.valid("json"), currentActorUserId(c));
       return result.ok ? c.json(toPublicRecordFinalizationStatus(result.data)) : respond(c, () => Promise.resolve(result));
     },
   )
@@ -822,4 +880,5 @@ const app = new Hono<AuthContext>()
     },
   );
 
+const app = new Hono<AuthContext>().use(auth.requireRole("authenticated")).route("/", tablesRoutes);
 export default app;

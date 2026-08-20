@@ -5,7 +5,7 @@ import { logAudit, type SqlClient } from "./audit";
 import { captureRecordRevision, lockDurableHistoryMutationBoundary, prepareRecordMutation } from "./durable-history";
 import { type FederatedRevisionScope, getActive, verifyRevisionScope } from "./federated-tables";
 import { assertMutationAllowed, type MutationOrigin } from "./mutation-policy";
-import { assertRecordMutable } from "./record-finalization";
+import { assertRecordMutable, supersedePendingFinalizationRequest } from "./record-finalization";
 import { insertWithShortIdForDb } from "./short-id";
 import { get as getTable } from "./tables";
 import type { GridFile, GridFileContent, GridFilePreview } from "./types";
@@ -515,6 +515,7 @@ export const upload = async (params: {
       INSERT INTO grids.file_attachments (file_id, record_id, field_id, position, attached_by)
       VALUES (${row.id}::uuid, ${params.recordId}::uuid, ${params.fieldId}::uuid, ${row.position}, ${params.userId}::uuid)
     `;
+    await supersedePendingFinalizationRequest(tx, params.tableId, params.recordId, params.userId);
     const file = mapRow(row);
     await captureRecordRevision(tx, {
       tableId: params.tableId,
@@ -601,6 +602,7 @@ export const replace = async (params: {
       SET file_id = ${nextRow.id}::uuid, attached_by = ${params.userId}::uuid, attached_at = now()
       WHERE file_id = ${params.fileId}::uuid
     `;
+    await supersedePendingFinalizationRequest(tx, params.tableId, params.recordId, params.userId);
     const previous = mapRow(existingRow);
     const next = mapRow(nextRow);
     await captureRecordRevision(tx, {
@@ -697,6 +699,7 @@ export const remove = async (params: {
     if (!row) return fail(err.notFound("File"));
     const file = mapRow(row);
     await tx`DELETE FROM grids.file_attachments WHERE file_id = ${params.fileId}::uuid`;
+    await supersedePendingFinalizationRequest(tx, params.tableId, params.recordId, params.userId ?? null);
     await captureRecordRevision(tx, {
       tableId: params.tableId,
       recordId: params.recordId,

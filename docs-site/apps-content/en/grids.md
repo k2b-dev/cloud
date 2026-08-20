@@ -18,6 +18,9 @@ documents, and workflows without splitting the domain across unrelated tools.
 
 - Create a base for one operational domain, then define tables, fields, and
   relationships around its records.
+- Review Table structure, indexed and unique fields, write paths, Durable
+  History, and Finalization together in the admin-only **Tables** Base setting.
+  Record totals stay out of this lightweight catalog.
 - Save filtered or grouped views for recurring work and reporting.
 - Publish Forms for guided record creation and Custom Apps for focused metrics,
   lists, instructions, and actions.
@@ -50,6 +53,17 @@ documents, and workflows without splitting the domain across unrelated tools.
 - Irreversibly enable Durable History for a stored table when every future
   Record, Relation, and File state must remain inspectable from an honest
   activation baseline. Existing tables stay unchanged until an admin opts in.
+- Choose Direct Finalization for a Table when writers may lock reviewed Records
+  themselves, or require Four-eyes Finalization with one Cloud approver group.
+  The mode and approver group are applied atomically when Finalization is enabled.
+  Four-eyes requests bind the exact current Record state, including Relations and Files; a different current
+  group member with Write access approves and finalizes it through the same
+  central service. Changing values, Relations, Files, trash state, or the policy
+  invalidates open requests and never changes already finalized Records.
+- Filter Records by **Draft**, **Awaiting review**, or **Finalized** in the
+  Records metadata filter, GQL, or the CLI. Awaiting review means a current
+  Four-eyes request still matches the Record and Table policy; it does not
+  imply that the current viewer can approve it.
 - Keep the default open mutation policy, or let a Base admin limit record,
   Relation, and File changes to direct editing and APIs, Forms, or Workflows
   and actions. Every client follows the same server-enforced policy.

@@ -6,6 +6,20 @@ describe("record finalization UI contract", () => {
 
     expect(source).toContain(".finalization.$get");
     expect(source).toContain(".finalize.$post");
+    expect(source).toContain(".finalization.request.$post");
+    expect(source).toContain(".finalization.approve.$post");
+    expect(source).toContain(".finalization.reject.$post");
+    expect(source).toContain("json: { requestId, comment }");
+    expect(source).toContain("Finalization status unavailable");
+    expect(source).toContain("finalizationQueryEnabled() && finalizationQuery.error()");
+    expect(source).toContain("Refresh Finalization");
+    expect(source).toContain("enabled: finalizationQueryEnabled");
+    expect(source).toContain("finalizationQuery.stale()");
+    expect(source).toContain("finalizationQuery.refreshing()");
+    expect(source).toContain("onChanged={refreshAfterFinalizationMutation}");
+    expect(source.match(/props\.onUpdated\(context\.rec\)/g)).toHaveLength(2);
+    expect(source).toContain("disabled={resolutionLoading()}");
+    expect(source).toContain("Previous request no longer applies");
     expect(source).toContain('title: "Finalize record?"');
     expect(source).toContain("After finalization, this record and its files and relations can no longer be changed or removed.");
     expect(source).toContain("!rec.finalizedAt");
@@ -33,7 +47,14 @@ describe("record finalization UI contract", () => {
     expect(dialogSource).toContain('title="Durable history"');
     expect(dialogSource).toContain('title="Record finalization"');
     expect(dialogSource).toContain(".finalization.enable.$post");
+    expect(dialogSource).toContain("json:");
+    expect(dialogSource).toContain('mode: "fourEyes", approverGroupId: approverGroup()!.id');
     expect(dialogSource).toContain(".finalization.disable.$post");
+    expect(dialogSource).toContain(".finalization.policy.$put");
+    expect(dialogSource).toContain("<Select");
+    expect(dialogSource).toContain("People with Write access can finalize Records themselves.");
+    expect(dialogSource).toContain("One person requests Finalization; a different approver reviews it.");
+    expect(dialogSource).toContain('types={["group"]}');
     expect(dialogSource).toContain('title: operation === "enable" ? "Enable record finalization?" : "Disable record finalization?"');
   });
 

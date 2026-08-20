@@ -37,6 +37,7 @@ import * as records from "./records";
 import * as referencedBy from "./referenced-by";
 import * as relationsModule from "./relations";
 import * as retentionPolicy from "./retention-policy";
+import * as tableAdminOverview from "./table-admin-overview";
 import * as tables from "./tables";
 import * as templates from "./templates";
 import * as views from "./views";
@@ -83,6 +84,7 @@ export const gridsService = {
   },
   table: {
     listByBase: tables.listByBase,
+    adminOverview: tableAdminOverview,
     listTrashedByBase: tables.listTrashedByBase,
     get: tables.get,
     getByShortId: tables.getByShortId,
@@ -98,8 +100,6 @@ export const gridsService = {
     },
     finalization: {
       getStatus: recordFinalization.getStatus,
-      enable: recordFinalization.enable,
-      disable: recordFinalization.disable,
     },
     mutationPolicy: {
       getImpact: mutationPolicy.getImpact,
@@ -158,7 +158,6 @@ export const gridsService = {
       getFileContent: durableHistory.getRevisionFileContent,
     },
     finalization: {
-      inspect: recordFinalization.inspect,
       finalize: recordFinalization.finalize,
     },
     comments: {

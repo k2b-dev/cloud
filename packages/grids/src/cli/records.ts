@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { arg, command, confirmFlag, flag } from "@valentinkolb/cloud/cli";
 import type { PublicGridRecord as GridRecord, PublicTableQueryResult as TableQueryResult } from "../api/public-dto";
+import type { PublicRecordFinalizationReadiness, PublicRecordFinalizationRequest } from "../api/record-finalization";
 import {
   type CombinedAuditResponse,
   type CreateRecordSnapshotResponse,
@@ -51,6 +52,7 @@ type RecordListBodyFlags = {
   q?: string;
   includeDeleted?: boolean;
   deletedOnly?: boolean;
+  finalization?: "draft" | "awaiting-review" | "finalized";
 };
 
 const AUDIT_INPUT = flag.input({
@@ -61,8 +63,19 @@ const AUDIT_INPUT = flag.input({
 });
 
 export const composeRecordListBody = (query: Record<string, unknown>, flags: RecordListBodyFlags): Record<string, unknown> => {
+  const recordMeta =
+    query.recordMeta && typeof query.recordMeta === "object" && !Array.isArray(query.recordMeta)
+      ? (query.recordMeta as Record<string, unknown>)
+      : {};
+  const finalizationRecordMeta = flags.finalization
+    ? {
+        ...recordMeta,
+        finalizationStates: [flags.finalization === "awaiting-review" ? "awaitingReview" : flags.finalization],
+      }
+    : undefined;
   if (flags.source) {
-    return { source: flags.source, query: Object.keys(query).length > 0 ? query : undefined, cursor: flags.cursor };
+    const sourceQuery = applyDefined({ ...query }, { recordMeta: finalizationRecordMeta });
+    return { source: flags.source, query: Object.keys(sourceQuery).length > 0 ? sourceQuery : undefined, cursor: flags.cursor };
   }
   return {
     query: applyDefined(
@@ -72,6 +85,7 @@ export const composeRecordListBody = (query: Record<string, unknown>, flags: Rec
         search: flags.q ? { q: flags.q } : undefined,
         includeDeleted: flags.includeDeleted ? true : undefined,
         deletedOnly: flags.deletedOnly ? true : undefined,
+        recordMeta: finalizationRecordMeta,
       },
     ),
     cursor: flags.cursor,
@@ -143,6 +157,9 @@ export const recordCommands = [
       limit: flag.int({ min: 1, max: 10_000, description: "Row limit (default: 100)" }),
       includeDeleted: flag.boolean({ name: "include-deleted", description: "Include deleted records" }),
       deletedOnly: flag.boolean({ name: "deleted-only", description: "Only deleted records" }),
+      finalization: flag.enum(["draft", "awaiting-review", "finalized"] as const, {
+        description: "Only Records in this Finalization state",
+      }),
     },
     async run({ ctx, args, flags }) {
       const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
@@ -333,6 +350,93 @@ export const recordCommands = [
         jsonRequest("POST"),
       );
       printJsonOrMessage(ctx, record, `Finalized record ${record.id}.`);
+    },
+  }),
+  command("records finalization request", {
+    summary: "Request Four-eyes Finalization for one exact Record version",
+    args: tableArgs,
+    flags: {
+      ...baseFlag,
+      ...tableFlag,
+      record: flag.string({ description: "Record public id" }),
+      comment: flag.string({ description: "Optional context for the approver" }),
+    },
+    async run({ ctx, args, flags }) {
+      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? (flags.record ? 0 : 1) : 2);
+      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const recordId = requirePublicId(flags.record ?? requireRestArg(flags.table ? rest : rest.slice(1), 0, "record"), "Record id");
+      const request = await readApi<PublicRecordFinalizationRequest>(
+        ctx,
+        `/records/${encodeURIComponent(table.id)}/${encodeURIComponent(recordId)}/finalization/request`,
+        jsonRequest("POST", { comment: flags.comment?.trim() || null }),
+      );
+      printJsonOrMessage(ctx, request, `Requested Finalization for record ${recordId}.`);
+    },
+  }),
+  command("records finalization approve", {
+    summary: "Approve a different person's request and finalize the Record",
+    args: tableArgs,
+    flags: {
+      ...baseFlag,
+      ...tableFlag,
+      record: flag.string({ description: "Record public id" }),
+      request: flag.string({ description: "Finalization request public id" }),
+      comment: flag.string({ description: "Optional decision comment" }),
+      yes: confirmFlag("Approve and permanently finalize the Record"),
+    },
+    async run({ ctx, args, flags }) {
+      if (!flags.yes) throw new Error("Pass --yes to approve and permanently finalize the Record.");
+      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? (flags.record ? 0 : 1) : 2);
+      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const recordId = requirePublicId(flags.record ?? requireRestArg(flags.table ? rest : rest.slice(1), 0, "record"), "Record id");
+      if (!flags.request) throw new Error("Pass --request with the Finalization request public id.");
+      const requestId = requirePublicId(flags.request, "Finalization request id");
+      const readiness = await readApi<PublicRecordFinalizationReadiness>(
+        ctx,
+        `/records/${encodeURIComponent(table.id)}/${encodeURIComponent(recordId)}/finalization`,
+      );
+      if (readiness.request?.status !== "pending" || readiness.request.id !== requestId) {
+        throw new Error("That Finalization request is no longer pending for this Record.");
+      }
+      const record = await readApi<GridRecord>(
+        ctx,
+        `/records/${encodeURIComponent(table.id)}/${encodeURIComponent(recordId)}/finalization/approve`,
+        jsonRequest("POST", { requestId, comment: flags.comment?.trim() || null }),
+      );
+      printJsonOrMessage(ctx, record, `Approved and finalized record ${record.id}.`);
+    },
+  }),
+  command("records finalization reject", {
+    summary: "Reject a Four-eyes Finalization request",
+    args: tableArgs,
+    flags: {
+      ...baseFlag,
+      ...tableFlag,
+      record: flag.string({ description: "Record public id" }),
+      request: flag.string({ description: "Finalization request public id" }),
+      comment: flag.string({ description: "Optional decision comment" }),
+      yes: confirmFlag("Reject the pending Finalization request"),
+    },
+    async run({ ctx, args, flags }) {
+      if (!flags.yes) throw new Error("Pass --yes to reject the Finalization request.");
+      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? (flags.record ? 0 : 1) : 2);
+      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const recordId = requirePublicId(flags.record ?? requireRestArg(flags.table ? rest : rest.slice(1), 0, "record"), "Record id");
+      if (!flags.request) throw new Error("Pass --request with the Finalization request public id.");
+      const requestId = requirePublicId(flags.request, "Finalization request id");
+      const readiness = await readApi<PublicRecordFinalizationReadiness>(
+        ctx,
+        `/records/${encodeURIComponent(table.id)}/${encodeURIComponent(recordId)}/finalization`,
+      );
+      if (readiness.request?.status !== "pending" || readiness.request.id !== requestId) {
+        throw new Error("That Finalization request is no longer pending for this Record.");
+      }
+      const request = await readApi<PublicRecordFinalizationRequest>(
+        ctx,
+        `/records/${encodeURIComponent(table.id)}/${encodeURIComponent(recordId)}/finalization/reject`,
+        jsonRequest("POST", { requestId, comment: flags.comment?.trim() || null }),
+      );
+      printJsonOrMessage(ctx, request, `Rejected Finalization for record ${recordId}.`);
     },
   }),
   command("records delete", {

@@ -5,7 +5,13 @@ import { renderToString } from "solid-js/web";
 import type { Field, GridFile } from "../../../service";
 import "../ssr-test-plugin";
 
-const { default: RecordFileField, recordFileContentHref, recordFileHref, recordFileRemovalPrompt } = await import("./RecordFileField");
+const {
+  default: RecordFileField,
+  recordFileContentHref,
+  recordFileHref,
+  recordFileRemovalPrompt,
+  refreshFilesAfterCommittedChange,
+} = await import("./RecordFileField");
 
 const image = {
   id: "22222222-2222-4222-8222-222222222222",
@@ -29,6 +35,21 @@ const field = {
 } as Field;
 
 describe("RecordFileField", () => {
+  test("notifies Finalization immediately when a committed file change cannot be refreshed", async () => {
+    const events: string[] = [];
+
+    await refreshFilesAfterCommittedChange(
+      () => events.push("changed"),
+      async () => {
+        events.push("refresh");
+        throw new Error("offline");
+      },
+      (error) => events.push(error instanceof Error ? `error:${error.message}` : "error"),
+    );
+
+    expect(events).toEqual(["changed", "refresh", "error:offline"]);
+  });
+
   test("appends the file path before preserving custom app page parameters", () => {
     expect(recordFileHref({ endpoint: `/api/files/${field.id}?item_id=item-1` }, image)).toBe(
       `/api/files/${field.id}/${image.id}?item_id=item-1`,

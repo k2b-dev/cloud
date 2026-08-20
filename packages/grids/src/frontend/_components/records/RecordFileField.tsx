@@ -38,6 +38,19 @@ export const recordFileContentHref = (location: RecordFileLocation, file: GridFi
 export const recordFileRemovalPrompt = (filename: string) =>
   `Remove "${filename}" from this record? Protected history or artifacts may retain the exact file. Without a protected reference, it may be cleaned up later.`;
 
+export async function refreshFilesAfterCommittedChange(
+  onChanged: (() => void) | undefined,
+  refresh: () => Promise<void>,
+  reportRefreshError: (error: unknown) => void,
+) {
+  onChanged?.();
+  try {
+    await refresh();
+  } catch (error) {
+    reportRefreshError(error);
+  }
+}
+
 function RecordFilePreviewDialog(props: { location: RecordFileLocation; file: GridFile; close: () => void }) {
   const downloadHref = () => recordFileContentHref(props.location, props.file);
   const previewHref = () => recordFileContentHref(props.location, props.file, true);
@@ -107,6 +120,7 @@ export default function RecordFileField(props: {
   canWrite: boolean;
   initialFiles: GridFile[];
   endpoint?: string;
+  onChanged?: () => void;
 }) {
   const [uploading, setUploading] = createSignal(false);
   const [files, setFiles] = createSignal<GridFile[]>(props.initialFiles);
@@ -118,6 +132,10 @@ export default function RecordFileField(props: {
     if (!res.ok) throw new Error(await errorMessage(res, "Failed to load files"));
     setFiles(((await res.json()) as { items: GridFile[] }).items);
   };
+  const refreshAfterCommittedChange = () =>
+    refreshFilesAfterCommittedChange(props.onChanged, refetch, () => {
+      prompts.error("The file was changed, but the current file list could not be refreshed.");
+    });
 
   const accept = () => {
     const raw = (props.field.config as { accept?: string[] }).accept;
@@ -152,7 +170,7 @@ export default function RecordFileField(props: {
             file,
           });
       if (!res.ok) throw new Error(await errorMessage(res, "Failed to upload file"));
-      await refetch();
+      await refreshAfterCommittedChange();
     } catch (e) {
       prompts.error(e instanceof Error ? e.message : "Failed to upload file");
     } finally {
@@ -167,7 +185,7 @@ export default function RecordFileField(props: {
       form.set("file", file);
       const res = await fetch(recordFileHref(location(), current), { method: "PUT", body: form });
       if (!res.ok) throw new Error(await errorMessage(res, "Failed to replace file"));
-      await refetch();
+      await refreshAfterCommittedChange();
     } catch (error) {
       prompts.error(error instanceof Error ? error.message : "Failed to replace file");
     } finally {
@@ -211,7 +229,7 @@ export default function RecordFileField(props: {
       prompts.error(await errorMessage(res, "Failed to remove attachment"));
       return;
     }
-    await refetch();
+    await refreshAfterCommittedChange();
   };
 
   return (

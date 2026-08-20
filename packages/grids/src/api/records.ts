@@ -10,6 +10,7 @@ import { DEFAULT_MAX_FILE_SIZE_MB, getMaxFileSizeBytes } from "../service/file-l
 import { fromPublicRecordValues, resolvePublicId } from "../service/public-resources";
 import { validateRecordQueryForTable } from "../service/query-validation";
 import { ALL_RECORD_ACCESS } from "../service/record-access";
+import * as recordFinalizationService from "../service/record-finalization";
 import { PublicRecordRevisionPageSchema, toPublicRecordRevisionPage } from "./durable-history";
 import { currentActorUserId, currentActorViewer, gateAt } from "./permissions";
 import {
@@ -30,7 +31,13 @@ import {
   toPublicRecords,
 } from "./public-dto";
 import { fromPublicExportBody, PublicExportBodySchema } from "./public-query";
-import { PublicRecordFinalizationReadinessSchema, toPublicRecordFinalizationReadiness } from "./record-finalization";
+import {
+  PublicFinalizationRequestInputSchema,
+  PublicFinalizationResolutionInputSchema,
+  PublicRecordFinalizationReadinessSchema,
+  PublicRecordFinalizationRequestSchema,
+  toPublicRecordFinalizationReadiness,
+} from "./record-finalization";
 import { PublicReferencedByPageSchema, toPublicReferencedByPage } from "./referenced-by";
 import { internalIdParam, requirePublicIdParam, requireStoredPublicIdParam } from "./route-params";
 
@@ -85,8 +92,7 @@ const CombinedAuditQuerySchema = z.object({
   cursor: z.string().max(2_000).optional(),
 });
 
-const app = new Hono<AuthContext>()
-  .use(auth.requireRole("authenticated"))
+export const recordsRoutes = new Hono<AuthContext>()
 
   // Record listing is served by the unified table query endpoint so
   // list, search, filter, sort, group, and aggregate reads share one
@@ -183,7 +189,12 @@ const app = new Hono<AuthContext>()
       if (!table) return c.json({ message: "Table not found" }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "write");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-      const result = await gridsService.record.finalization.inspect({ tableId, recordId, recordAccess: ALL_RECORD_ACCESS });
+      const result = await recordFinalizationService.inspect({
+        tableId,
+        recordId,
+        actorId: currentActorUserId(c),
+        recordAccess: ALL_RECORD_ACCESS,
+      });
       return result.ok ? c.json(await toPublicRecordFinalizationReadiness(result.data)) : respond(c, () => Promise.resolve(result));
     },
   )
@@ -221,6 +232,112 @@ const app = new Hono<AuthContext>()
       if (!result.ok) return respond(c, () => Promise.resolve(result));
       const fields = await gridsService.field.listByTable(tableId);
       return c.json(await toPublicRecord(result.data, fields));
+    },
+  )
+
+  .post(
+    "/:tableId/:recordId/finalization/request",
+    requirePublicIdParam("tableId", "table", "Table"),
+    requirePublicIdParam("recordId", "record", "Record"),
+    v("json", PublicFinalizationRequestInputSchema),
+    describeRoute({
+      tags: ["Grids:Record"],
+      summary: "Request Four-eyes Finalization",
+      responses: {
+        200: jsonResponse(PublicRecordFinalizationRequestSchema, "Finalization request"),
+        400: jsonResponse(ErrorResponseSchema, "Record is not ready"),
+        403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+        404: jsonResponse(ErrorResponseSchema, "Not found"),
+        409: jsonResponse(ErrorResponseSchema, "Request conflict"),
+      },
+    }),
+    async (c) => {
+      const tableId = internalIdParam(c, "tableId")!;
+      const recordId = internalIdParam(c, "recordId")!;
+      const table = await gridsService.table.get(tableId);
+      if (!table) return c.json({ message: "Table not found" }, 404);
+      const gate = await gateAt(c, { baseId: table.baseId }, "write");
+      if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+      const result = await recordFinalizationService.requestFinalization({
+        tableId,
+        recordId,
+        actorId: currentActorUserId(c),
+        comment: c.req.valid("json").comment,
+        recordAccess: ALL_RECORD_ACCESS,
+      });
+      return result.ok ? c.json(result.data) : respond(c, () => Promise.resolve(result));
+    },
+  )
+
+  .post(
+    "/:tableId/:recordId/finalization/approve",
+    requirePublicIdParam("tableId", "table", "Table"),
+    requirePublicIdParam("recordId", "record", "Record"),
+    v("json", PublicFinalizationResolutionInputSchema),
+    describeRoute({
+      tags: ["Grids:Record"],
+      summary: "Approve a Four-eyes Finalization request and finalize the Record",
+      responses: {
+        200: jsonResponse(PublicGridRecordSchema, "Finalized record"),
+        400: jsonResponse(ErrorResponseSchema, "Record is not ready"),
+        403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+        404: jsonResponse(ErrorResponseSchema, "Not found"),
+        409: jsonResponse(ErrorResponseSchema, "Request or Record changed"),
+      },
+    }),
+    async (c) => {
+      const tableId = internalIdParam(c, "tableId")!;
+      const recordId = internalIdParam(c, "recordId")!;
+      const table = await gridsService.table.get(tableId);
+      if (!table) return c.json({ message: "Table not found" }, 404);
+      const gate = await gateAt(c, { baseId: table.baseId }, "write");
+      if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+      const result = await recordFinalizationService.approveFinalization({
+        tableId,
+        recordId,
+        actorId: currentActorUserId(c),
+        requestId: c.req.valid("json").requestId,
+        comment: c.req.valid("json").comment,
+        recordAccess: ALL_RECORD_ACCESS,
+        dateConfig: await getDateConfig(c),
+      });
+      if (!result.ok) return respond(c, () => Promise.resolve(result));
+      const fields = await gridsService.field.listByTable(tableId);
+      return c.json(await toPublicRecord(result.data, fields));
+    },
+  )
+
+  .post(
+    "/:tableId/:recordId/finalization/reject",
+    requirePublicIdParam("tableId", "table", "Table"),
+    requirePublicIdParam("recordId", "record", "Record"),
+    v("json", PublicFinalizationResolutionInputSchema),
+    describeRoute({
+      tags: ["Grids:Record"],
+      summary: "Reject a Four-eyes Finalization request",
+      responses: {
+        200: jsonResponse(PublicRecordFinalizationRequestSchema, "Rejected Finalization request"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid request"),
+        403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+        404: jsonResponse(ErrorResponseSchema, "Not found"),
+        409: jsonResponse(ErrorResponseSchema, "Request changed"),
+      },
+    }),
+    async (c) => {
+      const tableId = internalIdParam(c, "tableId")!;
+      const recordId = internalIdParam(c, "recordId")!;
+      const table = await gridsService.table.get(tableId);
+      if (!table) return c.json({ message: "Table not found" }, 404);
+      const gate = await gateAt(c, { baseId: table.baseId }, "write");
+      if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+      const result = await recordFinalizationService.rejectFinalization({
+        tableId,
+        recordId,
+        actorId: currentActorUserId(c),
+        requestId: c.req.valid("json").requestId,
+        comment: c.req.valid("json").comment,
+      });
+      return result.ok ? c.json(result.data) : respond(c, () => Promise.resolve(result));
     },
   )
 
@@ -991,4 +1108,5 @@ const app = new Hono<AuthContext>()
     },
   );
 
+const app = new Hono<AuthContext>().use(auth.requireRole("authenticated")).route("/", recordsRoutes);
 export default app;

@@ -187,8 +187,8 @@ function RetentionFilesDialog(props: { baseId: string; minimumDays: number; clos
               <i class={files.refreshing() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} aria-hidden="true" /> Refresh
             </Button>
           </DataTable.Header>
-          <DataTable.Controls class="flex flex-wrap items-center gap-2">
-            <div class="min-w-56 flex-1">
+          <DataTable.Controls>
+            <div class="w-full">
               <TextInput
                 type="search"
                 aria-label="Search retained Files"
@@ -207,26 +207,28 @@ function RetentionFilesDialog(props: { baseId: string; minimumDays: number; clos
                 }}
               />
             </div>
-            <FilterChip
-              label="Floor status"
-              icon="ti ti-filter"
-              options={[
-                {
-                  options: [
-                    { value: "all", label: "All Files" },
-                    { value: "retained", label: "Retained until later" },
-                    { value: "reached", label: "Floor reached" },
-                  ],
-                },
-              ]}
-              value={[status()]}
-              defaultValue={["all"]}
-              isActive={status() !== "all"}
-              onValueChange={(value) => {
-                setPage(1);
-                setStatus((value[0] ?? "all") as RetentionFileStatus);
-              }}
-            />
+            <div class="flex flex-wrap items-center gap-2">
+              <FilterChip
+                label="Floor status"
+                icon="ti ti-filter"
+                options={[
+                  {
+                    options: [
+                      { value: "all", label: "All Files" },
+                      { value: "retained", label: "Retained until later" },
+                      { value: "reached", label: "Floor reached" },
+                    ],
+                  },
+                ]}
+                value={[status()]}
+                defaultValue={["all"]}
+                isActive={status() !== "all"}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setStatus((value[0] ?? "all") as RetentionFileStatus);
+                }}
+              />
+            </div>
           </DataTable.Controls>
           <Show
             when={!files.error()}

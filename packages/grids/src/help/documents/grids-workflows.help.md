@@ -258,6 +258,8 @@ Run options are configured separately from the workflow source. One workflow can
 
 `finalizeRecord` uses the table's generic Finalization contract: it validates the complete record, assigns final IDs, stores the final Durable History version, and permanently locks the record atomically. Retrying the same workflow step is safe. `updateRecord` and `createRecord` field keys accept exact field names or public IDs. If a table requires change context, `updateRecord.audit` must answer the applicable questions by their question UUID. `generateDocument.template` and `sendEmail.template` accept an enabled template exact name or public ID. Ambiguous and inaccessible references are rejected during validation.
 
+When a Table requires **Four-eyes Finalization**, a generic `finalizeRecord` workflow action cannot bypass it. A person requests Finalization from the Record, and a different current member of the configured approver group approves through the Finalization request. Switch the Table to Direct mode only when writers should again be able to finalize through ordinary Workflows, API, CLI, and Record actions.
+
 ### Commit related record changes together
 
 Use `atomicRecords` when a current Grids condition and several record writes must succeed together. It accepts only Grids record work: it cannot send email, call HTTP, generate documents, run another workflow, or contain control flow.

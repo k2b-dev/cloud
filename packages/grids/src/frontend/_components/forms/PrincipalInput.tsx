@@ -5,6 +5,11 @@ import type { PrincipalReference } from "../../../field-types/principal";
 type PrincipalOption = PrincipalReference & { label: string };
 type PrincipalChoice = { value: string; label: string; icon: string };
 
+const PRINCIPAL_GROUPS = [
+  { value: "user", label: "Users" },
+  { value: "group", label: "Groups" },
+] as const;
+
 const keyOf = (value: PrincipalReference) => `${value.type}:${value.id}`;
 
 const referenceOf = (value: string): PrincipalReference | null => {
@@ -55,9 +60,12 @@ export default function PrincipalInput(props: {
   value: unknown;
   multi: boolean;
   disabled?: boolean;
+  types?: Array<"user" | "group">;
   onChange: (value: PrincipalReference[] | null) => void;
 }) {
-  const initial = referenceArray(props.value);
+  const allowedTypes = props.types ?? ["user", "group"];
+  const accepts = (reference: PrincipalReference) => allowedTypes.includes(reference.type);
+  const initial = referenceArray(props.value).filter(accepts);
   const [knownOptions, setKnownOptions] = createSignal<PrincipalOption[]>(
     initial.map((value) => ({ ...value, label: value.type === "user" ? "User" : "Group" })),
   );
@@ -85,7 +93,7 @@ export default function PrincipalInput(props: {
     const users = initial.filter((value) => value.type === "user").map((value) => value.id);
     const groups = initial.filter((value) => value.type === "group").map((value) => value.id);
     const url = new URL("/api/accounts/entities", window.location.origin);
-    url.searchParams.set("kinds", "user,group");
+    url.searchParams.set("kinds", allowedTypes.join(","));
     url.searchParams.set("per_page", String(initial.length));
     if (users.length) url.searchParams.set("user_ids", users.join(","));
     if (groups.length) url.searchParams.set("group_ids", groups.join(","));
@@ -93,7 +101,7 @@ export default function PrincipalInput(props: {
     onCleanup(() => controller.abort());
   });
 
-  const references = () => referenceArray(props.value);
+  const references = () => referenceArray(props.value).filter(accepts);
   const values = () => references().map(keyOf);
   const selectedOptions = () => {
     const options = new Map(knownOptions().map((option) => [keyOf(option), option]));
@@ -101,18 +109,20 @@ export default function PrincipalInput(props: {
       choiceOf(options.get(keyOf(reference)) ?? { ...reference, label: reference.type === "user" ? "User" : "Group" }),
     );
   };
-  const loadOptions = async (query: string, signal: AbortSignal): Promise<PrincipalChoice[]> => {
+  const loadOptions = async (query: string, signal: AbortSignal, group: string | null): Promise<PrincipalChoice[]> => {
     if (query.trim().length < 2) return [];
+    const requestedTypes = group === "user" || group === "group" ? allowedTypes.filter((type) => type === group) : allowedTypes;
+    if (requestedTypes.length === 0) return [];
     const url = new URL("/api/accounts/entities", window.location.origin);
     url.searchParams.set("search", query.trim());
-    url.searchParams.set("kinds", "user,group");
+    url.searchParams.set("kinds", requestedTypes.join(","));
     url.searchParams.set("per_page", "10");
     return (await fetchEntities(url, signal)).map(choiceOf);
   };
   const commit = (next: string[]) => {
     const references = next.flatMap((value) => {
       const reference = referenceOf(value);
-      return reference ? [reference] : [];
+      return reference && accepts(reference) ? [reference] : [];
     });
     props.onChange(references.length ? references : null);
   };
@@ -129,9 +139,11 @@ export default function PrincipalInput(props: {
       onValueChange={commit}
       fetchData={loadOptions}
       selectedOptions={selectedOptions}
-      placeholder="Select users and groups"
-      searchPlaceholder="Search users and groups..."
-      noResultsLabel="No users or groups found"
+      groups={allowedTypes.length > 1 ? PRINCIPAL_GROUPS : undefined}
+      groupsAriaLabel="Filter principals"
+      placeholder={allowedTypes.length === 1 && allowedTypes[0] === "group" ? "Select groups" : "Select users and groups"}
+      searchPlaceholder={allowedTypes.length === 1 && allowedTypes[0] === "group" ? "Search groups..." : "Search users and groups..."}
+      noResultsLabel={allowedTypes.length === 1 && allowedTypes[0] === "group" ? "No groups found" : "No users or groups found"}
       clearable
     />
   ) : (
@@ -146,8 +158,10 @@ export default function PrincipalInput(props: {
       onValueChange={(value) => commit(value ? [value] : [])}
       fetchData={loadOptions}
       selectedOption={selectedOptions()[0]}
-      placeholder="Select a user or group"
-      searchPlaceholder="Search users and groups..."
+      groups={allowedTypes.length > 1 ? PRINCIPAL_GROUPS : undefined}
+      groupsAriaLabel="Filter principals"
+      placeholder={allowedTypes.length === 1 && allowedTypes[0] === "group" ? "Select a group" : "Select a user or group"}
+      searchPlaceholder={allowedTypes.length === 1 && allowedTypes[0] === "group" ? "Search groups..." : "Search users and groups..."}
       clearable
     />
   );

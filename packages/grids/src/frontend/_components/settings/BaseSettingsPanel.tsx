@@ -7,6 +7,7 @@ import { ControlledDestructionSection } from "./ControlledDestructionSection";
 import { EvidenceExportsSection } from "./EvidenceExportsSection";
 import { PreservationHoldsSection } from "./PreservationHoldsSection";
 import { RetentionPolicySection } from "./RetentionPolicySection";
+import { TablesOverviewSection } from "./TablesOverviewSection";
 
 type Props = {
   base: PublicBase;
@@ -75,6 +76,15 @@ export default function BaseSettingsPanel(props: Props) {
               onDirtyChange={(value) => setSectionDirty("general", value)}
               onSavingChange={(value) => setSectionSaving("general", value)}
             />
+          </SettingsModal.Tab>
+
+          <SettingsModal.Tab
+            id="tables"
+            title="Tables"
+            icon="ti ti-table-options"
+            description="Review Table structure, write paths, and evidence protections."
+          >
+            <TablesOverviewSection baseId={props.base.id} />
           </SettingsModal.Tab>
 
           <SettingsModal.Tab

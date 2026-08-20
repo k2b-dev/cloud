@@ -90,8 +90,8 @@ function RetentionRecordsDialog(props: { baseId: string; minimumDays: number; cl
               <i class={records.refreshing() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} aria-hidden="true" /> Refresh
             </Button>
           </DataTable.Header>
-          <DataTable.Controls class="flex flex-wrap items-center gap-2">
-            <div class="min-w-56 flex-1">
+          <DataTable.Controls>
+            <div class="w-full">
               <TextInput
                 type="search"
                 aria-label="Search retained Records"
@@ -110,27 +110,29 @@ function RetentionRecordsDialog(props: { baseId: string; minimumDays: number; cl
                 }}
               />
             </div>
-            <FilterChip
-              label="Floor status"
-              icon="ti ti-filter"
-              options={[
-                {
-                  options: [
-                    { value: "all", label: "All Records" },
-                    { value: "protected", label: "Finalized" },
-                    { value: "retained", label: "Retained until later" },
-                    { value: "reached", label: "Floor reached" },
-                  ],
-                },
-              ]}
-              value={[status()]}
-              defaultValue={["all"]}
-              isActive={status() !== "all"}
-              onValueChange={(value) => {
-                setPage(1);
-                setStatus((value[0] ?? "all") as RetentionRecordStatus);
-              }}
-            />
+            <div class="flex flex-wrap items-center gap-2">
+              <FilterChip
+                label="Floor status"
+                icon="ti ti-filter"
+                options={[
+                  {
+                    options: [
+                      { value: "all", label: "All Records" },
+                      { value: "protected", label: "Finalized" },
+                      { value: "retained", label: "Retained until later" },
+                      { value: "reached", label: "Floor reached" },
+                    ],
+                  },
+                ]}
+                value={[status()]}
+                defaultValue={["all"]}
+                isActive={status() !== "all"}
+                onValueChange={(value) => {
+                  setPage(1);
+                  setStatus((value[0] ?? "all") as RetentionRecordStatus);
+                }}
+              />
+            </div>
           </DataTable.Controls>
           <Show
             when={!records.error()}

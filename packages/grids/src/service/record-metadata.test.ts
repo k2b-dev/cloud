@@ -21,6 +21,12 @@ describe("record metadata query helpers", () => {
     });
   });
 
+  test("deduplicates Finalization states", () => {
+    expect(cleanRecordMeta({ finalizationStates: ["awaitingReview", "awaitingReview", "finalized"] })).toEqual({
+      finalizationStates: ["awaitingReview", "finalized"],
+    });
+  });
+
   test("deletedBy requires deleted records", () => {
     expect(recordMetaRequiresDeletedRows({ users: { deletedBy: ["11111111-1111-4111-8111-111111111111"] } })).toBe(true);
     expect(recordMetaRequiresDeletedRows({ users: { createdBy: ["11111111-1111-4111-8111-111111111111"] } })).toBe(false);

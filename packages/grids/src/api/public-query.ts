@@ -84,6 +84,10 @@ export const PublicRecordQuerySchema = RecordQuerySchema.extend({
   recordMeta: z
     .object({
       ids: z.array(ShortIdSchema).max(100).optional(),
+      finalizationStates: z
+        .array(z.enum(["draft", "awaitingReview", "finalized"]))
+        .max(3)
+        .optional(),
       users: z
         .object({
           createdBy: z.array(z.string().uuid()).max(50).optional(),

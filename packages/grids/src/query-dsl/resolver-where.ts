@@ -1,4 +1,4 @@
-import type { FilterTree, RecordMetaQuery, RecordMetaSortKey, RecordMetaUserKey } from "../contracts";
+import type { FilterTree, RecordFinalizationState, RecordMetaQuery, RecordMetaSortKey, RecordMetaUserKey } from "../contracts";
 import type { Expr, Literal } from "../formula/types";
 import { normalizeRefKey, parseQualifiedIdentifierRef } from "../ref-syntax";
 import { validateFilterValue } from "../service/filter-compiler-validation";
@@ -78,6 +78,11 @@ const isRecordIdRef = (ref: string): boolean => {
   return Boolean(parsed?.scope && normalizeRefKey(parsed.scope) === RECORD_SCOPE && normalizeRecordRef(parsed.ref) === "id");
 };
 
+const isRecordFinalizationStateRef = (ref: string): boolean => {
+  const parsed = parseQualifiedIdentifierRef(ref);
+  return Boolean(parsed?.scope && normalizeRefKey(parsed.scope) === RECORD_SCOPE && normalizeRecordRef(parsed.ref) === "finalizationstate");
+};
+
 export const recordMetaSortKeyForRef = (ref: DslQualifiedRef): RecordMetaSortKey | null => {
   if (!ref.scope || normalizeRefKey(ref.scope) !== RECORD_SCOPE) return null;
   const normalized = normalizeRecordRef(ref.ref);
@@ -126,18 +131,37 @@ const recordMetaPredicate = (
   return { kind: "recordMeta", meta: { users: { [key]: [...new Set(ids)] } } };
 };
 
+const finalizationStatePredicate = (values: Literal[], span?: DslSourceSpan): DslWherePredicate | DslResolverDiagnostic => {
+  const allowed = new Set<RecordFinalizationState>(["draft", "awaitingReview", "finalized"]);
+  const states: RecordFinalizationState[] = [];
+  for (const value of values) {
+    if (typeof value !== "string" || !allowed.has(value as RecordFinalizationState)) {
+      return diagnostic("record.finalizationState expects draft, awaitingReview, or finalized", span);
+    }
+    states.push(value as RecordFinalizationState);
+  }
+  if (states.length === 0) return diagnostic("record.finalizationState needs at least one state", span);
+  return { kind: "recordMeta", meta: { finalizationStates: [...new Set(states)] } };
+};
+
 export const mergeRecordMeta = (...items: Array<RecordMetaQuery | null | undefined>): RecordMetaQuery | undefined => {
   const ids = new Set<string>();
   const users: NonNullable<RecordMetaQuery["users"]> = {};
+  const finalizationStates = new Set<RecordFinalizationState>();
   for (const item of items) {
     for (const id of item?.ids ?? []) ids.add(id);
+    for (const state of item?.finalizationStates ?? []) finalizationStates.add(state);
     for (const key of ["createdBy", "updatedBy", "deletedBy"] as const) {
       const values = item?.users?.[key] ?? [];
       if (values.length > 0) users[key] = [...new Set([...(users[key] ?? []), ...values])];
     }
   }
-  return ids.size > 0 || Object.keys(users).length > 0
-    ? { ...(ids.size > 0 ? { ids: [...ids] } : {}), ...(Object.keys(users).length > 0 ? { users } : {}) }
+  return ids.size > 0 || finalizationStates.size > 0 || Object.keys(users).length > 0
+    ? {
+        ...(ids.size > 0 ? { ids: [...ids] } : {}),
+        ...(finalizationStates.size > 0 ? { finalizationStates: [...finalizationStates] } : {}),
+        ...(Object.keys(users).length > 0 ? { users } : {}),
+      }
     : undefined;
 };
 
@@ -379,6 +403,17 @@ const buildPredicateFunction = (
     }
     return recordIdPredicate(values, spanForExpr(baseSpan, expr));
   }
+  if (isRecordFinalizationStateRef(first.fieldId)) {
+    if (expr.fn !== "ONEOF") {
+      return diagnostic("record.finalizationState supports oneof(record.finalizationState, ...) only", spanForExpr(baseSpan, expr));
+    }
+    const values: Literal[] = [];
+    for (const arg of rest) {
+      if (arg.kind !== "literal") return diagnostic("record.finalizationState expects literal states", spanForExpr(baseSpan, arg));
+      values.push(arg.value);
+    }
+    return finalizationStatePredicate(values, spanForExpr(baseSpan, expr));
+  }
   if (metaKey) {
     if (expr.fn !== "ONEOF")
       return diagnostic(`record.${metaKey} supports oneof(record.${metaKey}, ...) only`, spanForExpr(baseSpan, expr));
@@ -460,6 +495,14 @@ const buildComparisonPredicate = (
       if (op !== "=") return diagnostic('record.id supports "=" or oneof(...) only', spanForExpr(baseSpan, expr));
       return recordIdPredicate([valueExpr.value], spanForExpr(baseSpan, expr));
     }
+    if (isRecordFinalizationStateRef(fieldExpr.fieldId)) {
+      if (valueExpr.kind !== "literal") {
+        return diagnostic("record.finalizationState expects a literal state", spanForExpr(baseSpan, valueExpr));
+      }
+      const op = leftField ? expr.op : invertComparison(expr.op);
+      if (op !== "=") return diagnostic('record.finalizationState supports "=" or oneof(...) only', spanForExpr(baseSpan, expr));
+      return finalizationStatePredicate([valueExpr.value], spanForExpr(baseSpan, expr));
+    }
     if (metaKey) {
       if (valueExpr.kind !== "literal") return diagnostic(`record.${metaKey} expects a literal user id`, spanForExpr(baseSpan, valueExpr));
       const op = leftField ? expr.op : invertComparison(expr.op);
@@ -502,6 +545,9 @@ const buildPredicate = (expr: Expr, scope: Scope, baseSpan?: DslSourceSpan): Dsl
   if (expr.kind === "binop" && COMPARISON_OPS.has(expr.op)) return buildComparisonPredicate(expr, scope, baseSpan);
   if (expr.kind === "field") {
     if (isRecordIdRef(expr.fieldId)) return diagnostic("record.id must be compared to a record id", spanForExpr(baseSpan, expr));
+    if (isRecordFinalizationStateRef(expr.fieldId)) {
+      return diagnostic("record.finalizationState must be compared to a state", spanForExpr(baseSpan, expr));
+    }
     const metaKey = recordMetaUserKeyForRef(expr.fieldId);
     if (metaKey) return diagnostic(`record.${metaKey} must be compared to a user id`, spanForExpr(baseSpan, expr));
     if (isScopedFormulaFieldRef(expr.fieldId)) return formulaLeaf(expr, scope, baseSpan);

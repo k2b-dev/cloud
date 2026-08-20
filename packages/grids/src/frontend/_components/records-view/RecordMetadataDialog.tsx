@@ -1,7 +1,7 @@
-import { Avatar, Button, Combobox, type ComboboxOption, dialogCore, PanelDialog, panelDialogOptions, prompts, Tag } from "@k2b/ui";
+import { Avatar, Button, Combobox, type ComboboxOption, dialogCore, PanelDialog, panelDialogOptions, prompts, Select, Tag } from "@k2b/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
-import type { RecordActor, RecordMetaQuery, RecordMetaUserKey } from "../../../contracts";
+import type { RecordActor, RecordFinalizationState, RecordMetaQuery, RecordMetaUserKey } from "../../../contracts";
 import { errorMessage } from "../utils/api-helpers";
 
 type UserKeyConfig = {
@@ -28,6 +28,7 @@ const cleanIds = (ids: string[] | undefined): string[] => [...new Set((ids ?? []
 
 export const cleanRecordMetaQuery = (meta: RecordMetaQuery | null | undefined): RecordMetaQuery | undefined => {
   if (!meta) return undefined;
+  const finalizationStates = [...new Set(meta.finalizationStates ?? [])];
   const createdBy = cleanIds(meta.users?.createdBy);
   const updatedBy = cleanIds(meta.users?.updatedBy);
   const deletedBy = cleanIds(meta.users?.deletedBy);
@@ -39,13 +40,15 @@ export const cleanRecordMetaQuery = (meta: RecordMetaQuery | null | undefined): 
           ...(deletedBy.length ? { deletedBy } : {}),
         }
       : undefined;
-  return users ? { users } : undefined;
+  return finalizationStates.length || users
+    ? { ...(finalizationStates.length ? { finalizationStates } : {}), ...(users ? { users } : {}) }
+    : undefined;
 };
 
 export const recordMetaActiveCount = (meta: RecordMetaQuery | null | undefined): number => {
   const cleaned = cleanRecordMetaQuery(meta);
   if (!cleaned) return 0;
-  return USER_KEYS.reduce((count, cfg) => count + (cleaned.users?.[cfg.key]?.length ? 1 : 0), 0);
+  return USER_KEYS.reduce((count, cfg) => count + (cleaned.users?.[cfg.key]?.length ? 1 : 0), cleaned.finalizationStates?.length ? 1 : 0);
 };
 
 const actorToOption = (actor: RecordActor): ComboboxOption => ({
@@ -160,10 +163,14 @@ export const openRecordMetadataDialog = (args: {
     const [createdBy, setCreatedBy] = createSignal<string[]>(cleanIds(initial?.users?.createdBy));
     const [updatedBy, setUpdatedBy] = createSignal<string[]>(cleanIds(initial?.users?.updatedBy));
     const [deletedBy, setDeletedBy] = createSignal<string[]>(cleanIds(initial?.users?.deletedBy));
+    const [finalizationState, setFinalizationState] = createSignal<RecordFinalizationState | null>(
+      initial?.finalizationStates?.[0] ?? null,
+    );
     const [labels, setLabels] = createSignal<Record<string, RecordActor>>({});
 
     const build = (): RecordMetaQuery | undefined =>
       cleanRecordMetaQuery({
+        finalizationStates: finalizationState() ? [finalizationState()!] : [],
         users: {
           createdBy: createdBy(),
           updatedBy: updatedBy(),
@@ -177,12 +184,31 @@ export const openRecordMetadataDialog = (args: {
       <PanelDialog>
         <PanelDialog.Header
           title="Record metadata"
-          subtitle="Filter by who created, modified, or deleted records."
+          subtitle="Filter by Finalization state or by who changed records."
           icon="ti ti-user-search"
           close={() => close(null)}
         />
         <PanelDialog.Body>
           <div class="flex flex-col gap-3">
+            <Select
+              label="Finalization state"
+              value={finalizationState}
+              onValueChange={(value) =>
+                setFinalizationState(value === "draft" || value === "awaitingReview" || value === "finalized" ? value : null)
+              }
+              placeholder="Any state"
+              clearable
+              options={[
+                { id: "draft", label: "Draft", description: "Finalization is active, with no current review request.", icon: "ti ti-edit" },
+                {
+                  id: "awaitingReview",
+                  label: "Awaiting review",
+                  description: "A current Four-eyes request is waiting for another person.",
+                  icon: "ti ti-users",
+                },
+                { id: "finalized", label: "Finalized", description: "The Record is locked as a final version.", icon: "ti ti-lock" },
+              ]}
+            />
             <For each={USER_KEYS}>
               {(config) => (
                 <ActorPicker

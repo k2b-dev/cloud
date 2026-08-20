@@ -32,10 +32,18 @@ const SELECT_MEMBERSHIP_FUNCTIONS = new Set(["ONEOF", "NONEOF", "CONTAINSALL"]);
 const COMPARISON_OPS = new Set(["=", "!="]);
 const RECORD_SCOPE = "record";
 const RECORD_META_REFS = new Map(
-  ["id", "createdBy", "updatedBy", "deletedBy", "createdAt", "updatedAt", "deletedAt"].map((ref) => [
-    ref.replaceAll("_", "").toLowerCase(),
-    `record.${ref}`,
-  ]),
+  [
+    "id",
+    "createdBy",
+    "updatedBy",
+    "deletedBy",
+    "createdAt",
+    "updatedAt",
+    "deletedAt",
+    "finalizedAt",
+    "finalizedBy",
+    "finalizationState",
+  ].map((ref) => [ref.replaceAll("_", "").toLowerCase(), `record.${ref}`]),
 );
 
 const isAlive = (field: Field): boolean => !field.deletedAt;

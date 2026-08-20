@@ -13,7 +13,7 @@ import { validatePrincipalValuesForActor } from "./principal-values";
 import { type AuthorizedRecordAccess, recordAccessPredicate } from "./record-access";
 import { buildRecordAuditContext, loadTableAuditPolicy } from "./record-audit";
 import { captureRecordEventSnapshot, notifyRecordEventOutbox } from "./record-event-outbox";
-import { assertRecordMutable } from "./record-finalization";
+import { assertRecordMutable, supersedePendingFinalizationRequest } from "./record-finalization";
 import { buildPersistedUpdateData, buildRecordDiff, mapRecordRow, splitRelationsFromData } from "./record-persistence";
 import { createReader, get } from "./record-read";
 import { recordUniqueConflict } from "./record-unique-conflicts";
@@ -505,6 +505,8 @@ export const updateInTransaction = async (
     `;
   if (!row) return fail(recordVersionConflict());
 
+  await supersedePendingFinalizationRequest(client, tableId, recordId, actorId);
+
   for (const [fieldId, toIds] of split.relations) {
     await writeRecordLinks(recordId, fieldId, toIds, client);
   }
@@ -615,6 +617,7 @@ export const softDelete = async (
         conflict.__versionConflict = true;
         throw conflict;
       }
+      await supersedePendingFinalizationRequest(tx, tableId, recordId, actorId, "The Record was moved to trash.");
       await captureRecordEventSnapshot(tx, {
         snapshotId: row.outbox_id,
         tableId,
@@ -678,6 +681,7 @@ export const restore = async (
         RETURNING grids.enqueue_record_event(${tableId}::uuid, ${recordId}::uuid, ${eventPayload}::jsonb)::text AS outbox_id
       `;
       if (!row) return fail(err.notFound("Record"));
+      await supersedePendingFinalizationRequest(tx, tableId, recordId, actorId, "The Record was restored from trash.");
       await captureRecordEventSnapshot(tx, {
         snapshotId: row.outbox_id,
         tableId,

@@ -12,6 +12,12 @@ export const recordMetaToGqlWhere = (meta: RecordMetaQuery | undefined): Convert
     if (!values.every((item): item is string => item !== null)) return unsupported("record.id needs literal record ids");
     parts.push(values.length === 1 ? `record.id = ${values[0]}` : `oneof(record.id, ${values.join(", ")})`);
   }
+  const finalizationStates = [...new Set(meta?.finalizationStates ?? [])];
+  if (finalizationStates.length > 0) {
+    const values = finalizationStates.map(gqlLiteralFromUnknown);
+    if (!values.every((item): item is string => item !== null)) return unsupported("record.finalizationState needs literal states");
+    parts.push(values.length === 1 ? `record.finalizationState = ${values[0]}` : `oneof(record.finalizationState, ${values.join(", ")})`);
+  }
   for (const key of ["createdBy", "updatedBy", "deletedBy"] as const) {
     const ids = [...new Set(meta?.users?.[key] ?? [])].filter(Boolean);
     if (ids.length === 0) continue;

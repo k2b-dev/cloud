@@ -349,7 +349,7 @@ export const tableCommands = [
       if (!printCliStructured(ctx, status)) {
         ctx.print(
           status.enabled
-            ? `Finalization is enabled for ${table.name} (${status.finalizedCount} finalized).`
+            ? `Finalization is enabled for ${table.name} in ${status.mode === "fourEyes" ? `Four-eyes mode (${status.approverGroupName ?? status.approverGroupId})` : "Direct mode"} (${status.finalizedCount} finalized).`
             : `Finalization is not enabled for ${table.name}. Durable history: ${status.durableHistory}.`,
         );
       }
@@ -358,15 +358,28 @@ export const tableCommands = [
   command("tables finalization enable", {
     summary: "Enable record finalization for a table",
     args: tableArgs,
-    flags: { ...baseFlag, ...tableFlag, yes: confirmFlag("Enable irreversible record finalization") },
+    flags: {
+      ...baseFlag,
+      ...tableFlag,
+      mode: flag.string({ description: "Finalization mode: direct or four-eyes" }),
+      approverGroup: flag.string({ description: "Cloud group UUID whose members may approve Four-eyes requests" }),
+      yes: confirmFlag("Enable irreversible record finalization"),
+    },
     async run({ ctx, args, flags }) {
       if (!flags.yes) throw new Error("Pass --yes to enable record finalization.");
+      const mode = flags.mode?.trim().toLowerCase();
+      if (mode !== "direct" && mode !== "four-eyes") throw new Error("Pass --mode direct or --mode four-eyes.");
+      if (mode === "four-eyes" && !flags.approverGroup?.trim()) {
+        throw new Error("Pass --approver-group with the Cloud group UUID for Four-eyes Finalization.");
+      }
       const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
       const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const policy =
+        mode === "four-eyes" ? { mode: "fourEyes" as const, approverGroupId: flags.approverGroup!.trim() } : { mode: "direct" as const };
       const status = await readApi<PublicRecordFinalizationStatus>(
         ctx,
         `/tables/${encodeURIComponent(table.id)}/finalization/enable`,
-        jsonRequest("POST"),
+        jsonRequest("POST", policy),
       );
       printJsonOrMessage(ctx, status, `Enabled finalization for ${table.name} (${table.id}).`);
     },
@@ -385,6 +398,41 @@ export const tableCommands = [
         jsonRequest("POST"),
       );
       printJsonOrMessage(ctx, status, `Disabled finalization for ${table.name} (${table.id}).`);
+    },
+  }),
+  command("tables finalization policy", {
+    summary: "Require Direct or Four-eyes Finalization for a table",
+    args: tableArgs,
+    flags: {
+      ...baseFlag,
+      ...tableFlag,
+      mode: flag.string({ description: "Finalization mode: direct or four-eyes" }),
+      approverGroup: flag.string({ description: "Cloud group UUID whose members may approve Four-eyes requests" }),
+      yes: confirmFlag("Change the table Finalization policy"),
+    },
+    async run({ ctx, args, flags }) {
+      if (!flags.yes) throw new Error("Pass --yes to change the Finalization policy.");
+      const mode = flags.mode?.trim().toLowerCase();
+      if (mode !== "direct" && mode !== "four-eyes") throw new Error("Pass --mode direct or --mode four-eyes.");
+      if (mode === "four-eyes" && !flags.approverGroup?.trim()) {
+        throw new Error("Pass --approver-group with the Cloud group UUID for Four-eyes Finalization.");
+      }
+      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
+      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const policy =
+        mode === "four-eyes" ? { mode: "fourEyes" as const, approverGroupId: flags.approverGroup!.trim() } : { mode: "direct" as const };
+      const status = await readApi<PublicRecordFinalizationStatus>(
+        ctx,
+        `/tables/${encodeURIComponent(table.id)}/finalization/policy`,
+        jsonRequest("PUT", policy),
+      );
+      printJsonOrMessage(
+        ctx,
+        status,
+        mode === "four-eyes"
+          ? `Four-eyes Finalization now requires group ${flags.approverGroup!.trim()} for ${table.name}.`
+          : `Direct Finalization is enabled for ${table.name}.`,
+      );
     },
   }),
   command("tables create", {

@@ -39,6 +39,13 @@ describe("GQL where predicates — first-class per field type", () => {
     return result.plan.query.filter;
   };
 
+  const recordMetaOf = (source: string, context = optCtx()) => {
+    const result = resolveDslQueryToRecordQuery(parseOk(source), context);
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error(result.diagnostics.map((d) => d.message).join("; "));
+    return result.plan.query.recordMeta;
+  };
+
   const errorOf = (source: string, context = optCtx()) => {
     const result = resolveDslQueryToQueryPlan(parseOk(source), context);
     expect(result.ok).toBe(false);
@@ -157,6 +164,22 @@ describe("GQL where predicates — first-class per field type", () => {
   test("record.id accepts public ids and rejects internal UUIDs", () => {
     expect(predicateOf(`where record.id = 'REC001'`)).toEqual({ kind: "publicRecordIds", ids: ["REC001"] });
     expect(errorOf(`where record.id = '99999999-9999-4999-8999-999999999991'`)).toEqual(["record.id expects public record ids"]);
+  });
+
+  test("record.finalizationState resolves bounded current states", () => {
+    expect(recordMetaOf("where record.finalizationState = 'awaitingReview'")).toEqual({
+      finalizationStates: ["awaitingReview"],
+    });
+    expect(recordMetaOf("where oneof(record.finalizationState, 'draft', 'finalized')")).toEqual({
+      finalizationStates: ["draft", "finalized"],
+    });
+    expect(errorOf("where record.finalizationState = 'rejected'")).toEqual([
+      "record.finalizationState expects draft, awaitingReview, or finalized",
+    ]);
+    const compiled = planSql("where record.finalizationState = 'awaitingReview'");
+    expect(compiled).toContain("grids.record_finalization_requests finalization_request");
+    expect(compiled).toContain("finalization_request.record_version = r.version");
+    expect(compiled).toContain("finalization_activation.policy_revision = finalization_request.policy_revision");
   });
 
   test("principal membership compiles to indexed identity containment", () => {

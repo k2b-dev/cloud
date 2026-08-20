@@ -9,6 +9,10 @@ A table stores one kind of record. Its fields define which facts every record ca
 
 Choose a field type for the meaning of the value, not merely for how it should look.
 
+Base admins can open **Base settings → Tables** to find Tables by name or public ID and compare their structure and protection settings in one
+place. The overview shows field, indexed-field, and unique-field counts together with Durable History, Finalization, and allowed write paths. It
+does not calculate Record totals; open the Table for its Records, schema, or **History and protection** settings.
+
 ## Fields for entered values {icon="table"}
 
 | Field type | Use it for | Important behavior |
@@ -100,7 +104,14 @@ Readers of a current Record can open **Versions** in its detail panel. A version
 
 ### Finalize records {icon="lock"}
 
-After Durable History has finished its baseline, a Base admin can enable **Record finalization** in the same **History and protection** section. Existing and new records remain Draft until someone with Write access explicitly finalizes one.
+After Durable History has finished its baseline, a Base admin can enable **Record finalization** in the same **History and protection** section. Existing and new records remain Draft until someone explicitly finalizes one. The setting belongs to one stored Table and offers two modes:
+
+- **Direct:** someone with Write access can finalize the Record themselves.
+- **Four-eyes:** someone with Write access requests Finalization for the exact current Record version. A different person must still have Write access and be a current member of the configured approver group to approve and finalize it.
+
+Choosing an approver group does not grant access. The mode and group are stored atomically when Finalization is enabled, so a Table intended for Four-eyes review is never briefly available in Direct mode. Changing the mode or approver group invalidates open requests so that an old review cannot authorize work under a new policy. Changing values, Relations, attached Files, or moving the Record through trash invalidates its request; submit the current state again. Request, approval, rejection, and the final Record lock remain visible in audit history.
+
+Each request has a short public ID. CLI approval and rejection require that exact ID, so a confirmation can never apply to a newer replacement request.
 
 Finalization checks every required field, assigns any sequential ID configured for **On finalization**, stores the final version, and then permanently locks the record in one operation. Its fields, Relations, Files, trash state, and final number can no longer change. A retry returns the same finalized record and never allocates a second number.
 

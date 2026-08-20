@@ -89,17 +89,26 @@ const parseFilterParam = (params: URLSearchParams): RecordQuery["filter"] | unde
 const parseRecordMetaParam = (params: URLSearchParams): RecordsUrlQuery["recordMeta"] | undefined => {
   const parsed = tryParseJson<unknown>(params.get("meta"));
   if (!parsed || typeof parsed !== "object") return undefined;
+  const finalizationStates = Array.isArray((parsed as { finalizationStates?: unknown }).finalizationStates)
+    ? (parsed as { finalizationStates: unknown[] }).finalizationStates.filter(
+        (state): state is "draft" | "awaitingReview" | "finalized" =>
+          state === "draft" || state === "awaitingReview" || state === "finalized",
+      )
+    : [];
   const users = (parsed as { users?: unknown }).users;
-  if (!users || typeof users !== "object") return undefined;
   const out: NonNullable<RecordsUrlQuery["recordMeta"]>["users"] = {};
-  for (const key of ["createdBy", "updatedBy", "deletedBy"] as const) {
-    const ids = (users as Record<string, unknown>)[key];
-    if (Array.isArray(ids)) {
-      const clean = ids.filter((id): id is string => typeof id === "string");
-      if (clean.length > 0) out[key] = clean;
+  if (users && typeof users === "object") {
+    for (const key of ["createdBy", "updatedBy", "deletedBy"] as const) {
+      const ids = (users as Record<string, unknown>)[key];
+      if (Array.isArray(ids)) {
+        const clean = ids.filter((id): id is string => typeof id === "string");
+        if (clean.length > 0) out[key] = clean;
+      }
     }
   }
-  return out && Object.keys(out).length > 0 ? { users: out } : undefined;
+  return finalizationStates.length || Object.keys(out).length > 0
+    ? { ...(finalizationStates.length ? { finalizationStates } : {}), ...(Object.keys(out).length > 0 ? { users: out } : {}) }
+    : undefined;
 };
 
 const parseSortParam = (params: URLSearchParams): RecordsUrlQuery["sort"] | undefined => {

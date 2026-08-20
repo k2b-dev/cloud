@@ -34,7 +34,7 @@ describe("structured query public ID boundary", () => {
       tableId,
       {
         filter: { fieldId: "REL001", op: "containsAny", value: ["RECD01"] },
-        recordMeta: { ids: ["RECD01"] },
+        recordMeta: { ids: ["RECD01"], finalizationStates: ["awaitingReview"] },
         sort: [{ fieldId: "FILD01", direction: "asc" }],
         columns: [{ fieldId: "FILD01" }],
       },
@@ -48,7 +48,7 @@ describe("structured query public ID boundary", () => {
       ok: true,
       data: {
         filter: { fieldId: relationFieldId, value: [relatedRecordId] },
-        recordMeta: { ids: [relatedRecordId] },
+        recordMeta: { ids: [relatedRecordId], finalizationStates: ["awaitingReview"] },
         sort: [{ fieldId, direction: "asc" }],
         columns: [{ fieldId }],
       },

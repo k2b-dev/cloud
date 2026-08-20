@@ -150,10 +150,11 @@ describe("durable history route permissions", () => {
       expect(serialized).not.toContain(userId);
 
       expect((await app.request(`/tables/${tableShortId}/finalization`, bearer(readCredential.data.token))).status).toBe(403);
-      const finalizationEnabled = await app.request(
-        `/tables/${tableShortId}/finalization/enable`,
-        bearer(adminCredential.data.token, "POST"),
-      );
+      const finalizationEnabled = await app.request(`/tables/${tableShortId}/finalization/enable`, {
+        ...bearer(adminCredential.data.token, "POST"),
+        headers: { authorization: `Bearer ${adminCredential.data.token}`, "content-type": "application/json" },
+        body: JSON.stringify({ mode: "direct" }),
+      });
       expect(finalizationEnabled.status).toBe(200);
       expect(await finalizationEnabled.json()).toMatchObject({ enabled: true, finalizedCount: 0, canDisable: true });
       expect((await app.request(`/records/${tableShortId}/${recordShortId}/finalization`, bearer(readCredential.data.token))).status).toBe(

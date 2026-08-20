@@ -30,6 +30,9 @@ describe("Retention policy settings contract", () => {
     expect(source).not.toContain(".filter(");
     expect(source).not.toContain('tone={row.status === "retained" ? "running"');
     expect(source).toContain("fillHeight");
+    expect(source).toContain("<DataTable.Controls>");
+    expect(source).toContain('<div class="w-full">');
+    expect(source).not.toContain('class="min-w-56 flex-1"');
   });
 
   test("loads the Record review through query.create and delegates recovery to Trash", async () => {
@@ -49,6 +52,9 @@ describe("Retention policy settings contract", () => {
     expect(source).not.toContain(".filter(");
     expect(source).not.toContain("mutation.create");
     expect(source).not.toContain("apiClient");
+    expect(source).toContain("<DataTable.Controls>");
+    expect(source).toContain('<div class="w-full">');
+    expect(source).not.toContain('class="min-w-56 flex-1"');
   });
 
   test("uses the shared compact stats surface without decorative section rules", async () => {

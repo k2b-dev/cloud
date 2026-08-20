@@ -891,8 +891,99 @@ const migrateRecordFinalization = async (sql: SQL): Promise<void> => {
     CREATE TABLE IF NOT EXISTS grids.table_finalization_activations (
       table_id UUID PRIMARY KEY REFERENCES grids.tables(id) ON DELETE RESTRICT,
       enabled_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      enabled_at TIMESTAMPTZ NOT NULL DEFAULT now()
+      enabled_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      mode TEXT NOT NULL DEFAULT 'direct',
+      approver_group_id UUID,
+      policy_revision INT NOT NULL DEFAULT 1
     )
+  `.simple();
+  await sql`ALTER TABLE grids.table_finalization_activations ADD COLUMN IF NOT EXISTS mode TEXT NOT NULL DEFAULT 'direct'`.simple();
+  await sql`ALTER TABLE grids.table_finalization_activations ADD COLUMN IF NOT EXISTS approver_group_id UUID`.simple();
+  await sql`ALTER TABLE grids.table_finalization_activations ADD COLUMN IF NOT EXISTS policy_revision INT NOT NULL DEFAULT 1`.simple();
+  await sql`ALTER TABLE grids.table_finalization_activations DROP CONSTRAINT IF EXISTS table_finalization_activations_policy_chk`.simple();
+  await sql`
+    ALTER TABLE grids.table_finalization_activations ADD CONSTRAINT table_finalization_activations_policy_chk CHECK (
+      (mode = 'direct' AND approver_group_id IS NULL)
+      OR (mode = 'four_eyes' AND approver_group_id IS NOT NULL)
+    )
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.record_finalization_requests (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      short_id TEXT,
+      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE RESTRICT,
+      record_id UUID NOT NULL REFERENCES grids.records(id) ON DELETE RESTRICT,
+      record_version INT NOT NULL,
+      policy_revision INT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      requested_by UUID NOT NULL REFERENCES auth.users(id) ON DELETE RESTRICT,
+      request_comment TEXT,
+      requested_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      resolved_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      resolution_comment TEXT,
+      resolved_at TIMESTAMPTZ,
+      CONSTRAINT record_finalization_requests_status_chk CHECK (status IN ('pending', 'approved', 'rejected', 'superseded')),
+      CONSTRAINT record_finalization_requests_resolution_chk CHECK (
+        (status = 'pending' AND resolved_by IS NULL AND resolved_at IS NULL)
+        OR (status <> 'pending' AND resolved_at IS NOT NULL)
+      )
+    )
+  `.simple();
+  await sql`ALTER TABLE grids.record_finalization_requests ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
+  const finalizationRequests = await sql<Array<{ id: string; short_id: string | null }>>`
+    SELECT id::text, short_id FROM grids.record_finalization_requests ORDER BY id FOR UPDATE
+  `;
+  const validOwners = new Map<string, string>();
+  for (const request of finalizationRequests) {
+    if (request.short_id && SHORT_ID_REGEX.test(request.short_id) && !validOwners.has(request.short_id)) {
+      validOwners.set(request.short_id, request.id);
+    }
+  }
+  const allocated = new Set(validOwners.keys());
+  for (const request of finalizationRequests) {
+    if (request.short_id && validOwners.get(request.short_id) === request.id) continue;
+    const shortId = allocateMigrationShortId(allocated, "record_finalization_requests");
+    allocated.add(shortId);
+    await sql`UPDATE grids.record_finalization_requests SET short_id = ${shortId} WHERE id = ${request.id}::uuid`;
+  }
+  const [requestIdConstraint] = await sql<Array<{ ready: boolean }>>`
+    SELECT EXISTS (
+      SELECT 1 FROM pg_constraint
+      WHERE conrelid = 'grids.record_finalization_requests'::regclass
+        AND conname = 'record_finalization_requests_short_id_format_chk'
+        AND convalidated
+    ) AS ready
+  `;
+  if (!requestIdConstraint?.ready) {
+    await sql`
+      ALTER TABLE grids.record_finalization_requests
+      ADD CONSTRAINT record_finalization_requests_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$')
+    `.simple();
+  }
+  const [requestIdColumn] = await sql<Array<{ nullable: string }>>`
+    SELECT is_nullable AS nullable
+    FROM information_schema.columns
+    WHERE table_schema = 'grids' AND table_name = 'record_finalization_requests' AND column_name = 'short_id'
+  `;
+  if (requestIdColumn?.nullable !== "NO") {
+    await sql`ALTER TABLE grids.record_finalization_requests ALTER COLUMN short_id SET NOT NULL`.simple();
+  }
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_finalization_requests_short_id
+    ON grids.record_finalization_requests(short_id)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_finalization_requests_pending
+    ON grids.record_finalization_requests(record_id) WHERE status = 'pending'
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_finalization_requests_table
+    ON grids.record_finalization_requests(table_id, requested_at DESC)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_finalization_requests_pending_table
+    ON grids.record_finalization_requests(table_id, record_id, record_version, policy_revision)
+    WHERE status = 'pending'
   `.simple();
   await sql`ALTER TABLE grids.records ADD COLUMN IF NOT EXISTS finalized_at TIMESTAMPTZ`.simple();
   await sql`ALTER TABLE grids.records ADD COLUMN IF NOT EXISTS finalized_by UUID REFERENCES auth.users(id) ON DELETE SET NULL`.simple();

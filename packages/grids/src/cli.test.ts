@@ -401,7 +401,7 @@ describe("grids CLI", () => {
     const commands = commandGroups.flat();
     const paths = commands.map((item) => item.path.join(" "));
 
-    expect(commands).toHaveLength(170);
+    expect(commands).toHaveLength(174);
     expect(new Set(paths).size).toBe(paths.length);
 
     for (const path of paths) {
@@ -1399,6 +1399,10 @@ describe("grids CLI", () => {
       enabledAt: "2026-08-18T12:00:00.000Z",
       finalizedCount: 0,
       canDisable: true,
+      mode: "direct" as const,
+      approverGroupId: null,
+      approverGroupName: null,
+      policyRevision: 1,
     };
     const status = createContext(
       ["tables", "finalization", baseId, "Authors"],
@@ -1412,14 +1416,34 @@ describe("grids CLI", () => {
 
     const enable = createContext(
       ["tables", "finalization", "enable", baseId, "Authors"],
-      { yes: true },
+      { mode: "direct", yes: true },
       [jsonResponse(basePage), jsonResponse([table]), jsonResponse(enabledStatus)],
       { output: "json" },
     );
     await gridsCli.run(enable.ctx);
     expect(enable.calls.at(-1)?.path).toBe(`/api/grids/tables/${tableId}/finalization/enable`);
     expect(enable.calls.at(-1)?.init?.method).toBe("POST");
+    expect(JSON.parse(String(enable.calls.at(-1)?.init?.body))).toEqual({ mode: "direct" });
     expect(enable.jsonValues).toEqual([enabledStatus]);
+
+    const approverGroupId = "45454545-4545-4454-8454-454545454545";
+    const fourEyesStatus = {
+      ...enabledStatus,
+      mode: "fourEyes" as const,
+      approverGroupId,
+      approverGroupName: "Finance reviewers",
+      policyRevision: 2,
+    };
+    const policy = createContext(
+      ["tables", "finalization", "policy", baseId, "Authors"],
+      { mode: "four-eyes", "approver-group": approverGroupId, yes: true },
+      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(fourEyesStatus)],
+      { output: "json" },
+    );
+    await gridsCli.run(policy.ctx);
+    expect(policy.calls.at(-1)?.path).toBe(`/api/grids/tables/${tableId}/finalization/policy`);
+    expect(policy.calls.at(-1)?.init?.method).toBe("PUT");
+    expect(JSON.parse(String(policy.calls.at(-1)?.init?.body))).toEqual({ mode: "fourEyes", approverGroupId });
 
     const finalizedRecord = { ...record, finalizedAt: "2026-08-18T12:01:00.000Z", finalizedBy: null };
     const finalize = createContext(
@@ -1436,6 +1460,78 @@ describe("grids CLI", () => {
     const missingConfirmation = createContext(["records", "finalize", baseId, "Authors", recordId]);
     await expect(gridsCli.run(missingConfirmation.ctx)).rejects.toThrow("Pass --yes to permanently finalize the record.");
     expect(missingConfirmation.calls).toHaveLength(0);
+
+    const request = {
+      id: "req001",
+      status: "pending",
+      recordVersion: 1,
+      requestedBy: "56565656-5656-4565-8565-565656565656",
+      requestedByDisplayName: "Requester",
+      requestComment: "Ready",
+      requestedAt: "2026-08-18T12:02:00.000Z",
+      resolvedBy: null,
+      resolvedByDisplayName: null,
+      resolutionComment: null,
+      resolvedAt: null,
+    };
+    const requested = createContext(
+      ["records", "finalization", "request", baseId, "Authors", recordId],
+      { comment: "Ready" },
+      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(request)],
+      { output: "json" },
+    );
+    await gridsCli.run(requested.ctx);
+    expect(requested.calls.at(-1)?.path).toBe(`/api/grids/records/${tableId}/${recordId}/finalization/request`);
+    expect(JSON.parse(String(requested.calls.at(-1)?.init?.body))).toEqual({ comment: "Ready" });
+
+    const approved = createContext(
+      ["records", "finalization", "approve", baseId, "Authors", recordId],
+      { request: "req001", yes: true },
+      [
+        jsonResponse(basePage),
+        jsonResponse([table]),
+        jsonResponse({
+          enabled: true,
+          mode: "fourEyes",
+          finalized: false,
+          finalizedAt: null,
+          request,
+          canResolveRequest: true,
+          resolutionDisabledReason: null,
+          missing: [],
+          assignedOnFinalization: [],
+        }),
+        jsonResponse(finalizedRecord),
+      ],
+      { output: "json" },
+    );
+    await gridsCli.run(approved.ctx);
+    expect(approved.calls.at(-1)?.path).toBe(`/api/grids/records/${tableId}/${recordId}/finalization/approve`);
+    expect(approved.calls.at(-1)?.init?.method).toBe("POST");
+    expect(JSON.parse(String(approved.calls.at(-1)?.init?.body))).toEqual({ requestId: "req001", comment: null });
+
+    const changedRequest = { ...request, id: "req002" };
+    const staleApproval = createContext(
+      ["records", "finalization", "approve", baseId, "Authors", recordId],
+      { request: "req001", yes: true },
+      [
+        jsonResponse(basePage),
+        jsonResponse([table]),
+        jsonResponse({
+          enabled: true,
+          mode: "fourEyes",
+          finalized: false,
+          finalizedAt: null,
+          request: changedRequest,
+          canResolveRequest: true,
+          resolutionDisabledReason: null,
+          missing: [],
+          assignedOnFinalization: [],
+        }),
+      ],
+    );
+    await expect(gridsCli.run(staleApproval.ctx)).rejects.toThrow("That Finalization request is no longer pending");
+    expect(staleApproval.calls.at(-1)?.path).toBe(`/api/grids/records/${tableId}/${recordId}/finalization`);
   });
 
   test("lists durable record versions and downloads retained files", async () => {

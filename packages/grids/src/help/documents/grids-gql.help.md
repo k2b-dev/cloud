@@ -262,11 +262,16 @@ Record metadata uses the reserved `record` scope:
 | `record.createdBy` | Match one or several creator user UUIDs |
 | `record.updatedBy` | Match one or several last-editor user UUIDs |
 | `record.deletedBy` | Match one or several deleting-user UUIDs |
+| `record.finalizationState` | Match `draft`, `awaitingReview`, or `finalized` with `=` or `oneof(...)` |
+| `record.finalizedAt` | Finalization time returned with Record metadata |
+| `record.finalizedBy` | Finalizing user UUID returned with Record metadata |
 | `record.createdAt` | Sort by creation time |
 | `record.updatedAt` | Sort by last update time |
 | `record.deletedAt` | Sort deleted records by deletion time |
 
 Metadata filters may be combined with `and`, but not placed inside an `or` branch. User values are UUIDs; record values are public IDs, not display names.
+`awaitingReview` means a current Four-eyes request still matches the Record version and Table policy. Rejected and superseded requests are history,
+not current Record states. A Table without Finalization enabled has no `draft` Records.
 
 ## Grouping and aggregate reference {icon="chart-bar"}
 

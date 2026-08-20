@@ -45,6 +45,63 @@ const withIsolatedDatabase = async (run: (database: SQL) => Promise<void>) => {
 
 describe("grids schema migration", () => {
   postgresTest(
+    "defines table-scoped Direct and Four-eyes Finalization storage",
+    async () => {
+      await withIsolatedDatabase(async (database) => {
+        await migrateCoreWorkflows(database);
+        await migrate(database);
+        const columns = await database<Array<{ name: string; nullable: string; defaultValue: string | null }>>`
+          SELECT column_name AS name, is_nullable AS nullable, column_default AS "defaultValue"
+          FROM information_schema.columns
+          WHERE table_schema = 'grids' AND table_name = 'table_finalization_activations'
+            AND column_name IN ('mode', 'approver_group_id', 'policy_revision')
+          ORDER BY column_name
+        `;
+        expect(columns).toEqual([
+          { name: "approver_group_id", nullable: "YES", defaultValue: null },
+          { name: "mode", nullable: "NO", defaultValue: "'direct'::text" },
+          { name: "policy_revision", nullable: "NO", defaultValue: "1" },
+        ]);
+        const [policyConstraint] = await database<Array<{ definition: string }>>`
+          SELECT pg_get_constraintdef(oid) AS definition
+          FROM pg_constraint
+          WHERE conrelid = 'grids.table_finalization_activations'::regclass
+            AND conname = 'table_finalization_activations_policy_chk'
+        `;
+        expect(policyConstraint?.definition).toContain("mode = 'four_eyes'::text");
+        const [pendingIndex] = await database<Array<{ definition: string }>>`
+          SELECT indexdef AS definition
+          FROM pg_indexes
+          WHERE schemaname = 'grids' AND indexname = 'idx_grids_record_finalization_requests_pending'
+        `;
+        expect(pendingIndex?.definition).toContain("WHERE (status = 'pending'::text)");
+        const [pendingTableIndex] = await database<Array<{ definition: string }>>`
+          SELECT indexdef AS definition
+          FROM pg_indexes
+          WHERE schemaname = 'grids' AND indexname = 'idx_grids_record_finalization_requests_pending_table'
+        `;
+        expect(pendingTableIndex?.definition).toContain("(table_id, record_id, record_version, policy_revision)");
+        expect(pendingTableIndex?.definition).toContain("WHERE (status = 'pending'::text)");
+        const [requestPublicId] = await database<Array<{ nullable: string; indexReady: boolean }>>`
+          SELECT column_info.is_nullable AS nullable,
+            EXISTS (
+              SELECT 1 FROM pg_indexes
+              WHERE schemaname = 'grids'
+                AND indexname = 'idx_grids_record_finalization_requests_short_id'
+                AND indexdef LIKE 'CREATE UNIQUE INDEX%'
+            ) AS "indexReady"
+          FROM information_schema.columns column_info
+          WHERE column_info.table_schema = 'grids'
+            AND column_info.table_name = 'record_finalization_requests'
+            AND column_info.column_name = 'short_id'
+        `;
+        expect(requestPublicId).toEqual({ nullable: "NO", indexReady: true });
+      });
+    },
+    120_000,
+  );
+
+  postgresTest(
     "defines a non-null allow-all mutation policy default",
     async () => {
       await withIsolatedDatabase(async (database) => {
@@ -238,7 +295,7 @@ describe("grids schema migration", () => {
         `;
         // Durable History and the evidence lifecycle add explicit owners
         // without replacing the lightweight live rows.
-        expect(row?.tableCount).toBe(47);
+        expect(row?.tableCount).toBe(48);
         const historyTables = await database<Array<{ tableName: string }>>`
           SELECT table_name AS "tableName"
           FROM information_schema.tables

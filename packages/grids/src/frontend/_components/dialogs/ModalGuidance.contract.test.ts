@@ -13,6 +13,7 @@ describe("Grids settings dialog guidance", () => {
     expect(history).toContain('title="Keep a history, then lock finished records"');
     expect(history).toContain('"Durable history is on"');
     expect(history).toContain('title="Finalization is on"');
+    expect(history.match(/class="w-full"/g)).toHaveLength(2);
     expect(history).not.toContain("append-only");
   });
 

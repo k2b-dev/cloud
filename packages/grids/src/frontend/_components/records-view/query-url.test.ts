@@ -57,6 +57,12 @@ describe("parseRecordsState", () => {
     expect(r.query.recordMeta).toEqual(meta);
   });
 
+  test("Finalization metadata state is parsed without actor filters", () => {
+    const meta: RecordMetaQuery = { finalizationStates: ["awaitingReview"] };
+    const r = parseRecordsState(params("meta=" + encodeURIComponent(JSON.stringify(meta))));
+    expect(r.query.recordMeta).toEqual(meta);
+  });
+
   test("malformed filter → silently dropped (no throw)", () => {
     const r = parseRecordsState(params("filter=not-json"));
     expect(r.query.filter).toBeUndefined();
