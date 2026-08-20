@@ -125,7 +125,7 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
 
   return (
     <>
-      <AppWorkspace.Main class={workspaceMainClass(route.kind)}>
+      <AppWorkspace.Main class={workspaceMainClass(route.kind)} scroll={false}>
         <Switch>
           <Match when={route.kind === "workflows"}>
             {(() => {

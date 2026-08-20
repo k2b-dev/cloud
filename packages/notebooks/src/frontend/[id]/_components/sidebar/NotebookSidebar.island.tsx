@@ -82,7 +82,7 @@ export default function NotebookSidebar(props: Props) {
     if (result.kind === "applied") nav.push(result.href);
   };
 
-  const renderTreeView = (scrollPreserveKey: string) => (
+  const renderTreeView = () => (
     <NoteTree
       tree={noteTree()}
       notebookId={notebook().id}
@@ -92,7 +92,6 @@ export default function NotebookSidebar(props: Props) {
       showSearch={false}
       showHeaderActions={false}
       favoriteNoteIds={[...favoriteNoteIds()]}
-      scrollPreserveKey={scrollPreserveKey}
     />
   );
 
@@ -167,7 +166,7 @@ export default function NotebookSidebar(props: Props) {
           />
         </AppWorkspace.SidebarMobileItems>
         <AppWorkspace.SidebarMobileBody scrollPreserveKey={`notebooks-mobile-sidebar-${notebook().id}`}>
-          {renderTreeView(`notebooks-mobile-tree-${notebook().id}`)}
+          {renderTreeView()}
         </AppWorkspace.SidebarMobileBody>
       </AppWorkspace.SidebarMobile>
 
@@ -218,7 +217,7 @@ export default function NotebookSidebar(props: Props) {
 
               <AppWorkspace.SidebarBody scrollPreserveKey={`notebooks-simple-sidebar-${notebook().id}`}>
                 <AppWorkspace.SidebarSection title="Notes" class="min-h-0 flex-1">
-                  {renderTreeView(`notebooks-simple-tree-${notebook().id}`)}
+                  {renderTreeView()}
                 </AppWorkspace.SidebarSection>
               </AppWorkspace.SidebarBody>
               <AppWorkspace.SidebarFooter>

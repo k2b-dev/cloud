@@ -1,4 +1,4 @@
-import { AppWorkspace, Placeholder, ScrollArea } from "@k2b/ui";
+import { AppWorkspace, Placeholder } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor } from "@valentinkolb/cloud/server";
 import { type WeatherData, weatherService } from "@valentinkolb/cloud/services";
@@ -208,22 +208,20 @@ export default ssr<AuthContext>(async (c) => {
           <LocationSidebar locations={locations} activeId={id} weatherMap={weatherMap} />
 
           <AppWorkspace.Content>
-            <AppWorkspace.Main>
-              <ScrollArea class="flex-1" scrollPreserveKey={`weather-main-${activeLocation.id}`}>
-                {activeWeather ? (
-                  <WeatherDetail location={activeLocation} data={activeWeather} />
-                ) : (
-                  <Placeholder
-                    state="error"
-                    variant="panel"
-                    title="Weather data unavailable"
-                    description="DWD currently provides forecast data only for locations in Germany."
-                    icon="ti ti-cloud-off"
-                    class="h-full"
-                    action={<LocationActions id={activeLocation.id} lat={activeLocation.lat} lon={activeLocation.lon} />}
-                  />
-                )}
-              </ScrollArea>
+            <AppWorkspace.Main scrollPreserveKey={`weather-main-${activeLocation.id}`}>
+              {activeWeather ? (
+                <WeatherDetail location={activeLocation} data={activeWeather} />
+              ) : (
+                <Placeholder
+                  state="error"
+                  variant="panel"
+                  title="Weather data unavailable"
+                  description="DWD currently provides forecast data only for locations in Germany."
+                  icon="ti ti-cloud-off"
+                  class="h-full"
+                  action={<LocationActions id={activeLocation.id} lat={activeLocation.lat} lon={activeLocation.lon} />}
+                />
+              )}
             </AppWorkspace.Main>
           </AppWorkspace.Content>
         </AppWorkspace>

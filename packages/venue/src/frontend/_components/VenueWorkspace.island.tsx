@@ -17,7 +17,6 @@ import {
   Placeholder,
   panelDialogOptions,
   prompts,
-  ScrollArea,
   StatCell,
   StatGrid,
   Tooltip,
@@ -626,8 +625,8 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
       </AppWorkspace.Sidebar>
 
       <AppWorkspace.Content>
-        <AppWorkspace.Main class="p-[var(--ui-space-shell)]">
-          <ScrollArea class="flex-1" scrollPreserveKey={`venue-main-${venue().id}`}>
+        <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scrollPreserveKey={`venue-main-${venue().id}`}>
+          <div class="flex-1">
             <div class="flex flex-col gap-2">
               <Show when={dashboardQuery.error()}>
                 <div class="paper flex items-center justify-between gap-3 p-3 text-sm">
@@ -951,7 +950,7 @@ export default function VenueWorkspace(props: VenueWorkspaceProps) {
                 </section>
               </Show>
             </div>
-          </ScrollArea>
+          </div>
         </AppWorkspace.Main>
       </AppWorkspace.Content>
     </AppWorkspace>

@@ -167,6 +167,8 @@ export type AppWorkspaceMainProps = {
   children: JSX.Element;
   class?: string;
   mobilePane?: string;
+  scroll?: boolean;
+  scrollPreserveKey?: string | false;
   "aria-busy"?: boolean | "true" | "false";
 };
 export type AppWorkspaceMainPaneProps = {
@@ -180,6 +182,7 @@ export type AppWorkspaceMainPaneProps = {
   minSize?: number;
   maxSize?: number;
   class?: string;
+  scroll?: boolean;
   children: JSX.Element;
 };
 export type AppWorkspaceDetailWidth = "sm" | "md" | "lg" | "xl";
@@ -393,7 +396,9 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
     <div
       class={`k2b-app-workspace__main ${hasPanes() ? "has-panes" : ""} ${props.class ?? ""}`}
       data-mobile-pane={props.mobilePane}
+      data-scroll={props.scroll === false ? "false" : undefined}
       aria-busy={props["aria-busy"]}
+      {...scrollAttrs(props.scrollPreserveKey)}
     >
       <Show when={hasPanes()} fallback={resolved() as JSX.Element}>
         {regions().flatMap((region) => {
@@ -428,6 +433,7 @@ function AppWorkspaceMain(props: AppWorkspaceMainProps): JSX.Element {
               data-workspace-panel-id={panelId}
               data-workspace-resizable={resizable ? "true" : "false"}
               data-surface={pane.props.surface === "navigation" ? "navigation" : undefined}
+              data-scroll={pane.props.scroll === false ? "false" : undefined}
               style={isAnchor ? undefined : { "--k2b-workspace-panel-size": `var(${variable}, ${defaultSize}px)` }}
             >
               {pane.props.children}

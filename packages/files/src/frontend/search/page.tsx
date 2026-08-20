@@ -1,4 +1,4 @@
-import { AppWorkspace, ButtonLink, Placeholder, ScrollArea, TextInput } from "@k2b/ui";
+import { AppWorkspace, ButtonLink, Placeholder, TextInput } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
@@ -175,8 +175,8 @@ export default ssr<AuthContext>(async (c) => {
 
         <AppWorkspace.Content>
           {/* Main content */}
-          <AppWorkspace.Main class="p-[var(--ui-space-shell)]">
-            <ScrollArea class="flex-1" scrollPreserveKey="files-search-results">
+          <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scrollPreserveKey="files-search-results">
+            <div class="flex-1">
               <div class="flex flex-col gap-2">
                 {/* Search form */}
                 <form action="/app/files/search" method="get" class="paper flex flex-col gap-2 p-3">
@@ -322,7 +322,7 @@ export default ssr<AuthContext>(async (c) => {
                   </>
                 )}
               </div>
-            </ScrollArea>
+            </div>
           </AppWorkspace.Main>
 
           <AppWorkspace.Detail

@@ -1,4 +1,4 @@
-import { AppWorkspace, ScrollArea } from "@k2b/ui";
+import { AppWorkspace } from "@k2b/ui";
 import { createSignal, type JSX, Show } from "solid-js";
 import type { Mailbox } from "../../contracts";
 import { openMailboxSettingsDialog } from "./MailboxSettingsDialog";
@@ -111,9 +111,7 @@ export default function MailAutomationShell(props: {
       </AppWorkspace.Sidebar>
       <AppWorkspace.Content>
         <AppWorkspace.Main class="p-[var(--ui-space-shell)]">
-          <ScrollArea class="flex-1">
-            <div class="flex w-full flex-col gap-3">{props.children}</div>
-          </ScrollArea>
+          <div class="flex w-full flex-col gap-3">{props.children}</div>
         </AppWorkspace.Main>
       </AppWorkspace.Content>
     </AppWorkspace>

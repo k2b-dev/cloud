@@ -1,4 +1,4 @@
-import { AppWorkspace, ScrollArea } from "@k2b/ui";
+import { AppWorkspace } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import AccountsNavSidebar, { type AccountsNavActiveKey } from "./AccountsNavSidebar";
 
@@ -15,10 +15,8 @@ export default function AccountsWorkspace(props: Props) {
     <AppWorkspace class="h-full">
       <AccountsNavSidebar active={props.active} isAdmin={props.isAdmin} pendingRequests={props.pendingRequests} />
       <AppWorkspace.Content>
-        <AppWorkspace.Main class="p-[var(--ui-space-shell)]">
-          <ScrollArea class="flex-1" scrollPreserveKey={props.scrollPreserveKey}>
-            {props.children}
-          </ScrollArea>
+        <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scrollPreserveKey={props.scrollPreserveKey}>
+          {props.children}
         </AppWorkspace.Main>
       </AppWorkspace.Content>
     </AppWorkspace>

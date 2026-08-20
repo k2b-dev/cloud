@@ -1047,7 +1047,7 @@ export default function AssistantWorkspace(props: Props) {
         />
 
         <AppWorkspace.Content>
-          <AppWorkspace.Main>
+          <AppWorkspace.Main scroll={false}>
             <Show
               keyed
               when={projectView()}

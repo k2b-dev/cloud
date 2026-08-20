@@ -89,7 +89,7 @@ export default ssr<AuthContext>(async (c) => {
         <NotebookSidebar ctx={ctx} />
 
         <AppWorkspace.Content>
-          <AppWorkspace.Main>
+          <AppWorkspace.Main scroll={false}>
             {ctx.settings.sidebarMode === "navigator" && (
               <AppWorkspace.MainPane
                 id="notebook-notes"
@@ -98,6 +98,7 @@ export default ssr<AuthContext>(async (c) => {
                 defaultSize={336}
                 minSize={280}
                 maxSize={520}
+                scroll={false}
               >
                 <NotebookNavigatorPane ctx={ctx} />
               </AppWorkspace.MainPane>

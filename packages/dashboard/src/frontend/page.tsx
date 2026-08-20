@@ -327,7 +327,7 @@ export default ssr<AuthContext>(async (c) => {
   const overviewRows = groupDashboardWidgetRows(overviewWidgets, 3);
 
   return () => (
-    <Layout c={c} title="Dashboard">
+    <Layout c={c} title="Dashboard" fullPage>
       <ScrollArea class="flex-1">
         <div class="dashboard-page">
           <div class="dashboard-intro">

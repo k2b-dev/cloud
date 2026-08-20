@@ -74,7 +74,7 @@ export default function SpacesWorkspace(props: { state: OkWorkspaceState; dateCo
         <SpaceSidebar ctx={sidebarContext} baseUrl={state.icalBaseUrl} dateConfig={props.dateConfig} />
 
         <AppWorkspace.Content>
-          <AppWorkspace.Main class="p-[var(--ui-space-shell)]">
+          <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scroll={false}>
             {state.space.description && <p class="mb-2 text-xs leading-relaxed text-dimmed">{state.space.description}</p>}
             {(state.currentView === "list" || state.currentView === "table") && (
               <SpacesListRoute

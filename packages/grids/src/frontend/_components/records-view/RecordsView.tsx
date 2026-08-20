@@ -659,7 +659,7 @@ export default function RecordsView(props: Props) {
   // ── Render ─────────────────────────────────────────────────────────
   return (
     <>
-      <AppWorkspace.Main class={workspaceMainClass("records")}>
+      <AppWorkspace.Main class={workspaceMainClass("records")} scroll={false}>
         <div class="flex flex-1 min-w-0 min-h-0 overflow-hidden" data-route-key={props.workspaceRouteKey}>
           {/* Records workbench splits into two zones:
           - header (search + toolbar) — fixed, never scrolls

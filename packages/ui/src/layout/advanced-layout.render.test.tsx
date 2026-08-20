@@ -584,6 +584,28 @@ describe("@k2b/ui complete advanced layout migrations", () => {
     expect(appWorkspaceResizeLimits({ kind: "drawer", workspaceSize: 700, reservedSize: 0 }).max).toBe(460);
   });
 
+  test("lets one bounded child own scrolling without nesting workspace scrollports", () => {
+    const html = renderToString(() =>
+      createComponent(AppWorkspace.Main, {
+        scroll: false,
+        scrollPreserveKey: "inventory-main",
+        get children() {
+          return createComponent(AppWorkspace.MainPane, {
+            id: "inventory-list",
+            label: "Inventory list",
+            scroll: false,
+            children: "Rows",
+          });
+        },
+      }),
+    );
+
+    expect(html).toContain('class="k2b-app-workspace__main has-panes');
+    expect(html).toContain('data-scroll="false"');
+    expect(html).toContain('data-scroll-preserve="inventory-main"');
+    expect(html).toContain('class="k2b-app-workspace__main-pane is-primary');
+  });
+
   /**
    * Cloud gets this geometry from inline Tailwind utilities; the package emits
    * none, so every value has to exist as a real declaration. Each assertion
@@ -654,6 +676,9 @@ describe("@k2b/ui complete advanced layout migrations", () => {
       expect(rule(".k2b-app-workspace__sidebar-desktop")).toContain("padding:.5rem");
       expect(rule(".k2b-app-workspace__sidebar-body")).toContain("padding:0");
       expect(rule(".k2b-app-workspace__sidebar-footer")).toContain("padding:0");
+      expect(rule(".k2b-app-workspace__main")).toContain("scrollbar-gutter:stable");
+      expect(rule(".k2b-app-workspace__main[data-scroll=false]")).toContain("overflow:hidden");
+      expect(rule(".k2b-app-workspace__main-pane[data-scroll=false]")).toContain("overflow:hidden");
       expect(rule(".k2b-app-workspace__sidebar-item")).toContain("--k2b-sidebar-item-depth");
       expect(rule(".k2b-app-workspace__sidebar-mobile-trigger")).toContain("font-size:.875rem");
       expect(rule(".k2b-app-workspace__sidebar-icon-action")).toContain("width:100%");

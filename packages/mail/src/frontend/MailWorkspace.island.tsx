@@ -1431,7 +1431,7 @@ export default function MailWorkspace(props: {
         onNavigate={navigateWorkspace}
       />
       <AppWorkspace.Content>
-        <AppWorkspace.Main class="p-0" aria-busy={routeLoading()} mobilePane={hasSelection() ? "main" : "conversations"}>
+        <AppWorkspace.Main class="p-0" aria-busy={routeLoading()} mobilePane={hasSelection() ? "main" : "conversations"} scroll={false}>
           <Show
             when={data.scheduledMode}
             fallback={
@@ -1439,6 +1439,7 @@ export default function MailWorkspace(props: {
                 <AppWorkspace.MainPane
                   id="conversations"
                   label="Conversation list"
+                  scroll={false}
                   open={!listCollapsed() || !hasSelection()}
                   defaultSize={430}
                   minSize={300}

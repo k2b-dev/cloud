@@ -806,6 +806,12 @@
 
 .k2b-ui .k2b-app-workspace__main-pane {
   border-right: 1px solid var(--k2b-border);
+  scrollbar-gutter: stable;
+}
+
+.k2b-ui .k2b-app-workspace__main-pane[data-scroll="false"] {
+  overflow: hidden;
+  scrollbar-gutter: auto;
 }
 
 .k2b-ui .k2b-app-workspace__main-pane[data-surface="navigation"] {

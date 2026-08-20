@@ -137,7 +137,7 @@ export default ssr<AuthContext>(async (c) => {
         <WorkspaceEventBridge notebookId={notebook.shortId} appUrl={appUrl} initialCursor={workspaceCursor} />
         <NotebookSidebar ctx={ctx} />
         <AppWorkspace.Content>
-          <AppWorkspace.Main class="flex-col overflow-hidden p-[var(--ui-space-shell)]">
+          <AppWorkspace.Main class="flex-col p-[var(--ui-space-shell)]" scroll={false}>
             {/* SearchBar (full width) + note counter on the right. The
                 tag itself already lives in the breadcrumb above. */}
             <div class="flex items-center gap-2">

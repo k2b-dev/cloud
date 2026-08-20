@@ -1000,7 +1000,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
 
   return (
     <>
-      <AppWorkspace.Main class="tools-main overflow-hidden">
+      <AppWorkspace.Main class="tools-main" scroll={false}>
         <div
           class="flex min-h-0 min-w-0 flex-1 flex-col"
           onDragOver={(e) => e.preventDefault()}

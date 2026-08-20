@@ -135,7 +135,7 @@ export default ssr<AuthContext>(async (c) => {
         <WorkspaceEventBridge notebookId={notebook.shortId} appUrl={appUrl} initialCursor={workspaceCursor} />
         <NotebookSidebar ctx={ctx} />
         <AppWorkspace.Content>
-          <AppWorkspace.Main class="flex-col overflow-hidden p-[var(--ui-space-shell)]">
+          <AppWorkspace.Main class="flex-col p-[var(--ui-space-shell)]" scroll={false}>
             {/* Search bar across the full content width. The breadcrumb already
                 labels the page — no additional title above. */}
             <SearchBar value={search} action={baseHref} placeholder="Search attachments…" ariaLabel="Search attachments" />

@@ -40,7 +40,7 @@ describe("ScrollArea", () => {
     expect(rule).toContain("min-height: 0");
     expect(rule).toContain("overflow: auto");
     expect(rule).toContain("scrollbar-gutter: stable");
-    expect(rule).toContain("overscroll-behavior: contain");
+    expect(rule).not.toContain("overscroll-behavior");
     expect(rule).not.toContain("flex:");
     expect(rule).not.toMatch(/(?:^|\n)\s*height:/);
     expect(rule).not.toMatch(/(?:^|\n)\s*padding:/);

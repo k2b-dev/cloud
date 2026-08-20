@@ -1803,7 +1803,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
 
   return (
     <>
-      <AppWorkspace.Main class="p-0" mobilePane="main">
+      <AppWorkspace.Main class="p-0" mobilePane="main" scroll={false}>
         <AppWorkspace.MainPane
           id="custom-app-pages"
           label="App pages"
@@ -1812,6 +1812,7 @@ function CustomAppBuilderEditor(props: CustomAppBuilderProps & { initialDefiniti
           minSize={220}
           maxSize={420}
           class="flex min-h-0 flex-col"
+          scroll={false}
         >
           <Toolbar label="App pages" class="p-2" wrap>
             <Toolbar.Group>
