@@ -1,8 +1,8 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
 import type { MailFocusView } from "../contracts";
-import { capByCredentialScopes, type MailRequestContext, userBackedActor } from "./auth";
 import { isCurrentActorActive, mailboxAccessPrincipalCondition } from "./access";
+import { capByCredentialScopes, type MailRequestContext, userBackedActor } from "./auth";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -25,6 +25,12 @@ export type MailFocusItem = {
 
 export type MailFocusCounts = Record<MailFocusView, number>;
 
+export type MailFocusMailboxCounts = {
+  mailboxId: string;
+  unread: number;
+  needsAction: number;
+};
+
 type DbFocusItem = {
   id: string;
   mailbox_id: string;
@@ -38,6 +44,12 @@ type DbFocusItem = {
   flagged: boolean;
   has_attachments: boolean;
   preview: string | null;
+};
+
+type DbMailboxCounts = {
+  mailbox_id: string;
+  unread: number;
+  needs_action: number;
 };
 
 const toIso = (value: Date | string): string => (value instanceof Date ? value : new Date(value)).toISOString();
@@ -67,7 +79,8 @@ const decodeCursor = (value: string | undefined, view: MailFocusView, userId: st
 
 const boundMailboxId = (context: MailRequestContext): string | null => {
   if (context.actor.kind !== "service_account" || context.actor.serviceAccount.kind !== "resource_bound") return null;
-  if (context.actor.serviceAccount.appId !== "mail" || context.actor.serviceAccount.resourceType !== "mailbox") return "00000000-0000-0000-0000-000000000000";
+  if (context.actor.serviceAccount.appId !== "mail" || context.actor.serviceAccount.resourceType !== "mailbox")
+    return "00000000-0000-0000-0000-000000000000";
   return context.actor.serviceAccount.resourceId;
 };
 
@@ -103,7 +116,9 @@ export const listFocusConversations = async (params: {
   view?: MailFocusView;
   cursor?: string;
   limit?: number;
-}): Promise<Result<{ items: MailFocusItem[]; counts: MailFocusCounts; nextCursor: string | null }>> => {
+}): Promise<
+  Result<{ items: MailFocusItem[]; counts: MailFocusCounts; mailboxCounts: MailFocusMailboxCounts[]; nextCursor: string | null }>
+> => {
   if (!(await isCurrentActorActive(params.context))) return fail(err.forbidden("Access denied"));
   if (capByCredentialScopes(params.context, "read") === "none") return fail(err.forbidden("Access denied"));
 
@@ -116,7 +131,7 @@ export const listFocusConversations = async (params: {
   if (!cursor.ok) return cursor;
   const limit = Math.min(Math.max(Math.floor(params.limit ?? 50), 1), 100);
 
-  const [rows, countRows] = await Promise.all([
+  const [rows, countRows, mailboxCountRows] = await Promise.all([
     sql<DbFocusItem[]>`
       WITH readable_conversations AS (${readableConversations(params.context)})
       SELECT
@@ -182,6 +197,26 @@ export const listFocusConversations = async (params: {
         COUNT(*) FILTER (WHERE c.work_status <> 'done' AND ${visibleNow})::int AS all
       FROM readable_conversations c
     `,
+    sql<DbMailboxCounts[]>`
+      WITH readable_conversations AS (${readableConversations(params.context)})
+      SELECT
+        c.mailbox_id,
+        COUNT(*) FILTER (
+          WHERE EXISTS (
+            SELECT 1
+            FROM mail.conversation_messages unread_cm
+            JOIN mail.message_placements unread_mp ON unread_mp.message_id = unread_cm.message_id
+            WHERE unread_cm.conversation_id = c.id
+              AND unread_mp.deleted_at IS NULL
+              AND NOT ('\\Seen' = ANY(unread_mp.flags))
+          )
+        )::int AS unread,
+        COUNT(*) FILTER (
+          WHERE c.work_status = 'needs_action' AND ${visibleNow}
+        )::int AS needs_action
+      FROM readable_conversations c
+      GROUP BY c.mailbox_id
+    `,
   ]);
 
   const hasMore = rows.length > limit;
@@ -205,6 +240,11 @@ export const listFocusConversations = async (params: {
   return ok({
     items,
     counts,
+    mailboxCounts: mailboxCountRows.map((row) => ({
+      mailboxId: row.mailbox_id,
+      unread: row.unread,
+      needsAction: row.needs_action,
+    })),
     nextCursor: hasMore && last ? encodeCursor({ version: 1, view, userId, date: toIso(last.latest_message_at), id: last.id }) : null,
   });
 };

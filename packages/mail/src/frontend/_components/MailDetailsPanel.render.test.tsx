@@ -209,6 +209,19 @@ const renderPanel = (overrides: Partial<Parameters<typeof MailDetailsPanel>[0]> 
   );
 
 describe("Mail conversation detail panel", () => {
+  test("can surface overview context and a full conversation destination", () => {
+    const html = renderPanel({
+      conversationHref: `/app/mail/${mailboxId}?conversation=${conversationId}`,
+      conversationSummary: { summary: "Payment is due **Friday**.", summaryRevision: 2, conversationRevision: 5 },
+    });
+
+    expect(html).toContain("Conversation summary");
+    expect(html).toContain("Payment is due");
+    expect(html).toContain("<strong>Friday</strong>");
+    expect(html).toContain(`href="/app/mail/${mailboxId}?conversation=${conversationId}"`);
+    expect(html).toContain("Open conversation");
+  });
+
   test("surfaces the newest conversation draft before workflow", () => {
     const html = renderPanel({
       conversationDrafts: [draft, { ...draft, id: "Draft2", createdByDisplayName: "Mara Klein" }],

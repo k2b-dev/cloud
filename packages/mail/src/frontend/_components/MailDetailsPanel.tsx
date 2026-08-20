@@ -26,6 +26,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from
 import { apiClient } from "../../api/client";
 import type { ConversationDraftSummary } from "../../contracts";
 import type { ConversationCollaboration, ConversationComment, MailActivityEvent, MailAssignableUser } from "../../service/collaboration";
+import type { ConversationContentSummary } from "../../service/conversation-summary";
 import type { ConversationLocalTags, LocalTag } from "../../service/local-tags";
 import type { MessageDetail } from "../../service/messages";
 import type { ConversationPresenceParticipant } from "../../service/presence";
@@ -74,6 +75,8 @@ export default function MailDetailsPanel(props: {
   initialReminder: ConversationReminder | null;
   detailErrors: MailDetailErrors;
   conversationDrafts: ConversationDraftSummary[];
+  conversationHref?: string;
+  conversationSummary?: ConversationContentSummary | null;
   messages: MessageDetail[];
   subject: string;
   requestUrl: string;
@@ -497,6 +500,13 @@ export default function MailDetailsPanel(props: {
               }
             />
           }
+          primaryActions={
+            props.conversationHref ? (
+              <ButtonLink href={props.conversationHref} size="sm" variant="secondary">
+                Open conversation <i class="ti ti-arrow-up-right" aria-hidden="true" />
+              </ButtonLink>
+            ) : undefined
+          }
           actions={
             <Tooltip.Anchor content="Close details">
               <IconButton type="button" class="lg:hidden" label="Close conversation details" onClick={props.onClose}>
@@ -522,6 +532,14 @@ export default function MailDetailsPanel(props: {
                 }
               />
             </DetailPanel.Section>
+          </Show>
+
+          <Show when={props.conversationSummary?.summary}>
+            {(summary) => (
+              <DetailPanel.Section title="Conversation summary" icon="ti ti-sparkles" tone="accent">
+                <MarkdownView markdown={summary()} headingScale="compact" class="text-sm text-primary" />
+              </DetailPanel.Section>
+            )}
           </Show>
 
           <CheckboxCard

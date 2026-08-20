@@ -3,6 +3,7 @@ import type { User } from "@valentinkolb/cloud/contracts";
 import { oauthTokens } from "@valentinkolb/cloud/services";
 import { generateSpecs } from "hono-openapi";
 import { focus, publicResources } from "../service";
+import * as workspace from "../service/workspace";
 import app from ".";
 
 const user = {
@@ -60,6 +61,7 @@ describe("Mail focus API", () => {
           },
         ],
         counts: { mine: 1, unassigned: 0, waiting: 0, all: 1 },
+        mailboxCounts: [{ mailboxId, unread: 1, needsAction: 1 }],
         nextCursor: null,
       },
     });
@@ -76,8 +78,32 @@ describe("Mail focus API", () => {
     expect(body).toMatchObject({
       items: [{ id: "Convo1", mailboxId: "Mail01", mailboxName: "Support" }],
       counts: { mine: 1, unassigned: 0, waiting: 0, all: 1 },
+      mailboxCounts: [{ mailboxId: "Mail01", unread: 1, needsAction: 1 }],
     });
     expect(JSON.stringify(body)).not.toContain(conversationId);
     expect(JSON.stringify(body)).not.toContain(mailboxId);
+  });
+
+  test("resolves public mailbox and conversation IDs for overview details", async () => {
+    const mailboxId = "33333333-3333-4333-8333-333333333333";
+    const conversationId = "22222222-2222-4222-8222-222222222222";
+    spyOn(oauthTokens, "verifyAccessToken").mockResolvedValue({ kind: "user", payload: {}, user, scopes: [] });
+    spyOn(publicResources, "resolvePublicId").mockResolvedValue(mailboxId);
+    spyOn(publicResources, "resolveMailboxPublicId").mockResolvedValue(conversationId);
+    const loadDetail = spyOn(workspace, "loadMailboxConversationDetail").mockResolvedValue(null);
+
+    const response = await app.request("/mailboxes/Mail01/workspace-detail/Convo1", {
+      headers: { authorization: "Bearer mail-focus-api-test" },
+    });
+
+    expect(response.status).toBe(404);
+    expect(publicResources.resolvePublicId).toHaveBeenCalledWith("mailboxes", "Mail01");
+    expect(publicResources.resolveMailboxPublicId).toHaveBeenCalledWith("conversations", mailboxId, "Convo1");
+    expect(loadDetail).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mailboxId,
+        conversationId,
+      }),
+    );
   });
 });

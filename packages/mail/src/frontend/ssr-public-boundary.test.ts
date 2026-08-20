@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { MailAutomationAccessData } from "../service/automation-workspace";
-import type { MailboxPageData } from "../service/workspace";
+import type { MailboxPageData, MailConversationDetailData } from "../service/workspace";
 import {
   projectAutomationWorkspace,
   projectComposeData,
   projectMailboxPageData,
+  projectMailConversationDetail,
+  projectSsrFocusPage,
   projectSsrMailboxList,
   projectSsrPaths,
   resolveSsrMailboxId,
@@ -43,6 +45,37 @@ describe("Mail SSR public boundary", () => {
 
     const composeMailboxes = await projectSsrMailboxList([{ id: ids.mailbox, name: "Inbox" }], loadIds);
     expect(composeMailboxes).toEqual([{ id: "Box001", name: "Inbox" }]);
+  });
+
+  test("projects focus rows and mailbox counters through the same public boundary", async () => {
+    const page = await projectSsrFocusPage(
+      {
+        items: [
+          {
+            id: ids.conversation,
+            mailboxId: ids.mailbox,
+            mailboxName: "Support",
+            subject: "Release update",
+            participantSummary: "Ada",
+            latestMessageAt: "2026-08-19T10:00:00.000Z",
+            workStatus: "needs_action" as const,
+            assigneeUserId: null,
+            unread: true,
+            flagged: false,
+            hasAttachments: false,
+            preview: "Ready to ship",
+          },
+        ],
+        counts: { mine: 0, unassigned: 1, waiting: 0, all: 1 },
+        mailboxCounts: [{ mailboxId: ids.mailbox, unread: 1, needsAction: 1 }],
+        nextCursor: null,
+      },
+      loadIds,
+    );
+
+    expect(page.items[0]).toMatchObject({ id: "Conv01", mailboxId: "Box001" });
+    expect(page.mailboxCounts).toEqual([{ mailboxId: "Box001", unread: 1, needsAction: 1 }]);
+    expect(JSON.stringify(page)).not.toContain(ids.mailbox);
   });
 
   test("loads distinct public-ID tables concurrently", async () => {
@@ -127,6 +160,32 @@ describe("Mail SSR public boundary", () => {
       targetId: "Conv01",
       metadata: { conversationId: "Conv01" },
     });
+  });
+
+  test("projects an SSR focus detail before hydration", async () => {
+    const data = {
+      conversationId: ids.conversation,
+      detailMessages: [],
+      conversationDrafts: [],
+      localTags: [],
+      conversationLocalTags: null,
+      comments: [],
+      reminder: null,
+      collaborationState: { conversationId: ids.conversation },
+      activity: [
+        {
+          conversationId: ids.conversation,
+          targetType: "conversation",
+          targetId: ids.conversation,
+          metadata: { conversationId: ids.conversation },
+        },
+      ],
+    } as unknown as MailConversationDetailData;
+
+    const projected = await projectMailConversationDetail(data, loadIds);
+    expect(projected.conversationId).toBe("Conv01");
+    expect(projected.collaborationState?.conversationId).toBe("Conv01");
+    expect(projected.activity[0]).toMatchObject({ conversationId: "Conv01", targetId: "Conv01" });
   });
 
   test("resolves short workspace URL state without changing the public URL", async () => {

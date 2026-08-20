@@ -1,9 +1,11 @@
+import { mutation } from "@k2b/stdlib/solid";
 import {
-  NoticeCard,
+  Button,
   CheckboxCard,
   confirmDiscardIfDirty,
   Dropdown,
   dialogCore,
+  NoticeCard,
   NumberInput,
   PanelDialog,
   Placeholder,
@@ -11,13 +13,9 @@ import {
   Select,
   StatusBadge,
   type StatusTone,
-  Switch,
   TextInput,
   toast,
-  Button,
-  IconButton,
 } from "@k2b/ui";
-import { mutation } from "@k2b/stdlib/solid";
 import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MailOAuthProviderId, ProviderConnection, ProviderConnectionDetails, SenderIdentity } from "../../contracts";
@@ -405,7 +403,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                       />
                     </div>
                     <Button
-                      variant="secondary"
+                      variant="input"
                       size="sm"
                       type="button"
                       class="shrink-0"
@@ -540,13 +538,12 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                       onValueChange={setCreateSender}
                     />
                     <Show when={createSender()}>
-                      <div class="px-1">
-                        <Switch
-                          label="Provider saves sent mail automatically"
-                          value={savesSentAutomatically}
-                          onValueChange={setSavesSentAutomatically}
-                        />
-                      </div>
+                      <CheckboxCard
+                        label="Provider saves sent mail automatically"
+                        description="Turn this on if your provider already adds sent messages to Sent. Otherwise Mail saves a copy."
+                        value={savesSentAutomatically}
+                        onValueChange={setSavesSentAutomatically}
+                      />
                     </Show>
                   </div>
                 </Show>
@@ -694,8 +691,9 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
             }
             action={
               <div class="flex flex-wrap items-center gap-2">
-                <Switch
+                <CheckboxCard
                   label="Provider saves sent mail automatically"
+                  description="Turn this on if your provider already adds sent messages to Sent. Otherwise Mail saves a copy."
                   value={savesSentAutomatically}
                   onValueChange={setSavesSentAutomatically}
                   disabled={setupSender.loading()}

@@ -127,10 +127,6 @@ for (const file of sharedStylesheets) {
   }
 }
 
-// Mail still consumes one compatibility shadow while its active redesign owns
-// that surface. No other legacy theme reference is accepted.
-const transitionalThemeReferences = new Map([["packages/mail/src/frontend/MailOverview.island.tsx", new Set(["--theme-shadow-elevated"])]]);
-
 for (const file of [...sharedStylesheets, ...appStylesheets]) {
   const source = withoutCssComments(readFileSync(file, "utf8"));
   if (source.includes("cloud-soft-ui")) report(file, "legacy cloud-soft-ui selectors are forbidden");
@@ -140,19 +136,8 @@ for (const file of readSourceFiles(packagesRoot)) {
   const source = withoutCssComments(readFileSync(file, "utf8"));
   const legacyNoticeClass = source.match(/\binfo-block(?:-(?:note|info|success|warning|danger|error))?(?![a-z-])/);
   if (legacyNoticeClass) report(file, `${legacyNoticeClass[0]} must use the shared NoticeCard contract`);
-  const allowed = transitionalThemeReferences.get(relative(workspaceRoot, file)) ?? new Set<string>();
   for (const match of source.matchAll(/var\(\s*(--theme-[A-Za-z0-9_-]+)/g)) {
-    if (!allowed.has(match[1]!)) report(file, `${match[1]} must use a semantic --ui-* role`);
-  }
-}
-
-for (const [path, properties] of transitionalThemeReferences) {
-  const file = join(workspaceRoot, path);
-  const source = existsSync(file) ? readFileSync(file, "utf8") : "";
-  for (const property of properties) {
-    if (!source.includes(`var(${property})`)) {
-      report(file, `remove the ${property} compatibility exception after migrating this consumer`);
-    }
+    report(file, `${match[1]} must use a semantic --ui-* role`);
   }
 }
 

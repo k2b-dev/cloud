@@ -177,6 +177,12 @@ suite("cross-mailbox focus", () => {
     if (!mine.ok) return;
     expect(mine.data.items.map((item) => item.subject)).toEqual(["Assigned support"]);
     expect(mine.data.counts).toEqual({ mine: 1, unassigned: 1, waiting: 1, all: 3 });
+    expect(mine.data.mailboxCounts).toEqual(
+      expect.arrayContaining([
+        { mailboxId: mailboxIds[0], unread: 2, needsAction: 1 },
+        { mailboxId: mailboxIds[1], unread: 1, needsAction: 1 },
+      ]),
+    );
     expect(mine.data.items[0]?.mailboxName).toBe(`Support ${suffix}`);
     expect(JSON.stringify(mine.data)).not.toContain("Hidden mail");
 

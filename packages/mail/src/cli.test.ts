@@ -134,6 +134,7 @@ test("focus lists a cross-mailbox queue without resolving one mailbox", async ()
       },
     ],
     counts: { mine: 1, unassigned: 0, waiting: 0, all: 1 },
+    mailboxCounts: [{ mailboxId: MAILBOX_ID, unread: 1, needsAction: 1 }],
     nextCursor: null,
   };
   const server = Bun.serve({

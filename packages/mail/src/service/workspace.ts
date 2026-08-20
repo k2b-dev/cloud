@@ -333,6 +333,7 @@ const loadConversationDetails = async (params: {
 
 export type MailConversationDetailData = MailSelectionDetail & {
   conversationId: string;
+  localTags: LocalTag[];
   selectedSubject: string;
 };
 
@@ -345,10 +346,17 @@ export const loadMailboxConversationDetail = async (params: {
   if (!permission.ok || permission.data === "none") return null;
   const conversation = await messages.listConversationMessages({ ...params, limit: 1 });
   if (!conversation.ok) return null;
-  const detail = await loadConversationDetails(params);
+  const [detail, availableTags] = await Promise.all([
+    loadConversationDetails(params),
+    localTags.listLocalTags(params.context, params.mailboxId),
+  ]);
+  const availableTagsError = availableTags.ok ? null : availableTags.error.message;
   return {
     ...detail,
     conversationId: params.conversationId,
+    collaborationError: detail.collaborationError ?? availableTagsError,
+    detailErrors: { ...detail.detailErrors, tags: detail.detailErrors.tags ?? availableTagsError },
+    localTags: availableTags.ok ? availableTags.data : [],
     selectedSubject: detail.detailMessages.at(-1)?.subject || "Message",
   };
 };

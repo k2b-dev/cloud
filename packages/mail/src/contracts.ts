@@ -1555,10 +1555,20 @@ export const mailFocusItemSchema = z
   .strict();
 export type MailFocusItem = z.infer<typeof mailFocusItemSchema>;
 
+export const mailFocusMailboxCountsSchema = z
+  .object({
+    mailboxId: ResourceShortIdSchema,
+    unread: z.number().int().nonnegative(),
+    needsAction: z.number().int().nonnegative(),
+  })
+  .strict();
+export type MailFocusMailboxCounts = z.infer<typeof mailFocusMailboxCountsSchema>;
+
 export const mailFocusPageSchema = z
   .object({
     items: z.array(mailFocusItemSchema).max(100),
     counts: z.record(mailFocusViewSchema, z.number().int().nonnegative()),
+    mailboxCounts: z.array(mailFocusMailboxCountsSchema),
     nextCursor: z.string().max(2_000).nullable(),
   })
   .strict();

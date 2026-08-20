@@ -1,8 +1,8 @@
 import { ResourceShortIdSchema } from "../contracts";
 import { activityPublic, publicResources } from "../service";
 import type { MailAutomationAccessData } from "../service/automation-workspace";
-import type { MailboxPageData } from "../service/workspace";
-import type { MailFocusItem as InternalMailFocusItem } from "../service/focus";
+import type { MailFocusItem as InternalMailFocusItem, MailFocusMailboxCounts } from "../service/focus";
+import type { MailboxPageData, MailConversationDetailData } from "../service/workspace";
 
 type Table = publicResources.MailPublicResourceTable;
 export type SsrPublicPath = { table: Table; segments: Array<string | number> };
@@ -66,6 +66,51 @@ export const projectSsrFocusItems = async (items: InternalMailFocusItem[], loadP
     add(paths, "mailboxes", [index, "mailboxId"], item.mailboxId);
   });
   return projectSsrPaths(items, paths, loadPublicIds);
+};
+
+export const projectSsrFocusPage = async <T extends { items: InternalMailFocusItem[]; mailboxCounts: MailFocusMailboxCounts[] }>(
+  page: T,
+  loadPublicIds?: LoadPublicIds,
+): Promise<T> => {
+  const paths: Path[] = [];
+  page.items.forEach((item, index) => {
+    add(paths, "conversations", ["items", index, "id"], item.id);
+    add(paths, "mailboxes", ["items", index, "mailboxId"], item.mailboxId);
+  });
+  page.mailboxCounts.forEach((counts, index) => add(paths, "mailboxes", ["mailboxCounts", index, "mailboxId"], counts.mailboxId));
+  return projectSsrPaths(page, paths, loadPublicIds);
+};
+
+export const projectMailConversationDetail = async (
+  data: MailConversationDetailData,
+  loadPublicIds?: LoadPublicIds,
+): Promise<MailConversationDetailData> => {
+  const activity = await activityPublic.projectActivityItems(data.activity, loadPublicIds);
+  const paths: Path[] = [{ table: "conversations", segments: ["conversationId"] }];
+  addResourceList(paths, "messages", ["detailMessages"], data.detailMessages);
+  data.detailMessages.forEach((message, index) => {
+    add(paths, "folders", ["detailMessages", index, "folderId"], message.folderId);
+    add(paths, "deliveries", ["detailMessages", index, "delivery", "submissionId"], message.delivery?.submissionId);
+    addResourceList(paths, "attachments", ["detailMessages", index, "attachments"], message.attachments);
+  });
+  addResourceList(paths, "drafts", ["conversationDrafts"], data.conversationDrafts);
+  addResourceList(paths, "tags", ["localTags"], data.localTags);
+  if (data.conversationLocalTags) {
+    add(paths, "conversations", ["conversationLocalTags", "conversationId"], data.conversationLocalTags.conversationId);
+    addResourceList(paths, "tags", ["conversationLocalTags", "tags"], data.conversationLocalTags.tags);
+  }
+  addResourceList(paths, "comments", ["comments"], data.comments);
+  data.comments.forEach((comment, index) => {
+    add(paths, "conversations", ["comments", index, "conversationId"], comment.conversationId);
+    add(paths, "messages", ["comments", index, "referencedMessageId"], comment.referencedMessageId);
+  });
+  if (data.reminder) {
+    add(paths, "reminders", ["reminder", "id"], data.reminder.id);
+    add(paths, "conversations", ["reminder", "conversationId"], data.reminder.conversationId);
+  }
+  if (data.collaborationState)
+    add(paths, "conversations", ["collaborationState", "conversationId"], data.collaborationState.conversationId);
+  return projectSsrPaths({ ...data, activity }, paths, loadPublicIds);
 };
 
 export const resolveSsrMailboxId = async (

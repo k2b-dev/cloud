@@ -55,13 +55,13 @@ import {
   type MailCommand,
   type MailCommandInput,
   mailCommandInputSchema,
-  mailFocusPageSchema,
-  mailFocusViewSchema,
   mailConversationContextQuerySchema,
   mailConversationContextSchema,
   mailConversationSpaceCreateInputSchema,
   mailConversationSpaceLinkInputSchema,
   mailConversationSpaceSearchQuerySchema,
+  mailFocusPageSchema,
+  mailFocusViewSchema,
   mailingListDispositionInputSchema,
   maintenanceCommandInputSchema,
   materializeDraftSeedInputSchema,
@@ -113,8 +113,8 @@ import {
   draftLeases,
   drafts,
   draftUploads,
-  folders,
   focus,
+  folders,
   health,
   listSubscriptions,
   type MailRequestContext,
@@ -378,7 +378,7 @@ const respondFolders = async <T>(c: Context<MailApiContext>, result: Result<T> |
   respondPublic(c, await projectRootRelation(await result, "parentId", "folders"), "folders");
 const respondConversations = <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) =>
   respondPublic(c, result, "conversations");
-const respondFocus = async <T extends { items: Array<{ id: string; mailboxId: string }> }>(
+const respondFocus = async <T extends { items: Array<{ id: string; mailboxId: string }>; mailboxCounts: Array<{ mailboxId: string }> }>(
   c: Context<MailApiContext>,
   result: Result<T> | Promise<Result<T>>,
 ) => {
@@ -388,6 +388,9 @@ const respondFocus = async <T extends { items: Array<{ id: string; mailboxId: st
     { path: ["items", String(index), "id"], table: "conversations" as const },
     { path: ["items", String(index), "mailboxId"], table: "mailboxes" as const },
   ]);
+  resolved.data.mailboxCounts.forEach((_counts, index) => {
+    paths.push({ path: ["mailboxCounts", String(index), "mailboxId"], table: "mailboxes" as const });
+  });
   return respondPublic(c, await projectResourcePaths(resolved, paths));
 };
 const respondMessages = async <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) => {
@@ -533,6 +536,7 @@ const aggregateResourcePaths = (data: unknown) => {
   for (const [field, table] of [
     ["savedViewId", "savedViews"],
     ["folderId", "folders"],
+    ["conversationId", "conversations"],
     ["selectedConversationId", "conversations"],
     ["selectedMessageId", "messages"],
   ] as const) {
@@ -701,6 +705,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
   .use("/mailboxes/:mailboxId/folders/:folderId/*", resolveFolderParam)
   .use("/mailboxes/:mailboxId/conversations/:conversationId", resolveConversationParam)
   .use("/mailboxes/:mailboxId/conversations/:conversationId/*", resolveConversationParam)
+  .use("/mailboxes/:mailboxId/workspace-detail/:conversationId", resolveConversationParam)
   .use("/mailboxes/:mailboxId/messages/:messageId", resolveMessageParam)
   .use("/mailboxes/:mailboxId/messages/:messageId/*", resolveMessageParam)
   .use("/mailboxes/:mailboxId/messages/:messageId/attachments/:attachmentId", resolveReceivedAttachmentParam)

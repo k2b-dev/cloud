@@ -232,7 +232,7 @@ cld --json mail focus --view unassigned --limit 25
 cld --json mail focus --view waiting --cursor <next-cursor>
 ```
 
-`focus` needs no mailbox selector. Every item includes its mailbox ID and name. `mine` and `waiting` are personal to the user behind the current credential; `unassigned` and `all` still include only readable mailboxes. For an agent using the generic capability surface, `mail conversation.focus` exposes the same bounded queue and cursor:
+`focus` needs no mailbox selector. Every item includes its mailbox ID and name, and the JSON page includes exact unread and needs-action counts for each readable mailbox. `mine` and `waiting` are personal to the user behind the current credential; `unassigned` and `all` still include only readable mailboxes. For an agent using the generic capability surface, `mail conversation.focus` exposes the same bounded queue and cursor:
 
 ```bash
 cld capabilities query mail conversation.focus \

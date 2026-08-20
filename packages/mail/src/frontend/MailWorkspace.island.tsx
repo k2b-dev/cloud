@@ -358,6 +358,7 @@ export default function MailWorkspace(props: {
           toolbarActions: toolbarActions(),
           listMode: data.listMode,
           lastMailboxId: mailboxId,
+          pinnedMailboxIds: props.initialPreferences.pinnedMailboxIds,
         }),
       120,
     );
@@ -382,6 +383,7 @@ export default function MailWorkspace(props: {
       toolbarActions: toolbarActions(),
       listMode,
       lastMailboxId: mailboxId,
+      pinnedMailboxIds: props.initialPreferences.pinnedMailboxIds,
     });
     setConversationSelection(emptyMailConversationSelection());
     setSelectionMode(false);
@@ -398,6 +400,7 @@ export default function MailWorkspace(props: {
         toolbarActions: toolbarActions(),
         listMode: previousListMode,
         lastMailboxId: mailboxId,
+        pinnedMailboxIds: props.initialPreferences.pinnedMailboxIds,
       });
       if (result === "failed") toast.error("Could not change the list view. Your current view was kept.");
     })();

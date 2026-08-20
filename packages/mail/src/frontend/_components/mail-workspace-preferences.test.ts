@@ -13,6 +13,7 @@ describe("Mail workspace preferences", () => {
       toolbarActions: ["reply", "archive", "tags"],
       listMode: "conversations",
       lastMailboxId: null,
+      pinnedMailboxIds: [],
     });
   });
 
@@ -29,6 +30,7 @@ describe("Mail workspace preferences", () => {
       toolbarActions: DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS,
       listMode: "conversations",
       lastMailboxId: null,
+      pinnedMailboxIds: [],
     });
     expect(readMailWorkspacePreferences("cloud_mail_workspace=%7Bbroken")).toEqual({
       listCollapsed: false,
@@ -36,6 +38,7 @@ describe("Mail workspace preferences", () => {
       toolbarActions: DEFAULT_MAIL_CONVERSATION_TOOLBAR_ACTIONS,
       listMode: "conversations",
       lastMailboxId: null,
+      pinnedMailboxIds: [],
     });
   });
 
@@ -52,5 +55,12 @@ describe("Mail workspace preferences", () => {
   test("drops storage-backed UUID mailbox identities", () => {
     const value = encodeURIComponent(JSON.stringify({ lastMailboxId: "00000000-0000-4000-8000-000000000002" }));
     expect(readMailWorkspacePreferences(`cloud_mail_workspace=${value}`).lastMailboxId).toBeNull();
+  });
+
+  test("keeps unique public mailbox IDs in pin order", () => {
+    const value = encodeURIComponent(
+      JSON.stringify({ pinnedMailboxIds: ["Box002", "invalid", "Box001", "Box002", "00000000-0000-4000-8000-000000000002"] }),
+    );
+    expect(readMailWorkspacePreferences(`cloud_mail_workspace=${value}`).pinnedMailboxIds).toEqual(["Box002", "Box001"]);
   });
 });

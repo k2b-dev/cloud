@@ -673,6 +673,7 @@ describe("mail capabilities", () => {
           },
         ],
         counts: { mine: 1, unassigned: 0, waiting: 0, all: 1 },
+        mailboxCounts: [{ mailboxId: internalMailboxId, unread: 1, needsAction: 1 }],
         nextCursor: "next-focus-page",
       },
     });

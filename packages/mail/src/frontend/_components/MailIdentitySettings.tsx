@@ -12,7 +12,6 @@ import {
   SettingsCollection,
   StatusBadge,
   type StatusTone,
-  Switch,
   TextInput,
   toast,
 } from "@k2b/ui";
@@ -491,7 +490,12 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                   required
                 />
                 <TextInput label="Verification recipient" type="email" value={recipient} onValueChange={setRecipient} required />
-                <Switch label="Provider saves sent mail automatically" value={savesSent} onValueChange={setSavesSent} />
+                <CheckboxCard
+                  label="Provider saves sent mail automatically"
+                  description="Turn this on if your provider already adds sent messages to Sent. Otherwise Mail saves a copy."
+                  value={savesSent}
+                  onValueChange={setSavesSent}
+                />
                 <div class="sticky bottom-0 flex justify-end gap-2 bg-[var(--ui-surface)] py-2">
                   <Button variant="ghost" size="sm" type="button" disabled={verifyIdentity.loading()} onClick={() => void closeEditor()}>
                     Cancel
