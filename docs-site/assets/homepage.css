@@ -707,8 +707,8 @@
 .cloud-request-entry::after {
   position: absolute;
   width: 1px;
-  height: 3.85rem;
-  top: 100%;
+  height: calc(3.75rem - 1px);
+  top: calc(100% + 1px);
   left: 2.1rem;
   background: var(--c-accent);
   content: "";
@@ -857,33 +857,8 @@
 }
 
 @media (max-width: 33.99rem) {
-  .cloud-request-canvas {
-    min-height: 22.4rem;
-  }
-
-  .cloud-request-entry {
-    margin-right: 0.8rem;
-    margin-left: 0.8rem;
-  }
-
-  .cloud-registry-record {
-    width: calc(100% - 2.4rem);
-    left: 0.8rem;
-  }
-
-  .cloud-runtime-response {
-    width: calc(100% - 4rem);
-    top: 13.5rem;
-    right: 0.8rem;
-  }
-
-  .cloud-request-events {
-    grid-template-columns: 1fr 1fr;
-    padding-inline: 0.8rem;
-  }
-
-  .cloud-request-events span + span::before {
-    content: none;
+  .cloud-request-trace {
+    display: none;
   }
 }
 
