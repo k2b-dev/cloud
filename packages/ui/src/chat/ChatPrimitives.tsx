@@ -125,6 +125,7 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
   const actions = () => props.actions ?? [];
   const actionDisplay = () =>
     props.actionDisplay === "auto" || !props.actionDisplay ? (props.role === "user" ? "menu" : "inline") : props.actionDisplay;
+  const hasMeta = () => props.status === "streaming" || status() !== null || Boolean(time()) || actions().length > 0;
 
   const runAction = async (action: ChatAction) => {
     if (action.disabled || busyActionId()) return;
@@ -222,51 +223,53 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
         </div>
       </Show>
 
-      <footer class="k2b-chat-message__meta">
-        <Show
-          when={props.status === "streaming"}
-          fallback={
-            <Show when={status()}>
-              {(label) => (
-                <span class="k2b-chat-message__status" role={props.status === "error" ? "alert" : "status"}>
-                  <i class={statusIcon(props.status)} aria-hidden="true" />
-                  {label()}
-                </span>
-              )}
-            </Show>
-          }
-        >
-          <span class="k2b-chat-message__status k2b-chat-message__status--streaming" role="status" aria-label="Generating">
-            <ChatProgressDots />
-          </span>
-        </Show>
-        <Show when={time()}>{(label) => <time dateTime={timestamp() ?? undefined}>{label()}</time>}</Show>
-        <Show when={actions().length > 0 && actionDisplay() === "inline"}>
-          <span class="k2b-chat-message__actions" role="group" aria-label="Message actions">
-            <For each={actions()}>
-              {(action) => (
-                <button
-                  type="button"
-                  aria-label={action.label}
-                  title={action.label}
-                  data-danger={action.variant === "danger" ? "true" : undefined}
-                  disabled={action.disabled || Boolean(busyActionId())}
-                  onClick={() => void runAction(action)}
-                >
-                  <i class={actionIcon(action)} aria-hidden="true" />
-                </button>
-              )}
-            </For>
-          </span>
-        </Show>
-        <Show when={actions().length > 0 && actionDisplay() === "menu"}>
-          <Dropdown.Root position="bottom-left" width="12rem" label="Message actions" items={menuItems()}>
-            <Dropdown.Trigger appearance="plain" class="k2b-chat-message__menu" label="Message actions" title="Message actions">
-              <i class="ti ti-dots" aria-hidden="true" />
-            </Dropdown.Trigger>
-          </Dropdown.Root>
-        </Show>
-      </footer>
+      <Show when={hasMeta()}>
+        <footer class="k2b-chat-message__meta">
+          <Show
+            when={props.status === "streaming"}
+            fallback={
+              <Show when={status()}>
+                {(label) => (
+                  <span class="k2b-chat-message__status" role={props.status === "error" ? "alert" : "status"}>
+                    <i class={statusIcon(props.status)} aria-hidden="true" />
+                    {label()}
+                  </span>
+                )}
+              </Show>
+            }
+          >
+            <span class="k2b-chat-message__status k2b-chat-message__status--streaming" role="status" aria-label="Generating">
+              <ChatProgressDots />
+            </span>
+          </Show>
+          <Show when={time()}>{(label) => <time dateTime={timestamp() ?? undefined}>{label()}</time>}</Show>
+          <Show when={actions().length > 0 && actionDisplay() === "inline"}>
+            <span class="k2b-chat-message__actions" role="group" aria-label="Message actions">
+              <For each={actions()}>
+                {(action) => (
+                  <button
+                    type="button"
+                    aria-label={action.label}
+                    title={action.label}
+                    data-danger={action.variant === "danger" ? "true" : undefined}
+                    disabled={action.disabled || Boolean(busyActionId())}
+                    onClick={() => void runAction(action)}
+                  >
+                    <i class={actionIcon(action)} aria-hidden="true" />
+                  </button>
+                )}
+              </For>
+            </span>
+          </Show>
+          <Show when={actions().length > 0 && actionDisplay() === "menu"}>
+            <Dropdown.Root position="bottom-left" width="12rem" label="Message actions" items={menuItems()}>
+              <Dropdown.Trigger appearance="plain" class="k2b-chat-message__menu" label="Message actions" title="Message actions">
+                <i class="ti ti-dots" aria-hidden="true" />
+              </Dropdown.Trigger>
+            </Dropdown.Root>
+          </Show>
+        </footer>
+      </Show>
     </article>
   );
 }

@@ -10,6 +10,7 @@ type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 const SPECIALIZED_TOOL_NAMES = new Set([
   "search_tools",
   "load_tools",
+  "load_skill",
   "list_apps",
   "search_help",
   "read_help",
@@ -27,6 +28,7 @@ const SPECIALIZED_TOOL_NAMES = new Set([
 
 export const hasSpecializedBuiltinToolView = (name: string, result?: unknown): boolean =>
   SPECIALIZED_TOOL_NAMES.has(name) &&
+  (name !== "load_skill" || (isRecord(result) && typeof result.name === "string" && typeof result.description === "string")) &&
   (name !== "read_cloud_resource" || (isRecord(result) && typeof result.summary === "string" && result.summary.trim().length > 0));
 
 const text = (value: unknown): string => (typeof value === "string" ? value : "");
@@ -168,6 +170,17 @@ function LoadToolsView(props: { block: ToolBlock }) {
           </For>
         </ResultList>
       </Show>
+    </CompletedActivity>
+  );
+}
+
+function LoadSkillView(props: { block: ToolBlock }) {
+  const result = () => (isRecord(props.block.result) ? props.block.result : {});
+  return (
+    <CompletedActivity block={props.block} label={`Loaded skill ${text(result().name)}`}>
+      <DetailSurface>
+        <p class="whitespace-pre-wrap px-2 py-1.5 leading-5 text-secondary">{text(result().description)}</p>
+      </DetailSurface>
     </CompletedActivity>
   );
 }
@@ -373,6 +386,8 @@ export function SpecializedBuiltinToolBlock(props: { block: ToolBlock }) {
       return <SearchToolsView block={props.block} />;
     case "load_tools":
       return <LoadToolsView block={props.block} />;
+    case "load_skill":
+      return <LoadSkillView block={props.block} />;
     case "list_apps":
       return <ListAppsView block={props.block} />;
     case "search_help":

@@ -162,7 +162,11 @@ export const buildBlocksFromMessages = (
   messages: {
     seq: number;
     message: Message;
-    meta?: { steerId?: string; toolPresentations?: Record<string, AiToolPresentation> } | null;
+    meta?: {
+      steerId?: string;
+      toolPresentations?: Record<string, AiToolPresentation>;
+      toolOutcomes?: Record<string, "rejected">;
+    } | null;
   }[],
 ): AiTurnBlock[] => {
   const blocks: AiTurnBlock[] = [];
@@ -201,7 +205,13 @@ export const buildBlocksFromMessages = (
       const at = toolIndex.get(message.callId);
       const existing = at !== undefined ? blocks[at] : undefined;
       if (existing?.kind === "tool") {
-        blocks[at!] = { ...existing, status: message.isError ? "failed" : "completed", result: message.result, isError: message.isError };
+        const rejected = meta?.toolOutcomes?.[message.callId] === "rejected";
+        blocks[at!] = {
+          ...existing,
+          status: rejected ? "rejected" : message.isError ? "failed" : "completed",
+          result: message.result,
+          isError: message.isError,
+        };
       }
     }
   }

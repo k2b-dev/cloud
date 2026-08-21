@@ -3,6 +3,7 @@ import {
   type AiTurnBlock,
   type AiWireEvent,
   applyWireEventToBlocks,
+  buildBlocksFromMessages,
   compactionBlockId,
   isNewerWireEvent,
   messageBlockId,
@@ -155,5 +156,41 @@ describe("resolved action snapshot reconciliation", () => {
         },
       ])[0],
     ).toMatchObject({ status: "rejected", approval: undefined });
+  });
+});
+
+describe("persisted tool outcomes", () => {
+  test("rebuilds a rejected tool result as rejected instead of failed", () => {
+    expect(
+      buildBlocksFromMessages([
+        {
+          seq: 1,
+          message: { role: "assistant", content: [{ type: "tool_call", id: "call-1", name: "send", args: { id: "draft-1" } }] },
+        },
+        {
+          seq: 2,
+          message: {
+            role: "tool_result",
+            callId: "call-1",
+            name: "send",
+            result: "Capability Action was rejected by the user.",
+            isError: true,
+          },
+          meta: { toolOutcomes: { "call-1": "rejected" } },
+        },
+      ]),
+    ).toEqual([
+      {
+        id: toolBlockId("call-1"),
+        kind: "tool",
+        callId: "call-1",
+        name: "send",
+        args: { id: "draft-1" },
+        status: "rejected",
+        result: "Capability Action was rejected by the user.",
+        isError: true,
+        presentation: undefined,
+      },
+    ]);
   });
 });

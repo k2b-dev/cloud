@@ -264,6 +264,7 @@ export type AiStoredMessage = {
       trigger: "scheduled" | "manual";
     };
     toolPresentations?: Record<string, AiToolPresentation>;
+    toolOutcomes?: Record<string, "rejected">;
   } | null;
   createdAt: string;
 };
@@ -851,6 +852,8 @@ export type AiConversationService = {
     turnInput?: Input;
     /** Mutable snapshot map read only when an assistant tool-call message is persisted. */
     toolPresentations?: ReadonlyMap<string, AiToolPresentation>;
+    /** Mutable call-id set read only when a rejected tool result is persisted. */
+    rejectedToolCallIds?: ReadonlySet<string>;
   }): SessionStore;
 };
 

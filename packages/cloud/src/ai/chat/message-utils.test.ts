@@ -101,6 +101,7 @@ describe("AI tool icons", () => {
     ["read_help", "ti ti-help-hexagon"],
     ["search_tools", "ti ti-ai-gateway"],
     ["load_tools", "ti ti-ai-gateway"],
+    ["load_skill", "ti ti-sparkles"],
     ["list_apps", "ti ti-apps"],
     ["read_cloud_resource", "ti ti-ai-gateway"],
     ["local_bash", "ti ti-terminal-2"],

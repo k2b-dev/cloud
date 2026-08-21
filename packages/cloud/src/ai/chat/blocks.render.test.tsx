@@ -172,6 +172,37 @@ describe("capability tool presentation", () => {
     expect(hasOpenDetails(html)).toBe(false);
   });
 
+  test("renders a loaded Skill with only its name and description", () => {
+    const completed: AiTurnBlock = {
+      id: "load-skill-call",
+      kind: "tool",
+      callId: "load-skill-1",
+      name: "load_skill",
+      args: { name: "skill-creator" },
+      status: "completed",
+      result: {
+        name: "skill-creator",
+        description: "Create or update a reusable Skill.",
+        revision: 4,
+        instructions: "Secret renderer noise",
+        mount: "/skills/skill-creator",
+        files: ["/skills/skill-creator/SKILL.md"],
+      },
+    };
+
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-1" }));
+
+    expect(html).toContain("Loaded skill skill-creator");
+    expect(html).toContain("Create or update a reusable Skill.");
+    expect(html).toContain("ti-sparkles");
+    expect(html).not.toContain("Secret renderer noise");
+    expect(html).not.toContain("/skills/skill-creator");
+    expect(html).not.toContain(">Input</p>");
+    expect(html).not.toContain(">Response</p>");
+    expect(html).not.toContain("k2b-content-structured-data");
+    expect(hasOpenDetails(html)).toBe(false);
+  });
+
   test("uses provider-authored capability summaries and semantic links", () => {
     const completed = block("completed");
     if (completed.kind !== "tool") throw new Error("tool block missing");
@@ -480,6 +511,12 @@ describe("capability tool presentation", () => {
     expect(liveHtml).not.toContain("Worked for");
   });
 
+  test("does not leave an empty block-list item in the chat layout", () => {
+    const html = renderToString(() => createComponent(AiTurnBlockList, { blocks: [], turnId: "turn-empty" }));
+
+    expect(html).not.toContain("flex flex-col");
+  });
+
   test("opens failed completed work immediately and preserves an explicit Worked disclosure choice", () => {
     const item: AiAssistantTimelineItem = {
       type: "assistant",
@@ -595,6 +632,27 @@ describe("capability tool presentation", () => {
     expect(customHtml.indexOf(">Open in Contacts</span></a>")).toBeLessThan(customHtml.indexOf(">Reject</span>"));
     expect(customHtml).toContain('data-variant="ghost"');
     expect(customHtml).not.toContain("book:default");
+  });
+
+  test("renders a rejected approval as one compact result row", () => {
+    const rejected = block("awaiting_approval");
+    if (rejected.kind !== "tool") throw new Error("tool block missing");
+    rejected.status = "rejected";
+    rejected.approval = undefined;
+    rejected.result = "Capability Action was rejected by the user.";
+    rejected.isError = true;
+
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: rejected, turnId: "turn-1" }));
+
+    expect(html).toContain("List contacts was rejected");
+    expect(html).toContain("ti-address-book");
+    expect(html).toContain("--k2b-chat-activity-accent:#0f766e");
+    expect(html).not.toContain("Capability Action was rejected by the user.");
+    expect(html).not.toContain("data-ai-approval-footer");
+    expect(html).not.toContain(">Input</p>");
+    expect(html).not.toContain(">Response</p>");
+    expect(html).not.toContain("k2b-content-structured-data");
+    expect(hasOpenDetails(html)).toBe(false);
   });
 });
 

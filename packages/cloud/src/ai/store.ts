@@ -821,17 +821,23 @@ const appendTurnOwnedMessage = async (input: {
   return false;
 };
 
-const toolPresentationMeta = (
+const toolMessageMeta = (
   message: Message,
   presentations: ReadonlyMap<string, AiToolPresentation> | undefined,
+  rejectedToolCallIds: ReadonlySet<string> | undefined,
 ): AiStoredMessage["meta"] => {
+  if (message.role === "tool_result" && rejectedToolCallIds?.has(message.callId)) {
+    return { toolOutcomes: { [message.callId]: "rejected" } };
+  }
   if (message.role !== "assistant" || !presentations || presentations.size === 0) return null;
-  const entries = message.content.flatMap((block) => {
-    if (block.type !== "tool_call") return [];
-    const presentation = presentations.get(block.name);
-    return presentation ? ([[block.id, presentation]] as const) : [];
-  });
-  return entries.length > 0 ? { toolPresentations: Object.fromEntries(entries) } : null;
+  const toolPresentations = Object.fromEntries(
+    message.content.flatMap((block) => {
+      if (block.type !== "tool_call") return [];
+      const presentation = presentations.get(block.name);
+      return presentation ? ([[block.id, presentation]] as const) : [];
+    }),
+  );
+  return Object.keys(toolPresentations).length > 0 ? { toolPresentations } : null;
 };
 
 export const aiConversations: AiConversationService = {
@@ -3012,7 +3018,7 @@ export const aiConversations: AiConversationService = {
     append: async (message, opts) => {
       // Initial input and durable steering are already persisted transactionally before Nessi appends them.
       if (message.role === "user") return;
-      const meta = toolPresentationMeta(message, input.toolPresentations);
+      const meta = toolMessageMeta(message, input.toolPresentations, input.rejectedToolCallIds);
 
       if (input.turnId && input.leaseOwner) {
         const appended = await appendTurnOwnedMessage({

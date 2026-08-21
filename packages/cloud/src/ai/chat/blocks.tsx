@@ -470,6 +470,18 @@ function CapabilityToolView(props: { block: ToolBlock }) {
   );
 }
 
+function RejectedToolView(props: { block: ToolBlock }) {
+  const presentation = () => props.block.presentation;
+  const title = () => presentation()?.title ?? displayToolName(props.block.name);
+  return (
+    <Chat.Activity
+      icon={aiToolIcon(props.block.name, presentation()?.appIcon)}
+      label={`${title()} was rejected`}
+      accent={presentation()?.appAccent}
+    />
+  );
+}
+
 function SurveyToolView(props: { turnId: string; block: ToolBlock; active?: boolean }) {
   const actions = useAiChatActions();
   const request = () => ({ turnId: props.turnId, callId: props.block.callId, name: props.block.name });
@@ -584,8 +596,11 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
         />
       }
     >
-      <Match when={status() === "awaiting_approval" || status() === "rejected"}>
+      <Match when={status() === "awaiting_approval"}>
         <ApprovalBlockView turnId={props.turnId} block={props.block} />
+      </Match>
+      <Match when={status() === "rejected"}>
+        <RejectedToolView block={props.block} />
       </Match>
       <Match when={props.block.presentation?.kind === "capability"}>
         <CapabilityToolView block={props.block} />
@@ -652,19 +667,21 @@ export function AiTurnBlockList(props: {
   const visible = () => props.blocks.filter(isRenderableTurnBlock);
   const disclosureState = props.disclosureState ?? createAiToolDisclosureState();
   return (
-    <AiToolDisclosureProvider state={disclosureState}>
-      <div class={`flex flex-col ${props.compact ? "gap-1" : "gap-2"}`}>
-        <For each={visible()}>
-          {(block, index) => (
-            <AiTurnBlockView
-              block={block}
-              turnId={props.turnId}
-              streaming={props.streaming && index() === visible().length - 1}
-              active={props.active}
-            />
-          )}
-        </For>
-      </div>
-    </AiToolDisclosureProvider>
+    <Show when={visible().length > 0}>
+      <AiToolDisclosureProvider state={disclosureState}>
+        <div class={`flex flex-col ${props.compact ? "gap-1" : "gap-2"}`}>
+          <For each={visible()}>
+            {(block, index) => (
+              <AiTurnBlockView
+                block={block}
+                turnId={props.turnId}
+                streaming={props.streaming && index() === visible().length - 1}
+                active={props.active}
+              />
+            )}
+          </For>
+        </div>
+      </AiToolDisclosureProvider>
+    </Show>
   );
 }

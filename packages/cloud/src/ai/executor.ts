@@ -360,6 +360,10 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[]) => {
   const setApprovalReviews = (items: Map<string, CapabilityActionReview>) => {
     approvalReviews = items;
   };
+  let rejectedCallIds = new Set<string>();
+  const setRejectedCallIds = (items: Set<string>) => {
+    rejectedCallIds = items;
+  };
   /** nessi stream block ids (turn-scoped) that belong to tool_call blocks — their deltas are raw args JSON. */
   const toolStreamIds = new Set<string>();
   /** kind per open Cloud stream block id, for delta create-if-missing. */
@@ -420,6 +424,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[]) => {
         return [{ type: "block_set", block: { id, kind: event.block.type, text } }];
       }
       case "tool_execution_start":
+        if (rejectedCallIds.has(event.callId)) return [];
         return [setTool(event.callId, { name: event.name, args: event.args, status: "running" })];
       case "tool_action_request":
         const displayCallId = event.kind === "custom_approval" ? (customApprovalParentCallId(event.callId) ?? event.callId) : event.callId;
@@ -443,7 +448,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[]) => {
         return [
           setTool(event.callId, {
             name: event.name,
-            status: event.isError ? "failed" : "completed",
+            status: rejectedCallIds.has(event.callId) ? "rejected" : event.isError ? "failed" : "completed",
             result: event.result,
             isError: Boolean(event.isError),
             clearApproval: true,
@@ -451,6 +456,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[]) => {
         ];
       case "issue": {
         const callId = "callId" in event.issue ? event.issue.callId : undefined;
+        if (callId && rejectedCallIds.has(callId)) return [];
         if (callId && toolBlocks.has(callId)) {
           const existing = toolBlocks.get(callId);
           if (existing && existing.status !== "completed" && existing.status !== "failed") {
@@ -468,7 +474,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[]) => {
     }
   };
 
-  return { translate, compaction, setFrontendModes, setPresentations, setApprovalReviews };
+  return { translate, compaction, setFrontendModes, setPresentations, setApprovalReviews, setRejectedCallIds };
 };
 
 // ---------------------------------------------------------------------------
@@ -738,6 +744,7 @@ export class AiTurnExecutor {
     const capabilityActionReviews = new Map<string, CapabilityActionReview>();
     pipeline.setFrontendModes(prepared.frontendModes);
     const toolPresentations = new Map<string, AiToolPresentation>();
+    const rejectedToolCallIds = new Set<string>();
     pipeline.setPresentations(toolPresentations);
     pipeline.setApprovalReviews(capabilityActionReviews);
     let turnInput = config.input;
@@ -771,10 +778,18 @@ export class AiTurnExecutor {
       leaseOwner: this.config.leaseOwner,
       turnInput,
       toolPresentations,
+      rejectedToolCallIds,
     });
 
     const { loopMessages, pendingRecords, resolvedRecords, turnSteers } =
       attemptState ?? (await loadChatAttemptState(conversationId, turnId));
+    for (const action of resolvedRecords) {
+      if (action.resolvedEvent?.type !== "approval_response" || action.resolvedEvent.approved) continue;
+      rejectedToolCallIds.add(
+        action.kind === "custom_approval" ? (customApprovalParentCallId(action.callId) ?? action.callId) : action.callId,
+      );
+    }
+    pipeline.setRejectedCallIds(rejectedToolCallIds);
     const assistantMessages = loopMessages.filter((message) => message.message.role !== "user");
     const isFresh = assistantMessages.length === 0 && resolvedRecords.length === 0 && !skipResolvedActions;
 
@@ -1376,6 +1391,10 @@ class StreamPipeline {
 
   setApprovalReviews(reviews: Map<string, CapabilityActionReview>): void {
     this.mapper.setApprovalReviews(reviews);
+  }
+
+  setRejectedCallIds(callIds: Set<string>): void {
+    this.mapper.setRejectedCallIds(callIds);
   }
 
   async emitBaseline(): Promise<void> {

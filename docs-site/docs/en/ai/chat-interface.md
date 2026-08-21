@@ -175,11 +175,13 @@ without a summary retain the complete generic input and response disclosure.
 Expanded generic disclosures show
 JSON-like payloads as structured data previews with at most eight visible rows
 and an optional raw view. Expanded data surfaces span the available message
-column. Built-in discovery, Help, Project, file, calculation, image, web,
+column. Built-in discovery, Skill, Help, Project, file, calculation, image, web,
 memory, and interaction tools use Cloud-owned readable renderers and omit raw
 input or output that adds no user value. Unknown tools and failures retain the
 generic technical details. Failures open those details immediately so the
 error and bounded validation issues are visible without another interaction.
+Rejected approvals collapse to one readable result row without input or
+response details; they are user decisions rather than tool failures.
 Approval prompts additionally show the owning application's saved name. The
 saved snapshot keeps history readable when an app is
 temporarily unavailable or later changes its registry metadata; ordinary Nessi

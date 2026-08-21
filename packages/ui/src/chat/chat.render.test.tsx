@@ -250,9 +250,19 @@ describe("@k2b/ui portable chat family", () => {
         children: "Visible timestamp",
       }),
     );
+    const emptyLabel = renderToString(() =>
+      createComponent(Chat.Message, {
+        role: "assistant",
+        timeLabel: "",
+        children: "No timestamp",
+      }),
+    );
 
     expect(machineOnly).not.toContain("<time");
+    expect(machineOnly).not.toContain("k2b-chat-message__meta");
     expect(visible).toContain('<time datetime="2026-07-28T12:00:00.000Z">14:00</time>');
+    expect(visible).toContain("k2b-chat-message__meta");
+    expect(emptyLabel).not.toContain("k2b-chat-message__meta");
   });
 
   test("does not render an empty bubble for attachment-only messages", () => {
@@ -593,5 +603,13 @@ describe("@k2b/ui portable chat family", () => {
     expect(css).toContain("var(--k2b-chat-activity-accent) 78%, black");
     expect(css).toContain("var(--k2b-chat-activity-accent) 58%, white");
     expect(css).toContain('.k2b-chat-activity[data-body-inset="false"] > .k2b-chat-activity__body');
+  });
+
+  test("leaves spacing after expanded activity bodies to their parent layout", () => {
+    const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
+    const bodyRule = css.match(/\.k2b-ui \.k2b-chat-activity__body \{([^}]+)\}/)?.[1] ?? "";
+
+    expect(bodyRule).toContain("padding: 0.375rem 0 0;");
+    expect(bodyRule).not.toContain("padding: 0.375rem 0 0.625rem;");
   });
 });

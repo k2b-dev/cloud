@@ -999,6 +999,7 @@ suite("AI conversation store integration", () => {
         runBudgetMs: 60_000,
       });
 
+      const rejectedToolCallIds = new Set(["call-1"]);
       const session = aiConversations.createSessionStore({
         conversationId: conversation.id,
         modelProfileId: "test-model",
@@ -1021,6 +1022,7 @@ suite("AI conversation store integration", () => {
             },
           ],
         ]),
+        rejectedToolCallIds,
       });
 
       // nessi re-appends the input on legacy paths — the session store must ignore it.
@@ -1031,12 +1033,20 @@ suite("AI conversation store integration", () => {
         content: [{ type: "tool_call", id: "call-1", name: "contacts__query__list", args: {} }],
         stopReason: "tool_use",
       });
+      await session.append({
+        role: "tool_result",
+        callId: "call-1",
+        name: "contacts__query__list",
+        result: "Capability Action was rejected by the user.",
+        isError: true,
+      });
 
       const messages = await aiConversations.listMessages({ conversationId: conversation.id });
-      expect(messages).toHaveLength(2);
+      expect(messages).toHaveLength(3);
       expect(messages[1]?.message.role).toBe("assistant");
       expect(messages[1]?.loopId).toBe(turn.id);
       expect(messages[1]?.meta?.toolPresentations?.["call-1"]).toMatchObject({ title: "List contacts" });
+      expect(messages[2]?.meta?.toolOutcomes?.["call-1"]).toBe("rejected");
 
       // A non-owner session store must fail loudly instead of writing.
       const stranger = aiConversations.createSessionStore({
@@ -1048,7 +1058,7 @@ suite("AI conversation store integration", () => {
       await expect(stranger.append(assistantMessage("intruder"))).rejects.toThrow("lost its lease");
 
       const load = await session.load();
-      expect(load).toHaveLength(2);
+      expect(load).toHaveLength(3);
       expect(load[0]?.message).toEqual({
         role: "user",
         content: [

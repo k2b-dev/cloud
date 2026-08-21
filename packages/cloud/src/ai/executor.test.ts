@@ -336,6 +336,39 @@ describe("nessi block event mapping", () => {
     expect(ops[0]).toMatchObject({ type: "block_set", block: { args: { a: 1 }, status: "completed", approval: undefined } });
   });
 
+  test("keeps rejected calls rejected while their continuation settles", () => {
+    const mapper = createEventMapper(3, []);
+    mapper.setRejectedCallIds(new Set(["call-1"]));
+
+    expect(
+      mapper.translate({ ...turn, type: "tool_execution_start", callId: "call-1", name: "danger", args: { a: 1 } } as OutboundEvent),
+    ).toEqual([]);
+    expect(
+      mapper.translate({
+        ...turn,
+        type: "issue",
+        issue: {
+          kind: "tool_execution_error",
+          reason: "execution_failed",
+          message: "Capability Action was rejected by the user.",
+          retryable: false,
+          callId: "call-1",
+          name: "danger",
+        },
+      } as OutboundEvent),
+    ).toEqual([]);
+    expect(
+      mapper.translate({
+        ...turn,
+        type: "tool_execution_end",
+        callId: "call-1",
+        name: "danger",
+        result: "Capability Action was rejected by the user.",
+        isError: true,
+      } as OutboundEvent)[0],
+    ).toMatchObject({ type: "block_set", block: { status: "rejected", isError: true } });
+  });
+
   test("loop lifecycle and usage events map to nothing", () => {
     const mapper = createEventMapper(1, []);
     expect(mapper.translate({ type: "loop_start", agentId: "cloud", loopId: "turn-1" } as OutboundEvent)).toEqual([]);

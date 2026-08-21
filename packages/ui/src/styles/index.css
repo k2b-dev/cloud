@@ -6174,7 +6174,7 @@
 
 .k2b-ui .k2b-chat-activity__body {
   margin-left: 1.5rem;
-  padding: 0.375rem 0 0.625rem;
+  padding: 0.375rem 0 0;
   color: var(--k2b-text-secondary);
   font-size: 0.75rem;
   line-height: 1.55;
