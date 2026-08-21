@@ -1294,7 +1294,7 @@ export const actorCommandInputSchema = z.discriminatedUnion("kind", [
     expectedDraftRevision: z.number().int().positive(),
     senderIdentityId: ResourceShortIdSchema,
     scheduledAt: z.string().datetime().optional(),
-    undoSeconds: z.number().int().min(0).max(60).default(10),
+    undoSeconds: z.number().int().min(0).max(60).default(20),
     safetyApproval: composeSafetyApprovalSchema.optional(),
   }),
 ]);
@@ -1766,7 +1766,16 @@ export type MailWorkflowDetail = MailWorkflow & {
   activations: MailWorkflowActivation[];
 };
 
-export const conversationViewSchema = z.enum(["needs_action", "mine", "unassigned", "waiting", "done", "snoozed", "recently_active"]);
+export const conversationViewSchema = z.enum([
+  "needs_action",
+  "mine",
+  "unassigned",
+  "waiting",
+  "done",
+  "snoozed",
+  "send_problems",
+  "recently_active",
+]);
 export type ConversationView = z.infer<typeof conversationViewSchema>;
 
 export const mergeConversationsInputSchema = z

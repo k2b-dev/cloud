@@ -69,7 +69,7 @@ export default function MailMessageCard(props: {
     };
   const controllableDelivery = () => {
     const delivery = props.message.delivery;
-    return delivery && messageDeliveryControlLabel(delivery.state, props.context.canWrite) ? delivery : null;
+    return delivery && messageDeliveryControlLabel(delivery, props.context.canWrite) ? delivery : null;
   };
   const outgoing = () => isOutgoingMessage(props.message, props.context.identities);
   const senderLabel = () => {
@@ -210,8 +210,8 @@ export default function MailMessageCard(props: {
             </Show>
             <Show when={props.message.delivery}>
               {(delivery) => {
-                if (messageDeliveryControlLabel(delivery().state, props.context.canWrite)) return null;
-                const status = messageDeliveryPresentation(delivery().state);
+                if (messageDeliveryControlLabel(delivery(), props.context.canWrite)) return null;
+                const status = messageDeliveryPresentation(delivery());
                 return status ? (
                   <StatusBadge
                     tone={status.tone}
@@ -253,6 +253,7 @@ export default function MailMessageCard(props: {
         {(delivery) => (
           <MailMessageDeliveryControl
             mailboxId={props.context.mailboxId}
+            requestUrl={props.context.requestUrl}
             delivery={delivery()}
             canWrite={props.context.canWrite}
             dateConfig={props.context.dateConfig}

@@ -1,0 +1,2 @@
+export const OUTBOX_MAX_ATTEMPTS = 5;
+export const OUTBOX_DISPATCH_GRACE_SECONDS = 10;

@@ -14,6 +14,13 @@ export const mailDraftHref = (mailboxId: string, draftId: string, returnHref: st
   return `/app/mail/${mailboxId}/compose/${draftId}?${query}`;
 };
 
+export const mailConversationHref = (mailboxId: string, conversationId: string, returnHref: string): string => {
+  const target = new URL(mailDraftReturnHref(returnHref, mailboxId), "http://mail.local");
+  target.searchParams.delete("message");
+  target.searchParams.set("conversation", conversationId);
+  return `${target.pathname}${target.search}`;
+};
+
 export const mailDraftSeedHref = (mailboxId: string, seedId: string, returnHref: string, options: { popout?: boolean } = {}): string => {
   const query = new URLSearchParams({ return: mailDraftReturnHref(returnHref, mailboxId) });
   if (options.popout) query.set("window", "1");

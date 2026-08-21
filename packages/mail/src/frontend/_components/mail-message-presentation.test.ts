@@ -93,7 +93,7 @@ describe("mail message presentation", () => {
     expect(messageDeliveryPresentation("sent")).toBeNull();
     expect(messageDeliveryPresentation("reconciled_accepted")).toBeNull();
     expect(messageDeliveryPresentation("sending")).toMatchObject({ label: "Sending", tone: "running" });
-    expect(messageDeliveryPresentation("failed")).toMatchObject({ label: "Send failed", tone: "error" });
+    expect(messageDeliveryPresentation("failed")).toMatchObject({ label: "Couldn’t send", tone: "error" });
   });
 
   test("offers cancellation only while a queued delivery remains controllable", () => {
@@ -101,6 +101,38 @@ describe("mail message presentation", () => {
     expect(messageDeliveryControlLabel("scheduled", true)).toBe("Scheduled");
     expect(messageDeliveryControlLabel("sending", true)).toBeNull();
     expect(messageDeliveryControlLabel("undo_window", false)).toBeNull();
+  });
+
+  test("distinguishes retries, partial delivery, and an unclear outcome", () => {
+    const delivery = {
+      submissionId: "delivery",
+      draftId: "draft",
+      state: "scheduled" as const,
+      attempt: 2,
+      maxAttempts: 5,
+      scheduledAt: "2026-08-21T16:00:00.000Z",
+      undoUntil: null,
+      acceptedAt: null,
+      lastErrorCode: "SMTP_TRANSIENT_REJECTION",
+      lastErrorMessage: "Temporary rejection",
+      acceptedRecipients: [],
+      rejectedRecipients: [],
+    };
+
+    expect(messageDeliveryPresentation(delivery)).toMatchObject({ label: "Trying again · 2/5", tone: "warning" });
+    expect(
+      messageDeliveryPresentation({
+        ...delivery,
+        state: "needs_attention",
+        lastErrorCode: "SMTP_PARTIAL_ACCEPTANCE",
+        acceptedRecipients: ["accepted@example.com"],
+        rejectedRecipients: ["rejected@example.com"],
+      }),
+    ).toMatchObject({ label: "Partially delivered", tone: "warning" });
+    expect(messageDeliveryPresentation({ ...delivery, state: "unknown" })).toMatchObject({
+      label: "Delivery status unclear",
+      tone: "warning",
+    });
   });
 
   test("does not expose response actions before outgoing delivery is accepted", () => {

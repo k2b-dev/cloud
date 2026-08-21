@@ -157,6 +157,15 @@ describe("@k2b/ui complete action migrations", () => {
     expect(button).toContain('type="button"');
     expect(rule('.k2b-ui .k2b-button[data-size="xs"]')).toContain("min-height: 1.5rem");
     expect(rule('.k2b-ui .k2b-button[data-variant="subtle"]')).toContain("background: var(--k2b-surface-muted)");
+    const warningRule = rule('.k2b-ui .k2b-button[data-variant="warning"]');
+    expect(warningRule).toContain("color: #422006");
+    expect(warningRule).toContain("background: var(--k2b-warning-500)");
+    expect(rule('.k2b-ui .k2b-button[data-variant="danger"]:not(:disabled):hover')).toContain(
+      "background: color-mix(in srgb, var(--k2b-danger-600) 86%, #000000)",
+    );
+    expect(rule('.k2b-ui .k2b-button[data-variant="success"]:not(:disabled):hover')).toContain(
+      "background: color-mix(in srgb, var(--k2b-success-600) 86%, #000000)",
+    );
     const aiRule = rule('.k2b-ui .k2b-button[data-variant="ai"]');
     expect(aiRule).toContain("color: var(--k2b-ai-on-solid)");
     expect(aiRule).toContain("background: var(--k2b-ai-solid)");

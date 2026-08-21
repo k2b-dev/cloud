@@ -26,6 +26,7 @@ import {
 } from "./maintenance-runtime";
 import { createBlobReadable, getStoredBlob, storeReadableBlob } from "./message-blobs";
 import { isOperatorMaintenanceKind } from "./operator-actions";
+import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
 import { loadOutboundProjectionByOutbox } from "./outbound-message-projection";
 import { buildMimeStream, outboundDraftSnapshotSchema, outboundRecipients } from "./outbound-mime";
 import { type loadProviderConnectionRuntime, loadProviderConnectionRuntimeSnapshot } from "./provider-connections";
@@ -2337,6 +2338,13 @@ const scheduleOutboxRetry = async (params: {
     await tx`UPDATE mail.drafts SET state = 'scheduled' WHERE id = ${params.outbox.draft_id}::uuid`;
     return true;
   });
+  if (updated) {
+    await publishOutboundSubmissionChange({
+      outboxId: params.outbox.id,
+      state: "scheduled",
+      attempt: params.outbox.attempt,
+    });
+  }
   if (updated && typeof parseJsonRecord(params.command.payload).scheduledAt === "string") {
     await publishMailMailboxEvent({
       mailboxId: params.command.mailbox_id,
@@ -2482,7 +2490,7 @@ const prepareFreshOutboxOrFinish = async (
   try {
     return await prepareFreshOutbox(outbox, command, assertLeaseActive, signal);
   } catch (error) {
-    if (outbox.attempt < 5 && isRetryablePreDispatchError(error)) {
+    if (outbox.attempt < OUTBOX_MAX_ATTEMPTS && isRetryablePreDispatchError(error)) {
       await scheduleOutboxRetry({
         outbox,
         command,
@@ -2558,7 +2566,7 @@ const persistSmtpFailure = async (params: {
 }): Promise<void> => {
   const { outbox, command, prepared, error } = params;
   const responseCode = Number((error as { responseCode?: unknown } | null)?.responseCode);
-  if (Number.isInteger(responseCode) && responseCode >= 400 && responseCode < 500 && outbox.attempt < 5) {
+  if (Number.isInteger(responseCode) && responseCode >= 400 && responseCode < 500 && outbox.attempt < OUTBOX_MAX_ATTEMPTS) {
     await scheduleOutboxRetry({
       outbox,
       command,

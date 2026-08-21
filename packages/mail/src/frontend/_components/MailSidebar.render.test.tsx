@@ -37,6 +37,7 @@ const renderSidebar = (overrides: Partial<Parameters<typeof MailSidebar>[0]> = {
         waiting: 3,
         done: 4,
         snoozed: 0,
+        send_problems: 0,
         recently_active: 5,
       },
       canWrite: true,
@@ -100,6 +101,16 @@ describe("Mail sidebar", () => {
     });
     const html = renderSidebar({
       scheduledCount: 7,
+      viewCounts: {
+        needs_action: 2,
+        mine: 1,
+        unassigned: 1,
+        waiting: 3,
+        done: 4,
+        snoozed: 0,
+        send_problems: 2,
+        recently_active: 5,
+      },
       folders: [
         folder("00000000-0000-4000-8000-000000000001", "Inbox", "inbox", 20, 5),
         folder("00000000-0000-4000-8000-000000000002", "Drafts", "drafts", 3, 0),
@@ -118,6 +129,8 @@ describe("Mail sidebar", () => {
     expect(mailSection).toContain(">3<");
     expect(mailSection).toContain("Scheduled");
     expect(mailSection).toContain(">7<");
+    expect(mailSection).toContain("Send problems");
+    expect(mailSection).toContain(">2<");
     expect(mailSection.slice(mailSection.indexOf("Sent"), mailSection.indexOf("More"))).not.toContain(">2<");
     expect(mailSection).toContain("Trash");
     expect(desktop).toContain("mail-compose-action");

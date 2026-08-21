@@ -36,6 +36,7 @@ const ButtonsDemo = () => (
 <Button variant="secondary">Preview</Button>
 <Button variant="ghost">Later</Button>
 <Button variant="text" size="xs">More</Button>
+<Button variant="warning" size="xs">Undo send · 8s</Button>
 <Button variant="danger" size="sm">Delete</Button>
 <Button variant="subtle" size="xs">
   <i class="ti ti-activity" aria-hidden="true" /> Status
@@ -81,6 +82,9 @@ const ButtonsDemo = () => (
       </Button>
       <Button variant="subtle" size="xs">
         <i class="ti ti-activity" aria-hidden="true" /> Status
+      </Button>
+      <Button variant="warning" size="xs">
+        Undo send · 8s
       </Button>
       <Button variant="danger" size="sm">
         Delete

@@ -1174,8 +1174,25 @@
   background: var(--k2b-danger-600);
 }
 
+.k2b-ui .k2b-button[data-variant="danger"]:not(:disabled):hover {
+  background: color-mix(in srgb, var(--k2b-danger-600) 86%, #000000);
+}
+
+.k2b-ui .k2b-button[data-variant="warning"] {
+  color: #422006;
+  background: var(--k2b-warning-500);
+}
+
+.k2b-ui .k2b-button[data-variant="warning"]:not(:disabled):hover {
+  background: color-mix(in srgb, var(--k2b-warning-500) 86%, #000000);
+}
+
 .k2b-ui .k2b-button[data-variant="success"] {
   background: var(--k2b-success-600);
+}
+
+.k2b-ui .k2b-button[data-variant="success"]:not(:disabled):hover {
+  background: color-mix(in srgb, var(--k2b-success-600) 86%, #000000);
 }
 
 .k2b-ui .k2b-button[data-variant="ai"] {

@@ -64,6 +64,23 @@ describe("Mail public response projection", () => {
     );
   });
 
+  test("projects queued send result IDs for browser navigation", async () => {
+    const conversationId = "11111111-1111-4111-8111-111111111111";
+    const messageId = "22222222-2222-4222-8222-222222222222";
+    const deliveryId = "33333333-3333-4333-8333-333333333333";
+    spyOn(publicResources, "publicIds").mockImplementation(async (table) =>
+      table === "conversations"
+        ? new Map([[conversationId, "cnv123"]])
+        : table === "messages"
+          ? new Map([[messageId, "msg123"]])
+          : new Map([[deliveryId, "dlv123"]]),
+    );
+
+    expect(await projectPublicRelations({ result: { conversationId, outboundMessageId: messageId, outboxSubmissionId: deliveryId } })).toEqual({
+      result: { conversationId: "cnv123", outboundMessageId: "msg123", outboxSubmissionId: "dlv123" },
+    });
+  });
+
   test("projects only explicitly selected nested mutation IDs", async () => {
     const sourceId = "11111111-1111-4111-8111-111111111111";
     const targetId = "22222222-2222-4222-8222-222222222222";

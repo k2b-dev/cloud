@@ -43,6 +43,13 @@ const ASSIGNMENT_VIEW_ITEMS: MailViewItem[] = [
 
 const SECONDARY_VIEW_ITEMS: MailViewItem[] = [{ id: "recently_active", label: "Recent activity", icon: "ti ti-activity" }];
 
+const SEND_PROBLEM_VIEW: MailViewItem = {
+  id: "send_problems",
+  label: "Send problems",
+  icon: "ti ti-alert-circle",
+  description: "Messages that need attention or will be retried.",
+};
+
 const PRIMARY_FOLDER_ROLES = new Set(["inbox", "drafts", "sent"]);
 const SECONDARY_FOLDER_ROLES = new Set(["archive", "trash", "junk"]);
 const SYSTEM_FOLDER_ROLES = new Set([...PRIMARY_FOLDER_ROLES, ...SECONDARY_FOLDER_ROLES]);
@@ -352,6 +359,7 @@ export default function MailSidebar(props: {
       {primaryFolderItems("inbox", suffix)}
       {primaryFolderItems("drafts", suffix)}
       {scheduledItem(suffix)}
+      {viewItems([SEND_PROBLEM_VIEW], `${suffix}-delivery`)}
       {primaryFolderItems("sent", suffix)}
     </>
   );

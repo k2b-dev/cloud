@@ -26,6 +26,7 @@ import { notifyMailInvalidations, publishMailCollaborationEvent, publishMailMail
 import { resolveMailExecution } from "./execution";
 import { createBlobReadable } from "./message-blobs";
 import { BASE_MAINTENANCE_KINDS, getOperatorActionEligibility } from "./operator-actions";
+import { OUTBOX_DISPATCH_GRACE_SECONDS } from "./outbound-delivery";
 import { materializeOutboundMessage, type OutboundMessageProjection } from "./outbound-message-projection";
 import { measureMimeStream, outboundDraftSnapshotSchema } from "./outbound-mime";
 import { activeSmtpMessageLimit, assertProviderMessageSize, loadBindingProviderLimits } from "./provider-limits";
@@ -569,6 +570,11 @@ const createSendOutbox = async (params: {
   }
   const effectiveScheduledAt = prepared.scheduledAt ? scheduledAt : new Date();
   const undoUntil = new Date(effectiveScheduledAt.getTime() + prepared.undoSeconds * 1_000);
+  const dispatchAt = prepared.scheduledAt
+    ? effectiveScheduledAt
+    : new Date(
+        effectiveScheduledAt.getTime() + (prepared.undoSeconds > 0 ? prepared.undoSeconds + OUTBOX_DISPATCH_GRACE_SECONDS : 0) * 1_000,
+      );
   const snapshot = outboundDraftSnapshotSchema.safeParse({
     revision: Number(draft.revision),
     from: { name: draft.display_name, address: draft.from_address },
@@ -663,7 +669,7 @@ const createSendOutbox = async (params: {
       ${stableMessageId},
       ${prepared.undoSeconds > 0 ? "undo_window" : "scheduled"},
       ${effectiveScheduledAt},
-      ${effectiveScheduledAt},
+      ${dispatchAt},
       ${undoUntil},
       ${snapshot.data}::jsonb,
       ${mimeDate},

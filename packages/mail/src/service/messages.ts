@@ -9,6 +9,7 @@ import { type ConversationCursorScope, decodeConversationCursor, encodeConversat
 import { resolveMailExecution } from "./execution";
 import { mailingListMetadata } from "./mailing-list-metadata";
 import { parseMessageProtocolFacts } from "./message-protocol";
+import { OUTBOX_MAX_ATTEMPTS } from "./outbound-delivery";
 import { type MessageRemoteContent, resolveMessagesRemoteContent } from "./remote-content";
 import { assessMessages } from "./security";
 
@@ -38,6 +39,17 @@ const decodeCursor = (value: string | undefined): Result<DateCursor | null> => {
 };
 
 const parseJsonArray = <T>(value: T[] | string): T[] => (typeof value === "string" ? (JSON.parse(value) as T[]) : value);
+const parseDeliveryRecipients = (value: Record<string, unknown> | string | null): { accepted: string[]; rejected: string[] } => {
+  if (!value) return { accepted: [], rejected: [] };
+  try {
+    const parsed = typeof value === "string" ? (JSON.parse(value) as Record<string, unknown>) : value;
+    const addresses = (key: "accepted" | "rejected") =>
+      Array.isArray(parsed[key]) ? parsed[key].filter((address): address is string => typeof address === "string") : [];
+    return { accepted: addresses("accepted"), rejected: addresses("rejected") };
+  } catch {
+    return { accepted: [], rejected: [] };
+  }
+};
 const toIso = (value: Date | string): string => (value instanceof Date ? value : new Date(value)).toISOString();
 
 export type MailFolderView = {
@@ -370,6 +382,19 @@ export const listConversations = async (params: {
         OR (${view} = 'waiting' AND c.work_status = 'waiting' AND (c.snoozed_until IS NULL OR c.snoozed_until <= now()))
         OR (${view} = 'done' AND c.work_status = 'done')
         OR (${view} = 'snoozed' AND c.snoozed_until > now())
+        OR (
+          ${view} = 'send_problems'
+          AND EXISTS (
+            SELECT 1
+            FROM mail.conversation_messages problem_cm
+            JOIN mail.outbox_submissions problem_outbox ON problem_outbox.message_id = problem_cm.message_id
+            WHERE problem_cm.conversation_id = c.id
+              AND (
+                (problem_outbox.state = 'scheduled' AND problem_outbox.last_error_code IS NOT NULL)
+                OR problem_outbox.state IN ('failed', 'unknown', 'reconciled_unsent', 'needs_attention')
+              )
+          )
+        )
         OR ${view} = 'recently_active'
       )
       AND (
@@ -470,6 +495,7 @@ export const getConversationViewCounts = async (params: {
       waiting: number;
       done: number;
       snoozed: number;
+      send_problems: number;
       recently_active: number;
     }[]
   >`
@@ -492,6 +518,18 @@ export const getConversationViewCounts = async (params: {
       )::int AS waiting,
       COUNT(*) FILTER (WHERE c.work_status = 'done')::int AS done,
       COUNT(*) FILTER (WHERE c.snoozed_until > now())::int AS snoozed,
+      COUNT(*) FILTER (
+        WHERE EXISTS (
+          SELECT 1
+          FROM mail.conversation_messages problem_cm
+          JOIN mail.outbox_submissions problem_outbox ON problem_outbox.message_id = problem_cm.message_id
+          WHERE problem_cm.conversation_id = c.id
+            AND (
+              (problem_outbox.state = 'scheduled' AND problem_outbox.last_error_code IS NOT NULL)
+              OR problem_outbox.state IN ('failed', 'unknown', 'reconciled_unsent', 'needs_attention')
+            )
+        )
+      )::int AS send_problems,
       COUNT(*)::int AS recently_active
     FROM mail.conversations c
     WHERE c.mailbox_id = ${params.mailboxId}::uuid
@@ -515,6 +553,7 @@ export const getConversationViewCounts = async (params: {
     waiting: row?.waiting ?? 0,
     done: row?.done ?? 0,
     snoozed: row?.snoozed ?? 0,
+    send_problems: row?.send_problems ?? 0,
     recently_active: row?.recently_active ?? 0,
   });
 };
@@ -681,12 +720,17 @@ export type MessageDetail = MessageSummary & {
   security?: MailSecurityAssessment;
   delivery: {
     submissionId: string;
+    draftId: string;
     state: MessageDeliveryState;
+    attempt: number;
+    maxAttempts: number;
     scheduledAt: string;
     undoUntil: string | null;
     acceptedAt: string | null;
     lastErrorCode: string | null;
     lastErrorMessage: string | null;
+    acceptedRecipients: string[];
+    rejectedRecipients: string[];
   } | null;
   attachments: Array<{
     id: string;
@@ -708,12 +752,15 @@ type DbMessageDetail = DbMessageSummary & {
   protocol_facts: Record<string, unknown> | string;
   source_available: boolean;
   delivery_submission_id: string | null;
+  delivery_draft_id: string | null;
   delivery_state: MessageDeliveryState | null;
+  delivery_attempt: string | number | null;
   delivery_scheduled_at: Date | string | null;
   delivery_undo_until: Date | string | null;
   delivery_accepted_at: Date | string | null;
   delivery_error_code: string | null;
   delivery_error_message: string | null;
+  delivery_provider_response: Record<string, unknown> | string | null;
   attachments: Array<{ id: string; filename: string | null; contentType: string; sizeBytes: number; contentId: string | null }> | string;
 };
 
@@ -749,17 +796,26 @@ const mapMessageDetail = (row: DbMessageDetail): MessageDetail => ({
     sender: null,
     domain: null,
   },
-  delivery: row.delivery_submission_id
-    ? {
-        submissionId: row.delivery_submission_id,
-        state: row.delivery_state!,
-        scheduledAt: toIso(row.delivery_scheduled_at!),
-        undoUntil: row.delivery_undo_until ? toIso(row.delivery_undo_until) : null,
-        acceptedAt: row.delivery_accepted_at ? toIso(row.delivery_accepted_at) : null,
-        lastErrorCode: row.delivery_error_code,
-        lastErrorMessage: row.delivery_error_message,
-      }
-    : null,
+  delivery:
+    row.delivery_submission_id && row.delivery_draft_id
+      ? (() => {
+          const recipients = parseDeliveryRecipients(row.delivery_provider_response);
+          return {
+            submissionId: row.delivery_submission_id,
+            draftId: row.delivery_draft_id,
+            state: row.delivery_state!,
+            attempt: Number(row.delivery_attempt ?? 0),
+            maxAttempts: OUTBOX_MAX_ATTEMPTS,
+            scheduledAt: toIso(row.delivery_scheduled_at!),
+            undoUntil: row.delivery_undo_until ? toIso(row.delivery_undo_until) : null,
+            acceptedAt: row.delivery_accepted_at ? toIso(row.delivery_accepted_at) : null,
+            lastErrorCode: row.delivery_error_code,
+            lastErrorMessage: row.delivery_error_message,
+            acceptedRecipients: recipients.accepted,
+            rejectedRecipients: recipients.rejected,
+          };
+        })()
+      : null,
   attachments: parseJsonArray(row.attachments),
 });
 
@@ -821,12 +877,15 @@ const messageDetailSelect = sql`
   mc.selected_headers,
   mc.protocol_facts,
   delivery.id AS delivery_submission_id,
+  delivery.draft_id AS delivery_draft_id,
   delivery.state AS delivery_state,
+  delivery.attempt AS delivery_attempt,
   delivery.scheduled_at AS delivery_scheduled_at,
   delivery.undo_until AS delivery_undo_until,
   delivery.accepted_at AS delivery_accepted_at,
   delivery.last_error_code AS delivery_error_code,
   delivery.last_error_message AS delivery_error_message,
+  delivery.provider_response AS delivery_provider_response,
   COALESCE(attachment_rows.items, '[]'::jsonb) AS attachments
 `;
 

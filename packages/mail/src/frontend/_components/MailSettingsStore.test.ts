@@ -13,7 +13,7 @@ describe("Mail reading preferences", () => {
     expect(normalizeMailUserPreferences(undefined)).toMatchObject({
       composeFormat: "markdown",
       readingFormat: "automatic",
-      undoSeconds: 10,
+      undoSeconds: 20,
     });
     expect(normalizeMailUserPreferences({ readingFormat: "html" })).toMatchObject({ readingFormat: "html" });
     expect(normalizeMailUserPreferences({ readingFormat: "plain" })).toMatchObject({ readingFormat: "plain" });

@@ -2,7 +2,7 @@ import { Link, type LinkNavigateEvent, type NavigationScrollMode } from "@k2b/ss
 import { type JSX, Show, splitProps } from "solid-js";
 import { Tooltip, type TooltipPlacement } from "../feedback/Tooltip";
 
-export type ButtonVariant = "primary" | "secondary" | "ghost" | "text" | "subtle" | "input" | "danger" | "success" | "ai";
+export type ButtonVariant = "primary" | "secondary" | "ghost" | "text" | "subtle" | "input" | "warning" | "danger" | "success" | "ai";
 export type ButtonSize = "xs" | "sm" | "md" | "lg";
 
 export type ButtonProps = JSX.ButtonHTMLAttributes<HTMLButtonElement> & {

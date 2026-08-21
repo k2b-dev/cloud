@@ -46,7 +46,14 @@ import { createMailbox, updateMailbox } from "./mailboxes";
 import { deleteOrphanedBlobs, storeReadableBlob } from "./message-blobs";
 import { hydrateMessageFromSource } from "./message-hydration";
 import { recordMessageReceipt } from "./message-receipts";
-import { createAttachmentStream, getMessage, listConversationMessages, listConversations, openAttachment } from "./messages";
+import {
+  createAttachmentStream,
+  getConversationViewCounts,
+  getMessage,
+  listConversationMessages,
+  listConversations,
+  openAttachment,
+} from "./messages";
 import { createProviderConnection, listProviderConnections, replaceProviderConnection } from "./provider-connections";
 import { MAIL_PROVIDER_OPERATION_LEASE_MS, mailProviderOperationMutex } from "./provider-operation-lock";
 import { cancelScheduledSend, cancelSendCommand, listScheduledSends } from "./scheduled-sends";
@@ -954,10 +961,33 @@ suite("mail PostgreSQL foundation", () => {
         hydrationStatus: "body",
         delivery: {
           submissionId: replyOutbox!.id,
+          draftId: replyDraft.data.id,
           state: "undo_window",
+          attempt: 0,
+          maxAttempts: 5,
+          acceptedRecipients: [],
+          rejectedRecipients: [],
         },
       });
     }
+    await sql`
+      UPDATE mail.outbox_submissions
+      SET state = 'scheduled', undo_until = NULL, last_error_code = 'SMTP_TRANSIENT_REJECTION', last_error_message = 'Temporary rejection'
+      WHERE id = ${replyOutbox!.id}::uuid
+    `;
+    const problemCounts = await getConversationViewCounts({ context, mailboxId: mailbox.data.id });
+    expect(problemCounts.ok).toBe(true);
+    if (problemCounts.ok) expect(problemCounts.data.send_problems).toBeGreaterThan(0);
+    const problemConversations = await listConversations({ context, mailboxId: mailbox.data.id, view: "send_problems" });
+    expect(problemConversations.ok).toBe(true);
+    if (problemConversations.ok) {
+      expect(problemConversations.data.items.map((conversation) => conversation.id)).toContain(orderedConversation!.id);
+    }
+    await sql`
+      UPDATE mail.outbox_submissions
+      SET state = 'undo_window', undo_until = scheduled_at, last_error_code = NULL, last_error_message = NULL
+      WHERE id = ${replyOutbox!.id}::uuid
+    `;
     const [reportMessage] = await sql<{ id: string }[]>`
       INSERT INTO mail.message_contents (
         short_id, mailbox_id, message_id, internal_date, content_hash, hydration_status
@@ -1101,7 +1131,7 @@ suite("mail PostgreSQL foundation", () => {
       context,
       mailboxId: mailbox.data.id,
       draftId: replyDraft.data.id,
-      expectedRevision: editedReplyDraft.data.revision,
+      expectedRevision: editedReplyDraft.data.revision + 1,
     });
     expect(discardedReply.ok).toBe(true);
 
@@ -1423,15 +1453,20 @@ suite("mail PostgreSQL foundation", () => {
         message_id: string;
         draft_snapshot: Record<string, unknown> | string;
         state: string;
+        requested_at: Date;
+        scheduled_at: Date;
+        undo_until: Date;
         mime_date: Date;
         preflight_byte_length: string | number;
       }[]
     >`
-      SELECT id, message_id, draft_snapshot, state, mime_date, preflight_byte_length
+      SELECT id, message_id, draft_snapshot, state, requested_at, scheduled_at, undo_until, mime_date, preflight_byte_length
       FROM mail.outbox_submissions
       WHERE command_id = ${command.data.id}::uuid
     `;
     expect(outbox?.state).toBe("undo_window");
+    expect(outbox!.undo_until.getTime() - outbox!.requested_at.getTime()).toBe(60_000);
+    expect(outbox!.scheduled_at.getTime() - outbox!.undo_until.getTime()).toBe(10_000);
     expect(outbox?.mime_date).toBeInstanceOf(Date);
     expect(Number(outbox?.preflight_byte_length)).toBeGreaterThan(outgoingAttachment.length);
     const snapshot = typeof outbox?.draft_snapshot === "string" ? JSON.parse(outbox.draft_snapshot) : outbox?.draft_snapshot;
@@ -1485,6 +1520,25 @@ suite("mail PostgreSQL foundation", () => {
     }
     const cancelled = await cancelSendCommand({ context, mailboxId: mailbox.data.id, commandId: command.data.id });
     expect(cancelled.ok).toBe(true);
+    const [restoredDraftProjection] = await sql<{ state: string; revision: number; projection_queued: boolean }[]>`
+      SELECT
+        draft.state,
+        draft.revision::int,
+        EXISTS (
+          SELECT 1
+          FROM mail.draft_provider_snapshots snapshot
+          WHERE snapshot.draft_id = draft.id
+            AND snapshot.direction = 'export'
+            AND snapshot.cloud_revision = draft.revision
+        ) AS projection_queued
+      FROM mail.drafts draft
+      WHERE draft.id = ${draft.data.id}::uuid
+    `;
+    expect(restoredDraftProjection).toEqual({
+      state: "draft",
+      revision: draftWithAttachment.data.revision + 1,
+      projection_queued: true,
+    });
     const restoredLease = await acquireDraftLease({
       context,
       mailboxId: mailbox.data.id,
@@ -1795,7 +1849,7 @@ suite("mail PostgreSQL foundation", () => {
       mailboxId: mailbox.data.id,
       draftId: draft.data.id,
       uploadId: upload.data.id,
-      expectedRevision: draftWithAttachment.data.revision,
+      expectedRevision: draftWithAttachment.data.revision + 1,
     });
     expect(draftWithResumedAttachment.ok && draftWithResumedAttachment.data.attachments).toHaveLength(2);
     if (!draftWithResumedAttachment.ok) return;

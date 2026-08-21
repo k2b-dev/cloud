@@ -1,7 +1,7 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import type { StatusTone } from "@k2b/ui";
 import type { CloudTheme } from "@valentinkolb/cloud/shared";
-import type { MessageDeliveryState } from "../../service/messages";
+import type { MessageDeliveryState, MessageDetail } from "../../service/messages";
 import type { MailReadingFormat } from "./mail-user-preferences";
 
 type PlainMessageSegment = {
@@ -159,14 +159,26 @@ export const resolveMessageBodyFormat = (
   return null;
 };
 
-export const messageDeliveryPresentation = (state: MessageDeliveryState): { label: string; icon: string; tone: StatusTone } | null => {
+type MessageDelivery = NonNullable<MessageDetail["delivery"]>;
+type MessageDeliveryInput = MessageDeliveryState | MessageDelivery;
+
+const deliveryState = (input: MessageDeliveryInput): MessageDeliveryState => (typeof input === "string" ? input : input.state);
+
+export const messageDeliveryPresentation = (delivery: MessageDeliveryInput): { label: string; icon: string; tone: StatusTone } | null => {
+  const state = deliveryState(delivery);
   switch (state) {
     case "scheduled":
-      return { label: "Scheduled", icon: "ti ti-clock", tone: "neutral" };
+      return typeof delivery !== "string" && delivery.lastErrorCode
+        ? { label: `Trying again · ${delivery.attempt}/${delivery.maxAttempts}`, icon: "ti ti-refresh", tone: "warning" }
+        : { label: "Scheduled", icon: "ti ti-clock", tone: "neutral" };
     case "undo_window":
       return null;
     case "sending":
-      return { label: "Sending", icon: "ti ti-loader-2", tone: "running" };
+      return {
+        label: typeof delivery === "string" ? "Sending" : `Sending · ${delivery.attempt}/${delivery.maxAttempts}`,
+        icon: "ti ti-loader-2",
+        tone: "running",
+      };
     case "accepted":
     case "sent_sync_pending":
     case "sent":
@@ -174,19 +186,28 @@ export const messageDeliveryPresentation = (state: MessageDeliveryState): { labe
       return null;
     case "failed":
     case "reconciled_unsent":
-      return { label: "Send failed", icon: "ti ti-alert-circle", tone: "error" };
+      return { label: "Couldn’t send", icon: "ti ti-alert-circle", tone: "error" };
     case "unknown":
+      return { label: "Delivery status unclear", icon: "ti ti-alert-triangle", tone: "warning" };
     case "needs_attention":
-      return { label: "Needs attention", icon: "ti ti-alert-triangle", tone: "warning" };
+      return {
+        label:
+          typeof delivery !== "string" && delivery.lastErrorCode === "SMTP_PARTIAL_ACCEPTANCE" ? "Partially delivered" : "Needs attention",
+        icon: "ti ti-alert-triangle",
+        tone: "warning",
+      };
     case "cancelled":
       return { label: "Cancelled", icon: "ti ti-ban", tone: "neutral" };
   }
 };
 
-export const messageDeliveryControlLabel = (state: MessageDeliveryState, canWrite: boolean): string | null => {
-  if (!canWrite) return null;
-  if (state === "undo_window") return "Undo send";
-  if (state === "scheduled") return "Scheduled";
+export const messageDeliveryControlLabel = (delivery: MessageDeliveryInput, canWrite: boolean): string | null => {
+  const state = deliveryState(delivery);
+  if (state === "undo_window") return canWrite ? "Undo send" : null;
+  if (state === "scheduled") return messageDeliveryPresentation(delivery)?.label ?? null;
+  if (["failed", "unknown", "reconciled_unsent", "needs_attention"].includes(state)) {
+    return messageDeliveryPresentation(delivery)?.label ?? null;
+  }
   return null;
 };
 

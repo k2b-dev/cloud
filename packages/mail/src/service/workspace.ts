@@ -67,6 +67,7 @@ const EMPTY_VIEW_COUNTS: ConversationViewCounts = {
   waiting: 0,
   done: 0,
   snoozed: 0,
+  send_problems: 0,
   recently_active: 0,
 };
 
@@ -77,6 +78,7 @@ const VIEW_LABELS: Record<ConversationView, string> = {
   waiting: "Waiting for reply",
   done: "Done",
   snoozed: "Snoozed",
+  send_problems: "Send problems",
   recently_active: "Recent activity",
 };
 

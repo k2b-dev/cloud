@@ -45,7 +45,7 @@ import MailRecipientInput from "./MailRecipientInput";
 import { chooseScheduledSendTime } from "./MailScheduleDialog";
 import { readMailUserPreferences, writeMailComposerPanes } from "./MailSettingsStore";
 import { launchMailDraftAssistant } from "./mail-assistant-launch";
-import { mailDraftHref, mailDraftSeedHref } from "./mail-compose-route";
+import { mailConversationHref, mailDraftHref, mailDraftSeedHref } from "./mail-compose-route";
 import { createMailComposerAttachmentManager } from "./mail-composer-attachment-manager";
 import { focusMailComposerEditorAtStart } from "./mail-composer-editor-focus";
 import { reconcileMailComposerPanes } from "./mail-composer-panes";
@@ -581,7 +581,7 @@ export default function MailComposer(props: {
       const command = await response.json();
       return { command, attempt };
     },
-    onSuccess: ({ attempt }) => {
+    onSuccess: ({ command, attempt }) => {
       lastDeliveryAttempt = null;
       localStorage.removeItem(draftSession.draftKey(attempt.draftId));
       const returnHref = props.returnHref;
@@ -593,7 +593,12 @@ export default function MailComposer(props: {
             ? "Message queued. You can undo it directly in the conversation."
             : "Message queued",
       );
-      navigateTo(returnHref);
+      const pendingConversationId = command.result.conversationId;
+      navigateTo(
+        !scheduled && attempt.request.undoSeconds > 0 && typeof pendingConversationId === "string"
+          ? mailConversationHref(props.mailboxId, pendingConversationId, returnHref)
+          : returnHref,
+      );
     },
     onError: (error) => {
       if (error instanceof ComposeSafetyAttachmentRequested) {

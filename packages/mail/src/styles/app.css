@@ -586,34 +586,6 @@
     }
   }
 
-  .mail-delivery-action-badge {
-    display: inline-flex;
-    min-height: 1.5rem;
-    align-items: center;
-    gap: 0.3125rem;
-    appearance: none;
-    border: 0;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--ui-app-accent-border) 13%, var(--ui-surface));
-    color: var(--ui-app-accent-text);
-    font-family: inherit;
-    font-size: 0.6875rem;
-    font-weight: 650;
-    line-height: 1;
-    padding: 0.25rem 0.5625rem;
-    text-decoration: none;
-    white-space: nowrap;
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ui-app-accent-border) 42%, transparent);
-  }
-
-  button.mail-delivery-action-badge {
-    cursor: pointer;
-  }
-
-  button.mail-delivery-action-badge:hover {
-    background: color-mix(in srgb, var(--ui-app-accent-border) 20%, var(--ui-surface));
-  }
-
   .mail-list-copy {
     display: grid;
     min-width: 0;

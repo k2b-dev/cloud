@@ -15,7 +15,7 @@ export type StoredMailUserPreferences = {
 const DEFAULT_MAIL_USER_PREFERENCES: MailUserPreferences = {
   composeFormat: "markdown",
   readingFormat: "automatic",
-  undoSeconds: 10,
+  undoSeconds: 20,
 };
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>

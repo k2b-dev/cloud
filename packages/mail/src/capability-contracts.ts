@@ -625,7 +625,7 @@ export const DraftSendInputSchema = z
     expectedRevision: ExpectedRevisionInputSchema,
     senderIdentityId: ResourceShortIdSchema.describe("Verified sender-identity ID."),
     scheduledAt: TimestampSchema.optional().describe("Optional future delivery time."),
-    undoSeconds: z.number().int().min(0).max(60).default(10).describe("Undo-send window in seconds."),
+    undoSeconds: z.number().int().min(0).max(60).default(20).describe("Undo-send window in seconds."),
     safetyApproval: composeSafetyApprovalSchema.optional().describe("Exact approval returned by draft.send.review when warnings exist."),
   })
   .strict();

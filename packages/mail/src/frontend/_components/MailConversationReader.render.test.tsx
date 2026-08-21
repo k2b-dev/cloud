@@ -134,6 +134,99 @@ describe("Mail conversation reader", () => {
     expect(html).not.toContain("data-mail-draft-indicator");
   });
 
+  test("uses the compact shared button for an undo-window delivery", () => {
+    const html = renderReader([], {
+      messages: [
+        {
+          ...message,
+          delivery: {
+            submissionId: "Delivery01",
+            draftId: "Draft01",
+            state: "undo_window",
+            attempt: 0,
+            maxAttempts: 5,
+            scheduledAt: "2099-08-16T12:00:00.000Z",
+            undoUntil: "2099-08-16T12:00:10.000Z",
+            acceptedAt: null,
+            lastErrorCode: null,
+            lastErrorMessage: null,
+            acceptedRecipients: [],
+            rejectedRecipients: [],
+          },
+        },
+      ],
+    });
+
+    expect(html).toMatch(/<button[^>]*data-mail-undo-send[^>]*class="k2b-button /);
+    expect(html).toContain('data-size="xs"');
+    expect(html).toContain('data-variant="warning"');
+    expect(html).toContain("data-mail-undo-send");
+    expect(html).not.toContain("mail-delivery-action-badge");
+  });
+
+  test("renders retry and partial-delivery states as compact visible controls", () => {
+    const delivery = {
+      submissionId: "Delivery02",
+      draftId: "Draft02",
+      state: "scheduled" as const,
+      attempt: 2,
+      maxAttempts: 5,
+      scheduledAt: "2099-08-16T12:01:00.000Z",
+      undoUntil: null,
+      acceptedAt: null,
+      lastErrorCode: "SMTP_TRANSIENT_REJECTION",
+      lastErrorMessage: "Temporary rejection",
+      acceptedRecipients: [],
+      rejectedRecipients: [],
+    };
+    const retryHtml = renderReader([], { messages: [{ ...message, delivery }] });
+    const partialHtml = renderReader([], {
+      messages: [
+        {
+          ...message,
+          delivery: {
+            ...delivery,
+            state: "needs_attention",
+            lastErrorCode: "SMTP_PARTIAL_ACCEPTANCE",
+            acceptedRecipients: ["accepted@example.com"],
+            rejectedRecipients: ["rejected@example.com"],
+          },
+        },
+      ],
+    });
+
+    expect(retryHtml).toContain("Trying again · 2/5");
+    expect(retryHtml).toContain('data-variant="warning"');
+    expect(partialHtml).toContain("Partially delivered");
+  });
+
+  test("renders a terminal send failure as a compact red control", () => {
+    const html = renderReader([], {
+      messages: [
+        {
+          ...message,
+          delivery: {
+            submissionId: "Delivery03",
+            draftId: "Draft03",
+            state: "failed",
+            attempt: 5,
+            maxAttempts: 5,
+            scheduledAt: "2099-08-16T12:01:00.000Z",
+            undoUntil: null,
+            acceptedAt: null,
+            lastErrorCode: "EENVELOPE",
+            lastErrorMessage: "Recipient rejected",
+            acceptedRecipients: [],
+            rejectedRecipients: ["rejected@example.com"],
+          },
+        },
+      ],
+    });
+
+    expect(html).toContain("Couldn’t send");
+    expect(html).toContain('data-variant="danger"');
+  });
+
   test("shows Reply all when it adds an original recipient", () => {
     const groupMessage = {
       ...message,

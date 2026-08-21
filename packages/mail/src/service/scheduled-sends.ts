@@ -1,5 +1,5 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { audit } from "@valentinkolb/cloud/services";
+import { audit, logger } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
 import type {
@@ -11,12 +11,14 @@ import type {
   ScheduledSendPage,
 } from "../contracts";
 import { auditActorFromRequest, type MailRequestContext } from "./auth";
+import { enqueueDraftProjectionSnapshot, queueDraftProjectionInTransaction } from "./draft-provider-projection";
 import { requireMailboxCollaborationPermission } from "./collaboration";
 import { publishMailMailboxEvent } from "./events";
 import { removeUnsentOutboundMessage } from "./outbound-message-projection";
 
 type ScheduledCursor = { version: 1; scheduledAt: string; id: string };
 type SqlClient = typeof sql;
+const log = logger("mail:scheduled-sends");
 type ScheduledSnapshot = {
   to: MailAddress[];
   cc: MailAddress[];
@@ -326,8 +328,18 @@ const cancelScheduledSendBy = async (params: {
         SET state = 'cancelled'
         WHERE command_id = ${outbox.command_id}::uuid AND state = 'queued'
       `;
-      await tx`UPDATE mail.drafts SET state = ${draftState} WHERE id = ${outbox.draft_id}::uuid`;
+      await tx`
+        UPDATE mail.drafts
+        SET
+          state = ${draftState},
+          revision = revision + ${params.input.disposition === "draft" ? 1 : 0}
+        WHERE id = ${outbox.draft_id}::uuid
+      `;
       await removeUnsentOutboundMessage(tx, outbox.id);
+      const projectionSnapshotId =
+        params.input.disposition === "draft"
+          ? await queueDraftProjectionInTransaction({ db: tx, draftId: outbox.draft_id })
+          : null;
       await tx`
         INSERT INTO mail.activity_events (
           mailbox_id, conversation_id, command_id, actor_kind, actor_id, action, outcome, target_type, target_id, metadata
@@ -366,18 +378,27 @@ const cancelScheduledSendBy = async (params: {
         },
         tx,
       );
-      return ok({ disposition: params.input.disposition, draftId: outbox.draft_id });
+      return ok({ disposition: params.input.disposition, draftId: outbox.draft_id, projectionSnapshotId });
     });
-    if (result.ok) {
-      await publishMailMailboxEvent({
-        mailboxId: params.mailboxId,
-        conversationId: null,
-        reason: "scheduled_send",
-        targetId: result.data.draftId,
-        activityId: `scheduled-send-cancelled:${params.scheduledSendId ?? params.commandId}`,
-      });
+    if (!result.ok) return result;
+    if (result.data.projectionSnapshotId) {
+      try {
+        await enqueueDraftProjectionSnapshot(result.data.projectionSnapshotId);
+      } catch (error) {
+        log.warn("Immediate restored-draft projection enqueue failed; the reconciliation sweep will retry it", {
+          draftId: result.data.draftId,
+          error,
+        });
+      }
     }
-    return result;
+    await publishMailMailboxEvent({
+      mailboxId: params.mailboxId,
+      conversationId: null,
+      reason: "scheduled_send",
+      targetId: result.data.draftId,
+      activityId: `scheduled-send-cancelled:${params.scheduledSendId ?? params.commandId}`,
+    });
+    return ok({ disposition: result.data.disposition, draftId: result.data.draftId });
   } catch {
     return fail(err.internal("Failed to cancel scheduled message"));
   }
