@@ -416,6 +416,28 @@ const mapSpace = (space: SpaceWithPermission, context: CapabilityExecutionContex
   updatedAt: space.updatedAt,
 });
 
+const spaceRef = (space: { id: string; name: string; description?: string | null }) => ({
+  type: "spaces.space" as const,
+  id: space.id,
+  title: space.name,
+  ...(space.description ? { preview: space.description } : {}),
+  icon: "ti ti-layout-kanban",
+});
+const itemRef = (item: { id: string; title: string; description?: string | null }, kind: "task" | "event") => ({
+  type: "spaces.item" as const,
+  id: item.id,
+  title: item.title,
+  ...(item.description ? { preview: item.description } : {}),
+  icon: kind === "event" ? "ti ti-calendar-event" : "ti ti-checkbox",
+});
+const commentRef = (comment: Pick<SpaceComment, "id" | "userName">, item: Pick<SpaceItem, "title">) => ({
+  type: "spaces.comment" as const,
+  id: comment.id,
+  title: `Comment on ${item.title}`,
+  ...(comment.userName ? { preview: comment.userName } : {}),
+  icon: "ti ti-message",
+});
+
 const runSpaceSearch = async (input: UniversalSearchInput, context: CapabilityExecutionContext) => {
   const scope = scopedSpaceId(context, "read");
   if (!scope.ok) return ok({ data: [] });
@@ -545,11 +567,7 @@ const runSpaceList = async (input: z.infer<typeof SpaceListInputSchema>, context
     ref: { type: "spaces.space" as const, id: space.id },
     links: [{ rel: "open" as const, href: `/app/spaces/${space.id}` }],
   }));
-  return pageResult(
-    page,
-    data,
-    data.map((space) => ({ type: "spaces.space", id: space.id })),
-  );
+  return pageResult(page, data, publicSpaces.map(spaceRef));
 };
 
 const runSpaceRead = async (input: z.infer<typeof SpaceReadInputSchema>, context: CapabilityExecutionContext) => {
@@ -583,7 +601,7 @@ const runSpaceRead = async (input: z.infer<typeof SpaceReadInputSchema>, context
       updatedAt: publicDetail.updatedAt,
     },
     summary: boundedCapabilitySummary(`Read Space “${publicDetail.name}”.`),
-    refs: [{ type: "spaces.space", id: publicDetail.id }],
+    refs: [spaceRef(publicDetail)],
     links: [{ rel: "open" as const, href: `/app/spaces/${publicDetail.id}` }],
   });
 };
@@ -650,7 +668,7 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
   return pageResult(
     { items: page.items, page: page.page, perPage: page.pageSize, total: page.total, hasNext: page.page < page.totalPages },
     items,
-    items.map((item) => ({ type: "spaces.item", id: item.id })),
+    items.map((item) => itemRef(item, item.kind)),
   );
 };
 
@@ -668,7 +686,7 @@ const runItemRead = async (input: z.infer<typeof ItemReadInputSchema>, context: 
   return ok({
     data,
     summary: boundedCapabilitySummary(`Read ${data.kind} ${itemTitle(data.title)}.`),
-    refs: [{ type: "spaces.item", id: resolved.data.item.id }],
+    refs: [itemRef(data, data.kind)],
     links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
   });
 };
@@ -692,7 +710,7 @@ const runCommentList = async (input: z.infer<typeof CommentListInputSchema>, con
   return pageResult(
     page,
     data,
-    data.map((comment) => ({ type: "spaces.comment", id: comment.id })),
+    data.map((comment) => commentRef(comment, resolved.data.item)),
     [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
   );
 };
@@ -716,8 +734,8 @@ const runCommentRead = async (input: z.infer<typeof CommentReadInputSchema>, con
     data: mapComment(resolved.data.comment),
     summary: boundedCapabilitySummary(`Read a comment on ${itemTitle(resolved.data.item.title)}.`),
     refs: [
-      { type: "spaces.comment", id: resolved.data.comment.id },
-      { type: "spaces.item", id: resolved.data.item.id },
+      commentRef(resolved.data.comment, resolved.data.item),
+      itemRef(resolved.data.item, isEvent(resolved.data.item) ? "event" : "task"),
     ],
     links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
   });
@@ -840,7 +858,7 @@ const itemMutationResult = async (result: MutationResult<SpaceItem>, summary: (i
   return ok({
     data: mapItem(item),
     summary: boundedCapabilitySummary(summary(item)),
-    refs: [{ type: "spaces.item", id: item.id }],
+    refs: [itemRef(item, isEvent(item) ? "event" : "task")],
     links: [{ rel: "open" as const, href: buildSpaceItemHref(item.spaceId, item.id) }],
   });
 };
@@ -848,9 +866,13 @@ const itemMutationResult = async (result: MutationResult<SpaceItem>, summary: (i
 const runItemReferenceList = async (input: z.infer<typeof ItemResourceReferenceListInputSchema>, context: CapabilityExecutionContext) => {
   const resolved = await requireItem(input.itemId, context, "read");
   if (!resolved.ok) return resolved;
+  const data = await spacesService.item.references.list({ itemId: resolved.data.internalId });
   return ok({
-    data: await spacesService.item.references.list({ itemId: resolved.data.internalId }),
-    refs: [{ type: "spaces.item", id: input.itemId }],
+    data,
+    refs: [
+      itemRef(resolved.data.item, isEvent(resolved.data.item) ? "event" : "task"),
+      ...data.map((reference) => ({ ...reference.ref, title: reference.label })),
+    ],
     links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
   });
 };
@@ -868,7 +890,10 @@ const runItemReferenceAdd = async (input: z.infer<typeof ItemResourceReferenceAd
     return ok({
       data,
       summary: boundedCapabilitySummary(`Linked ${itemTitle(input.reference.label)} to ${itemTitle(resolved.data.item.title)}.`),
-      refs: [{ type: "spaces.item", id: input.itemId }, input.reference.ref],
+      refs: [
+        itemRef(resolved.data.item, isEvent(resolved.data.item) ? "event" : "task"),
+        { ...input.reference.ref, title: input.reference.label },
+      ],
       links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
     });
   });
@@ -889,7 +914,7 @@ const runItemReferenceRemove = async (input: z.infer<typeof ItemResourceReferenc
           ? `Removed a resource link from ${itemTitle(resolved.data.item.title)}.`
           : `${itemTitle(resolved.data.item.title)} had no matching resource link.`,
       ),
-      refs: [{ type: "spaces.item", id: input.itemId }, input.ref],
+      refs: [itemRef(resolved.data.item, isEvent(resolved.data.item) ? "event" : "task"), input.ref],
       links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
     });
   });
@@ -918,7 +943,7 @@ const runTaskDependencyList = async (input: z.infer<typeof TaskDependencyListInp
       ...dependency,
       blocker: { ...dependency.blocker, ref: { type: "spaces.item" as const, id: dependency.blocker.id } },
     })),
-    refs: [{ type: "spaces.item", id: input.itemId }],
+    refs: [itemRef(resolved.data.item, "task")],
     links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
   });
 };
@@ -935,7 +960,7 @@ const runTaskDependentList = async (input: z.infer<typeof TaskDependencyListInpu
       ...dependency,
       dependent: { ...dependency.dependent, ref: { type: "spaces.item" as const, id: dependency.dependent.id } },
     })),
-    refs: [{ type: "spaces.item", id: input.itemId }],
+    refs: [itemRef(resolved.data.item, "task")],
     links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
   });
 };
@@ -960,10 +985,7 @@ const runTaskDependencyAdd = async (input: z.infer<typeof TaskDependencyInputSch
     return ok({
       data,
       summary: boundedCapabilitySummary(`${itemTitle(resolved.data.item.title)} now waits for ${itemTitle(blocker.data.item.title)}.`),
-      refs: [
-        { type: "spaces.item", id: input.itemId },
-        { type: "spaces.item", id: input.blockerItemId },
-      ],
+      refs: [itemRef(resolved.data.item, "task"), itemRef(blocker.data.item, "task")],
       links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
     });
   });
@@ -987,10 +1009,7 @@ const runTaskDependencyRemove = async (input: z.infer<typeof TaskDependencyInput
       summary: boundedCapabilitySummary(
         `${itemTitle(resolved.data.item.title)} no longer waits for ${itemTitle(blocker.data.item.title)}.`,
       ),
-      refs: [
-        { type: "spaces.item", id: input.itemId },
-        { type: "spaces.item", id: input.blockerItemId },
-      ],
+      refs: [itemRef(resolved.data.item, "task"), itemRef(blocker.data.item, "task")],
       links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, input.itemId) }],
     });
   });
@@ -1002,10 +1021,7 @@ const commentMutationResult = async (result: MutationResult<SpaceComment>, item:
   return ok({
     data: mapComment(comment),
     summary: boundedCapabilitySummary(summary),
-    refs: [
-      { type: "spaces.comment", id: comment.id },
-      { type: "spaces.item", id: item.id },
-    ],
+    refs: [commentRef(comment, item), itemRef(item, isEvent(item) ? "event" : "task")],
     links: [{ rel: "open" as const, href: buildSpaceItemHref(item.spaceId, item.id) }],
   });
 };
@@ -1271,6 +1287,7 @@ const calendarDestinationContext = async (context: CapabilityExecutionContext) =
       color: space.color,
       links: [{ rel: "open" as const, href: `/app/spaces/${space.id}` }],
     })),
+    refs: spaces.map(spaceRef),
   });
 };
 
@@ -1307,7 +1324,7 @@ const runCalendarInvitationImport = async (
               ? `Cancelled ${itemTitle(item.data.item.title)} from the calendar invitation.`
               : `${itemTitle(item.data.item.title)} was already up to date.`,
       ),
-      refs: [{ type: "spaces.item", id: data.itemId }],
+      refs: [itemRef(item.data.item, "event")],
       links: [{ rel: "open", href: data.href }],
     });
   });
@@ -1351,10 +1368,7 @@ const runEventInvitationPrepare = async (input: z.infer<typeof EventInvitationPr
       ? ok({
           data: { ...result.data, itemId: resolved.data.item.id },
           summary: boundedCapabilitySummary(`Prepared an invitation for ${itemTitle(resolved.data.item.title)}.`),
-          refs: [
-            { type: "spaces.item", id: resolved.data.item.id },
-            { type: "mail.draft", id: result.data.draftId },
-          ],
+          refs: [itemRef(resolved.data.item, "event"), { type: "mail.draft", id: result.data.draftId }],
           links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
         })
       : result;
@@ -1372,10 +1386,7 @@ const runEventInvitationCommit = async (input: z.infer<typeof EventInvitationCom
     return ok({
       data: { ...result.data, itemId: resolved.data.item.id },
       summary: boundedCapabilitySummary(`Attached the invitation for ${itemTitle(resolved.data.item.title)} to the mail draft.`),
-      refs: [
-        { type: "spaces.item", id: resolved.data.item.id },
-        { type: "mail.draft", id: result.data.draftId },
-      ],
+      refs: [itemRef(resolved.data.item, "event"), { type: "mail.draft", id: result.data.draftId }],
       links: [{ rel: "open" as const, href: buildSpaceItemHref(resolved.data.item.spaceId, resolved.data.item.id) }],
     });
   });

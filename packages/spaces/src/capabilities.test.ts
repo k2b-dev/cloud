@@ -287,6 +287,15 @@ describe("spaces capabilities", () => {
             links: [{ rel: "open", href: `/app/spaces/${spaceId}` }],
           },
         ],
+        refs: [
+          {
+            type: "spaces.space",
+            id: spaceId,
+            title: space.name,
+            preview: space.description,
+            icon: "ti ti-layout-kanban",
+          },
+        ],
       },
     });
   });

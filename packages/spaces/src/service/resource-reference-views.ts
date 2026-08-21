@@ -2,6 +2,7 @@ import { type CapabilityCaller, getCapabilityCatalogApp, invokeCapabilityWithDat
 import {
   type CapabilityManifest,
   type CapabilitySemanticLink,
+  type CloudResourceReference,
   type CloudResourceView,
   CloudResourceViewSchema,
   cloudResourceRefAppId,
@@ -19,7 +20,7 @@ type ResourceReaderDependencies = {
   invokeReader: (
     input: { appId: string; capabilityId: string; id: string },
     caller: CapabilityCaller,
-  ) => Promise<CapabilitySemanticLink[] | null>;
+  ) => Promise<{ refs: CloudResourceReference[]; links: CapabilitySemanticLink[] } | null>;
 };
 
 const resourceReaderDependencies: ResourceReaderDependencies = {
@@ -29,7 +30,7 @@ const resourceReaderDependencies: ResourceReaderDependencies = {
   },
   invokeReader: async ({ appId, capabilityId, id }, caller) => {
     const result = await invokeCapabilityWithDataSchema({ appId, capabilityId, kind: "query", input: { id } }, z.unknown(), caller);
-    return result.ok && result.data.links?.length ? result.data.links : null;
+    return result.ok && result.data.links?.length ? { refs: result.data.refs ?? [], links: result.data.links } : null;
   },
 };
 
@@ -49,15 +50,18 @@ export const resolveReferenceViews = async (
     const app = await catalog;
     const reader = app ? resolveCapabilityResourceReader(app.manifest, reference.ref) : null;
     if (!reader) return { ...reference, resource: null };
-    const links = await dependencies.invokeReader({ appId, capabilityId: reader.localId, id: reference.ref.id }, caller);
-    if (!links) return { ...reference, resource: null };
+    const result = await dependencies.invokeReader({ appId, capabilityId: reader.localId, id: reference.ref.id }, caller);
+    if (!result) return { ...reference, resource: null };
     const localType = reference.ref.type.slice(appId.length + 1);
     const type = app?.manifest.types.find((candidate) => candidate.localId === localType);
+    const current = result.refs.find((candidate) => candidate.type === reference.ref.type && candidate.id === reference.ref.id);
+    const icon = current?.icon ?? type?.icon;
     const resource = CloudResourceViewSchema.parse({
       ref: reference.ref,
-      title: reference.label,
-      icon: type?.icon,
-      links,
+      title: current?.title ?? reference.label,
+      ...(current?.preview ? { preview: current.preview } : {}),
+      ...(icon ? { icon } : {}),
+      links: result.links,
     });
     return { ...reference, resource };
   };

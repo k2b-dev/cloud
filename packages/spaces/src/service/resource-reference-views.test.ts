@@ -52,7 +52,18 @@ test("resolves current readers with the caller and loads each provider manifest 
     },
     invokeReader: async (input, currentCaller) => {
       readerCalls.push({ input, caller: currentCaller });
-      return [{ rel: "open", href: `/app/provider/${input.id}` }];
+      return {
+        refs: [
+          {
+            type: "provider.item",
+            id: input.id,
+            title: `Current ${input.id}`,
+            preview: "Current preview",
+            icon: "ti ti-current",
+          },
+        ],
+        links: [{ rel: "open", href: `/app/provider/${input.id}` }],
+      };
     },
   });
 
@@ -66,8 +77,9 @@ test("resolves current readers with the caller and loads each provider manifest 
       ...references[0]!,
       resource: {
         ref: references[0]!.ref,
-        title: references[0]!.label,
-        icon: "ti ti-box",
+        title: "Current First1",
+        preview: "Current preview",
+        icon: "ti ti-current",
         links: [{ rel: "open", href: "/app/provider/First1" }],
       },
     },
@@ -75,8 +87,9 @@ test("resolves current readers with the caller and loads each provider manifest 
       ...references[1]!,
       resource: {
         ref: references[1]!.ref,
-        title: references[1]!.label,
-        icon: "ti ti-box",
+        title: "Current Second",
+        preview: "Current preview",
+        icon: "ti ti-current",
         links: [{ rel: "open", href: "/app/provider/Second" }],
       },
     },
@@ -93,7 +106,8 @@ test("preserves snapshots when a provider, reader, permission, or link is unavai
 
   const result = await resolveReferenceViews(references, caller, {
     getCatalogApp: async (appId) => (appId === "provider" ? { appId, manifest } : null),
-    invokeReader: async ({ id }) => (id === "Denied" || id === "NoLink" ? null : [{ rel: "open", href: `/app/provider/${id}` }]),
+    invokeReader: async ({ id }) =>
+      id === "Denied" || id === "NoLink" ? null : { refs: [], links: [{ rel: "open", href: `/app/provider/${id}` }] },
   });
 
   expect(result).toEqual(references.map((item) => ({ ...item, resource: null })));
@@ -111,10 +125,25 @@ test("bounds concurrent reader calls while preserving reference order", async ()
       maximumActive = Math.max(maximumActive, active);
       await new Promise<void>((resolve) => queueMicrotask(resolve));
       active -= 1;
-      return [{ rel: "open", href: `/app/provider/${id}` }];
+      return { refs: [], links: [{ rel: "open", href: `/app/provider/${id}` }] };
     },
   });
 
   expect(maximumActive).toBe(8);
   expect(result.map((item) => item.ref.id)).toEqual(references.map((item) => item.ref.id));
+});
+
+test("falls back to stored labels and Type icons when readers return bare refs", async () => {
+  const item = reference("Bare1");
+  const [result] = await resolveReferenceViews([item], caller, {
+    getCatalogApp: async (appId) => ({ appId, manifest }),
+    invokeReader: async () => ({ refs: [{ type: "provider.item", id: item.ref.id }], links: [{ rel: "open", href: "/item" }] }),
+  });
+
+  expect(result?.resource).toEqual({
+    ref: item.ref,
+    title: item.label,
+    icon: "ti ti-box",
+    links: [{ rel: "open", href: "/item" }],
+  });
 });
