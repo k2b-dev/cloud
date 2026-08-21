@@ -1,5 +1,5 @@
 import { Button, IconButton, Select, TextInput } from "@k2b/ui";
-import { Index, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import type { MailAutomationAction, MailAutomationCondition, MailAutomationConditions } from "../../contracts";
 import type { MailWorkflowCatalogSnapshot } from "../../workflows/catalog";
 import {
@@ -47,6 +47,7 @@ export function MailAutomationConditionsEditor(props: {
   conditions: MailAutomationConditions;
   onChange: (conditions: MailAutomationConditions) => void;
 }) {
+  const [conditionIds, setConditionIds] = createSignal(props.conditions.items.map(() => crypto.randomUUID()));
   const replace = (index: number, condition: MailAutomationCondition) =>
     props.onChange({
       ...props.conditions,
@@ -57,121 +58,139 @@ export function MailAutomationConditionsEditor(props: {
     if (destination < 0 || destination >= props.conditions.items.length) return;
     const items = [...props.conditions.items];
     [items[index], items[destination]] = [items[destination]!, items[index]!];
+    setConditionIds((current) => {
+      const next = [...current];
+      [next[index], next[destination]] = [next[destination]!, next[index]!];
+      return next;
+    });
     props.onChange({ ...props.conditions, items });
+  };
+  const remove = (index: number) => {
+    setConditionIds((current) => current.filter((_, candidateIndex) => candidateIndex !== index));
+    props.onChange({
+      ...props.conditions,
+      items: props.conditions.items.filter((_, candidateIndex) => candidateIndex !== index),
+    });
+  };
+  const add = () => {
+    setConditionIds((current) => [...current, crypto.randomUUID()]);
+    props.onChange({ ...props.conditions, items: [...props.conditions.items, initialMailAutomationCondition("subject")] });
   };
 
   return (
     <div class="flex flex-col gap-2">
-      <Index each={props.conditions.items}>
-        {(condition, index) => (
-          <div class="rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-2">
-            <div class="flex flex-wrap items-end gap-2 md:flex-nowrap">
-              <div class="min-w-40 flex-[1_1_11rem]">
-                <Select
-                  label="Field"
-                  value={() => condition().field}
-                  onValueChange={(field) => replace(index, initialMailAutomationCondition(field as ConditionField))}
-                  options={Object.entries(conditionFieldLabels).map(([id, label]) => ({ id, label }))}
-                />
-              </div>
-              <Show when={condition().field === "subject" || condition().field === "body_text"}>
-                <div class="min-w-32 flex-[0.75_1_9rem]">
+      <For each={conditionIds()}>
+        {(conditionId) => {
+          const index = () => conditionIds().indexOf(conditionId);
+          const condition = () => props.conditions.items[index()]!;
+          return (
+            <div
+              class="rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-2"
+              role="group"
+              aria-label={`Condition ${index() + 1}`}
+            >
+              <div class="flex flex-wrap items-end gap-2 md:flex-nowrap">
+                <div class="min-w-40 flex-[1_1_11rem]">
                   <Select
-                    label="Operator"
-                    value={() => {
-                      const current = condition();
-                      return current.field === "subject" || current.field === "body_text" ? current.operator : "is";
-                    }}
-                    onValueChange={(operator) => {
-                      const current = condition();
-                      if (current.field === "subject" || current.field === "body_text") {
-                        replace(index, { ...current, operator: operator as TextOperator });
-                      }
-                    }}
-                    options={Object.entries(textOperatorLabels).map(([id, label]) => ({ id, label }))}
+                    label="Field"
+                    value={() => condition().field}
+                    onValueChange={(field) => replace(index(), initialMailAutomationCondition(field as ConditionField))}
+                    options={Object.entries(conditionFieldLabels).map(([id, label]) => ({ id, label }))}
                   />
                 </div>
-              </Show>
-              <div class="min-w-48 flex-[1.5_1_16rem]">
-                <Show
-                  when={condition().field === "attachment_presence"}
-                  fallback={
-                    <TextInput
-                      label="Value"
-                      type={condition().field === "sender_address" ? "email" : "text"}
+                <Show when={condition().field === "subject" || condition().field === "body_text"}>
+                  <div class="min-w-32 flex-[0.75_1_9rem]">
+                    <Select
+                      label="Operator"
                       value={() => {
                         const current = condition();
-                        return current.field === "attachment_presence" ? "" : current.value;
+                        return current.field === "subject" || current.field === "body_text" ? current.operator : "is";
                       }}
-                      onValueChange={(value) => {
+                      onValueChange={(operator) => {
                         const current = condition();
-                        if (current.field !== "attachment_presence") replace(index, { ...current, value });
+                        if (current.field === "subject" || current.field === "body_text") {
+                          replace(index(), { ...current, operator: operator as TextOperator });
+                        }
                       }}
-                      placeholder={
-                        condition().field === "sender_address"
-                          ? "sender@example.com"
-                          : condition().field === "sender_domain"
-                            ? "example.com"
-                            : "Text to match"
-                      }
-                      maxLength={condition().field === "sender_address" || condition().field === "sender_domain" ? 320 : 1_000}
-                      required
+                      options={Object.entries(textOperatorLabels).map(([id, label]) => ({ id, label }))}
                     />
-                  }
-                >
-                  <Select
-                    label="Value"
-                    value={() => (condition().field === "attachment_presence" && condition().value ? "yes" : "no")}
-                    onValueChange={(value) => replace(index, { field: "attachment_presence", operator: "is", value: value === "yes" })}
-                    options={[
-                      { id: "yes", label: "Has attachments" },
-                      { id: "no", label: "Has no attachments" },
-                    ]}
-                  />
+                  </div>
                 </Show>
-              </div>
-              <div class="flex h-9 shrink-0 items-center gap-1">
-                <IconButton size="sm" type="button" label="Move condition up" disabled={index === 0} onClick={() => move(index, -1)}>
-                  <i class="ti ti-arrow-up" aria-hidden="true" />
-                </IconButton>
-                <IconButton
-                  size="sm"
-                  type="button"
-                  label="Move condition down"
-                  disabled={index === props.conditions.items.length - 1}
-                  onClick={() => move(index, 1)}
-                >
-                  <i class="ti ti-arrow-down" aria-hidden="true" />
-                </IconButton>
-                <IconButton
-                  size="sm"
-                  type="button"
-                  label="Remove condition"
-                  disabled={props.conditions.items.length === 1}
-                  onClick={() =>
-                    props.onChange({
-                      ...props.conditions,
-                      items: props.conditions.items.filter((_, candidateIndex) => candidateIndex !== index),
-                    })
-                  }
-                >
-                  <i class="ti ti-x" aria-hidden="true" />
-                </IconButton>
+                <div class="min-w-48 flex-[1.5_1_16rem]">
+                  <Show
+                    when={condition().field === "attachment_presence"}
+                    fallback={
+                      <TextInput
+                        label="Value"
+                        type={condition().field === "sender_address" ? "email" : "text"}
+                        value={() => {
+                          const current = condition();
+                          return current.field === "attachment_presence" ? "" : current.value;
+                        }}
+                        onValueChange={(value) => {
+                          const current = condition();
+                          if (current.field !== "attachment_presence") replace(index(), { ...current, value });
+                        }}
+                        placeholder={
+                          condition().field === "sender_address"
+                            ? "sender@example.com"
+                            : condition().field === "sender_domain"
+                              ? "example.com"
+                              : "Text to match"
+                        }
+                        maxLength={condition().field === "sender_address" || condition().field === "sender_domain" ? 320 : 1_000}
+                        required
+                      />
+                    }
+                  >
+                    <Select
+                      label="Value"
+                      value={() => (condition().field === "attachment_presence" && condition().value ? "yes" : "no")}
+                      onValueChange={(value) => replace(index(), { field: "attachment_presence", operator: "is", value: value === "yes" })}
+                      options={[
+                        { id: "yes", label: "Has attachments" },
+                        { id: "no", label: "Has no attachments" },
+                      ]}
+                    />
+                  </Show>
+                </div>
+                <div class="flex h-9 shrink-0 items-center gap-1">
+                  <IconButton
+                    size="sm"
+                    type="button"
+                    label={`Move condition ${index() + 1} up`}
+                    disabled={index() === 0}
+                    onClick={() => move(index(), -1)}
+                  >
+                    <i class="ti ti-arrow-up" aria-hidden="true" />
+                  </IconButton>
+                  <IconButton
+                    size="sm"
+                    type="button"
+                    label={`Move condition ${index() + 1} down`}
+                    disabled={index() === props.conditions.items.length - 1}
+                    onClick={() => move(index(), 1)}
+                  >
+                    <i class="ti ti-arrow-down" aria-hidden="true" />
+                  </IconButton>
+                  <IconButton
+                    size="sm"
+                    type="button"
+                    label={`Remove condition ${index() + 1}`}
+                    disabled={props.conditions.items.length === 1}
+                    onClick={() => remove(index())}
+                  >
+                    <i class="ti ti-x" aria-hidden="true" />
+                  </IconButton>
+                </div>
               </div>
             </div>
-          </div>
-        )}
-      </Index>
+          );
+        }}
+      </For>
       <div class="flex flex-wrap items-center gap-2">
         <Show when={props.conditions.items.length < 8}>
-          <Button
-            size="sm"
-            variant="secondary"
-            type="button"
-            onClick={() =>
-              props.onChange({ ...props.conditions, items: [...props.conditions.items, initialMailAutomationCondition("subject")] })
-            }
-          >
+          <Button size="sm" variant="input" type="button" onClick={add}>
             <i class="ti ti-plus" aria-hidden="true" /> Add condition
           </Button>
         </Show>

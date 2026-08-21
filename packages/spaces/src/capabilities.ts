@@ -92,6 +92,12 @@ const stableUuid = (value: string): string => {
   const hex = createHash("sha256").update(value).digest("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 };
+const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
+const capabilityActorKey = (context: CapabilityExecutionContext): string =>
+  context.accessSubject.type === "user"
+    ? `user:${context.accessSubject.userId}:${context.accessSubject.delegatedByServiceAccountId ?? "direct"}`
+    : `service_account:${context.accessSubject.serviceAccountId}`;
+const EVENT_CREATE_ONCE_ACTION_ID = "spaces.event.create-once";
 
 const truncateText = (value: string, maxBytes: number): { text: string; truncated: boolean } => {
   if (Buffer.byteLength(value, "utf8") <= maxBytes) return { text: value, truncated: false };
@@ -746,9 +752,14 @@ const actionAudit = (context: CapabilityExecutionContext, actionId: string, targ
 const audited = async <T>(
   params: ReturnType<typeof actionAudit>,
   operation: () => Promise<CapabilityInvocationResult<T>>,
+  replayed: boolean | (() => boolean) = false,
 ): Promise<CapabilityInvocationResult<T>> => {
   const result = await operation();
-  return result.ok ? audit.recordResultAfterSideEffect({ ...params, result }) : audit.recordResult({ ...params, result });
+  if (!result.ok) return audit.recordResult({ ...params, result });
+  const wasReplayed = typeof replayed === "function" ? replayed() : replayed;
+  return wasReplayed
+    ? audit.recordResult({ ...params, metadata: { ...params.metadata, replayed: true }, result })
+    : audit.recordResultAfterSideEffect({ ...params, result });
 };
 
 const boundedCapabilitySummary = (value: string): string => {
@@ -1075,6 +1086,44 @@ const runEventCreate = async (input: z.infer<typeof EventCreateInputSchema>, con
       (item) => `Created ${itemTitle(item.title)} in ${access.data.space.name}.`,
     );
   });
+
+const runEventCreateOnce = async (input: z.infer<typeof EventCreateInputSchema>, context: CapabilityExecutionContext) => {
+  let replayed = false;
+  return audited(
+    actionAudit(context, "event.create-once", "space", input.spaceId),
+    async () => {
+      if (!context.idempotencyKey) return fail(err.badInput("Idempotency-Key is required"));
+      const access = await requireSpace(input.spaceId, context, "write");
+      if (!access.ok) return access;
+      const { spaceId, ...data } = input;
+      const [columnIds, tagIds] = await Promise.all([
+        spacesPublicResources.resolveSpacePublicIds("columns", access.data.internalId, [data.columnId]),
+        spacesPublicResources.resolveSpacePublicIds("tags", access.data.internalId, data.tagIds ?? []),
+      ]);
+      const columnId = columnIds?.[0];
+      if (!columnId || !tagIds) return fail(err.badInput("Unknown Space column or tag"));
+      return itemMutationResult(
+        await spacesService.item.create({
+          spaceId: access.data.internalId,
+          data: { ...data, columnId, tagIds },
+          createdBy: context.user?.id ?? null,
+          actor: spaceActivityActor(context),
+          idempotency: {
+            actorKey: capabilityActorKey(context),
+            actionId: EVENT_CREATE_ONCE_ACTION_ID,
+            idempotencyKeyHash: sha256(context.idempotencyKey),
+            requestHash: sha256(JSON.stringify(input)),
+            onReplay: () => {
+              replayed = true;
+            },
+          },
+        }),
+        (item) => `Created ${itemTitle(item.title)} in ${access.data.space.name}.`,
+      );
+    },
+    () => replayed,
+  );
+};
 
 const runEventUpdate = async (input: z.infer<typeof EventUpdateInputSchema>, context: CapabilityExecutionContext) =>
   audited(actionAudit(context, "event.update", "space_item", input.itemId), async () => {
@@ -1745,6 +1794,16 @@ export const spacesCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "none",
       run: runEventCreate,
+    },
+    "event.create-once": {
+      title: "Create calendar event once",
+      description: "Create one calendar event with retry-safe idempotency for durable workflows.",
+      input: EventCreateInputSchema,
+      data: EventDataSchema,
+      destructive: false,
+      openWorld: false,
+      idempotency: "required",
+      run: runEventCreateOnce,
     },
     "event.update": {
       title: "Update event",

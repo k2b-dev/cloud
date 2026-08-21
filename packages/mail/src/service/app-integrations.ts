@@ -38,7 +38,13 @@ const REQUIRED_SPACES_CONTEXT_QUERIES = [
   "space.read",
   "calendar-destination.list",
 ] as const;
-const REQUIRED_SPACES_CONTEXT_ACTIONS = ["item.reference.add", "item.reference.remove", "task.create", "event.create"] as const;
+const REQUIRED_SPACES_CONTEXT_ACTIONS = [
+  "item.reference.add",
+  "item.reference.remove",
+  "task.create",
+  "event.create",
+  "event.create-once",
+] as const;
 
 export type AppIntegrationRequest = {
   cookie?: string | null;
@@ -111,6 +117,17 @@ export const linkSpaceItemResource = (
     request,
     dataSchema: spacesItemResourceReferenceSchema,
     input,
+  }).then((result) => (result.ok ? { ok: true as const, data: result.data.data } : result));
+
+export const createSpaceEventOnce = (input: Record<string, unknown>, idempotencyKey: string, request: AppIntegrationRequest) =>
+  fetchAppCapability({
+    appId: "spaces",
+    kind: "action",
+    capabilityId: "event.create-once",
+    request,
+    dataSchema: spacesItemMutationDataSchema,
+    input,
+    idempotencyKey,
   }).then((result) => (result.ok ? { ok: true as const, data: result.data.data } : result));
 
 export const unlinkSpaceItemResource = (input: { itemId: string; ref: { type: string; id: string } }, request: AppIntegrationRequest) =>

@@ -100,7 +100,7 @@ export const migrateWorkflowAi = async (db: SQL = sql): Promise<void> => {
       run_id UUID NOT NULL REFERENCES workflows.run(id) ON DELETE CASCADE,
       step_key TEXT NOT NULL CHECK (char_length(step_key) BETWEEN 1 AND 1000),
       effect_key TEXT NOT NULL UNIQUE CHECK (char_length(effect_key) BETWEEN 1 AND 500),
-      kind TEXT NOT NULL CHECK (kind IN ('generate_text', 'classify', 'classify_many')),
+      kind TEXT NOT NULL CHECK (kind IN ('generate_text', 'classify', 'classify_many', 'extract_data')),
       request JSONB NOT NULL CHECK (jsonb_typeof(request) = 'object' AND octet_length(request::text) <= 100000),
       input_hash TEXT NOT NULL CHECK (char_length(input_hash) = 64),
       model_profile_id TEXT NOT NULL CHECK (char_length(model_profile_id) BETWEEN 1 AND 120),
@@ -119,6 +119,11 @@ export const migrateWorkflowAi = async (db: SQL = sql): Promise<void> => {
         (status IN ('succeeded', 'failed', 'canceled')) = (completed_at IS NOT NULL)
       )
     )
+  `.simple();
+  await db`
+    ALTER TABLE ai.workflow_task DROP CONSTRAINT IF EXISTS workflow_task_kind_check;
+    ALTER TABLE ai.workflow_task ADD CONSTRAINT workflow_task_kind_check
+      CHECK (kind IN ('generate_text', 'classify', 'classify_many', 'extract_data'))
   `.simple();
   await db`
     CREATE INDEX IF NOT EXISTS idx_ai_workflow_task_recovery

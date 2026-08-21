@@ -201,6 +201,8 @@ suite("mail migrations", () => {
         text_sources_applied_count: number;
         summaries_applied_count: number;
         live_invalidation_applied_count: number;
+        integration_credentials_applied_count: number;
+        integration_credential_columns_present: boolean;
         summary_columns_present: boolean;
         live_invalidation_table_present: boolean;
         live_invalidation_trigger_present: boolean;
@@ -220,6 +222,14 @@ suite("mail migrations", () => {
         (SELECT COUNT(*)::int FROM mail.schema_migrations WHERE version = 112 AND name = 'mail_automation_text_sources') AS text_sources_applied_count,
         (SELECT COUNT(*)::int FROM mail.schema_migrations WHERE version = 114 AND name = 'conversation_summaries') AS summaries_applied_count,
         (SELECT COUNT(*)::int FROM mail.schema_migrations WHERE version = 115 AND name = 'live_invalidation_outbox') AS live_invalidation_applied_count,
+        (SELECT COUNT(*)::int FROM mail.schema_migrations WHERE version = 120 AND name = 'incoming_automation_integration_credentials') AS integration_credentials_applied_count,
+        (
+          SELECT COUNT(*) = 2
+          FROM information_schema.columns
+          WHERE table_schema = 'mail'
+            AND table_name = 'incoming_automations'
+            AND column_name IN ('integration_credential_id', 'encrypted_integration_token')
+        ) AS integration_credential_columns_present,
         (
           SELECT COUNT(*) = 2
           FROM information_schema.columns
@@ -270,6 +280,8 @@ suite("mail migrations", () => {
       text_sources_applied_count: 1,
       summaries_applied_count: 1,
       live_invalidation_applied_count: 1,
+      integration_credentials_applied_count: 1,
+      integration_credential_columns_present: true,
       summary_columns_present: true,
       live_invalidation_table_present: true,
       live_invalidation_trigger_present: true,

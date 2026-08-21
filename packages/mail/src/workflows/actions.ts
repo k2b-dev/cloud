@@ -1,4 +1,4 @@
-import { notifications } from "@valentinkolb/cloud/services";
+import { decryptSecret, notifications } from "@valentinkolb/cloud/services";
 import type {
   ErasedWorkflowAction,
   WorkflowActionContext,
@@ -9,9 +9,11 @@ import type {
 } from "@valentinkolb/cloud/workflows";
 import { workflowAction } from "@valentinkolb/cloud/workflows";
 import { sql } from "bun";
+import { z } from "zod";
 import { app } from "../config";
 import type { ActorCommandInput, MailAddress, MailCommand, ResponseScheduleDefinitionInput } from "../contracts";
 import { mailAddressSchema, responseScheduleDefinitionSchema } from "../contracts";
+import { createSpaceEventOnce, linkSpaceItemResource } from "../service/app-integrations";
 import { linkAutomaticReplyCommandInTransaction, prepareAutomaticReplyInTransaction } from "../service/automatic-reply";
 import {
   createWorkflowConversationCommentInTransaction,
@@ -99,6 +101,19 @@ const responseSchedule = {
   ],
   description: "Explicitly always active or limited to date and weekly windows.",
 } satisfies WorkflowFieldSchema;
+const spaceEventSchema = z
+  .object({
+    ready: z.boolean().optional(),
+    title: z.string().trim().min(1).max(500),
+    description: z.string().trim().max(50_000).optional(),
+    location: z.string().trim().max(500).optional(),
+    startsAt: z.string().datetime({ offset: true }),
+    endsAt: z.string().datetime({ offset: true }),
+    allDay: z.boolean().default(false),
+  })
+  .strict()
+  .refine((value) => value.ready !== false, "AI event data needs review")
+  .refine((value) => Date.parse(value.endsAt) > Date.parse(value.startsAt), "Event end must be after its start");
 
 const isObject = (value: unknown): value is JsonObject => value !== null && typeof value === "object" && !Array.isArray(value);
 const asObject = (value: unknown, label: string): JsonObject => {
@@ -231,6 +246,29 @@ const resolveObject = async (ctx: WorkflowActionContext, value: unknown, key: st
   if (typeof value === "string") return asObject(await ctx.resolveReference(value, key), key);
   throw new Error(`${key} must resolve to an object`);
 };
+const workflowIntegrationRequest = async (ctx: WorkflowActionContext) => {
+  const [row] = await sql<{ encrypted_integration_token: string | null }[]>`
+    SELECT automation.encrypted_integration_token
+    FROM workflows.run run
+    JOIN mail.incoming_automations automation ON automation.workflow_id = run.workflow_id
+    WHERE run.id = ${ctx.runId}::uuid
+      AND automation.deleted_at IS NULL
+  `;
+  if (!row?.encrypted_integration_token) {
+    throw Object.assign(new Error("This automation has no active Spaces authorization"), { code: "FORBIDDEN" });
+  }
+  const token = await decryptSecret<string>(row.encrypted_integration_token);
+  return { authorization: `Bearer ${token}`, requestId: ctx.runId };
+};
+const appActionResult = (result: Awaited<ReturnType<typeof createSpaceEventOnce>>): ActionResult =>
+  result.ok
+    ? { state: "succeeded", output: result.data as WorkflowJsonValue }
+    : {
+        state: "failed",
+        code: result.code,
+        message: result.message,
+        retryable: result.status >= 500,
+      };
 
 const commandOutcome = (command: MailCommand): ActionResult => {
   const output = { commandId: command.id, state: command.state };
@@ -427,6 +465,78 @@ const conversationMutation = (
   }) as ErasedWorkflowAction;
 
 export const MAIL_WORKFLOW_ACTIONS = {
+  linkSpaceItem: workflowAction.idempotent({
+    label: "Link Spaces item",
+    description: "Links the Mail conversation to one existing writable task or event.",
+    config: object({
+      conversation: conversationReference,
+      item: text("Spaces item ID.", false, 120),
+    }),
+    authorize: authorized,
+    plan: async () => planned("Link a Spaces item.", { maxCollaborationChanges: 1 }),
+    run: (ctx, values) =>
+      attempt(async () => {
+        await loadScope(ctx);
+        const conversation = await resolveObject(ctx, values.conversation, "conversation");
+        const conversationId = asText(conversation.id, "conversation.id");
+        const result = await linkSpaceItemResource(
+          {
+            itemId: asText(values.item, "Spaces item"),
+            reference: {
+              ref: { type: "mail.conversation", id: conversationId },
+              label:
+                typeof conversation.subject === "string" && conversation.subject.trim()
+                  ? conversation.subject
+                  : `Mail conversation ${conversationId}`,
+            },
+          },
+          await workflowIntegrationRequest(ctx),
+        );
+        return result.ok
+          ? { state: "succeeded", output: result.data as WorkflowJsonValue }
+          : { state: "failed", code: result.code, message: result.message, retryable: result.status >= 500 };
+      }),
+  }),
+  createSpaceEvent: workflowAction.idempotent({
+    label: "Create Spaces event",
+    description: "Creates one retry-safe event and links it to the Mail conversation.",
+    config: object({
+      conversation: conversationReference,
+      space: text("Destination Space ID.", false, 120),
+      column: text("Destination column ID.", false, 120),
+      event: { kind: "value", description: "Event data object from AI extraction or explicit values." },
+    }),
+    authorize: authorized,
+    plan: async () => planned("Create a linked Spaces event.", { maxCollaborationChanges: 1, maxTargets: 1 }),
+    run: (ctx, values) =>
+      attempt(async () => {
+        await loadScope(ctx);
+        const conversation = await resolveObject(ctx, values.conversation, "conversation");
+        const eventValue = typeof values.event === "string" ? await ctx.resolveReference(values.event, "event") : values.event;
+        const event = spaceEventSchema.parse(eventValue);
+        const result = await createSpaceEventOnce(
+          {
+            spaceId: asText(values.space, "Space"),
+            columnId: asText(values.column, "Space column"),
+            title: event.title,
+            description: event.description,
+            location: event.location,
+            startsAt: event.startsAt,
+            endsAt: event.endsAt,
+            allDay: event.allDay,
+            references: [
+              {
+                ref: { type: "mail.conversation", id: asText(conversation.id, "conversation.id") },
+                label: typeof conversation.subject === "string" && conversation.subject.trim() ? conversation.subject : "Mail conversation",
+              },
+            ],
+          },
+          ctx.effectKey,
+          await workflowIntegrationRequest(ctx),
+        );
+        return appActionResult(result);
+      }),
+  }),
   addKeyword: messageAction(
     "addKeyword",
     "Add keyword",

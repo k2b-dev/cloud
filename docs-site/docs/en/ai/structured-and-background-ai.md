@@ -133,17 +133,24 @@ export const inventoryWorkflows = defineWorkflowModule({
 });
 ```
 
-The shared vocabulary contains three data-only actions:
+The shared vocabulary contains four data-only actions:
 
 | Action | Result |
 | --- | --- |
 | `aiGenerateText` | One bounded text value |
 | `aiClassify` | Exactly one declared choice |
 | `aiClassifyMany` | A unique subset of the declared choices, in declaration order |
+| `aiExtractData` | One strict object validated against declared fields |
 
 Each action requires `saveAs`. Later steps consume the stored value through the
 normal workflow expression and template syntax. `aiClassifyMany` output works
 with the exact array-membership condition `includes`.
+
+`aiExtractData` accepts 1–40 unique fields. Each field declares a `name`,
+`description`, and `type`: `text`, `number`, `boolean`, `date_time`, or `enum`.
+Fields are required by default; text fields may set `maxLength`, and enum fields
+must declare 1–50 `choices`. Undeclared properties and values that do not match
+the field contract fail validation instead of reaching later steps.
 
 The actions do not tag records, send mail, or perform another domain effect.
 Compose their output with application actions that retain their own

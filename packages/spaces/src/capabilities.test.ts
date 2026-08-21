@@ -320,6 +320,7 @@ describe("spaces capabilities", () => {
       "comment.delete",
       "comment.update",
       "event.create",
+      "event.create-once",
       "event.invitation.commit",
       "event.invitation.prepare",
       "event.update",
@@ -390,6 +391,7 @@ describe("spaces capabilities", () => {
   test("uses agent-oriented calendar creation wording", () => {
     expect(spacesCapabilities.actions["event.create"].title).toBe("Create calendar event");
     expect(spacesCapabilities.actions["event.create"].description).toContain("calendar event");
+    expect(spacesCapabilities.actions["event.create-once"].idempotency).toBe("required");
     expect(spacesCapabilities.actions["calendar-invitation.import"].title).toBe("Import calendar invitation");
   });
 
@@ -939,6 +941,31 @@ describe("spaces capabilities", () => {
       },
     });
     expect(recordAllowed).toHaveBeenCalledWith(expect.objectContaining({ action: "spaces.capability.task.create" }));
+  });
+
+  test("passes a stable idempotency claim to retry-safe event creation", async () => {
+    spyOn(spacesService.space, "get").mockResolvedValue(space);
+    spyOn(spacesService.space.permission, "get").mockResolvedValue("write");
+    const create = spyOn(spacesService.item, "create").mockResolvedValue({ ok: true, data: event });
+    spyOn(audit, "recordResultAfterSideEffect").mockImplementation(async ({ result }) => result);
+
+    const result = await spacesCapabilities.actions["event.create-once"].run(
+      { spaceId, columnId, title: event.title, startsAt: event.startsAt!, endsAt: event.endsAt! },
+      { ...userContext, idempotencyKey: "mail-workflow-effect-1" },
+    );
+
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        spaceId: spaceUuid,
+        idempotency: expect.objectContaining({
+          actorKey: `user:${userId}:direct`,
+          actionId: "spaces.event.create-once",
+          idempotencyKeyHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+          requestHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+        }),
+      }),
+    );
+    expect(result).toMatchObject({ ok: true, data: { data: { kind: "event", id: itemId } } });
   });
 
   test("sets item tags through the existing item update boundary", async () => {

@@ -147,15 +147,16 @@ steps:
     else: []
 ```
 
-Use `mode: matching` with a condition set for sender, domain, subject, body, or attachment filters. Direct actions can move mail, mark it read, add a keyword or local tag, assign a user, set collaboration status, add an internal comment, create a reply draft, or replace the conversation summary. AI steps can generate text, classify once, or select multiple labels; compatible later steps can consume the generated text. Guided text generation receives the new message and the existing summary as structured input. `automation catalog` returns the mailbox-scoped folder, tag, user, and sender-identity ids accepted by the definition.
+Use `mode: matching` with a condition set for sender, domain, subject, body, or attachment filters. Direct actions can move mail, mark it read, add a keyword or local tag, assign a user, set collaboration status, link an existing Spaces item, create a linked Spaces event, add an internal comment, create a reply draft, or replace the conversation summary. AI steps can generate text, classify, select multiple labels, or extract validated event data. Guided text generation receives the new message and the existing summary as structured input. `automation catalog` returns mailbox-scoped folder, tag, user, and sender-identity ids. Use `cld spaces list`, `cld spaces search`, and `cld spaces show` to discover Space, kanban, task, and event ids.
 
 The incoming-automation file is strict: unknown fields are rejected. `name` accepts 1–120 characters and new definitions default to `enabled: false` when the field is omitted.
 
 - `scope.mode: all` needs no conditions. `scope.mode: matching` requires `conditions.mode: all|any` and 1–8 unique condition items.
 - Condition fields are `sender_address`, `sender_domain`, `subject`, `body_text`, and `attachment_presence`. Sender address and domain use only `operator: is`; subject and body accept `is`, `contains`, `starts_with`, or `ends_with`; attachment presence uses `is` with a boolean `value`. Address values accept 1–320 characters, domains 1–253, and subject or body values 1–1,000.
-- Step kinds are `mail_action`, `ai_generate_text`, `ai_classify`, `ai_classify_many`, `create_reply_draft`, `add_comment`, `set_summary`, and `if`. Every step has a unique UUID in `id`.
+- Step kinds are `mail_action`, `ai_generate_text`, `ai_classify`, `ai_classify_many`, `ai_extract_event`, `link_space_item`, `create_space_event`, `create_reply_draft`, `add_comment`, `set_summary`, and `if`. Every step has a unique UUID in `id`.
 - Direct `mail_action` values are `junk`, `trash`, `mark_read`, `add_keyword`, `move_to_folder`, `add_local_tag`, `assign_user`, and `set_status`. Catalog-backed actions use `folderId`, `tagId`, or `userId`; status accepts `needs_action`, `waiting`, or `done`. `add_keyword.keyword` accepts 1–100 characters and must use valid provider-keyword syntax.
 - `ai_generate_text` takes `instructions` of 1–4,000 characters and `maxOutputChars` of 200–10,000. Classification takes 2–10 choices with case-insensitively unique names; a choice `name` accepts 1–80 characters and its `description` 1–500. `ai_classify_many.maxChoices` is from 1 to the number of choices.
+- `ai_extract_event` takes 1–4,000 characters of `instructions` and an explicit IANA `timeZone`. It returns strict event data with a `ready` guard. `create_space_event` accepts either that earlier `sourceStepId` or explicit `title`, ISO `startsAt`, ISO `endsAt`, optional `description` and `location`, and `allDay`; AI ambiguity stops creation. `link_space_item` takes one writable Spaces `itemId`, while destinations use `spaceId` and `columnId`.
 - A text consumer uses `body: { kind: custom, value: ... }` with 1–50,000 characters or `body: { kind: step_output, sourceStepId: ... }`. Only an earlier text-producing AI step is valid, and a multi-choice result is not a text source. `create_reply_draft` additionally requires a catalog `senderIdentityId`.
 - An `if` condition references an earlier AI `sourceStepId`: use `equals` for generated text or single classification and `includes` for multi-classification. Its `value` accepts 1–500 characters and must name a declared choice for classification. Both `then` and `else` are step arrays of at most 12 items.
 - A definition starts with 1–20 top-level steps, contains at most 40 steps across branches, has at most 4 branch levels, and makes at most 10 AI calls. One reachable path may contain only one provider message action, one assignment, one status change, and one summary replacement; it cannot add the same local tag twice.
@@ -172,6 +173,8 @@ cld --json mail automation backfill cancel <automation-id> <operation-id> --yes
 ```
 
 A non-AI automation backfill walks every candidate message with a durable cursor and emits targeted events into the same workflow runtime used for new mail. `start` returns an `operationId`; use it with `status` or `cancel`. AI flows intentionally process only future mail. Cancel an active backfill before editing, disabling, or deleting its automation. Mutations require the revision shown by `automation get`; they refuse stale state instead of silently adopting the latest revision.
+
+Spaces actions use an encrypted, revocable delegation created for the configuring user. Current Mail and Spaces permissions are rechecked when a run executes. Event creation is idempotent across retries. Removing all Spaces steps or deleting the automation revokes the delegation. Use `set_status: done` to complete a conversation; `needs_action` or `waiting` reopens it, while a verified new inbound message already reopens a completed conversation automatically.
 
 ## Configure conversation references
 
@@ -201,6 +204,8 @@ Use `--disable` to stop new allocations without removing existing values. Use `-
 ## Write canonical workflow YAML
 
 Mail workflows use the shared Cloud workflow language: strict YAML with top-level `inputs`, optional automatic `triggers`, and `steps`. Workflow metadata is not part of the YAML. Mail lifecycle records store name, description, priority, activation state, immutable version ids, and effect budgets.
+
+The shared AI action `aiExtractData` takes `input`, `prompt`, 1–40 declared `fields`, optional `model`, and `saveAs`. Field `type` is `text`, `number`, `boolean`, `date_time`, or `enum`; fields may set `required`, text may set `maxLength`, and enum fields require `choices`. Managed incoming automations also compile their Spaces steps to `linkSpaceItem` with `conversation` and `item`, or `createSpaceEvent` with `conversation`, `space`, `column`, and an `event` value. These Spaces actions depend on the managed automation's encrypted delegation and are not available to unrelated hand-written Mail workflows.
 
 The source accepts 1–200,000 characters, at most 20 inputs, 500 steps, 20 nested step levels, 500 conditions, and 20 nested condition levels. Input and variable names start with a letter or underscore and then contain only letters, numbers, and underscores. Input `required` defaults to `false`. `steps` must be non-empty. Unknown root keys, action names, properties, and value paths are validation errors.
 

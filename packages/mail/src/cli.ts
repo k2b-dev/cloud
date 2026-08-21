@@ -5993,7 +5993,7 @@ export default defineCliCommands({
       },
     }),
     command("automation catalog", {
-      summary: "List folders, Cloud tags, and users available to guided incoming automations",
+      summary: "List Mail folders, tags, identities, and users available to guided incoming automations",
       flags: mailboxFlag,
       run: async ({ ctx, flags }) => {
         const mailbox = await resolveMailbox(ctx, flags.mailbox);
@@ -6090,7 +6090,7 @@ export default defineCliCommands({
       },
     }),
     command("automation create", {
-      summary: "Create a guided incoming automation from a JSON or YAML definition",
+      summary: "Create a guided Mail, AI, or Spaces incoming automation from JSON or YAML",
       flags: {
         ...mailboxFlag,
         definition: incomingAutomationDefinitionInput,
@@ -6107,7 +6107,7 @@ export default defineCliCommands({
       },
     }),
     command("automation update", {
-      summary: "Replace an incoming automation from a JSON or YAML definition",
+      summary: "Replace a guided Mail, AI, or Spaces incoming automation from JSON or YAML",
       args: { automationId: arg.required({ description: "Incoming automation id" }) },
       flags: {
         ...mailboxFlag,

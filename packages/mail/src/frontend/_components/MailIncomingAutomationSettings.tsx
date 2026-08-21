@@ -20,7 +20,9 @@ import {
   toast,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import { apiClient } from "../../api/client";
+import { spaceDetailSchema, spacesItemSearchDataSchema, spacesMailDestinationsSchema } from "../../app-integration-contracts";
 import {
   createIncomingAutomationSchema,
   type IncomingAutomationBackfill,
@@ -87,7 +89,7 @@ const activeBackfillStates = new Set<IncomingAutomationBackfill["state"]>(["queu
 type AutomationOutput = {
   id: string;
   label: string;
-  type: "text" | "text_array";
+  type: "text" | "text_array" | "event";
   choices: string[];
 };
 
@@ -124,6 +126,7 @@ const outputForStep = (step: MailAutomationStep, index: number): AutomationOutpu
       choices: step.choices.map((item) => item.name),
     };
   }
+  if (step.kind === "ai_extract_event") return { id: step.id, label: `Event data · step ${index + 1}`, type: "event", choices: [] };
   return null;
 };
 
@@ -136,11 +139,18 @@ const outputReferencesResolve = (steps: readonly MailAutomationStep[], inherited
       !available.has(step.body.sourceStepId)
     )
       return false;
+    if (step.kind === "create_space_event" && step.event.kind === "step_output" && !available.has(step.event.sourceStepId)) return false;
     if (step.kind === "if") {
       if (!available.has(step.condition.sourceStepId)) return false;
       if (!outputReferencesResolve(step.then, available) || !outputReferencesResolve(step.else, available)) return false;
     }
-    if (step.kind === "ai_generate_text" || step.kind === "ai_classify" || step.kind === "ai_classify_many") available.add(step.id);
+    if (
+      step.kind === "ai_generate_text" ||
+      step.kind === "ai_classify" ||
+      step.kind === "ai_classify_many" ||
+      step.kind === "ai_extract_event"
+    )
+      available.add(step.id);
   }
   return true;
 };
@@ -260,6 +270,52 @@ const flattenSteps = (steps: readonly MailAutomationStep[]): MailAutomationStep[
   steps.flatMap((step) => (step.kind === "if" ? [step, ...flattenSteps(step.then), ...flattenSteps(step.else)] : [step]));
 
 const hasAi = (steps: readonly MailAutomationStep[]): boolean => flattenSteps(steps).some((step) => step.kind.startsWith("ai_"));
+const aiCallCount = (steps: readonly MailAutomationStep[]): number =>
+  flattenSteps(steps).filter((step) => step.kind.startsWith("ai_")).length;
+const branchDepth = (steps: readonly MailAutomationStep[]): number =>
+  steps.reduce((depth, step) => (step.kind === "if" ? Math.max(depth, 1 + branchDepth([...step.then, ...step.else])) : depth), 0);
+const referencesOutput = (steps: readonly MailAutomationStep[], sourceStepId: string): boolean =>
+  steps.some((step) => {
+    if (
+      (step.kind === "create_reply_draft" || step.kind === "add_comment" || step.kind === "set_summary") &&
+      step.body.kind === "step_output" &&
+      step.body.sourceStepId === sourceStepId
+    )
+      return true;
+    if (step.kind === "create_space_event" && step.event.kind === "step_output" && step.event.sourceStepId === sourceStepId) return true;
+    return (
+      step.kind === "if" &&
+      (step.condition.sourceStepId === sourceStepId ||
+        referencesOutput(step.then, sourceStepId) ||
+        referencesOutput(step.else, sourceStepId))
+    );
+  });
+const referencesChoice = (steps: readonly MailAutomationStep[], sourceStepId: string, value: string): boolean =>
+  steps.some(
+    (step) =>
+      step.kind === "if" &&
+      ((step.condition.sourceStepId === sourceStepId && step.condition.value.toLowerCase() === value.toLowerCase()) ||
+        referencesChoice(step.then, sourceStepId, value) ||
+        referencesChoice(step.else, sourceStepId, value)),
+  );
+const replaceChoiceReferences = (
+  steps: readonly MailAutomationStep[],
+  sourceStepId: string,
+  previous: string,
+  next: string,
+): MailAutomationStep[] =>
+  steps.map((step) => {
+    if (step.kind !== "if") return step;
+    return {
+      ...step,
+      condition:
+        step.condition.sourceStepId === sourceStepId && step.condition.value.toLowerCase() === previous.toLowerCase()
+          ? { ...step.condition, value: next }
+          : step.condition,
+      then: replaceChoiceReferences(step.then, sourceStepId, previous, next),
+      else: replaceChoiceReferences(step.else, sourceStepId, previous, next),
+    };
+  });
 const maxAiCalls = (steps: readonly MailAutomationStep[]): number =>
   steps.reduce((total, step) => {
     if (step.kind.startsWith("ai_")) return total + 1;
@@ -287,21 +343,34 @@ const flowLabel = (automation: IncomingAutomation, catalog: MailWorkflowCatalogS
 function ChoiceEditor(props: {
   step: Extract<MailAutomationStep, { kind: "ai_classify" | "ai_classify_many" }>;
   context?: string;
-  onChange: (step: Extract<MailAutomationStep, { kind: "ai_classify" | "ai_classify_many" }>) => void;
+  onChange: (
+    step: Extract<MailAutomationStep, { kind: "ai_classify" | "ai_classify_many" }>,
+    change?: { kind: "rename"; previous: string; next: string } | { kind: "remove"; name: string },
+  ) => void;
 }) {
   const remove = (index: number) => {
+    const removed = props.step.choices[index];
+    if (!removed) return;
     const choices = props.step.choices.filter((_, itemIndex) => itemIndex !== index);
     props.onChange(
       props.step.kind === "ai_classify_many"
         ? { ...props.step, choices, maxChoices: Math.min(props.step.maxChoices, choices.length) }
         : { ...props.step, choices },
+      { kind: "remove", name: removed.name },
     );
   };
-  const replace = (index: number, patch: Partial<(typeof props.step.choices)[number]>) =>
-    props.onChange({
-      ...props.step,
-      choices: props.step.choices.map((candidate, candidateIndex) => (candidateIndex === index ? { ...candidate, ...patch } : candidate)),
-    });
+  const replace = (index: number, patch: Partial<(typeof props.step.choices)[number]>) => {
+    const previous = props.step.choices[index];
+    if (!previous) return;
+    const next = { ...previous, ...patch };
+    props.onChange(
+      {
+        ...props.step,
+        choices: props.step.choices.map((candidate, candidateIndex) => (candidateIndex === index ? next : candidate)),
+      },
+      patch.name === undefined ? undefined : { kind: "rename", previous: previous.name, next: next.name },
+    );
+  };
   return (
     <div class="flex flex-col gap-2">
       <Index each={props.step.choices}>
@@ -358,12 +427,15 @@ function ChoiceEditor(props: {
 }
 
 function AutomationStepsEditor(props: {
+  mailboxId: string;
   steps: MailAutomationStep[];
+  workflowSteps?: MailAutomationStep[];
   availableActions: MailAutomationAction[];
   availableOutputs?: AutomationOutput[];
   catalog: MailWorkflowCatalogSnapshot;
   allowEmpty?: boolean;
   maxSteps?: number;
+  depth?: number;
   labelContext?: string;
   onChange: (steps: MailAutomationStep[]) => void;
 }) {
@@ -381,7 +453,20 @@ function AutomationStepsEditor(props: {
   ];
   const replace = (index: number, step: MailAutomationStep) =>
     props.onChange(props.steps.map((candidate, candidateIndex) => (candidateIndex === index ? step : candidate)));
-  const remove = (index: number) => props.onChange(props.steps.filter((_, candidateIndex) => candidateIndex !== index));
+  const remove = (index: number) => {
+    const step = props.steps[index];
+    if (!step) return;
+    if (
+      referencesOutput(
+        props.steps.filter((_, candidateIndex) => candidateIndex !== index),
+        step.id,
+      )
+    ) {
+      void prompts.error("Change or remove the later steps that use this output before removing its source.");
+      return;
+    }
+    props.onChange(props.steps.filter((_, candidateIndex) => candidateIndex !== index));
+  };
   const canMove = (index: number, offset: -1 | 1): boolean => {
     const destination = index + offset;
     if (destination < 0 || destination >= props.steps.length) return false;
@@ -397,15 +482,48 @@ function AutomationStepsEditor(props: {
     props.onChange(next);
   };
   const expand = (id: string) => setExpandedStepIds((current) => new Set(current).add(id));
-  const append = (step: MailAutomationStep) => {
-    expand(step.id);
-    props.onChange([...props.steps, step]);
+  const capacityIssueFor = (shape: { localSteps: number; totalSteps: number; aiCalls: number; branchDepth: number }): string | null => {
+    if (props.steps.length + shape.localSteps > (props.maxSteps ?? 20)) {
+      return `This ${props.labelContext ? "branch" : "flow"} can contain at most ${props.maxSteps ?? 20} steps.`;
+    }
+    const workflowSteps = props.workflowSteps ?? props.steps;
+    if (flattenSteps(workflowSteps).length + shape.totalSteps > 40)
+      return "An automation can contain at most 40 steps across all branches.";
+    if (aiCallCount(workflowSteps) + shape.aiCalls > 10) return "An automation can contain at most 10 AI calls.";
+    if ((props.depth ?? 0) + shape.branchDepth > 4) return "Automation branches can be nested at most 4 levels.";
+    return null;
   };
+  const capacityIssue = (steps: readonly MailAutomationStep[]): string | null =>
+    capacityIssueFor({
+      localSteps: steps.length,
+      totalSteps: flattenSteps(steps).length,
+      aiCalls: aiCallCount(steps),
+      branchDepth: branchDepth(steps),
+    });
+  const canInsert = (steps: readonly MailAutomationStep[]) => capacityIssue(steps) === null;
+  const canInsertShape = (shape: { localSteps: number; totalSteps?: number; aiCalls?: number; branchDepth?: number }) =>
+    capacityIssueFor({
+      localSteps: shape.localSteps,
+      totalSteps: shape.totalSteps ?? shape.localSteps,
+      aiCalls: shape.aiCalls ?? 0,
+      branchDepth: shape.branchDepth ?? 0,
+    }) === null;
+  const append = (step: MailAutomationStep) => appendMany([step]);
   const appendMany = (steps: MailAutomationStep[]) => {
+    const issue = capacityIssue(steps);
+    if (issue) {
+      void prompts.error(issue);
+      return;
+    }
     steps.forEach((step) => expand(step.id));
     props.onChange([...props.steps, ...steps]);
   };
   const insertAfterOutput = (index: number, sourceStepId: string, step: MailAutomationStep) => {
+    const issue = capacityIssue([step]);
+    if (issue) {
+      void prompts.error(issue);
+      return;
+    }
     let destination = index + 1;
     while (destination < props.steps.length) {
       const candidate = props.steps[destination]!;
@@ -437,10 +555,120 @@ function AutomationStepsEditor(props: {
     if (step.kind === "ai_generate_text") return "AI generate text";
     if (step.kind === "ai_classify") return "AI classify";
     if (step.kind === "ai_classify_many") return "AI classify many";
+    if (step.kind === "ai_extract_event") return "AI extract event data";
+    if (step.kind === "link_space_item") return "Link Spaces item";
+    if (step.kind === "create_space_event") return "Create Spaces event";
     if (step.kind === "create_reply_draft") return "Create reply draft";
     if (step.kind === "add_comment") return "Add internal comment";
     if (step.kind === "set_summary") return "Set conversation summary";
     return "If";
+  };
+  const chooseSpaceItem = async (): Promise<string | null> => {
+    const selected = await prompts.search<{ id: string; title: string }>(
+      async ({ query, abortSignal }) => {
+        if (!query.trim()) return [];
+        const response = await apiClient.mailboxes[":mailboxId"]["incoming-automations"].spaces.items.$get(
+          { param: { mailboxId: props.mailboxId }, query: { query } },
+          { init: { signal: abortSignal } },
+        );
+        if (!response.ok) throw new Error(await readApiError(response, "Could not search Spaces"));
+        return spacesItemSearchDataSchema.parse(await response.json()).map((item) => ({
+          value: { id: item.ref.id, title: item.title },
+          label: item.title,
+          desc: item.metadata?.find((entry) => entry.label === "Space")?.value,
+          icon: item.icon ?? "ti ti-checkbox",
+        }));
+      },
+      {
+        title: "Link Spaces item",
+        icon: "ti ti-link",
+        placeholder: "Search writable tasks and events...",
+        minQueryLength: 1,
+        noResultsText: "No writable Space items found.",
+        size: "small",
+      },
+    );
+    return selected?.value?.id ?? null;
+  };
+  const appendSpaceItem = async () => {
+    const itemId = await chooseSpaceItem();
+    if (itemId) append({ id: stepId(), kind: "link_space_item", itemId });
+  };
+  const chooseEventDestination = async (): Promise<{ spaceId: string; columnId: string } | null> => {
+    const destinationsResponse = await apiClient.mailboxes[":mailboxId"]["incoming-automations"].spaces.destinations.$get({
+      param: { mailboxId: props.mailboxId },
+    });
+    if (!destinationsResponse.ok) throw new Error(await readApiError(destinationsResponse, "Could not load Spaces"));
+    const destinations = spacesMailDestinationsSchema.parse(await destinationsResponse.json());
+    const selected = await prompts.search<(typeof destinations)[number]>(
+      ({ query }) =>
+        Promise.resolve(
+          destinations
+            .filter((space) => space.name.toLowerCase().includes(query.toLowerCase()))
+            .map((space) => ({
+              value: space,
+              label: space.name,
+              icon: "ti ti-layout-kanban",
+            })),
+        ),
+      {
+        title: "Choose Space",
+        icon: "ti ti-layout-kanban",
+        placeholder: "Search writable Spaces...",
+        minQueryLength: 0,
+        noResultsText: "No writable Spaces found.",
+        size: "small",
+      },
+    );
+    if (!selected?.value) return null;
+    const spaceResponse = await apiClient.mailboxes[":mailboxId"]["incoming-automations"].spaces[":spaceId"].$get({
+      param: { mailboxId: props.mailboxId, spaceId: selected.value.id },
+    });
+    if (!spaceResponse.ok) throw new Error(await readApiError(spaceResponse, "Could not load Space kanbans"));
+    const columns = spaceDetailSchema.parse(await spaceResponse.json()).columns.filter((column) => !column.isDone);
+    const column = await prompts.search<(typeof columns)[number]>(
+      ({ query }) =>
+        Promise.resolve(
+          columns
+            .filter((entry) => entry.name.toLowerCase().includes(query.toLowerCase()))
+            .map((entry) => ({ value: entry, label: entry.name, icon: "ti ti-columns" })),
+        ),
+      {
+        title: "Choose kanban",
+        icon: "ti ti-columns",
+        placeholder: "Search open kanbans...",
+        minQueryLength: 0,
+        noResultsText: "No open kanban found.",
+        size: "small",
+      },
+    );
+    return column?.value ? { spaceId: selected.value.id, columnId: column.value.id } : null;
+  };
+  const appendAiEventFlow = async () => {
+    try {
+      const destination = await chooseEventDestination();
+      if (!destination) return;
+      const extractor: Extract<MailAutomationStep, { kind: "ai_extract_event" }> = {
+        id: stepId(),
+        kind: "ai_extract_event",
+        instructions: "Extract only event details stated in the incoming message.",
+        timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      };
+      appendMany([
+        extractor,
+        { id: stepId(), kind: "create_space_event", ...destination, event: { kind: "step_output", sourceStepId: extractor.id } },
+      ]);
+    } catch (error) {
+      void prompts.error(error instanceof Error ? error.message : "Could not configure Spaces event");
+    }
+  };
+  const changeEventDestination = async (index: number, step: Extract<MailAutomationStep, { kind: "create_space_event" }>) => {
+    try {
+      const destination = await chooseEventDestination();
+      if (destination) replace(index, { ...step, ...destination });
+    } catch (error) {
+      void prompts.error(error instanceof Error ? error.message : "Could not configure Spaces event");
+    }
   };
   const accessibleStepLabel = (step: MailAutomationStep, index: number): string =>
     `${stepLabel(step)} step ${index + 1}${props.labelContext ? ` in ${props.labelContext}` : ""}`;
@@ -448,22 +676,30 @@ function AutomationStepsEditor(props: {
     const actions = actionsBefore(props.steps.length);
     const outputs = outputsBefore(props.steps.length);
     const latestOutput = outputs.at(-1);
-    const nextAction = nextMailAction(actions, props.catalog, directActionOrder);
+    const availableMailActions = mailAutomationActionKindsFor({ actions, catalog: props.catalog });
     const replyDraft = replyDraftStep(props.catalog);
     const remaining = (props.maxSteps ?? 20) - props.steps.length;
     const classification = classificationSteps(false, props.catalog, actions);
     const multiClassification = classificationSteps(true, props.catalog, actions);
     return [
-      ...(nextAction
-        ? [
-            {
-              label: `Mail action · ${mailAutomationActionKindLabels[nextAction.kind]}`,
-              icon: "ti ti-mail-forward",
-              action: () => append(mailActionStep(nextAction)),
-            },
-          ]
+      ...directActionOrder
+        .filter((kind) => availableMailActions.includes(kind))
+        .filter(() => canInsertShape({ localSteps: 1 }))
+        .map((kind) => {
+          const action = createMailAutomationAction({ kind, actions, catalog: props.catalog });
+          return {
+            label: `Mail action · ${mailAutomationActionKindLabels[kind]}`,
+            icon: "ti ti-mail-forward",
+            action: () => action && append(mailActionStep(action)),
+          };
+        }),
+      ...(canInsertShape({ localSteps: 1 })
+        ? [{ label: "Link Spaces item", icon: "ti ti-link", action: () => void appendSpaceItem() }]
         : []),
-      ...(replyDraft
+      ...(canInsertShape({ localSteps: 2, aiCalls: 1 })
+        ? [{ label: "AI extract event + create Spaces event", icon: "ti ti-calendar-plus", action: () => void appendAiEventFlow() }]
+        : []),
+      ...(replyDraft && canInsert([replyDraft])
         ? [
             {
               label: "Create reply draft",
@@ -472,28 +708,22 @@ function AutomationStepsEditor(props: {
             },
           ]
         : []),
-      {
-        label: "Add internal comment",
-        icon: "ti ti-message-plus",
-        action: () => append(commentStep()),
-      },
-      {
-        label: "Set conversation summary",
-        icon: "ti ti-notes",
-        action: () => append(summaryStep()),
-      },
-      {
-        label: "AI generate text",
-        icon: "ti ti-sparkles",
-        action: () => append(generatedTextStep()),
-      },
-      ...(classification.length <= remaining
+      ...(canInsertShape({ localSteps: 1 })
+        ? [{ label: "Add internal comment", icon: "ti ti-message-plus", action: () => append(commentStep()) }]
+        : []),
+      ...(canInsertShape({ localSteps: 1 })
+        ? [{ label: "Set conversation summary", icon: "ti ti-notes", action: () => append(summaryStep()) }]
+        : []),
+      ...(canInsertShape({ localSteps: 1, aiCalls: 1 })
+        ? [{ label: "AI generate text", icon: "ti ti-sparkles", action: () => append(generatedTextStep()) }]
+        : []),
+      ...(classification.length <= remaining && canInsert(classification)
         ? [{ label: "AI classify", icon: "ti ti-list-check", action: () => appendMany(classification) }]
         : []),
-      ...(multiClassification.length <= remaining
+      ...(multiClassification.length <= remaining && canInsert(multiClassification)
         ? [{ label: "AI classify many", icon: "ti ti-tags", action: () => appendMany(multiClassification) }]
         : []),
-      ...(latestOutput
+      ...(latestOutput && latestOutput.type !== "event" && canInsertShape({ localSteps: 1, branchDepth: 1 })
         ? [
             {
               label: "If output matches",
@@ -535,13 +765,19 @@ function AutomationStepsEditor(props: {
                           ? "ti-list-check"
                           : step.kind === "ai_classify_many"
                             ? "ti-tags"
-                            : step.kind === "create_reply_draft"
-                              ? "ti-message-reply"
-                              : step.kind === "add_comment"
-                                ? "ti-message-plus"
-                                : step.kind === "set_summary"
-                                  ? "ti-notes"
-                                  : "ti-git-branch"
+                            : step.kind === "ai_extract_event"
+                              ? "ti-calendar-search"
+                              : step.kind === "link_space_item"
+                                ? "ti-link"
+                                : step.kind === "create_space_event"
+                                  ? "ti-calendar-plus"
+                                  : step.kind === "create_reply_draft"
+                                    ? "ti-message-reply"
+                                    : step.kind === "add_comment"
+                                      ? "ti-message-plus"
+                                      : step.kind === "set_summary"
+                                        ? "ti-notes"
+                                        : "ti-git-branch"
                   }`}
                   aria-hidden="true"
                 />
@@ -556,9 +792,15 @@ function AutomationStepsEditor(props: {
                           ? `Produces one of ${step.choices.length} choices`
                           : step.kind === "ai_classify_many"
                             ? `Produces up to ${step.maxChoices} choices`
-                            : step.kind === "create_reply_draft" || step.kind === "add_comment" || step.kind === "set_summary"
-                              ? textSourceLabel(step.body, outputsBefore(index()))
-                              : `Uses ${outputsBefore(index()).find((output) => output.id === step.condition.sourceStepId)?.label ?? "missing output"}`}
+                            : step.kind === "ai_extract_event"
+                              ? `Produces validated event data in ${step.timeZone}`
+                              : step.kind === "link_space_item"
+                                ? `Links item ${step.itemId}`
+                                : step.kind === "create_space_event"
+                                  ? `Creates an event in ${step.spaceId}`
+                                  : step.kind === "create_reply_draft" || step.kind === "add_comment" || step.kind === "set_summary"
+                                    ? textSourceLabel(step.body, outputsBefore(index()))
+                                    : `Uses ${outputsBefore(index()).find((output) => output.id === step.condition.sourceStepId)?.label ?? "missing output"}`}
                   </span>
                 </div>
                 <IconButton
@@ -603,7 +845,7 @@ function AutomationStepsEditor(props: {
 
                   <Show when={step.kind === "ai_generate_text"}>
                     <div class="flex flex-col gap-3">
-                      <div class="grid gap-2 md:grid-cols-[minmax(0,1fr)_10rem]">
+                      <div class="flex flex-col gap-2">
                         <TextInput
                           label="Instructions"
                           description="The incoming message and current conversation summary are supplied as untrusted context. Say exactly what text should be created."
@@ -614,16 +856,18 @@ function AutomationStepsEditor(props: {
                           lines={3}
                           required
                         />
-                        <NumberInput
-                          label="Maximum characters"
-                          value={() => (step.kind === "ai_generate_text" ? step.maxOutputChars : 4_000)}
-                          onValueChange={(maxOutputChars) =>
-                            step.kind === "ai_generate_text" && replace(index(), { ...step, maxOutputChars: maxOutputChars ?? 4_000 })
-                          }
-                          min={200}
-                          max={10_000}
-                          step={100}
-                        />
+                        <div class="max-w-56">
+                          <NumberInput
+                            label="Maximum characters"
+                            value={() => (step.kind === "ai_generate_text" ? step.maxOutputChars : 4_000)}
+                            onValueChange={(maxOutputChars) =>
+                              step.kind === "ai_generate_text" && replace(index(), { ...step, maxOutputChars: maxOutputChars ?? 4_000 })
+                            }
+                            min={200}
+                            max={10_000}
+                            step={100}
+                          />
+                        </div>
                       </div>
                       <div class="flex items-center gap-3 rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
                         <i class="ti ti-variable text-dimmed" aria-hidden="true" />
@@ -660,7 +904,17 @@ function AutomationStepsEditor(props: {
                             },
                           ]}
                         >
-                          <Dropdown.Trigger type="button" variant="secondary" size="sm">
+                          <Dropdown.Trigger
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            disabled={!canInsertShape({ localSteps: 1 })}
+                            title={
+                              canInsertShape({ localSteps: 1 })
+                                ? undefined
+                                : (capacityIssueFor({ localSteps: 1, totalSteps: 1, aiCalls: 0, branchDepth: 0 }) ?? undefined)
+                            }
+                          >
                             <i class="ti ti-plus" aria-hidden="true" /> Use output
                           </Dropdown.Trigger>
                         </Dropdown.Root>
@@ -699,7 +953,20 @@ function AutomationStepsEditor(props: {
                           <ChoiceEditor
                             step={classifier}
                             context={[props.labelContext, `${stepLabel(step)} step ${index() + 1}`].filter(Boolean).join(", ")}
-                            onChange={(next) => replace(index(), next)}
+                            onChange={(next, change) => {
+                              if (change?.kind === "remove" && referencesChoice(props.steps, classifier.id, change.name)) {
+                                void prompts.error("Change or remove the conditions that use this choice before removing it.");
+                                return;
+                              }
+                              const changed = props.steps.map((candidate, candidateIndex) =>
+                                candidateIndex === index() ? next : candidate,
+                              );
+                              props.onChange(
+                                change?.kind === "rename"
+                                  ? replaceChoiceReferences(changed, classifier.id, change.previous, change.next)
+                                  : changed,
+                              );
+                            }}
                           />
                           <div class="flex items-center gap-3 rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
                             <i class="ti ti-variable text-dimmed" aria-hidden="true" />
@@ -712,7 +979,9 @@ function AutomationStepsEditor(props: {
                             <Button
                               type="button"
                               size="sm"
-                              variant="secondary"
+                              variant="input"
+                              disabled={!canInsertShape({ localSteps: 1, branchDepth: 1 })}
+                              title={capacityIssueFor({ localSteps: 1, totalSteps: 1, aiCalls: 0, branchDepth: 1 }) ?? undefined}
                               onClick={() => {
                                 const output = outputForStep(classifier, index());
                                 if (output)
@@ -725,6 +994,74 @@ function AutomationStepsEditor(props: {
                         </div>
                       );
                     })()}
+                  </Show>
+
+                  <Show when={step.kind === "ai_extract_event"}>
+                    <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_14rem]">
+                      <TextInput
+                        label="Instructions"
+                        description="Mail supplies the incoming message and receipt time as untrusted input. Missing or ambiguous required dates stop event creation."
+                        value={() => (step.kind === "ai_extract_event" ? step.instructions : "")}
+                        onValueChange={(instructions) => step.kind === "ai_extract_event" && replace(index(), { ...step, instructions })}
+                        maxLength={4_000}
+                        multiline
+                        lines={3}
+                        required
+                      />
+                      <TextInput
+                        label="Time zone"
+                        description="IANA time zone for relative dates."
+                        value={() => (step.kind === "ai_extract_event" ? step.timeZone : "")}
+                        onValueChange={(timeZone) => step.kind === "ai_extract_event" && replace(index(), { ...step, timeZone })}
+                        maxLength={80}
+                        required
+                      />
+                    </div>
+                  </Show>
+
+                  <Show when={step.kind === "link_space_item"}>
+                    <div class="flex flex-wrap items-end gap-2">
+                      <div class="min-w-48 flex-1">
+                        <TextInput
+                          label="Spaces item"
+                          description="The selected writable task or event."
+                          value={() => (step.kind === "link_space_item" ? step.itemId : "")}
+                          readOnly
+                        />
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="input"
+                        onClick={() => {
+                          if (step.kind !== "link_space_item") return;
+                          void chooseSpaceItem().then((itemId) => itemId && replace(index(), { ...step, itemId }));
+                        }}
+                      >
+                        <i class="ti ti-search" aria-hidden="true" /> Change item
+                      </Button>
+                    </div>
+                  </Show>
+
+                  <Show when={step.kind === "create_space_event"}>
+                    <div class="grid gap-3 md:grid-cols-2">
+                      <TextInput label="Space" value={() => (step.kind === "create_space_event" ? step.spaceId : "")} readOnly />
+                      <TextInput label="Kanban" value={() => (step.kind === "create_space_event" ? step.columnId : "")} readOnly />
+                      <div class="flex flex-wrap items-center justify-between gap-2 md:col-span-2">
+                        <p class="min-w-48 flex-1 text-[11px] text-dimmed">
+                          Uses the earlier AI event-data output. Event creation stops when required data is missing or ambiguous and is safe
+                          to retry.
+                        </p>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="input"
+                          onClick={() => step.kind === "create_space_event" && void changeEventDestination(index(), step)}
+                        >
+                          <i class="ti ti-search" aria-hidden="true" /> Change destination
+                        </Button>
+                      </div>
+                    </div>
                   </Show>
 
                   <Show when={step.kind === "create_reply_draft"}>
@@ -828,7 +1165,7 @@ function AutomationStepsEditor(props: {
                   <Show when={step.kind === "if"}>
                     {(() => {
                       const conditionStep = step as Extract<MailAutomationStep, { kind: "if" }>;
-                      const outputs = () => outputsBefore(index());
+                      const outputs = () => outputsBefore(index()).filter((output) => output.type !== "event");
                       const source = () => outputs().find((output) => output.id === conditionStep.condition.sourceStepId) ?? outputs()[0];
                       const context = [props.labelContext, `If step ${index() + 1}`].filter(Boolean).join(", ");
                       return (
@@ -878,26 +1215,32 @@ function AutomationStepsEditor(props: {
                           <div class="rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
                             <strong class="mb-2 block text-xs text-primary">Then</strong>
                             <AutomationStepsEditor
+                              mailboxId={props.mailboxId}
                               steps={conditionStep.then}
+                              workflowSteps={props.workflowSteps ?? props.steps}
                               availableActions={actions()}
                               availableOutputs={outputs()}
                               catalog={props.catalog}
                               labelContext={`${context}, Then`}
                               allowEmpty
                               maxSteps={12}
+                              depth={(props.depth ?? 0) + 1}
                               onChange={(then) => replace(index(), { ...conditionStep, then })}
                             />
                           </div>
                           <div class="rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
                             <strong class="mb-2 block text-xs text-primary">Else</strong>
                             <AutomationStepsEditor
+                              mailboxId={props.mailboxId}
                               steps={conditionStep.else}
+                              workflowSteps={props.workflowSteps ?? props.steps}
                               availableActions={actions()}
                               availableOutputs={outputs()}
                               catalog={props.catalog}
                               labelContext={`${context}, Else`}
                               allowEmpty
                               maxSteps={12}
+                              depth={(props.depth ?? 0) + 1}
                               onChange={(otherwise) => replace(index(), { ...conditionStep, else: otherwise })}
                             />
                           </div>
@@ -911,7 +1254,18 @@ function AutomationStepsEditor(props: {
           );
         }}
       </For>
-      <Show when={props.steps.length < (props.maxSteps ?? 20) && menuItems().length > 0}>
+      <Show
+        when={menuItems().length > 0}
+        fallback={
+          <Show when={capacityIssueFor({ localSteps: 1, totalSteps: 1, aiCalls: 0, branchDepth: 0 })}>
+            {(message) => (
+              <p class="text-[11px] text-dimmed" role="status">
+                {message()}
+              </p>
+            )}
+          </Show>
+        }
+      >
         <Dropdown.Root position="bottom-right" width="18rem" items={menuItems()}>
           <Dropdown.Trigger type="button" variant="secondary" size="sm" class="self-start">
             <i class="ti ti-plus" aria-hidden="true" /> Add step
@@ -949,7 +1303,9 @@ function IncomingAutomationEditor(props: {
   const [enabled, setEnabled] = createSignal(initialEnabled);
   const [scope, setScope] = createSignal<MailAutomationScope>(initialScope);
   const [matchingConditions, setMatchingConditions] = createSignal(initialMatchingConditions);
-  const [steps, setSteps] = createSignal<MailAutomationStep[]>(initialStepList);
+  const [stepState, setStepState] = createStore({ items: initialStepList });
+  const steps = (): MailAutomationStep[] => stepState.items;
+  const setSteps = (next: MailAutomationStep[]) => setStepState("items", reconcile(next, { key: "id" }));
   const [applyExisting, setApplyExisting] = createSignal(false);
   const [nameTouched, setNameTouched] = createSignal(false);
   const [scopeTouched, setScopeTouched] = createSignal(false);
@@ -1049,7 +1405,10 @@ function IncomingAutomationEditor(props: {
       return issue.code === "custom" ? `${prefix}: ${issue.message}.` : `${prefix}: Enter a value.`;
     }
     const stepIndex = typeof issue.path[1] === "number" ? issue.path[1] : null;
-    if (stepIndex === null) return "Add at least one step.";
+    if (stepIndex === null) {
+      if (issue.code === "custom") return `${issue.message}.`;
+      return steps().length === 0 ? "Add at least one step." : "Use at most 20 top-level steps.";
+    }
     const location = [`Step ${stepIndex + 1}`];
     for (let index = 2; index < issue.path.length; index += 1) {
       if (issue.path[index] === "choices" && typeof issue.path[index + 1] === "number") {
@@ -1151,7 +1510,14 @@ function IncomingAutomationEditor(props: {
             )}
           </Show>
         </PanelDialog.Section>
-        <AutomationStepsEditor steps={steps()} availableActions={[]} catalog={props.catalog} onChange={setSteps} />
+        <AutomationStepsEditor
+          mailboxId={props.mailboxId}
+          steps={steps()}
+          workflowSteps={steps()}
+          availableActions={[]}
+          catalog={props.catalog}
+          onChange={setSteps}
+        />
         <Show when={validationMessage("steps")}>
           {(message) => (
             <p class="text-xs text-red-600 dark:text-red-400" role="alert">

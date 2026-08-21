@@ -181,6 +181,21 @@ export const migrate = async (): Promise<void> => {
     )
   `.simple();
   await sql`
+    CREATE TABLE IF NOT EXISTS spaces.capability_action_results (
+      actor_key TEXT NOT NULL,
+      action_id TEXT NOT NULL,
+      idempotency_key_hash TEXT NOT NULL,
+      request_hash TEXT NOT NULL,
+      item_id UUID NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (actor_key, action_id, idempotency_key_hash)
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_spaces_capability_action_results_created
+    ON spaces.capability_action_results(created_at)
+  `.simple();
+  await sql`
     CREATE INDEX IF NOT EXISTS idx_item_resource_refs_resource
     ON spaces.item_resource_refs(resource_type, resource_id, item_id)
   `.simple();

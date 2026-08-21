@@ -3945,6 +3945,20 @@ const addConversationSummaries = async (db: SqlClient): Promise<void> => {
   `;
 };
 
+const addIncomingAutomationIntegrationCredentials = async (db: SqlClient): Promise<void> => {
+  await db`
+    ALTER TABLE mail.incoming_automations
+    ADD COLUMN integration_credential_id UUID,
+    ADD COLUMN encrypted_integration_token TEXT
+  `;
+  await db`
+    ALTER TABLE mail.incoming_automations
+    ADD CONSTRAINT incoming_automations_integration_credential_shape CHECK (
+      (integration_credential_id IS NULL) = (encrypted_integration_token IS NULL)
+    )
+  `;
+};
+
 const installLiveInvalidationEnqueue = async (db: SqlClient): Promise<void> => {
   await db`
     CREATE OR REPLACE FUNCTION mail.enqueue_live_invalidation(
@@ -4311,6 +4325,7 @@ const migrations: readonly MailMigration[] = [
   { version: 117, name: "public_short_ids", run: finalizePublicShortIds },
   { version: 118, name: "flat_conversation_comments", run: flattenConversationComments },
   { version: 119, name: "attachment_document_extraction", run: addAttachmentDocumentExtraction },
+  { version: 120, name: "incoming_automation_integration_credentials", run: addIncomingAutomationIntegrationCredentials },
 ];
 
 const ensureMigrationFoundation = async (db: SqlClient): Promise<void> => {

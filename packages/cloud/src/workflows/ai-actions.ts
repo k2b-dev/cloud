@@ -1,8 +1,8 @@
 import type { AiResolvedModel } from "../ai/types";
+import type { WorkflowAiRequestInput, WorkflowAiTask } from "./ai/types";
+import type { WorkflowFieldSchema, WorkflowJsonValue } from "./contracts";
 import type { WorkflowActionContext, WorkflowActionResult, WorkflowPlannedEffect } from "./definition";
 import { workflowAction } from "./definition";
-import type { WorkflowJsonValue } from "./contracts";
-import type { WorkflowAiRequestInput, WorkflowAiTask } from "./ai/types";
 
 const text = (description: string, optional = false, maxLength = 20_000) =>
   ({ kind: "string", minLength: 1, maxLength, optional, description }) as const;
@@ -15,6 +15,40 @@ const choices = {
   minItems: 2,
   maxItems: 50,
   description: "Allowed classification values.",
+} as const;
+const structuredFieldTypes: Array<"text" | "number" | "boolean" | "date_time" | "enum"> = [
+  "text",
+  "number",
+  "boolean",
+  "date_time",
+  "enum",
+];
+const structuredFields = {
+  kind: "array",
+  minItems: 1,
+  maxItems: 40,
+  description: "Declared fields in the returned object.",
+  items: {
+    kind: "object",
+    properties: {
+      name: identifier("Stable output field name."),
+      type: { kind: "string", enum: structuredFieldTypes, description: "Field value type." },
+      description: text("What the field means and how to extract it.", false, 500),
+      required: { kind: "boolean", optional: true, description: "Whether the field must be present. Defaults to true." },
+      choices: { kind: "array", optional: true, minItems: 1, maxItems: 50, items: text("One enum value.", false, 200) },
+      maxLength: { kind: "number", integer: true, minimum: 1, maximum: 20_000, optional: true, description: "Maximum text length." },
+    },
+  },
+} as const satisfies WorkflowFieldSchema;
+const extractDataConfig = {
+  kind: "object",
+  properties: {
+    input: { kind: "value", description: "Bounded JSON input from which fields are extracted." },
+    prompt,
+    fields: structuredFields,
+    model,
+    saveAs: identifier("Variable name for the extracted object."),
+  },
 } as const;
 
 type WorkflowAiActionDependencies = {
@@ -120,6 +154,21 @@ export const planWorkflowAiAction = async (
 };
 
 export const AI_WORKFLOW_ACTIONS = {
+  aiExtractData: workflowAction.idempotent<typeof extractDataConfig, WorkflowJsonValue>({
+    label: "AI extract structured data",
+    description: "Extracts one bounded, validated object from supplied input.",
+    outputType: "core.value",
+    config: extractDataConfig,
+    plan: (ctx) => planWorkflowAiAction(ctx, "Extract structured data with AI."),
+    run: (ctx, values) =>
+      runWorkflowAiAction(ctx, {
+        kind: "extract_data",
+        input: values.input,
+        prompt: values.prompt,
+        fields: values.fields,
+        ...(values.model ? { modelProfileId: values.model } : {}),
+      }),
+  }),
   aiGenerateText: workflowAction.idempotent({
     label: "AI generate text",
     description: "Generates one bounded text value without performing a domain action.",

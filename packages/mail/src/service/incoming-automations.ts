@@ -1,6 +1,6 @@
 import { err, fail, isServiceError, ok, type Result, unwrap } from "@k2b/stdlib";
 import { type PumpHandle, type PumpState, pump } from "@k2b/sync";
-import { audit, toPgTextArray, toPgUuidArray, trace } from "@valentinkolb/cloud/services";
+import { audit, encryptSecret, serviceAccountCredentials, toPgTextArray, toPgUuidArray, trace } from "@valentinkolb/cloud/services";
 import type { WorkflowJsonValue } from "@valentinkolb/cloud/workflows";
 import { emitWorkflowEvent } from "@valentinkolb/cloud/workflows/store";
 import { sql } from "bun";
@@ -31,7 +31,7 @@ import { type MailWorkflowCatalogSnapshot, snapshotMailWorkflowCatalog } from ".
 import { MAIL_WORKFLOW_APP_ID, MAIL_WORKFLOW_EVENT } from "../workflows/events";
 import { requireMailboxPermission } from "./access";
 import { normalizeEmailAddress, normalizeEmailDomain } from "./address-normalization";
-import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext } from "./auth";
+import { actorRefFromRequest, auditActorFromRequest, type MailRequestContext, userBackedActor } from "./auth";
 import { sha256Json } from "./canonical";
 import { databaseErrorCode } from "./database-errors";
 import { publishMailMailboxEvent } from "./events";
@@ -40,6 +40,7 @@ import {
   incomingAutomationActions,
   incomingAutomationBudget,
   incomingAutomationHasAi,
+  incomingAutomationHasSpaces,
 } from "./incoming-automation-definition";
 import { loadMailWorkflowCatalog } from "./workflow-catalog-service";
 import type { SqlClient } from "./workflow-data";
@@ -65,6 +66,10 @@ export type IncomingAutomation = {
   createdAt: string;
   updatedAt: string;
 };
+type StoredIncomingAutomation = IncomingAutomation & {
+  integrationCredentialId: string | null;
+  encryptedIntegrationToken: string | null;
+};
 
 export type IncomingAutomationActivityMetadata = Pick<IncomingAutomation, "id" | "workflowId" | "name">;
 
@@ -82,6 +87,8 @@ type IncomingAutomationRow = {
   revision: string | number;
   created_at: Date | string;
   updated_at: Date | string;
+  integration_credential_id: string | null;
+  encrypted_integration_token: string | null;
 };
 
 type AutomationActor = { kind: "user" | "service_account"; id: string };
@@ -110,7 +117,28 @@ const incomingAutomationColumns = sql`
   automation.revision,
   automation.created_at,
   automation.updated_at
+  , automation.integration_credential_id
+  , automation.encrypted_integration_token
 `;
+
+type IntegrationCredential = { credentialId: string; encryptedToken: string };
+const createIntegrationCredential = async (context: MailRequestContext, automationId: string): Promise<Result<IntegrationCredential>> => {
+  const user = userBackedActor(context);
+  if (!user) return fail(err.forbidden("Spaces automation actions require a user-backed actor"));
+  const created = await serviceAccountCredentials.createUserApiToken({
+    user,
+    name: `Mail incoming automation ${automationId}`,
+  });
+  if (!created.ok) return fail(created.error);
+  return ok({ credentialId: created.data.credential.id, encryptedToken: await encryptSecret(created.data.token) });
+};
+
+const revokeIntegrationCredential = async (context: MailRequestContext, credentialId: string | null): Promise<void> => {
+  if (!credentialId) return;
+  const user = userBackedActor(context);
+  if (!user) throw new TypeError("Spaces automation credentials require a user-backed actor");
+  await serviceAccountCredentials.revoke({ credentialId, actor: user });
+};
 
 const toIso = (value: Date | string): string => (value instanceof Date ? value : new Date(value)).toISOString();
 const normalizeName = (value: string): string => value.trim().replace(/\s+/gu, " ");
@@ -157,21 +185,28 @@ const requestActor = (context: MailRequestContext): AutomationActor => {
   throw new TypeError("Request actor cannot configure incoming automations");
 };
 
-const mapIncomingAutomation = (row: IncomingAutomationRow): IncomingAutomation => ({
-  id: row.id,
-  mailboxId: row.mailbox_id,
-  workflowId: row.workflow_id,
-  workflowVersionId: row.workflow_version_id,
-  name: row.name,
-  enabled: row.enabled,
-  scope: parseJson(row.scope),
-  steps: parseJson(row.steps),
-  latestBackfillOperationId: row.latest_backfill_operation_id,
-  workflowSource: row.workflow_source,
-  revision: Number(row.revision),
-  createdAt: toIso(row.created_at),
-  updatedAt: toIso(row.updated_at),
-});
+const mapIncomingAutomation = (row: IncomingAutomationRow): StoredIncomingAutomation =>
+  Object.defineProperties(
+    {
+      id: row.id,
+      mailboxId: row.mailbox_id,
+      workflowId: row.workflow_id,
+      workflowVersionId: row.workflow_version_id,
+      name: row.name,
+      enabled: row.enabled,
+      scope: parseJson(row.scope),
+      steps: parseJson(row.steps),
+      latestBackfillOperationId: row.latest_backfill_operation_id,
+      workflowSource: row.workflow_source,
+      revision: Number(row.revision),
+      createdAt: toIso(row.created_at),
+      updatedAt: toIso(row.updated_at),
+    } as StoredIncomingAutomation,
+    {
+      integrationCredentialId: { value: row.integration_credential_id, enumerable: false },
+      encryptedIntegrationToken: { value: row.encrypted_integration_token, enumerable: false },
+    },
+  );
 
 const normalizeSenderMatch = (kind: SenderMatchKind, value: string): Result<string> => {
   const normalized = kind === "sender" ? normalizeEmailAddress(value) : normalizeEmailDomain(value);
@@ -523,7 +558,7 @@ const loadIncomingAutomation = async (
   db: SqlClient,
   lock = false,
   includeDeleted = false,
-): Promise<Result<IncomingAutomation>> => {
+): Promise<Result<StoredIncomingAutomation>> => {
   const [row] = await db<IncomingAutomationRow[]>`
     SELECT ${incomingAutomationColumns}
     FROM mail.incoming_automations automation
@@ -1019,6 +1054,11 @@ export const createIncomingAutomation = async (params: {
   if (!scope.ok) return scope;
   const actions = incomingAutomationActions(parsed.data.steps);
   const conditions = scopeConditions(scope.data);
+  const integration = incomingAutomationHasSpaces(parsed.data.steps)
+    ? await createIntegrationCredential(params.context, automationId)
+    : ok<IntegrationCredential | null>(null);
+  if (!integration.ok) return integration;
+  let committed = false;
   try {
     const result = await sql.begin(async (tx) => {
       unwrap(await lockMailbox(params.context, params.mailboxId, tx));
@@ -1076,7 +1116,8 @@ export const createIncomingAutomation = async (params: {
         (db, shortId) => db<IncomingAutomationRow[]>`
         INSERT INTO mail.incoming_automations AS automation (
           id, short_id, mailbox_id, workflow_id, name, normalized_name, scope,
-          steps, enabled, created_by_actor_kind, created_by_actor_id
+          steps, enabled, created_by_actor_kind, created_by_actor_id,
+          integration_credential_id, encrypted_integration_token
         ) VALUES (
           ${automationId}::uuid,
           ${shortId},
@@ -1088,7 +1129,9 @@ export const createIncomingAutomation = async (params: {
           ${parsed.data.steps}::jsonb,
           ${parsed.data.enabled},
           ${actor.kind},
-          ${actor.id}::uuid
+          ${actor.id}::uuid,
+          ${integration.data?.credentialId ?? null}::uuid,
+          ${integration.data?.encryptedToken ?? null}
         )
         RETURNING ${incomingAutomationColumns}
       `,
@@ -1110,9 +1153,11 @@ export const createIncomingAutomation = async (params: {
       );
       return { automation, activityId };
     });
+    committed = true;
     await publishAutomationChange(result.automation, result.activityId);
     return ok(result.automation);
   } catch (error) {
+    if (!committed) await revokeIntegrationCredential(params.context, integration.data?.credentialId ?? null);
     return mutationFailure(error, "Failed to create incoming automation");
   }
 };
@@ -1130,6 +1175,10 @@ export const updateIncomingAutomation = async (params: {
   if (!scope.ok) return scope;
   const actions = incomingAutomationActions(parsed.data.steps);
   const conditions = scopeConditions(scope.data);
+  let createdIntegration: IntegrationCredential | null = null;
+  let createdIntegrationCredentialId: string | null = null;
+  let revokeAfterCommit: string | null = null;
+  let committed = false;
   try {
     const result = await sql.begin(async (tx) => {
       unwrap(await lockMailbox(params.context, params.mailboxId, tx));
@@ -1165,6 +1214,17 @@ export const updateIncomingAutomation = async (params: {
       const enabledChanged = current.enabled !== parsed.data.enabled;
       const changed = current.name !== name || definitionChanged || enabledChanged;
       if (!changed) return { automation: current, activityId: null as string | null };
+      if (definitionChanged && current.integrationCredentialId && !userBackedActor(params.context)) {
+        unwrap(fail(err.forbidden("Spaces automation actions require a user-backed actor")));
+      }
+      const needsSpaces = incomingAutomationHasSpaces(parsed.data.steps);
+      if (needsSpaces && (definitionChanged || !current.integrationCredentialId)) {
+        createdIntegration = unwrap(await createIntegrationCredential(params.context, params.automationId));
+        createdIntegrationCredentialId = createdIntegration.credentialId;
+        revokeAfterCommit = current.integrationCredentialId;
+      } else if (!needsSpaces && current.integrationCredentialId) {
+        revokeAfterCommit = current.integrationCredentialId;
+      }
       if (definitionChanged || enabledChanged) unwrap(await rejectActiveBackfillMutation(current));
       if (definitionChanged) {
         unwrap(
@@ -1202,6 +1262,8 @@ export const updateIncomingAutomation = async (params: {
           steps = ${parsed.data.steps}::jsonb,
           enabled = ${parsed.data.enabled},
           latest_backfill_operation_id = CASE WHEN ${definitionChanged} THEN NULL ELSE latest_backfill_operation_id END,
+          integration_credential_id = ${createdIntegration?.credentialId ?? (needsSpaces ? current.integrationCredentialId : null)}::uuid,
+          encrypted_integration_token = ${createdIntegration?.encryptedToken ?? (needsSpaces ? current.encryptedIntegrationToken : null)},
           revision = revision + 1
         WHERE id = ${params.automationId}::uuid AND mailbox_id = ${params.mailboxId}::uuid
       `;
@@ -1225,9 +1287,13 @@ export const updateIncomingAutomation = async (params: {
       );
       return { automation, activityId };
     });
+    committed = true;
+    await revokeIntegrationCredential(params.context, revokeAfterCommit);
     if (result.activityId) await publishAutomationChange(result.automation, result.activityId);
     return ok(result.automation);
   } catch (error) {
+    if (!committed) await revokeIntegrationCredential(params.context, createdIntegrationCredentialId);
+    else await revokeIntegrationCredential(params.context, revokeAfterCommit);
     return mutationFailure(error, "Failed to update incoming automation");
   }
 };
@@ -1325,11 +1391,15 @@ export const deleteIncomingAutomation = async (params: {
 }): Promise<Result<IncomingAutomation>> => {
   const parsed = deleteIncomingAutomationSchema.safeParse(params.input);
   if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid incoming automation deletion"));
+  let committedCredentialId: string | null = null;
   try {
     const result = await sql.begin(async (tx) => {
       unwrap(await lockMailbox(params.context, params.mailboxId, tx));
       const current = unwrap(await loadIncomingAutomation(params.mailboxId, params.automationId, tx, true));
       if (current.revision !== parsed.data.expectedRevision) unwrap(fail(err.conflict("Incoming automation was changed")));
+      if (current.integrationCredentialId && !userBackedActor(params.context)) {
+        unwrap(fail(err.forbidden("Spaces automation actions require a user-backed actor")));
+      }
       unwrap(await rejectActiveBackfillMutation(current));
       unwrap(
         await setManagedWorkflowEnabledInTransaction({
@@ -1360,11 +1430,14 @@ export const deleteIncomingAutomation = async (params: {
         },
         tx,
       );
-      return { automation, activityId };
+      return { automation, activityId, integrationCredentialId: current.integrationCredentialId };
     });
+    committedCredentialId = result.integrationCredentialId;
+    await revokeIntegrationCredential(params.context, result.integrationCredentialId);
     await publishAutomationChange(result.automation, result.activityId);
     return ok(result.automation);
   } catch (error) {
+    await revokeIntegrationCredential(params.context, committedCredentialId);
     return mutationFailure(error, "Failed to delete incoming automation");
   }
 };

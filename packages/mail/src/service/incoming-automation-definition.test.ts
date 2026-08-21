@@ -132,6 +132,34 @@ describe("incoming automation workflow compiler", () => {
     expect(bound.ok).toBe(true);
   });
 
+  test("compiles strict event extraction into retry-safe Spaces creation", async () => {
+    const extractId = "00000000-0000-4000-8000-000000000040";
+    const steps: MailAutomationStep[] = [
+      {
+        id: extractId,
+        kind: "ai_extract_event",
+        instructions: "Use only explicit event details.",
+        timeZone: "Europe/Berlin",
+      },
+      {
+        id: "00000000-0000-4000-8000-000000000041",
+        kind: "create_space_event",
+        spaceId: "Space1",
+        columnId: "Col001",
+        event: { kind: "step_output", sourceStepId: extractId },
+      },
+      { id: "00000000-0000-4000-8000-000000000042", kind: "link_space_item", itemId: "Item01" },
+    ];
+    const source = buildIncomingAutomationWorkflowSource({ scope: { mode: "all" }, steps });
+    expect(source).toContain("aiExtractData:");
+    expect(source).toContain("Europe/Berlin");
+    expect(source).toContain("createSpaceEvent:");
+    expect(source).toContain("event: ${{ step_00000000000040008000000000000040 }}");
+    expect(source).toContain("linkSpaceItem:");
+    expect(incomingAutomationBudget(steps)).toMatchObject({ maxAiCalls: 1, maxCollaborationChanges: 2 });
+    expect(await compileWorkflow(source, mailWorkflows)).toMatchObject({ ok: true });
+  });
+
   test("compiles multi-classification as ordinary sequential conditions", async () => {
     const source = buildIncomingAutomationWorkflowSource({
       scope: { mode: "all" },

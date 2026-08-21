@@ -29,19 +29,25 @@ Add steps in the order they should run. A flow can freely mix:
 - **AI generate text** to produce bounded text for later steps.
 - **AI classify** to produce exactly one configured category.
 - **AI classify many** to produce up to the configured maximum of matching categories.
+- **Link Spaces item** to attach the conversation to an existing writable task or event.
+- **AI extract event + create Spaces event** to select a destination, extract validated event fields, and create one linked event.
 - **Create reply draft**, **Add internal comment**, or **Set conversation summary** with custom text or an earlier text output.
 - **If output matches** to run normal Mail or AI steps in a Then or Else branch.
 
 Reply drafts and internal comments are normal Mail steps and do not require AI. Add either step directly, then choose **Custom text** or a compatible earlier workflow output as its text source. AI results remain normal workflow outputs. **Use output** and **Add condition** are shortcuts that add ordinary following steps; they do not hide extra behavior inside the AI block. Then and Else branches can again contain Mail actions, AI steps, output consumers, or conditions.
+
+The editor disables or omits additions that would exceed the flow, branch, nesting, or AI-call limits. A step that produces output cannot be removed while a later step still uses that output. Renaming an AI classification choice updates conditions that use it; remove or change those conditions before deleting an in-use choice.
 
 ### Know the guided definition contract
 
 The guided editor and the CLI use the same strict definition. Unknown fields are rejected. A definition has `name`, `enabled`, `scope`, and `steps`; its name accepts 1–120 characters, and a new definition defaults `enabled` to `false`.
 
 - `scope.mode: all` needs no conditions. `scope.mode: matching` requires `conditions.mode: all|any` and 1–8 unique condition items. Fields are `sender_address`, `sender_domain`, `subject`, `body_text`, and `attachment_presence`. Sender address and domain use `operator: is`; subject and body accept `is`, `contains`, `starts_with`, or `ends_with`; attachment presence uses `is` with a boolean `value`. Address values accept 1–320 characters, domains 1–253, and subject or body values 1–1,000.
-- Every step has a unique UUID in `id`. Step kinds are `mail_action`, `ai_generate_text`, `ai_classify`, `ai_classify_many`, `create_reply_draft`, `add_comment`, `set_summary`, and `if`.
+- Every step has a unique UUID in `id`. Step kinds are `mail_action`, `ai_generate_text`, `ai_classify`, `ai_classify_many`, `ai_extract_event`, `link_space_item`, `create_space_event`, `create_reply_draft`, `add_comment`, `set_summary`, and `if`.
 - A `mail_action` is `junk`, `trash`, `mark_read`, `add_keyword`, `move_to_folder`, `add_local_tag`, `assign_user`, or `set_status`. Catalog-backed actions use `folderId`, `tagId`, or `userId`; status is `needs_action`, `waiting`, or `done`. The guided editor recommends local tags and no longer offers `add_keyword` for new steps. Existing definitions containing it remain editable, and CLI or advanced workflow callers can still use it for provider interoperability; a keyword accepts 1–100 characters and must use valid provider-keyword syntax.
 - `ai_generate_text.instructions` accepts 1–4,000 characters and `maxOutputChars` is 200–10,000. `ai_classify` and `ai_classify_many` accept 2–10 choices with case-insensitively unique names; a choice name accepts 1–80 characters and its description 1–500. `ai_classify_many.maxChoices` is from 1 to the number of choices.
+- `ai_extract_event` accepts 1–4,000 characters of instructions and an explicit IANA `timeZone`. Its structured output contains `ready`, title, optional description and location, start, end, and all-day state. Missing or ambiguous title or times set `ready: false`; the following event step then stops instead of inventing an event.
+- `link_space_item.itemId` identifies one existing writable task or event. `create_space_event` requires a writable `spaceId`, open `columnId`, and either explicit event data or an earlier `ai_extract_event` output through `sourceStepId`. The guided editor shows these IDs read-only; use **Change item** or **Change destination** to select another currently writable target. Explicit event data uses `title`, optional `description` and `location`, ISO `startsAt` and `endsAt`, and `allDay`. The created event includes a stable reference back to the Mail conversation.
 - `create_reply_draft`, `add_comment`, and `set_summary` use `body: { kind: custom, value: ... }` with 1–50,000 characters or `body: { kind: step_output, sourceStepId: ... }` for an earlier text-producing AI step. A multi-choice result is not a text source. Reply drafts additionally require a catalog `senderIdentityId`.
 - An `if` condition references an earlier AI `sourceStepId`. Use `equals` for generated text or one classification and `includes` for multi-classification; `value` accepts 1–500 characters and must name a declared choice for classification. Both `then` and `else` contain at most 12 steps.
 - A definition contains 1–20 top-level steps, at most 40 steps across branches, at most 4 branch levels, and at most 10 AI calls. One reachable path can contain only one provider-message action, assignment, status change, and summary replacement, and cannot add the same local tag twice.
@@ -53,6 +59,10 @@ Text conditions support exact, contains, starts-with, and ends-with matching. Re
 New incoming automations start inactive. A deterministic flow can preview and process existing matching messages with a resumable backfill. The durable cursor survives restarts, a failed message is retried without stopping unrelated workflow runs, and a repeated backfill skips messages already accepted for the same immutable version. The automation menu shows progress and lets you cancel or run it again.
 
 Any flow containing an AI step processes only future messages. Mail matching conditions run before AI. The Safety section shows the maximum number of AI calls per matching message. AI can classify or write incorrectly, so keep category descriptions precise and review the first runs under **Activity**. A generated text output has no effect until a later step uses it. Reply automation only creates drafts for human review and never sends them.
+
+Spaces steps run with a revocable delegation of the user who configured the automation. Mail stores its token encrypted and revokes it when the last Spaces step is removed or the automation is deleted. Every run still checks current Mail authority and current Spaces access. Linking is an upsert, and event creation uses a durable idempotency key, so retries do not create duplicate events. Revoking the delegated API key or removing Space access makes future runs fail closed.
+
+Use `set_status: done` to complete a conversation. Use `needs_action` or `waiting` to reopen it explicitly. A verified new inbound message already moves a completed conversation back to Needs action, so a separate “unmark done on incoming mail” step is normally unnecessary.
 
 For automation through `cld`, use `mail automation catalog` to discover valid IDs. `mail automation create` and `mail automation update` accept the complete guided definition as JSON or YAML through `--definition-file` or `--definition-stdin`, including `scope` and the ordered `steps` tree. This keeps CLI and UI behavior identical, including output references and nested conditions.
 

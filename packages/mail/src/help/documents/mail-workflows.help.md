@@ -184,11 +184,16 @@ Variables created inside a branch do not escape that branch. Defining the same v
 | `aiGenerateText` | `prompt`, `saveAs` | Generates bounded text; `input`, `model`, and `maxOutputChars` are optional |
 | `aiClassify` | `input`, `prompt`, `choices`, `saveAs` | Returns exactly one declared choice |
 | `aiClassifyMany` | `input`, `prompt`, `choices`, `saveAs` | Returns a unique subset of declared choices |
+| `aiExtractData` | `input`, `prompt`, `fields`, `saveAs` | Returns one object validated against declared bounded fields |
+| `linkSpaceItem` | `conversation`, `item` | Links a conversation to an existing writable Spaces task or event |
+| `createSpaceEvent` | `conversation`, `space`, `column`, `event` | Creates one retry-safe event with a conversation reference |
 | `setVariable` | `name`, `value` | Stores a value for later steps |
 | `succeed` | `message` | Stops the run successfully |
 | `fail` | `message` | Stops the run with a non-retryable workflow error |
 
 Folder, local-tag, user, and sender fields accept an unambiguous accessible name or ID. The saved version binds those catalog values before activation. Response timing is written inline and validated as part of the version.
+
+`linkSpaceItem` and `createSpaceEvent` are emitted by managed incoming automations. They use the encrypted, revocable Spaces delegation stored with that automation and therefore are not available to unrelated hand-written Mail workflows.
 
 ### Check fields, defaults, outputs, and budgets
 
@@ -209,6 +214,8 @@ Reference fields named `message`, `conversation`, or `draft` accept a raw value 
 | `aiGenerateText` | prompt: 1–20,000 characters; `maxOutputChars`: 4,000 by default, from 1 to 20,000; optional `input` and `model` | required `saveAs` receives `core.text` | 1 `maxAiCalls` for a newly created task |
 | `aiClassify` | prompt: 1–20,000 characters; 2–50 unique choices of 1–200 characters; optional `model` | required `saveAs` receives one declared choice as `core.text` | 1 `maxAiCalls` for a newly created task |
 | `aiClassifyMany` | same choice limits; `minChoices`: 0 by default; `maxChoices`: all choices by default; both from 0 to 50 | required `saveAs` receives an ordered unique `core.textArray` | 1 `maxAiCalls` for a newly created task |
+| `aiExtractData` | 1–40 unique named fields; types are `text`, `number`, `boolean`, `date_time`, or `enum`; enum fields require 1–50 choices; text may set `maxLength` | required `saveAs` receives a strict `core.value` object | 1 `maxAiCalls` for a newly created task |
+| `linkSpaceItem`, `createSpaceEvent` | stable six-character Spaces ids; event requires a valid title and ISO start/end range | linked reference or created event | 1 `maxCollaborationChanges`; event also consumes 1 `maxTargets` |
 | `setVariable` | any JSON-compatible `value` | `name` receives `core.value` | none |
 | `succeed`, `fail` | operator-facing message: at most 1,000 characters | terminal state | none |
 
@@ -284,6 +291,40 @@ steps:
 ```
 
 Use `aiClassify` when exactly one choice is allowed. Use `aiClassifyMany` when zero or more choices may apply; `minChoices` and `maxChoices` bound the result. Choices are exact values, not free-form model output.
+
+`aiExtractData` declares its complete output contract instead of accepting free-form JSON Schema. This generated managed-automation example extracts event data and creates a linked Spaces event. If the model cannot supply a valid title or time range, structured validation or the `ready` guard stops the create step:
+
+```yaml
+inputs:
+  message: { type: mailMessage, required: true }
+  conversation: { type: mailConversation, required: true }
+triggers:
+  messageReceived:
+    with:
+      message: "${{ trigger.message }}"
+      conversation: "${{ trigger.conversation }}"
+steps:
+  - aiExtractData:
+      input:
+        subject: "${{ inputs.message.subject }}"
+        body: "${{ inputs.message.bodyText }}"
+        receivedAt: "${{ inputs.message.receivedAt }}"
+      prompt: Extract calendar details. Interpret relative dates in Europe/Berlin. Do not invent missing facts.
+      fields:
+        - { name: ready, type: boolean, description: "True only when title, start, and end are unambiguous." }
+        - { name: title, type: text, description: Concise event title., required: false, maxLength: 500 }
+        - { name: startsAt, type: date_time, description: ISO start with offset., required: false }
+        - { name: endsAt, type: date_time, description: ISO end with offset., required: false }
+        - { name: allDay, type: boolean, description: Whether the event is all day. }
+      saveAs: eventData
+  - createSpaceEvent:
+      conversation: inputs.conversation
+      space: Space1
+      column: Col001
+      event: "${{ eventData }}"
+```
+
+The generic field types are `text`, `number`, `boolean`, `date_time`, and `enum`. Optional fields may be absent; output rejects undeclared fields. The guided incoming-mail editor supplies the fixed event field contract, an explicit IANA time zone, the message receipt time, and the no-invention guard automatically.
 
 An optional `model` selects an enabled profile for one action. Otherwise Mail uses the platform workflow model, then the background model, then the platform default. Each newly created AI task consumes one `maxAiCalls` budget unit; Mail defaults that budget to 10 per run.
 

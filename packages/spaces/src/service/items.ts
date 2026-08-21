@@ -22,8 +22,8 @@ import type {
 } from "@/contracts";
 import { withShortId } from "../lib/short-id";
 import { buildSpacePrincipalCondition, isSpaceResourceId } from "./access";
-import * as activity from "./activity";
 import type { SpaceActivityIdentity } from "./activity";
+import * as activity from "./activity";
 import { descriptionPreview } from "./description-preview";
 import { publishSpaceEvent } from "./events";
 import { insertMany as insertItemResourceReferences } from "./item-resource-references";
@@ -1227,6 +1227,13 @@ export const create = async (params: {
   createdBy: string | null;
   dateConfig?: DateContext;
   actor?: SpaceActivityIdentity;
+  idempotency?: {
+    actorKey: string;
+    actionId: string;
+    idempotencyKeyHash: string;
+    requestHash: string;
+    onReplay?: () => void;
+  };
 }): Promise<MutationResult<SpaceItem>> => {
   const { spaceId, data, createdBy } = params;
 
@@ -1268,15 +1275,45 @@ export const create = async (params: {
   const recurrence = recurrenceValues(data.recurrence);
 
   const row = await withShortId("item", (shortId) =>
-    sql.begin(async (tx): Promise<{ id: string } | null> => {
+    sql.begin(async (tx): Promise<{ id: string; replayed: boolean; conflict?: boolean } | null> => {
+      let allocatedId: string | null = null;
+      if (params.idempotency) {
+        const [allocated] = await tx<{ id: string }[]>`SELECT gen_random_uuid() AS id`;
+        if (!allocated) throw new Error("Failed to allocate Space item id");
+        const [claim] = await tx<{ item_id: string }[]>`
+          INSERT INTO spaces.capability_action_results (
+            actor_key, action_id, idempotency_key_hash, request_hash, item_id
+          ) VALUES (
+            ${params.idempotency.actorKey}, ${params.idempotency.actionId},
+            ${params.idempotency.idempotencyKeyHash}, ${params.idempotency.requestHash}, ${allocated.id}::uuid
+          )
+          ON CONFLICT (actor_key, action_id, idempotency_key_hash) DO NOTHING
+          RETURNING item_id
+        `;
+        if (!claim) {
+          const [existing] = await tx<{ request_hash: string; item_id: string }[]>`
+            SELECT request_hash, item_id
+            FROM spaces.capability_action_results
+            WHERE actor_key = ${params.idempotency.actorKey}
+              AND action_id = ${params.idempotency.actionId}
+              AND idempotency_key_hash = ${params.idempotency.idempotencyKeyHash}
+          `;
+          if (!existing) throw new Error("Space idempotency replay lookup failed");
+          if (existing.request_hash !== params.idempotency.requestHash) {
+            return { id: existing.item_id, replayed: true, conflict: true };
+          }
+          return { id: existing.item_id, replayed: true };
+        }
+        allocatedId = claim.item_id;
+      }
       const [created] = await tx<{ id: string }[]>`
       INSERT INTO spaces.items (
-        short_id, space_id, column_id, title, description, location, url, starts_at, ends_at, deadline,
+        id, short_id, space_id, column_id, title, description, location, url, starts_at, ends_at, deadline,
         estimated_duration_minutes, all_day, priority, recurrence_rrule, recurrence_dtstart, recurrence_exdate,
         recurring_event_id, recurrence_id, rank, completed_at, created_by
       )
       VALUES (
-        ${shortId},
+        COALESCE(${allocatedId}::uuid, gen_random_uuid()), ${shortId},
         ${spaceId},
         ${data.columnId},
         ${data.title},
@@ -1318,7 +1355,7 @@ export const create = async (params: {
         await insertItemResourceReferences(tx, created.id, data.references);
       }
 
-      return created;
+      return { id: created.id, replayed: false };
     }),
   );
 
@@ -1328,20 +1365,24 @@ export const create = async (params: {
     }
     return { ok: false, error: "Failed to create item", status: 500 };
   }
+  if (row.conflict) return { ok: false, error: "Idempotency-Key was already used with different input", status: 409 };
 
   const item = await get({ id: row.id });
   if (!item) {
     return { ok: false, error: "Failed to load created item", status: 500 };
   }
 
-  await publishSpaceEvent({ type: "item.created", spaceId, itemId: item.id });
-  await activity.record({
-    spaceId,
-    itemId: item.id,
-    actor: params.actor ?? (createdBy ? { kind: "user", id: createdBy } : systemActor),
-    action: item.startsAt && item.endsAt ? "event.created" : "task.created",
-    metadata: { itemTitle: item.title },
-  });
+  if (row.replayed) params.idempotency?.onReplay?.();
+  else {
+    await publishSpaceEvent({ type: "item.created", spaceId, itemId: item.id });
+    await activity.record({
+      spaceId,
+      itemId: item.id,
+      actor: params.actor ?? (createdBy ? { kind: "user", id: createdBy } : systemActor),
+      action: item.startsAt && item.endsAt ? "event.created" : "task.created",
+      metadata: { itemTitle: item.title },
+    });
+  }
   return { ok: true, data: item };
 };
 

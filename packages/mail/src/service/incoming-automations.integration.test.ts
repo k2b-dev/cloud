@@ -280,4 +280,62 @@ suite("incoming automations", () => {
       input: { expectedRevision: destructive.data.revision },
     });
   });
+
+  test("encrypts and revokes delegated Spaces authorization with the managed definition", async () => {
+    const created = await createIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      input: {
+        name: "Link project item",
+        enabled: false,
+        scope: { mode: "all" },
+        steps: [{ id: crypto.randomUUID(), kind: "link_space_item", itemId: "Item01" }],
+      },
+    });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const [stored] = await sql<
+      { integration_credential_id: string | null; encrypted_integration_token: string | null; status: string | null }[]
+    >`
+      SELECT automation.integration_credential_id, automation.encrypted_integration_token, credential.status
+      FROM mail.incoming_automations automation
+      LEFT JOIN auth.service_account_credentials credential ON credential.id = automation.integration_credential_id
+      WHERE automation.id = ${created.data.id}::uuid
+    `;
+    expect(stored?.integration_credential_id).not.toBeNull();
+    expect(stored?.encrypted_integration_token).not.toContain("cld_");
+    expect(stored?.status).toBe("active");
+
+    const updated = await updateIncomingAutomation({
+      context: ownerContext,
+      mailboxId,
+      automationId: created.data.id,
+      input: {
+        expectedRevision: created.data.revision,
+        name: created.data.name,
+        enabled: false,
+        scope: { mode: "all" },
+        steps: [{ id: crypto.randomUUID(), kind: "mail_action", action: { kind: "mark_read" } }],
+      },
+    });
+    expect(updated.ok).toBe(true);
+    const [after] = await sql<
+      { integration_credential_id: string | null; encrypted_integration_token: string | null; status: string | null }[]
+    >`
+      SELECT automation.integration_credential_id, automation.encrypted_integration_token, credential.status
+      FROM mail.incoming_automations automation
+      LEFT JOIN auth.service_account_credentials credential ON credential.id = ${stored?.integration_credential_id ?? null}::uuid
+      WHERE automation.id = ${created.data.id}::uuid
+    `;
+    expect(after).toMatchObject({ integration_credential_id: null, encrypted_integration_token: null, status: "revoked" });
+    if (updated.ok) {
+      await deleteIncomingAutomation({
+        context: ownerContext,
+        mailboxId,
+        automationId: updated.data.id,
+        input: { expectedRevision: updated.data.revision },
+      });
+    }
+  });
 });

@@ -1,7 +1,7 @@
 import { StructuredOutputError } from "@k2b/nessi";
 import { job } from "@k2b/sync";
 import { z } from "zod";
-import { isAiSettingsError, runAiStructured, type RunAiStructuredInput } from "../../ai";
+import { isAiSettingsError, type RunAiStructuredInput, runAiStructured } from "../../ai";
 import type { WorkflowJsonValue } from "../contracts";
 import {
   claimWorkflowAiTask,
@@ -11,8 +11,8 @@ import {
   listRecoverableWorkflowAiTaskIds,
   markWorkflowAiTaskCanceledIfRequested,
   requeueWorkflowAiTask,
-  workflowAiTaskCancellationRequested,
   wakeWorkflowAiTask,
+  workflowAiTaskCancellationRequested,
 } from "./store";
 import type { WorkflowAiRequest, WorkflowAiTask } from "./types";
 
@@ -62,6 +62,24 @@ export const settleWorkflowAiAttemptFailure = async (
 
 const asJson = (value: unknown): WorkflowJsonValue => JSON.parse(JSON.stringify(value)) as WorkflowJsonValue;
 const choiceEnum = (values: string[]) => z.enum(values as [string, ...string[]]);
+const structuredOutputSchema = (fields: Extract<WorkflowAiRequest, { kind: "extract_data" }>["fields"]) => {
+  const shape: Record<string, z.ZodType> = {};
+  for (const field of fields) {
+    let schema: z.ZodType =
+      field.type === "text"
+        ? z.string().max(field.maxLength ?? 20_000)
+        : field.type === "number"
+          ? z.number()
+          : field.type === "boolean"
+            ? z.boolean()
+            : field.type === "date_time"
+              ? z.iso.datetime({ offset: true })
+              : choiceEnum(field.choices!);
+    if (!field.required) schema = schema.optional();
+    shape[field.name] = schema.describe(field.description);
+  }
+  return z.object(shape).strict();
+};
 
 export const executeWorkflowAiRequest = async (task: WorkflowAiTask, runStructured: StructuredRunner, signal: AbortSignal) => {
   const request = task.request;
@@ -96,6 +114,19 @@ export const executeWorkflowAiRequest = async (task: WorkflowAiTask, runStructur
       maxOutputTokens: 200,
     });
     return { output: result.output.choice as WorkflowJsonValue, usage: result.usage ? asJson(result.usage) : null };
+  }
+
+  if (request.kind === "extract_data") {
+    const result = await runStructured({
+      ...common,
+      task: "workflow-extract-data",
+      systemPrompt: `${request.prompt}\nReturn only the declared fields. Do not invent values that are not supported by the input.`,
+      input: JSON.stringify(request.input),
+      outputName: "structured_data",
+      output: structuredOutputSchema(request.fields),
+      maxOutputTokens: 4_096,
+    });
+    return { output: asJson(result.output), usage: result.usage ? asJson(result.usage) : null };
   }
 
   const maximum = request.maxChoices ?? request.choices.length;

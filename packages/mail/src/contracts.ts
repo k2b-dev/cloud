@@ -2131,6 +2131,19 @@ export const mailAutomationScopeSchema = z.discriminatedUnion("mode", [
 export type MailAutomationScope = z.infer<typeof mailAutomationScopeSchema>;
 
 const automationStepIdSchema = z.string().uuid();
+const ianaTimeZoneSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .refine((timeZone) => {
+    try {
+      new Intl.DateTimeFormat("en", { timeZone }).format();
+      return true;
+    } catch {
+      return false;
+    }
+  }, "Enter a valid IANA time zone");
 
 type MailAutomationChoice = {
   name: string;
@@ -2138,6 +2151,17 @@ type MailAutomationChoice = {
 };
 
 type MailAutomationTextSource = { kind: "custom"; value: string } | { kind: "step_output"; sourceStepId: string };
+type MailAutomationEventSource =
+  | {
+      kind: "custom";
+      title: string;
+      description?: string;
+      location?: string;
+      startsAt: string;
+      endsAt: string;
+      allDay: boolean;
+    }
+  | { kind: "step_output"; sourceStepId: string };
 
 type MailAutomationIfCondition = {
   sourceStepId: string;
@@ -2161,6 +2185,9 @@ export type MailAutomationStep =
       choices: MailAutomationChoice[];
       maxChoices: number;
     }
+  | { id: string; kind: "ai_extract_event"; instructions: string; timeZone: string }
+  | { id: string; kind: "link_space_item"; itemId: string }
+  | { id: string; kind: "create_space_event"; spaceId: string; columnId: string; event: MailAutomationEventSource }
   | { id: string; kind: "create_reply_draft"; body: MailAutomationTextSource; senderIdentityId: string }
   | { id: string; kind: "add_comment"; body: MailAutomationTextSource }
   | { id: string; kind: "set_summary"; body: MailAutomationTextSource }
@@ -2177,6 +2204,24 @@ const mailAutomationChoiceSchema: z.ZodType<MailAutomationChoice> = z.lazy(() =>
 
 const mailAutomationTextSourceSchema: z.ZodType<MailAutomationTextSource> = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("custom"), value: z.string().trim().min(1).max(50_000) }).strict(),
+  z.object({ kind: z.literal("step_output"), sourceStepId: automationStepIdSchema }).strict(),
+]);
+const mailAutomationEventSourceSchema: z.ZodType<MailAutomationEventSource> = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("custom"),
+      title: z.string().trim().min(1).max(500),
+      description: z.string().trim().max(50_000).optional(),
+      location: z.string().trim().max(500).optional(),
+      startsAt: z.string().datetime({ offset: true }),
+      endsAt: z.string().datetime({ offset: true }),
+      allDay: z.boolean(),
+    })
+    .strict()
+    .refine((value) => Date.parse(value.endsAt) > Date.parse(value.startsAt), {
+      message: "Event end must be after its start",
+      path: ["endsAt"],
+    }),
   z.object({ kind: z.literal("step_output"), sourceStepId: automationStepIdSchema }).strict(),
 ]);
 
@@ -2197,6 +2242,24 @@ export const mailAutomationStepSchema: z.ZodType<MailAutomationStep> = z.lazy(()
         kind: z.literal("ai_generate_text"),
         instructions: z.string().trim().min(1).max(4_000),
         maxOutputChars: z.number().int().min(200).max(10_000),
+      })
+      .strict(),
+    z
+      .object({
+        id: automationStepIdSchema,
+        kind: z.literal("ai_extract_event"),
+        instructions: z.string().trim().min(1).max(4_000),
+        timeZone: ianaTimeZoneSchema,
+      })
+      .strict(),
+    z.object({ id: automationStepIdSchema, kind: z.literal("link_space_item"), itemId: ResourceShortIdSchema }).strict(),
+    z
+      .object({
+        id: automationStepIdSchema,
+        kind: z.literal("create_space_event"),
+        spaceId: ResourceShortIdSchema,
+        columnId: ResourceShortIdSchema,
+        event: mailAutomationEventSourceSchema,
       })
       .strict(),
     z
@@ -2239,7 +2302,7 @@ export const mailAutomationStepSchema: z.ZodType<MailAutomationStep> = z.lazy(()
 );
 
 const addAutomationStepIssues = (steps: MailAutomationStep[], context: z.RefinementCtx): void => {
-  type OutputStep = Extract<MailAutomationStep, { kind: "ai_generate_text" | "ai_classify" | "ai_classify_many" }>;
+  type OutputStep = Extract<MailAutomationStep, { kind: "ai_generate_text" | "ai_classify" | "ai_classify_many" | "ai_extract_event" }>;
   const ids = new Set<string>();
   let total = 0;
   let aiCalls = 0;
@@ -2289,6 +2352,16 @@ const addAutomationStepIssues = (steps: MailAutomationStep[], context: z.Refinem
           });
         }
       }
+      if (step.kind === "create_space_event" && step.event.kind === "step_output") {
+        const source = current.get(step.event.sourceStepId);
+        if (!source || source.kind !== "ai_extract_event") {
+          context.addIssue({
+            code: "custom",
+            message: "Select an earlier AI event-data step",
+            path: [...stepPath, "event", "sourceStepId"],
+          });
+        }
+      }
       if (step.kind === "if") {
         const source = current.get(step.condition.sourceStepId);
         const expectedOperator = source?.kind === "ai_classify_many" ? "includes" : "equals";
@@ -2296,6 +2369,12 @@ const addAutomationStepIssues = (steps: MailAutomationStep[], context: z.Refinem
           context.addIssue({
             code: "custom",
             message: "Select an earlier AI output",
+            path: [...stepPath, "condition", "sourceStepId"],
+          });
+        } else if (source.kind === "ai_extract_event") {
+          context.addIssue({
+            code: "custom",
+            message: "Event-data outputs can only be used by a create-event step",
             path: [...stepPath, "condition", "sourceStepId"],
           });
         } else if (step.condition.operator !== expectedOperator) {
@@ -2308,6 +2387,7 @@ const addAutomationStepIssues = (steps: MailAutomationStep[], context: z.Refinem
         if (
           source &&
           source.kind !== "ai_generate_text" &&
+          source.kind !== "ai_extract_event" &&
           !source.choices.some((choice) => choice.name.toLowerCase() === step.condition.value.toLowerCase())
         ) {
           context.addIssue({
@@ -2319,7 +2399,13 @@ const addAutomationStepIssues = (steps: MailAutomationStep[], context: z.Refinem
         visit(step.then, current, [...stepPath, "then"], depth + 1);
         visit(step.else, current, [...stepPath, "else"], depth + 1);
       }
-      if (step.kind === "ai_generate_text" || step.kind === "ai_classify" || step.kind === "ai_classify_many") current.set(step.id, step);
+      if (
+        step.kind === "ai_generate_text" ||
+        step.kind === "ai_classify" ||
+        step.kind === "ai_classify_many" ||
+        step.kind === "ai_extract_event"
+      )
+        current.set(step.id, step);
     });
   };
   visit(steps, new Map(), ["steps"], 0);

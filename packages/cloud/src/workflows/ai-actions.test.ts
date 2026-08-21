@@ -31,8 +31,9 @@ const context = { runId: task().runId, stepKey: "step:ai", effectKey: task().eff
 const resolved = { profile: { id: "workflow-model" } } as AiResolvedModel;
 
 describe("shared workflow AI actions", () => {
-  test("exposes only the three opt-in data actions", () => {
-    expect(Object.keys(AI_WORKFLOW_ACTIONS)).toEqual(["aiGenerateText", "aiClassify", "aiClassifyMany"]);
+  test("exposes the bounded opt-in data actions", () => {
+    expect(Object.keys(AI_WORKFLOW_ACTIONS)).toEqual(["aiExtractData", "aiGenerateText", "aiClassify", "aiClassifyMany"]);
+    expect(AI_WORKFLOW_ACTIONS.aiExtractData.outputType).toBe("core.value");
     expect(AI_WORKFLOW_ACTIONS.aiClassifyMany.outputType).toBe("core.textArray");
   });
 
