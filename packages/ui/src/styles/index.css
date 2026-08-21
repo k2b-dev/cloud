@@ -3679,8 +3679,8 @@
   cursor: pointer;
 }
 
-.k2b-ui .k2b-choice-trigger[data-clearable="true"] {
-  padding-right: 2rem;
+.k2b-ui .k2b-choice-trigger[data-clearable="true"] .k2b-choice-trigger__value {
+  padding-right: 1.75rem;
 }
 
 .k2b-ui .k2b-choice-trigger:disabled,
@@ -3716,6 +3716,12 @@
   border: 0;
   border-radius: 0.375rem;
   cursor: pointer;
+}
+
+.k2b-ui .k2b-choice-trigger[data-clearable="true"] + input + .k2b-choice-control__clear,
+.k2b-ui .k2b-choice-trigger[data-clearable="true"] + .k2b-choice-control__clear,
+.k2b-ui .k2b-combobox__input[data-clearable="true"] .k2b-choice-control__clear {
+  right: 1.75rem;
 }
 
 .k2b-ui .k2b-combobox__input {
@@ -3761,6 +3767,10 @@
 .k2b-ui .k2b-combobox__input:has(> input:disabled) {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.k2b-ui .k2b-combobox__input[data-clearable="true"] > input {
+  padding-right: 2.1875rem;
 }
 
 .k2b-ui .k2b-choice-popover {
@@ -3949,6 +3959,7 @@
   flex-direction: column;
   gap: 0.125rem;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .k2b-ui .k2b-choice-options[data-view="grid"] {

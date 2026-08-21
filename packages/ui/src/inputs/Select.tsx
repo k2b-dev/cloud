@@ -226,12 +226,7 @@ export function Select(props: SelectProps): JSX.Element {
           <span class="k2b-choice-trigger__value" data-placeholder={selected() ? undefined : "true"}>
             {selected()?.label ?? props.placeholder ?? "Select..."}
           </span>
-          <Show when={!hasClearAction()}>
-            <i
-              class={popover.open() ? (props.activeIcon ?? "ti ti-chevron-up") : (props.icon ?? "ti ti-chevron-down")}
-              aria-hidden="true"
-            />
-          </Show>
+          <i class={popover.open() ? (props.activeIcon ?? "ti ti-chevron-up") : (props.icon ?? "ti ti-chevron-down")} aria-hidden="true" />
         </button>
         <Show when={props.name}>{(name) => <input type="hidden" name={name()} value={value() ?? ""} />}</Show>
         <Show when={hasClearAction()}>

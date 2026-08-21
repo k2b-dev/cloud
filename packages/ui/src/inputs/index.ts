@@ -1,5 +1,11 @@
 export type { AutocompleteEditorProps } from "./AutocompleteEditor";
 export { AutocompleteEditor } from "./AutocompleteEditor";
+export type {
+  AutocompleteSelectOption,
+  AutocompleteSelectProps,
+  AutocompleteSelectSearchResult,
+} from "./AutocompleteSelect";
+export { AutocompleteSelect } from "./AutocompleteSelect";
 export type { CheckboxProps } from "./Checkbox";
 export { Checkbox } from "./Checkbox";
 export type { CheckboxCardProps } from "./CheckboxCard";

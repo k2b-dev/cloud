@@ -176,8 +176,30 @@ export function createChoicePopover(disabled: () => boolean): {
     const popoverElement = popover();
     if (!popoverElement) return;
     const syncOpenState = () => setOpen(popoverIsOpen(popoverElement));
+    const containWheel = (event: WheelEvent) => {
+      if (event.ctrlKey) return;
+      event.preventDefault();
+
+      const target = event.target instanceof Element ? event.target : undefined;
+      const groups = target?.closest<HTMLElement>(".k2b-choice-groups");
+      const horizontalDelta = event.shiftKey && event.deltaX === 0 ? event.deltaY : event.deltaX;
+      if (groups && (event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) && groups.scrollWidth > groups.clientWidth) {
+        const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? groups.clientWidth : 1;
+        groups.scrollLeft += horizontalDelta * unit;
+        return;
+      }
+
+      const options = popoverElement.querySelector<HTMLElement>(".k2b-choice-options");
+      if (!options || options.scrollHeight <= options.clientHeight) return;
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? options.clientHeight : 1;
+      options.scrollTop += event.deltaY * unit;
+    };
     popoverElement.addEventListener("toggle", syncOpenState);
-    onCleanup(() => popoverElement.removeEventListener("toggle", syncOpenState));
+    popoverElement.addEventListener("wheel", containWheel, { passive: false });
+    onCleanup(() => {
+      popoverElement.removeEventListener("toggle", syncOpenState);
+      popoverElement.removeEventListener("wheel", containWheel);
+    });
   });
 
   createEffect(() => {

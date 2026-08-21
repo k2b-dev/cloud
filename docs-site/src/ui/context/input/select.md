@@ -7,14 +7,15 @@ tasks. The parent owns every selected value.
 
 Choose from the state transition, not from the desired visual shape:
 
-| Task                                        | Component          | Value contract                 |
-| ------------------------------------------- | ------------------ | ------------------------------ |
-| Choose one value in a form                  | `Select`           | one controlled value or `null` |
-| Choose several values                       | `MultiSelectInput` | one controlled ID array        |
-| Choose one compact toolbar value            | `SelectChip`       | one controlled value           |
-| Filter a result set                         | `FilterChip`       | controlled filter state        |
-| Find an item, perform an action, then clear | `Combobox`         | selected item callback         |
-| Run a secondary action or open a link       | `Dropdown`         | no field value                 |
+| Task                                        | Component            | Value contract                 |
+| ------------------------------------------- | -------------------- | ------------------------------ |
+| Choose one value in a form                  | `Select`             | one controlled value or `null` |
+| Type, validate, and keep one remote value   | `AutocompleteSelect` | one controlled ID or `null`    |
+| Choose several values                       | `MultiSelectInput`   | one controlled ID array        |
+| Choose one compact toolbar value            | `SelectChip`         | one controlled value           |
+| Filter a result set                         | `FilterChip`         | controlled filter state        |
+| Find an item, perform an action, then clear | `Combobox`           | selected item callback         |
+| Run a secondary action or open a link       | `Dropdown`           | no field value                 |
 
 Do not rebuild select rows in a `Dropdown`. That loses the shared field,
 listbox, or radio semantics and makes alignment and keyboard behavior the

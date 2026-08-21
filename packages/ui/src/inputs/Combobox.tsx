@@ -125,42 +125,44 @@ export function Combobox(props: ComboboxProps): JSX.Element {
             <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
           </Show>
         </div>
-        <div ref={popover.setPopover} popover="manual" class="k2b-choice-popover" role="listbox" id={listboxId}>
-          <Show when={loader.error()}>
-            {(message) => (
-              <div class="k2b-choice-status" data-tone="danger">
-                <span>{message()}</span>
-                <button type="button" onClick={loader.retry}>
-                  Retry
+        <div ref={popover.setPopover} popover="manual" class="k2b-choice-popover">
+          <div class="k2b-choice-options" role="listbox" id={listboxId}>
+            <Show when={loader.error()}>
+              {(message) => (
+                <div class="k2b-choice-status" data-tone="danger">
+                  <span>{message()}</span>
+                  <button type="button" onClick={loader.retry}>
+                    Retry
+                  </button>
+                </div>
+              )}
+            </Show>
+            <For
+              each={loader.error() ? [] : options()}
+              fallback={<div class="k2b-choice-status">{query().length >= 2 ? "No results found" : "Type to search..."}</div>}
+            >
+              {(option, index) => (
+                <button
+                  ref={(element) => (optionRefs[index()] = element)}
+                  type="button"
+                  id={`${listboxId}-${index()}`}
+                  class="k2b-choice-option"
+                  role="option"
+                  aria-selected={index() === focusedIndex()}
+                  data-focused={index() === focusedIndex() ? "true" : undefined}
+                  onPointerMove={() => focus(index())}
+                  onPointerDown={(event) => event.preventDefault()}
+                  onClick={() => select(option)}
+                >
+                  <Show when={option.icon}>{(icon) => <i class={iconClass(icon())} aria-hidden="true" />}</Show>
+                  <span>
+                    <strong>{option.label}</strong>
+                    <Show when={option.description}>{(description) => <small>{description()}</small>}</Show>
+                  </span>
                 </button>
-              </div>
-            )}
-          </Show>
-          <For
-            each={loader.error() ? [] : options()}
-            fallback={<div class="k2b-choice-status">{query().length >= 2 ? "No results found" : "Type to search..."}</div>}
-          >
-            {(option, index) => (
-              <button
-                ref={(element) => (optionRefs[index()] = element)}
-                type="button"
-                id={`${listboxId}-${index()}`}
-                class="k2b-choice-option"
-                role="option"
-                aria-selected={index() === focusedIndex()}
-                data-focused={index() === focusedIndex() ? "true" : undefined}
-                onPointerMove={() => focus(index())}
-                onPointerDown={(event) => event.preventDefault()}
-                onClick={() => select(option)}
-              >
-                <Show when={option.icon}>{(icon) => <i class={iconClass(icon())} aria-hidden="true" />}</Show>
-                <span>
-                  <strong>{option.label}</strong>
-                  <Show when={option.description}>{(description) => <small>{description()}</small>}</Show>
-                </span>
-              </button>
-            )}
-          </For>
+              )}
+            </For>
+          </div>
         </div>
       </div>
     </Field>

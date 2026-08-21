@@ -28,6 +28,7 @@ import feedbackToast from "./feedback/toast.md" with { type: "text" };
 import feedbackTooltip from "./feedback/tooltip.md" with { type: "text" };
 import actionFilters from "./filter-chip.md" with { type: "text" };
 import inputAutocomplete from "./input/autocomplete.md" with { type: "text" };
+import inputAutocompleteSelect from "./input/autocomplete-select.md" with { type: "text" };
 import inputBoolean from "./input/boolean.md" with { type: "text" };
 import inputColor from "./input/color.md" with { type: "text" };
 import inputCombobox from "./input/combobox.md" with { type: "text" };
@@ -72,6 +73,7 @@ const catalogContextSources = {
   "input/text": { file: "input/text.md", content: inputText },
   "input/markdown-editor": { file: "markdown-editor.md", content: inputMarkdownEditor },
   "input/autocomplete": { file: "input/autocomplete.md", content: inputAutocomplete },
+  "input/autocomplete-select": { file: "input/autocomplete-select.md", content: inputAutocompleteSelect },
   "input/number": { file: "input/number.md", content: inputNumber },
   "input/date-picker": { file: "input/date-picker.md", content: inputDatePicker },
   "input/select": { file: "input/select.md", content: inputSelect },

@@ -150,7 +150,7 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(html).toContain("Runtime and infrastructure");
     expect(html).toContain("Clear selection");
     expect(html).toContain("k2b-input-clear-action");
-    expect(html).not.toContain("ti ti-chevron-down");
+    expect(html).toContain("ti ti-chevron-down");
     expect(html).toContain("disabled");
     expect(cssRule(".k2b-ui .k2b-choice-popover")).toContain("transition: none");
   });
@@ -263,6 +263,7 @@ describe("@k2b/ui complete choice input migrations", () => {
     const controls = html.match(/aria-controls="([^"]+)"/)?.[1];
     expect(controls).toMatch(/^k2b-field-\d+-listbox$/);
     expect(html).toContain(`id="${controls}"`);
+    expect(html).toContain('class="k2b-choice-options" role="listbox"');
     expect(html).toContain("Type to search...");
     expect(cssRule(".k2b-ui .k2b-combobox__input > i:first-child")).toContain("margin-inline: 0.625rem 0");
     expect(cssRule(".k2b-ui .k2b-combobox__input > i:last-child")).toContain("margin-inline: 0 0.625rem");
@@ -751,7 +752,7 @@ describe("@k2b/ui complete choice input migrations", () => {
     expect(plain).not.toContain('data-clearable="true"');
     expect(clearable).toContain('data-clearable="true"');
     expect(plain).toContain("ti ti-chevron-down");
-    expect(clearable).not.toContain("ti ti-chevron-down");
+    expect(clearable).toContain("ti ti-chevron-down");
   });
 
   test("gives static multi-selects the Cloud search field, chevron props, and pill semantics", () => {

@@ -1,5 +1,6 @@
 import type {
   AutocompleteEditorProps,
+  AutocompleteSelectProps,
   CheckboxCardProps,
   CheckboxProps,
   ColorInputProps,
@@ -45,6 +46,7 @@ type ValueFieldContractCoverage = [
   Expect<Extends<DateRangePickerProps, ValueFieldProps<{ start: string | null; end: string | null }>>>,
   Expect<Extends<SelectChipProps<string>, ValueFieldProps<string>>>,
   Expect<Extends<AutocompleteEditorProps, ValueFieldProps<string>>>,
+  Expect<Extends<AutocompleteSelectProps, ValueFieldProps<string | null>>>,
   Expect<Extends<MarkdownEditorProps, ValueFieldProps<string>>>,
   Expect<Extends<TemplateEditorProps, ValueFieldProps<string>>>,
   Expect<Extends<ImageInputProps, ValueFieldProps<string | null>>>,
@@ -56,6 +58,7 @@ type FieldContractCoverage = [Expect<Extends<ComboboxProps, FieldProps>>, Expect
 const text: TextInputProps = { label: "Name", value: "", onValueChange: () => {}, onValueCommit: () => {} };
 const number: NumberInputProps = { label: "Count", value: null, onValueChange: () => {}, onValueCommit: () => {} };
 const select: SelectProps = { label: "Team", value: null, onValueChange: () => {}, options: [] };
+const autocompleteSelect: AutocompleteSelectProps = { label: "Team", value: null, search: async () => ({ options: [] }) };
 const multi: MultiSelectInputProps = { label: "Teams", value: [], onValueChange: () => {}, options: [] };
 const tags: TagsInputProps = { "aria-label": "Tags", value: [], onValueChange: () => {} };
 const color: ColorInputProps = {
@@ -85,6 +88,6 @@ const legacyImageLabel: ImageInputProps = { label: "Image", ariaLabel: "Image", 
 // @ts-expect-error Secondary controlled values use the same value naming.
 const legacyTransparent: ColorInputProps = { label: "Color", isTransparent: () => false };
 
-void [text, number, select, multi, tags, color, image, date];
+void [text, number, select, autocompleteSelect, multi, tags, color, image, date];
 void (0 as unknown as ValueFieldContractCoverage);
 void (0 as unknown as FieldContractCoverage);

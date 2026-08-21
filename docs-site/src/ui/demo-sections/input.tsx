@@ -1,5 +1,9 @@
+import { fuzzy } from "@k2b/stdlib";
 import {
   AutocompleteEditor,
+  AutocompleteSelect,
+  type AutocompleteSelectOption,
+  type AutocompleteSelectSearchResult,
   Checkbox,
   CheckboxCard,
   ColorInput,
@@ -114,6 +118,88 @@ const selectGroups = [
   { value: "work", label: "Work" },
   { value: "media", label: "Media" },
 ];
+
+const artCategories: readonly AutocompleteSelectOption[] = [
+  { value: "551", label: "Gemälde", description: "Kunst > Malerei > Gemälde", icon: "ti ti-brush", groups: ["recommended", "fine-art"] },
+  { value: "553", label: "Zeichnungen", description: "Kunst > Grafik > Zeichnungen", icon: "ti ti-pencil", groups: ["fine-art"] },
+  {
+    value: "557",
+    label: "Druckgrafik",
+    description: "Kunst > Grafik > Druckgrafik",
+    icon: "ti ti-printer",
+    groups: ["recommended", "fine-art"],
+  },
+  { value: "619", label: "Skulpturen", description: "Kunst > Plastik > Skulpturen", icon: "ti ti-building-monument", groups: ["fine-art"] },
+  { value: "870", label: "Fotografie", description: "Kunst > Fotografie", icon: "ti ti-camera", groups: ["recommended", "media"] },
+  { value: "901", label: "Textilien", description: "Kunsthandwerk > Textilien", icon: "ti ti-shirt", groups: ["craft"] },
+];
+
+const artCategoryGroups = [
+  { value: "recommended", label: "Recommended" },
+  { value: "fine-art", label: "Fine art" },
+  { value: "media", label: "Media" },
+  { value: "craft", label: "Craft" },
+];
+
+const normalizeCategoryQuery = (query: string) => query.trim().toLocaleLowerCase();
+
+const categoryMatch = (query: string, options = artCategories): AutocompleteSelectOption | undefined => {
+  const normalized = normalizeCategoryQuery(query);
+  if (!normalized) return undefined;
+  const exact = options.find(
+    (option) => option.value.toLocaleLowerCase() === normalized || option.label.toLocaleLowerCase() === normalized,
+  );
+  if (exact) return exact;
+  const prefixes = options.filter(
+    (option) => option.value.toLocaleLowerCase().startsWith(normalized) || option.label.toLocaleLowerCase().startsWith(normalized),
+  );
+  return prefixes.length === 1 ? prefixes[0] : undefined;
+};
+
+const waitForCategorySearch = (signal: AbortSignal, milliseconds = 180) =>
+  new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(resolve, milliseconds);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(new DOMException("Search aborted", "AbortError"));
+      },
+      { once: true },
+    );
+  });
+
+const findArtCategories = (query: string, group: string | null = null): AutocompleteSelectSearchResult => {
+  const normalized = normalizeCategoryQuery(query);
+  const grouped = group ? artCategories.filter((option) => option.groups?.includes(group)) : artCategories;
+  const options = normalized
+    ? fuzzy
+        .filter(normalized, grouped, {
+          key: (option) => `${option.value} ${option.label} ${option.description ?? ""}`,
+          limit: 6,
+        })
+        .map((hit) => hit.item)
+    : grouped;
+  return { options, match: categoryMatch(query, grouped) };
+};
+
+const searchArtCategories = async (
+  query: string,
+  signal: AbortSignal,
+  group: string | null = null,
+): Promise<AutocompleteSelectSearchResult> => {
+  await waitForCategorySearch(signal);
+  return findArtCategories(query, group);
+};
+
+const searchArtCategoriesImmediately = async (
+  query: string,
+  signal: AbortSignal,
+  group: string | null = null,
+): Promise<AutocompleteSelectSearchResult> => {
+  if (signal.aborted) throw new DOMException("Search aborted", "AbortError");
+  return findArtCategories(query, group);
+};
 
 const people = [
   {
@@ -579,6 +665,128 @@ const SelectViewsDemo = () => {
   );
 };
 
+const AutocompleteSelectWorkflowDemo = () => {
+  const [title, setTitle] = createSignal("");
+  const [description, setDescription] = createSignal("");
+  const [category, setCategory] = createSignal<string | null>("551");
+  return (
+    <DemoCard
+      id="autocomplete-select-workflow"
+      chip={{ kind: "component", name: "AutocompleteSelect", from: "@k2b/ui" }}
+      description="A form can keep its native Tab order while a known code or an unambiguous label prefix completes the controlled category. Focus Title, then move through the fields without reaching an extra button."
+      code={`const [category, setCategory] = createSignal<string | null>("551");
+
+<AutocompleteSelect
+  label="Category"
+  value={category}
+  onValueChange={setCategory}
+  selectedOption={{ value: "551", label: "Gemälde" }}
+  search={searchCategories}
+  formatValue={(option) => \`\${option.value} — \${option.label}\`}
+/>`}
+    >
+      <div class="ui-demo-stack">
+        <TextInput label="Title" value={title} onValueChange={setTitle} placeholder="Start here, then press Tab" />
+        <TextInput label="Description" value={description} onValueChange={setDescription} multiline lines={3} />
+        <AutocompleteSelect
+          label="Category"
+          description="Try 551 or gem, then press Tab. Escape restores the value present when editing began."
+          value={category}
+          onValueChange={setCategory}
+          selectedOption={artCategories[0]}
+          search={searchArtCategories}
+          groups={artCategoryGroups}
+          defaultGroup="recommended"
+          formatValue={(option) => `${option.value} — ${option.label}`}
+          clearable
+        />
+      </div>
+    </DemoCard>
+  );
+};
+
+const AutocompleteSelectFuzzyDemo = () => {
+  const [category, setCategory] = createSignal<string | null>(null);
+  return (
+    <DemoCard
+      id="autocomplete-select-fuzzy"
+      chip={[
+        { kind: "component", name: "AutocompleteSelect", from: "@k2b/ui" },
+        { kind: "component", name: "fuzzy", from: "@k2b/stdlib" },
+      ]}
+      description="The application owns matching and ranking. This provider uses @k2b/stdlib fuzzy search for forgiving suggestions, but returns match only for an exact code, exact label, or one unambiguous prefix."
+      code={`import { fuzzy } from "@k2b/stdlib";
+
+const search = async (query, signal, group) => {
+  const source = group ? categories.filter((option) => option.groups?.includes(group)) : categories;
+  const options = fuzzy.filter(query, source, {
+    key: (option) => \`\${option.value} \${option.label} \${option.description}\`,
+    limit: 6,
+  }).map((hit) => hit.item);
+  return { options, match: findSafeMatch(query) };
+};
+
+<AutocompleteSelect
+  label="Art category"
+  value={category}
+  onValueChange={setCategory}
+  search={search}
+  groups={categoryGroups}
+  debounceMs={0}
+/>`}
+    >
+      <AutocompleteSelect
+        label="Art category"
+        description="Try druck, skulptur, or an abbreviated label. Arrow keys and Enter select a fuzzy suggestion explicitly."
+        value={category}
+        onValueChange={setCategory}
+        selectedOption={artCategories.find((option) => option.value === category())}
+        search={searchArtCategoriesImmediately}
+        groups={artCategoryGroups}
+        debounceMs={0}
+        placeholder="Search code, label, or path…"
+        clearable
+      />
+    </DemoCard>
+  );
+};
+
+const AutocompleteSelectFeedbackDemo = () => {
+  const [category, setCategory] = createSignal<string | null>("551");
+  const search = async (query: string, signal: AbortSignal): Promise<AutocompleteSelectSearchResult> => {
+    if (normalizeCategoryQuery(query) === "offline") {
+      await waitForCategorySearch(signal);
+      throw new Error("Category service unavailable");
+    }
+    return searchArtCategories(query, signal);
+  };
+  return (
+    <DemoCard
+      id="autocomplete-select-feedback"
+      chip={{ kind: "component", name: "AutocompleteSelect", from: "@k2b/ui" }}
+      description="No match and a failed search are separate states. Tab is never trapped: validation appears after focus moves, and a late authoritative async result may still commit."
+      code={`<AutocompleteSelect
+  label="Category"
+  value={category}
+  onValueChange={setCategory}
+  search={search}
+  noMatchText="No matching category found"
+/>`}
+    >
+      <AutocompleteSelect
+        label="Category with validation"
+        description="Type 552 and press Tab for no match. Type offline for a technical error. Escape restores 551 — Gemälde."
+        value={category}
+        onValueChange={setCategory}
+        selectedOption={artCategories[0]}
+        search={search}
+        formatValue={(option) => `${option.value} — ${option.label}`}
+        noMatchText="No matching category found"
+      />
+    </DemoCard>
+  );
+};
+
 const ComboboxDemo = () => (
   <DemoCard
     id="combobox"
@@ -947,6 +1155,13 @@ const demos: DemoSection = {
       <SelectDemo />
       <GroupedSelectDemo />
       <SelectViewsDemo />
+    </DemoGrid>
+  ),
+  "autocomplete-select": () => (
+    <DemoGrid columns="one">
+      <AutocompleteSelectWorkflowDemo />
+      <AutocompleteSelectFuzzyDemo />
+      <AutocompleteSelectFeedbackDemo />
     </DemoGrid>
   ),
   combobox: () => (

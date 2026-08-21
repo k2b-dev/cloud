@@ -65,6 +65,12 @@ const portableSections = [
       page("number", "NumberInput", "ti ti-number", "Bounded and formatted numeric input with steppers and clear state."),
       page("boolean", "Boolean inputs", "ti ti-toggle-right", "Switch, checkbox, and descriptive checkbox-card controls."),
       page("select", "Selection controls", "ti ti-list-check", "Single, multi, and compact controlled selection."),
+      page(
+        "autocomplete-select",
+        "AutocompleteSelect",
+        "ti ti-input-search",
+        "Keyboard-first controlled selection with authoritative asynchronous matching.",
+      ),
       page("combobox", "Combobox", "ti ti-list-search", "Consume-and-clear suggestions for commands and entity selection."),
       page("tags", "TagsInput", "ti ti-tags", "Comma-separated tag entry in one editable field, deduplicated on commit."),
       page("tag-editor", "Tag editing", "ti ti-tag", "Reusable tag presentation, entity management, and assignment composition."),
@@ -268,7 +274,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 104;
+export const portableUiComponentCount = 105;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({
