@@ -1,12 +1,12 @@
+import { err, fail, ok } from "@k2b/stdlib";
 import {
   type CapabilityExecutionContext,
   type CloudResourceView,
   defineCapabilities,
-  type UniversalSearchInput,
   UniversalSearchDataSchema,
+  type UniversalSearchInput,
   UniversalSearchInputSchema,
 } from "@valentinkolb/cloud/contracts";
-import { err, fail, ok } from "@k2b/stdlib";
 import { z } from "zod";
 import { filesService } from "./service";
 
@@ -38,11 +38,7 @@ const buildPreviewUrl = (baseType: "home" | "group", baseId: string, path: strin
 const fileResourceInput = (type: "files.file" | "files.directory") =>
   z
     .object({
-      id: z
-        .string()
-        .min(1)
-        .max(4_608)
-        .describe(`Exact ${type} resource ID from the typed ref returned by Search files.`),
+      id: z.string().min(1).max(4_608).describe(`Exact ${type} resource ID from the typed ref returned by Search files.`),
     })
     .strict();
 
@@ -112,11 +108,7 @@ const readResource = async (id: string, expectedType: "file" | "directory", cont
   const item = await filesService.item.get({ base: base.data, path: identity.data.path, showHidden: false, computeSizes: false });
   if (!item.ok) return serviceError(item);
   if (item.data.type !== expectedType) {
-    return fail(
-      err.badInput(
-        `The path is now a ${item.data.type}; use a current files.${item.data.type} ref returned by Search files`,
-      ),
-    );
+    return fail(err.badInput(`The path is now a ${item.data.type}; use a current files.${item.data.type} ref returned by Search files`));
   }
   const baseInfo = filesService.base.toInfo(base.data);
   const href = buildFileHref(baseInfo.type, baseInfo.id, item.data.path);
@@ -133,13 +125,21 @@ const readResource = async (id: string, expectedType: "file" | "directory", cont
     ? ok({
         data: { ...common, type: "file" as const, size: item.data.size, ...(item.data.mimeType ? { mimeType: item.data.mimeType } : {}) },
         summary: `Read file “${item.data.name}”.`,
-        refs: [{ type: "files.file", id }],
+        refs: [{ type: "files.file", id, title: item.data.name, preview: `${baseInfo.name} • ${item.data.path}`, icon: "ti ti-file" }],
         links: [{ rel: "open" as const, href }],
       })
     : ok({
         data: { ...common, type: "directory" as const, itemCount: item.data.total },
         summary: `Read directory “${item.data.name}” with ${item.data.total} ${item.data.total === 1 ? "item" : "items"}.`,
-        refs: [{ type: "files.directory", id }],
+        refs: [
+          {
+            type: "files.directory",
+            id,
+            title: item.data.name,
+            preview: `${baseInfo.name} • ${item.data.path}`,
+            icon: "ti ti-folder",
+          },
+        ],
         links: [{ rel: "open" as const, href }],
       });
 };

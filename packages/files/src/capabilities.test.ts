@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { compileCapabilityManifest } from "@valentinkolb/cloud/capabilities/testing";
 import {
   type CapabilityExecutionContext,
   UniversalSearchDataSchema,
   UniversalSearchInputSchema,
   type User,
 } from "@valentinkolb/cloud/contracts";
-import { compileCapabilityManifest } from "@valentinkolb/cloud/capabilities/testing";
 import { filesCapabilities } from "./capabilities";
 import { filesService } from "./service";
 
@@ -133,21 +133,23 @@ describe("files capabilities", () => {
         },
       });
 
-    const file = await filesCapabilities.queries["file.read"].run(
-      { id: "home:files-capability:/Reports/report.pdf" },
-      context,
-    );
-    const directory = await filesCapabilities.queries["directory.read"].run(
-      { id: "home:files-capability:/Reports" },
-      context,
-    );
+    const file = await filesCapabilities.queries["file.read"].run({ id: "home:files-capability:/Reports/report.pdf" }, context);
+    const directory = await filesCapabilities.queries["directory.read"].run({ id: "home:files-capability:/Reports" }, context);
 
     expect(file).toMatchObject({
       ok: true,
       data: {
         data: { type: "file", name: "report.pdf", base: { type: "home", id: user.uid, name: "Home" }, size: 42 },
         summary: "Read file “report.pdf”.",
-        refs: [{ type: "files.file", id: "home:files-capability:/Reports/report.pdf" }],
+        refs: [
+          {
+            type: "files.file",
+            id: "home:files-capability:/Reports/report.pdf",
+            title: "report.pdf",
+            preview: "Home • /Reports/report.pdf",
+            icon: "ti ti-file",
+          },
+        ],
       },
     });
     expect(directory).toMatchObject({
@@ -155,7 +157,15 @@ describe("files capabilities", () => {
       data: {
         data: { type: "directory", name: "Reports", itemCount: 3 },
         summary: "Read directory “Reports” with 3 items.",
-        refs: [{ type: "files.directory", id: "home:files-capability:/Reports" }],
+        refs: [
+          {
+            type: "files.directory",
+            id: "home:files-capability:/Reports",
+            title: "Reports",
+            preview: "Home • /Reports",
+            icon: "ti ti-folder",
+          },
+        ],
       },
     });
   });
@@ -185,9 +195,7 @@ describe("files capabilities", () => {
       },
     });
 
-    expect(
-      await filesCapabilities.queries["file.read"].run({ id: "home:files-capability:/Reports/report.pdf" }, context),
-    ).toMatchObject({
+    expect(await filesCapabilities.queries["file.read"].run({ id: "home:files-capability:/Reports/report.pdf" }, context)).toMatchObject({
       ok: false,
       error: { code: "BAD_INPUT", message: expect.stringContaining("files.directory ref") },
     });
