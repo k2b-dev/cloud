@@ -121,7 +121,7 @@ function CapabilityTable(props: {
   const selectedRowId = props.selection ? `${props.selection.kind}:${props.selection.operation.localId}` : null;
 
   return (
-    <DataTable.Panel class="overflow-hidden">
+    <DataTable.Panel class="flex min-h-0 flex-1 flex-col overflow-hidden">
       <DataTable.Header
         title={props.app.name}
         subtitle={
@@ -153,7 +153,7 @@ function CapabilityTable(props: {
           })
         }
         ariaLabel={`${props.app.name} capabilities`}
-        class="overflow-x-auto"
+        class="min-h-0 flex-1"
         density="compact"
         hoverRows
         empty={props.state.search ? "No capabilities match this search." : "This app publishes no capabilities."}
@@ -238,12 +238,12 @@ export default ssr<AuthContext>(async (c) => {
           : [{ title: loaded.app.name }]),
       ]}
     >
-      <div class="k2b-ui min-h-0 min-w-0 flex-1 overflow-hidden">
+      <div class="k2b-ui min-h-0 min-w-0 flex-1 overflow-hidden" style={{ background: "transparent" }}>
         <AppWorkspace>
           <CapabilitiesSidebar apps={workspace.apps} selectedAppId={loaded.app.id} searchEntries={searchEntries} />
 
           <AppWorkspace.Content>
-            <AppWorkspace.Main class="overflow-y-auto p-[var(--ui-space-shell)]">
+            <AppWorkspace.Main class="p-[var(--ui-space-shell)]" scroll={false}>
               <Show
                 when={loaded.kind === "ready" ? loaded : undefined}
                 fallback={
