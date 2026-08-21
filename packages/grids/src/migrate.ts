@@ -818,6 +818,7 @@ const migrateCoreRecords = async (sql: SQL): Promise<void> => {
   await sql`CREATE INDEX IF NOT EXISTS idx_grids_records_table_creator_live ON grids.records(table_id, created_by, id) WHERE deleted_at IS NULL`.simple();
   // Trash queries: list soft-deleted rows of a table (ordered by deletion time).
   await sql`CREATE INDEX IF NOT EXISTS idx_grids_records_table_trash ON grids.records(table_id, deleted_at) WHERE deleted_at IS NOT NULL`.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_grids_records_id_table ON grids.records(id, table_id)`.simple();
   console.log("  ✓ grids.records");
 
   // Connector identities are durable bindings, not user-editable Record
@@ -830,9 +831,11 @@ const migrateCoreRecords = async (sql: SQL): Promise<void> => {
       resource_kind TEXT NOT NULL CHECK (char_length(resource_kind) BETWEEN 1 AND 100),
       external_id TEXT NOT NULL CHECK (char_length(external_id) BETWEEN 1 AND 500),
       table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE CASCADE,
-      record_id UUID NOT NULL REFERENCES grids.records(id) ON DELETE CASCADE,
+      record_id UUID NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      UNIQUE (provider, provider_account, resource_kind, external_id)
+      UNIQUE (provider, provider_account, resource_kind, external_id),
+      CONSTRAINT record_external_bindings_record_table_fkey
+        FOREIGN KEY (record_id, table_id) REFERENCES grids.records(id, table_id) ON DELETE CASCADE
     )
   `.simple();
   await sql`
@@ -842,17 +845,60 @@ const migrateCoreRecords = async (sql: SQL): Promise<void> => {
   await sql`
     CREATE TABLE IF NOT EXISTS grids.record_external_operations (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      provider TEXT NOT NULL CHECK (char_length(provider) BETWEEN 1 AND 100),
-      provider_account TEXT NOT NULL CHECK (char_length(provider_account) BETWEEN 1 AND 200),
-      resource_kind TEXT NOT NULL CHECK (char_length(resource_kind) BETWEEN 1 AND 100),
+      operation_scope_hash TEXT NOT NULL CHECK (char_length(operation_scope_hash) = 64),
       operation_key_hash TEXT NOT NULL CHECK (char_length(operation_key_hash) = 64),
       binding_id UUID NOT NULL REFERENCES grids.record_external_bindings(id) ON DELETE CASCADE,
       request_hash TEXT NOT NULL CHECK (char_length(request_hash) = 64),
+      result_version INT NOT NULL CHECK (result_version > 0),
       created BOOLEAN NOT NULL,
       changed BOOLEAN NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      UNIQUE (provider, provider_account, resource_kind, operation_key_hash)
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
+  `.simple();
+  // The pre-release receipt shape cannot preserve exact replay: it scoped
+  // callers differently and hashed schema-resolved UUID values. Expire those
+  // receipts explicitly while retaining their durable identity bindings.
+  await sql`ALTER TABLE grids.record_external_operations ADD COLUMN IF NOT EXISTS operation_scope_hash TEXT`.simple();
+  await sql`ALTER TABLE grids.record_external_operations ADD COLUMN IF NOT EXISTS result_version INT`.simple();
+  await sql`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'grids' AND table_name = 'record_external_operations' AND column_name = 'provider'
+      ) THEN
+        DELETE FROM grids.record_external_operations;
+      END IF;
+    END
+    $$
+  `.simple();
+  await sql`ALTER TABLE grids.record_external_operations ALTER COLUMN operation_scope_hash SET NOT NULL`.simple();
+  await sql`ALTER TABLE grids.record_external_operations ALTER COLUMN result_version SET NOT NULL`.simple();
+  await sql`ALTER TABLE grids.record_external_operations DROP COLUMN IF EXISTS provider`.simple();
+  await sql`ALTER TABLE grids.record_external_operations DROP COLUMN IF EXISTS provider_account`.simple();
+  await sql`ALTER TABLE grids.record_external_operations DROP COLUMN IF EXISTS resource_kind`.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_grids_record_external_operations_scope_key
+    ON grids.record_external_operations(operation_scope_hash, operation_key_hash)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_external_operations_created
+    ON grids.record_external_operations(created_at, id)
+  `.simple();
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'record_external_bindings_record_table_fkey'
+          AND conrelid = 'grids.record_external_bindings'::regclass
+      ) THEN
+        ALTER TABLE grids.record_external_bindings
+          ADD CONSTRAINT record_external_bindings_record_table_fkey
+          FOREIGN KEY (record_id, table_id) REFERENCES grids.records(id, table_id) ON DELETE CASCADE;
+      END IF;
+    END
+    $$
   `.simple();
   console.log("  ✓ grids.record_external_bindings");
 

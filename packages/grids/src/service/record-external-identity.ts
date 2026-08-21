@@ -1,16 +1,21 @@
 import { createHash } from "node:crypto";
+import { scheduler } from "@k2b/sync";
 import { type DateContext, err, fail, ok, type Result } from "@k2b/stdlib";
+import { logger } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import type { RecordMutationAudit } from "../contracts";
 import type { SqlClient } from "./audit";
 import { listByTable as listFields } from "./fields";
 import { notifyRecordEventOutbox } from "./record-event-outbox";
-import { createInTransaction, updateInTransaction } from "./record-write";
-import { get } from "./record-read";
-import { recordUniqueConflict } from "./record-unique-conflicts";
 import type { AuthorizedRecordAccess } from "./record-access";
+import { recordUniqueConflict } from "./record-unique-conflicts";
+import { createInTransaction, updateInTransaction } from "./record-write";
 import type { ExpansionViewer } from "./relations";
-import type { GridRecord } from "./types";
+
+export const EXTERNAL_RECORD_OPERATION_RETENTION_DAYS = 30;
+const EXTERNAL_RECORD_OPERATION_DELETE_BATCH = 10_000;
+const externalRecordOperationScheduler = scheduler({ id: "grids:external-record-operation-retention" });
+const log = logger("grids:external-record-operation-retention");
 
 export type ExternalRecordIdentity = {
   provider: string;
@@ -20,22 +25,19 @@ export type ExternalRecordIdentity = {
 };
 
 export type ExternalRecordPutResult = {
-  record: GridRecord;
+  recordShortId: string;
+  version: number;
   created: boolean;
   changed: boolean;
   replayed: boolean;
 };
 
-type InternalPutResult = Omit<ExternalRecordPutResult, "record"> & {
-  recordId: string;
-  outboxId: string | null;
-};
-
+type ConflictKind = "capability" | "standard";
+type InternalPutResult = ExternalRecordPutResult & { outboxId: string | null };
 type StoredOutcome = {
   request_hash: string;
-  table_id: string;
-  record_id: string;
-  deleted_at: string | null;
+  record_short_id: string;
+  result_version: number;
   created: boolean;
   changed: boolean;
 };
@@ -54,31 +56,102 @@ const stableValue = (value: unknown): unknown => {
 
 const sha256 = (value: string): string => createHash("sha256").update(value).digest("hex");
 
-const requestHash = (input: {
-  tableId: string;
-  identity: ExternalRecordIdentity;
-  values: Record<string, unknown>;
-  ifVersion?: number;
-  audit?: RecordMutationAudit;
-}): string => sha256(JSON.stringify(stableValue(input)));
+export const externalRecordRequestHash = (value: unknown): string => sha256(JSON.stringify(stableValue(value)));
 
-const operationScope = (identity: ExternalRecordIdentity): string =>
-  JSON.stringify([identity.provider, identity.providerAccount, identity.resourceKind]);
+export const restExternalRecordOperationScope = (
+  identity: Pick<ExternalRecordIdentity, "provider" | "providerAccount" | "resourceKind">,
+): string => `rest:${JSON.stringify([identity.provider, identity.providerAccount, identity.resourceKind])}`;
 
 const identityScope = (identity: ExternalRecordIdentity): string =>
   JSON.stringify([identity.provider, identity.providerAccount, identity.resourceKind, identity.externalId]);
 
-const lockAdmission = async (client: SqlClient, identity: ExternalRecordIdentity, operationKeyHash: string): Promise<void> => {
-  await client`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:external-operation:${operationScope(identity)}:${operationKeyHash}`}, 0))`;
+const operationConflict = (kind: ConflictKind) =>
+  kind === "capability"
+    ? { code: "IDEMPOTENCY_CONFLICT" as const, message: "Idempotency-Key was already used with different input", status: 409 as const }
+    : err.conflict("This idempotency key was already used for a different external Record request.");
+
+const validateOperation = (input: { operationScope: string; operationKey: string; requestHash: string }): Result<void> => {
+  if (!input.operationScope || input.operationScope.length > 1_000 || input.operationScope.includes("\0")) {
+    return fail(err.badInput("operationScope is invalid"));
+  }
+  if (!input.operationKey || input.operationKey.length > 200 || input.operationKey.includes("\0")) {
+    return fail(err.badInput("operationKey must contain between 1 and 200 characters"));
+  }
+  if (!/^[a-f0-9]{64}$/.test(input.requestHash)) return fail(err.badInput("requestHash is invalid"));
+  return ok();
+};
+
+const validateIdentity = (identity: ExternalRecordIdentity): Result<void> => {
+  const parts: Array<[string, string, number]> = [
+    ["provider", identity.provider, 100],
+    ["providerAccount", identity.providerAccount, 200],
+    ["resourceKind", identity.resourceKind, 100],
+    ["externalId", identity.externalId, 500],
+  ];
+  for (const [name, value, maxLength] of parts) {
+    if (!value || value.length > maxLength || value.trim() !== value || value.includes("\0")) {
+      return fail(err.badInput(`${name} must contain between 1 and ${maxLength} characters without surrounding whitespace or NUL`));
+    }
+  }
+  return ok();
+};
+
+const lockAdmission = async (
+  client: SqlClient,
+  identity: ExternalRecordIdentity,
+  operationScopeHash: string,
+  operationKeyHash: string,
+): Promise<void> => {
+  await client`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:external-operation:${operationScopeHash}:${operationKeyHash}`}, 0))`;
   await client`SELECT pg_advisory_xact_lock(hashtextextended(${`grids:external-record:${identityScope(identity)}`}, 0))`;
 };
 
-const unavailableBinding = () => fail(err.conflict("This external identity is bound to a Record that is no longer available."));
+const storedOutcome = async (
+  client: SqlClient,
+  operationScopeHash: string,
+  operationKeyHash: string,
+): Promise<StoredOutcome | null> => {
+  const [stored] = await client<StoredOutcome[]>`
+    SELECT operation.request_hash, record.short_id AS record_short_id,
+           operation.result_version, operation.created, operation.changed
+    FROM grids.record_external_operations operation
+    JOIN grids.record_external_bindings binding ON binding.id = operation.binding_id
+    JOIN grids.records record ON record.id = binding.record_id
+    WHERE operation.operation_scope_hash = ${operationScopeHash}
+      AND operation.operation_key_hash = ${operationKeyHash}
+  `;
+  return stored ?? null;
+};
+
+const toReplay = (stored: StoredOutcome): ExternalRecordPutResult => ({
+  recordShortId: stored.record_short_id,
+  version: stored.result_version,
+  created: stored.created,
+  changed: stored.changed,
+  replayed: true,
+});
+
+/** Check an immutable receipt before schema-dependent public Field IDs are resolved. */
+export const replay = async (input: {
+  operationScope: string;
+  operationKey: string;
+  requestHash: string;
+  conflictKind?: ConflictKind;
+}): Promise<Result<ExternalRecordPutResult | null>> => {
+  const valid = validateOperation(input);
+  if (!valid.ok) return valid;
+  const stored = await storedOutcome(sql, sha256(input.operationScope), sha256(input.operationKey));
+  if (!stored) return ok(null);
+  return stored.request_hash === input.requestHash ? ok(toReplay(stored)) : fail(operationConflict(input.conflictKind ?? "standard"));
+};
 
 export const put = async (input: {
   tableId: string;
   identity: ExternalRecordIdentity;
+  operationScope: string;
   operationKey: string;
+  requestHash: string;
+  conflictKind?: ConflictKind;
   values: Record<string, unknown>;
   ifVersion?: number;
   audit?: RecordMutationAudit;
@@ -87,55 +160,20 @@ export const put = async (input: {
   viewer?: ExpansionViewer;
   recordAccess?: AuthorizedRecordAccess;
 }): Promise<Result<ExternalRecordPutResult>> => {
-  const identityParts: Array<[string, string, number]> = [
-    ["provider", input.identity.provider, 100],
-    ["providerAccount", input.identity.providerAccount, 200],
-    ["resourceKind", input.identity.resourceKind, 100],
-    ["externalId", input.identity.externalId, 500],
-  ];
-  for (const [name, value, maxLength] of identityParts) {
-    if (!value || value.length > maxLength || value.trim() !== value) {
-      return fail(err.badInput(`${name} must contain between 1 and ${maxLength} characters without surrounding whitespace`));
-    }
-  }
-  if (!input.operationKey || input.operationKey.length > 200) {
-    return fail(err.badInput("operationKey must contain between 1 and 200 characters"));
-  }
+  const validOperation = validateOperation(input);
+  if (!validOperation.ok) return validOperation;
+  const validIdentity = validateIdentity(input.identity);
+  if (!validIdentity.ok) return validIdentity;
+  const operationScopeHash = sha256(input.operationScope);
   const operationKeyHash = sha256(input.operationKey);
-  const expectedRequestHash = requestHash({
-    tableId: input.tableId,
-    identity: input.identity,
-    values: input.values,
-    ifVersion: input.ifVersion,
-    audit: input.audit,
-  });
   const transaction = await sql
     .begin(async (tx): Promise<Result<InternalPutResult>> => {
-      await lockAdmission(tx, input.identity, operationKeyHash);
-
-      const [storedOperation] = await tx<StoredOutcome[]>`
-        SELECT operation.request_hash, binding.table_id::text, binding.record_id::text,
-               record.deleted_at::text, operation.created, operation.changed
-        FROM grids.record_external_operations operation
-        JOIN grids.record_external_bindings binding ON binding.id = operation.binding_id
-        JOIN grids.records record ON record.id = binding.record_id
-        WHERE operation.provider = ${input.identity.provider}
-          AND operation.provider_account = ${input.identity.providerAccount}
-          AND operation.resource_kind = ${input.identity.resourceKind}
-          AND operation.operation_key_hash = ${operationKeyHash}
-      `;
-      if (storedOperation) {
-        if (storedOperation.request_hash !== expectedRequestHash) {
-          return fail(err.conflict("This idempotency key was already used for a different external Record request."));
-        }
-        if (storedOperation.table_id !== input.tableId || storedOperation.deleted_at) return unavailableBinding();
-        return ok({
-          recordId: storedOperation.record_id,
-          created: storedOperation.created,
-          changed: storedOperation.changed,
-          replayed: true,
-          outboxId: null,
-        });
+      await lockAdmission(tx, input.identity, operationScopeHash, operationKeyHash);
+      const stored = await storedOutcome(tx, operationScopeHash, operationKeyHash);
+      if (stored) {
+        return stored.request_hash === input.requestHash
+          ? ok({ ...toReplay(stored), outboxId: null })
+          : fail(operationConflict(input.conflictKind ?? "standard"));
       }
 
       const [binding] = await tx<Array<{ id: string; table_id: string; record_id: string; deleted_at: string | null }>>`
@@ -149,7 +187,9 @@ export const put = async (input: {
       `;
 
       if (binding) {
-        if (binding.table_id !== input.tableId || binding.deleted_at) return unavailableBinding();
+        if (binding.table_id !== input.tableId || binding.deleted_at) {
+          return fail(err.conflict("This external identity is bound to a Record that is no longer available."));
+        }
         if (input.ifVersion === undefined) {
           return fail(err.conflict("This external identity already exists; supply its current Record version to update it."));
         }
@@ -172,14 +212,21 @@ export const put = async (input: {
         const changed = updated.data.outboxId !== null;
         await tx`
           INSERT INTO grids.record_external_operations (
-            provider, provider_account, resource_kind, operation_key_hash,
-            binding_id, request_hash, created, changed
+            operation_scope_hash, operation_key_hash,
+            binding_id, request_hash, result_version, created, changed
           ) VALUES (
-            ${input.identity.provider}, ${input.identity.providerAccount}, ${input.identity.resourceKind}, ${operationKeyHash},
-            ${binding.id}::uuid, ${expectedRequestHash}, FALSE, ${changed}
+            ${operationScopeHash}, ${operationKeyHash}, ${binding.id}::uuid, ${input.requestHash},
+            ${updated.data.record.version}, FALSE, ${changed}
           )
         `;
-        return ok({ recordId: binding.record_id, created: false, changed, replayed: false, outboxId: updated.data.outboxId });
+        return ok({
+          recordShortId: updated.data.record.shortId,
+          version: updated.data.record.version,
+          created: false,
+          changed,
+          replayed: false,
+          outboxId: updated.data.outboxId,
+        });
       }
 
       if (input.ifVersion !== undefined) {
@@ -203,14 +250,21 @@ export const put = async (input: {
       if (!newBinding) throw new Error("external Record binding insert returned no row");
       await tx`
         INSERT INTO grids.record_external_operations (
-          provider, provider_account, resource_kind, operation_key_hash,
-          binding_id, request_hash, created, changed
+          operation_scope_hash, operation_key_hash,
+          binding_id, request_hash, result_version, created, changed
         ) VALUES (
-          ${input.identity.provider}, ${input.identity.providerAccount}, ${input.identity.resourceKind}, ${operationKeyHash},
-          ${newBinding.id}::uuid, ${expectedRequestHash}, TRUE, TRUE
+          ${operationScopeHash}, ${operationKeyHash}, ${newBinding.id}::uuid, ${input.requestHash},
+          ${created.data.record.version}, TRUE, TRUE
         )
       `;
-      return ok({ recordId: created.data.record.id, created: true, changed: true, replayed: false, outboxId: created.data.outboxId });
+      return ok({
+        recordShortId: created.data.record.shortId,
+        version: created.data.record.version,
+        created: true,
+        changed: true,
+        replayed: false,
+        outboxId: created.data.outboxId,
+      });
     })
     .catch(async (error: unknown) => {
       const conflict = recordUniqueConflict<InternalPutResult>(error, await listFields(input.tableId));
@@ -219,17 +273,61 @@ export const put = async (input: {
     });
 
   if (!transaction.ok) return transaction;
-  const record = await get(input.tableId, transaction.data.recordId, {
-    dateConfig: input.dateConfig,
-    viewer: input.viewer,
-    recordAccess: input.recordAccess,
-  });
-  if (!record) return unavailableBinding();
   if (transaction.data.outboxId) notifyRecordEventOutbox(transaction.data.outboxId);
-  return ok({
-    record,
-    created: transaction.data.created,
-    changed: transaction.data.changed,
-    replayed: transaction.data.replayed,
+  const { outboxId: _outboxId, ...result } = transaction.data;
+  return ok(result);
+};
+
+export const deleteExpiredExternalRecordOperations = async (): Promise<number> => {
+  const rows = await sql<{ id: string }[]>`
+    WITH expired AS (
+      SELECT id
+      FROM grids.record_external_operations
+      WHERE created_at < now() - (${EXTERNAL_RECORD_OPERATION_RETENTION_DAYS} * interval '1 day')
+      ORDER BY created_at, id
+      LIMIT ${EXTERNAL_RECORD_OPERATION_DELETE_BATCH}
+    )
+    DELETE FROM grids.record_external_operations operation
+    USING expired
+    WHERE operation.id = expired.id
+    RETURNING operation.id::text
+  `;
+  if (rows.length > 0) log.info("Removed expired external Record operation receipts", { count: rows.length });
+  return rows.length;
+};
+
+let retentionStarted = false;
+
+export const startExternalRecordOperationRetention = async (): Promise<void> => {
+  if (!retentionStarted) {
+    externalRecordOperationScheduler.start();
+    retentionStarted = true;
+  }
+  await externalRecordOperationScheduler.create({
+    id: "grids:external-record-operations:cleanup",
+    cron: "23 * * * *",
+    tz: "UTC",
+    meta: { appId: "grids", family: "maintenance", label: "External Record idempotency retention" },
+    process: async () => ({ deleted: await deleteExpiredExternalRecordOperations() }),
+    after: ({ ctx }) => {
+      if (ctx.error && ctx.failureCount < 3) {
+        ctx.reschedule({ delayMs: ctx.expBackoff({ baseMs: 5_000, maxMs: 60_000 }) });
+        return;
+      }
+      if (ctx.error) {
+        log.error("External Record idempotency retention exhausted retries", {
+          failureCount: ctx.failureCount,
+          error: ctx.error.message,
+        });
+        return;
+      }
+      if (ctx.data?.deleted === EXTERNAL_RECORD_OPERATION_DELETE_BATCH) ctx.reschedule({ delayMs: 0 });
+    },
   });
+};
+
+export const stopExternalRecordOperationRetention = async (): Promise<void> => {
+  if (!retentionStarted) return;
+  await externalRecordOperationScheduler.stop();
+  retentionStarted = false;
 };

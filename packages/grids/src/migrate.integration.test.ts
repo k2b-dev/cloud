@@ -322,6 +322,27 @@ describe("grids schema migration", () => {
           "record_revisions",
           "table_schema_revisions",
         ]);
+        const constraints = await database<Array<{ name: string }>>`
+          SELECT conname AS name
+          FROM pg_constraint
+          WHERE conrelid = 'grids.record_external_bindings'::regclass
+            AND conname = 'record_external_bindings_record_table_fkey'
+        `;
+        expect(constraints).toEqual([{ name: "record_external_bindings_record_table_fkey" }]);
+        const receiptIndexes = await database<Array<{ name: string }>>`
+          SELECT indexname AS name
+          FROM pg_indexes
+          WHERE schemaname = 'grids'
+            AND indexname IN (
+              'uq_grids_record_external_operations_scope_key',
+              'idx_grids_record_external_operations_created'
+            )
+          ORDER BY indexname
+        `;
+        expect(receiptIndexes.map((item) => item.name)).toEqual([
+          "idx_grids_record_external_operations_created",
+          "uq_grids_record_external_operations_scope_key",
+        ]);
         const [cast] = await database<Array<{ value: number | string }>>`SELECT grids.canonical_numeric('12.5') AS value`;
         expect(String(cast?.value)).toBe("12.5");
         const [invalidFormulaCoercion] = await database<Array<{ value: number | null }>>`
@@ -395,6 +416,110 @@ describe("grids schema migration", () => {
           FROM grids.operational_health
         `;
         expect(health).toEqual({ status: "ok", outboxPending: 0 });
+      });
+    },
+    30_000,
+  );
+
+  postgresTest(
+    "rejects external bindings whose Record belongs to another Table",
+    async () => {
+      await withIsolatedDatabase(async (database) => {
+        await migrateCoreWorkflows(database);
+        await migrate(database);
+        const baseId = uuid();
+        const tableA = uuid();
+        const tableB = uuid();
+        const recordId = uuid();
+        await database`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${shortId("b")}, 'External invariant')`;
+        await database`
+          INSERT INTO grids.tables (id, short_id, base_id, name)
+          VALUES (${tableA}::uuid, ${shortId("a")}, ${baseId}::uuid, 'A'), (${tableB}::uuid, ${shortId("t")}, ${baseId}::uuid, 'B')
+        `;
+        await database`INSERT INTO grids.records (id, short_id, table_id) VALUES (${recordId}::uuid, ${shortId("r")}, ${tableB}::uuid)`;
+        let mismatchRejected = false;
+        try {
+          await database.begin((transaction) => transaction`
+            INSERT INTO grids.record_external_bindings (
+              provider, provider_account, resource_kind, external_id, table_id, record_id
+            ) VALUES ('test', 'main', 'row', 'mismatch', ${tableA}::uuid, ${recordId}::uuid)
+          `);
+        } catch {
+          mismatchRejected = true;
+        }
+        expect(mismatchRejected).toBe(true);
+      });
+    },
+    30_000,
+  );
+
+  postgresTest(
+    "expires incompatible pre-release external receipts without losing bindings",
+    async () => {
+      await withIsolatedDatabase(async (database) => {
+        await migrateCoreWorkflows(database);
+        await migrate(database);
+        const baseId = uuid();
+        const tableId = uuid();
+        const recordA = uuid();
+        const recordB = uuid();
+        await database`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${shortId("b")}, 'Legacy receipts')`;
+        await database`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${shortId("t")}, ${baseId}::uuid, 'Rows')`;
+        await database`
+          INSERT INTO grids.records (id, short_id, table_id)
+          VALUES (${recordA}::uuid, ${shortId("a")}, ${tableId}::uuid), (${recordB}::uuid, ${shortId("r")}, ${tableId}::uuid)
+        `;
+        const bindings = await database<Array<{ id: string }>>`
+          INSERT INTO grids.record_external_bindings (
+            provider, provider_account, resource_kind, external_id, table_id, record_id
+          ) VALUES
+            ('a:b', 'c', 'd', 'one', ${tableId}::uuid, ${recordA}::uuid),
+            ('a', 'b:c', 'd', 'two', ${tableId}::uuid, ${recordB}::uuid)
+          RETURNING id::text
+        `;
+        await database`DROP TABLE grids.record_external_operations`;
+        await database`
+          CREATE TABLE grids.record_external_operations (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            provider TEXT NOT NULL,
+            provider_account TEXT NOT NULL,
+            resource_kind TEXT NOT NULL,
+            operation_key_hash TEXT NOT NULL,
+            binding_id UUID NOT NULL REFERENCES grids.record_external_bindings(id) ON DELETE CASCADE,
+            request_hash TEXT NOT NULL,
+            created BOOLEAN NOT NULL,
+            changed BOOLEAN NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE (provider, provider_account, resource_kind, operation_key_hash)
+          )
+        `.simple();
+        const sharedKeyHash = "a".repeat(64);
+        await database`
+          INSERT INTO grids.record_external_operations (
+            provider, provider_account, resource_kind, operation_key_hash, binding_id, request_hash, created, changed
+          ) VALUES
+            ('a:b', 'c', 'd', ${sharedKeyHash}, ${bindings[0]!.id}::uuid, ${"b".repeat(64)}, TRUE, TRUE),
+            ('a', 'b:c', 'd', ${sharedKeyHash}, ${bindings[1]!.id}::uuid, ${"c".repeat(64)}, TRUE, TRUE)
+        `;
+
+        await migrate(database);
+
+        const [state] = await database<Array<{ bindings: number; receipts: number; legacyColumns: number; scopeIndexes: number }>>`
+          SELECT
+            (SELECT count(*)::int FROM grids.record_external_bindings WHERE table_id = ${tableId}::uuid) AS bindings,
+            (SELECT count(*)::int FROM grids.record_external_operations) AS receipts,
+            (
+              SELECT count(*)::int FROM information_schema.columns
+              WHERE table_schema = 'grids' AND table_name = 'record_external_operations'
+                AND column_name IN ('provider', 'provider_account', 'resource_kind')
+            ) AS "legacyColumns",
+            (
+              SELECT count(*)::int FROM pg_indexes
+              WHERE schemaname = 'grids' AND tablename = 'record_external_operations'
+                AND indexdef LIKE '%(operation_scope_hash, operation_key_hash)%'
+            ) AS "scopeIndexes"
+        `;
+        expect(state).toEqual({ bindings: 2, receipts: 0, legacyColumns: 0, scopeIndexes: 1 });
       });
     },
     30_000,

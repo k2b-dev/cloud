@@ -300,24 +300,28 @@ const ExternalRecordIdentitySchema = z
       .min(1)
       .max(100)
       .refine((value) => value.trim() === value, "Must not start or end with whitespace")
+      .refine((value) => !value.includes("\0"), "Must not contain NUL")
       .describe("External system or connector name."),
     providerAccount: z
       .string()
       .min(1)
       .max(200)
       .refine((value) => value.trim() === value, "Must not start or end with whitespace")
+      .refine((value) => !value.includes("\0"), "Must not contain NUL")
       .describe("Stable provider account or tenant identity."),
     resourceKind: z
       .string()
       .min(1)
       .max(100)
       .refine((value) => value.trim() === value, "Must not start or end with whitespace")
+      .refine((value) => !value.includes("\0"), "Must not contain NUL")
       .describe("External resource kind."),
     externalId: z
       .string()
       .min(1)
       .max(500)
       .refine((value) => value.trim() === value, "Must not start or end with whitespace")
+      .refine((value) => !value.includes("\0"), "Must not contain NUL")
       .describe("Stable id within the external system."),
   })
   .strict();
@@ -339,7 +343,9 @@ export const RecordExternalUpsertInputSchema = z
 
 export const RecordExternalUpsertDataSchema = z
   .object({
-    record: RecordCapabilityDataSchema,
+    recordId: ShortIdSchema,
+    tableId: ShortIdSchema,
+    version: z.number().int().positive(),
     created: z.boolean(),
     changed: z.boolean(),
     replayed: z.boolean(),

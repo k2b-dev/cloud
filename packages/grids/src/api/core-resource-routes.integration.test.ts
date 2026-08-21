@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { dropFieldUniqueIndex, ensureFieldUniqueIndex } from "../service/field-indexes";
+import { deleteExpiredExternalRecordOperations } from "../service/record-external-identity";
 import basesRoutes from "./bases";
 import fieldsRoutes from "./fields";
 import recordsRoutes from "./records";
@@ -627,6 +628,12 @@ describe("classic resource route contracts", () => {
         expect((await request(fixture.tokens.write, undefined, { [fixture.uniqueFieldPublicId]: "EXT-1" })).status).toBe(400);
         expect(await count("records", "table_id", fixture.tableId)).toBe(0);
         expect(await sideEffectCounts(fixture.baseId)).toEqual(beforeDenied);
+        for (const part of ["provider", "providerAccount", "resourceKind", "externalId"] as const) {
+          const invalidRef = { ...externalRef, [part]: `${externalRef[part]}\0x` };
+          expect((await request(fixture.tokens.write, `nul-${part}`, { [fixture.uniqueFieldPublicId]: "EXT-NUL" }, undefined, invalidRef)).status).toBe(400);
+        }
+        expect(await count("records", "table_id", fixture.tableId)).toBe(0);
+        expect(await sideEffectCounts(fixture.baseId)).toEqual(beforeDenied);
 
         const [first, retry] = await Promise.all([
           request(fixture.tokens.write, "create-003ABC", { [fixture.uniqueFieldPublicId]: "EXT-1" }),
@@ -634,18 +641,20 @@ describe("classic resource route contracts", () => {
         ]);
         expect([first.status, retry.status].sort()).toEqual([200, 201]);
         const firstBody = (await first.json()) as {
-          record: { id: string; tableId: string; version: number; data: Record<string, unknown> };
+          recordId: string;
+          tableId: string;
+          version: number;
           created: boolean;
           changed: boolean;
           replayed: boolean;
         };
         const retryBody = (await retry.json()) as typeof firstBody;
-        expect(firstBody.record.id).toBe(retryBody.record.id);
-        expect(firstBody.record.id).toMatch(/^[A-Za-z0-9]{6}$/);
-        expect(firstBody.record.tableId).toBe(fixture.tablePublicId);
+        expect(firstBody.recordId).toBe(retryBody.recordId);
+        expect(firstBody.recordId).toMatch(/^[A-Za-z0-9]{6}$/);
+        expect(firstBody.tableId).toBe(fixture.tablePublicId);
         expect([firstBody.replayed, retryBody.replayed].sort()).toEqual([false, true]);
-        expect(firstBody).toMatchObject({ created: true, changed: true, record: { version: 1 } });
-        expect(retryBody).toMatchObject({ created: true, changed: true, record: { version: 1 } });
+        expect(firstBody).toMatchObject({ created: true, changed: true, version: 1 });
+        expect(retryBody).toMatchObject({ created: true, changed: true, version: 1 });
         expect(await count("records", "table_id", fixture.tableId)).toBe(1);
         const [identityCounts] = await sql<Array<{ bindings: number; operations: number; internal_record_id: string }>>`
           SELECT
@@ -659,7 +668,7 @@ describe("classic resource route contracts", () => {
             (SELECT record_id::text FROM grids.record_external_bindings WHERE table_id = ${fixture.tableId}::uuid) AS internal_record_id
         `;
         expect(identityCounts).toMatchObject({ bindings: 1, operations: 1 });
-        expect(identityCounts?.internal_record_id).not.toBe(firstBody.record.id);
+        expect(identityCounts?.internal_record_id).not.toBe(firstBody.recordId);
         const afterCreate = await sideEffectCounts(fixture.baseId);
         expect(afterCreate).toEqual({ audit: beforeDenied.audit + 1, outbox: beforeDenied.outbox + 1 });
 
@@ -684,7 +693,8 @@ describe("classic resource route contracts", () => {
           created: false,
           changed: true,
           replayed: false,
-          record: { id: firstBody.record.id, version: 2, data: { [fixture.uniqueFieldPublicId]: "EXT-2" } },
+          recordId: firstBody.recordId,
+          version: 2,
         });
         const afterUpdate = await sideEffectCounts(fixture.baseId);
         expect(afterUpdate).toEqual({ audit: afterCreate.audit + 1, outbox: afterCreate.outbox + 1 });
@@ -696,7 +706,9 @@ describe("classic resource route contracts", () => {
           1,
         );
         expect(replayedUpdate.status).toBe(200);
-        expect(await replayedUpdate.json()).toMatchObject({ changed: true, replayed: true, record: { version: 2 } });
+        expect(await replayedUpdate.json()).toMatchObject({ changed: true, replayed: true, version: 2 });
+        const oldCreateReplay = await request(fixture.tokens.write, "create-003ABC", { [fixture.uniqueFieldPublicId]: "EXT-1" });
+        expect(await oldCreateReplay.json()).toMatchObject({ created: true, changed: true, replayed: true, version: 1 });
         const noop = await request(
           fixture.tokens.write,
           "noop-003ABC-v2",
@@ -704,7 +716,7 @@ describe("classic resource route contracts", () => {
           2,
         );
         expect(noop.status).toBe(200);
-        expect(await noop.json()).toMatchObject({ created: false, changed: false, replayed: false, record: { version: 2 } });
+        expect(await noop.json()).toMatchObject({ created: false, changed: false, replayed: false, version: 2 });
         const stale = await request(
           fixture.tokens.write,
           "stale-003ABC-v1",
@@ -722,7 +734,40 @@ describe("classic resource route contracts", () => {
           { ...externalRef, providerAccount: "secondary" },
         );
         expect(otherAccount.status).toBe(201);
-        expect((await otherAccount.json()) as { record: { id: string } }).not.toMatchObject({ record: { id: firstBody.record.id } });
+        expect((await otherAccount.json()) as { recordId: string }).not.toMatchObject({ recordId: firstBody.recordId });
+        expect(await count("records", "table_id", fixture.tableId)).toBe(2);
+
+        await sql`UPDATE grids.fields SET deleted_at = now() WHERE id = ${fixture.uniqueFieldId}::uuid`;
+        const replayAfterSchemaChange = await request(fixture.tokens.write, "create-003ABC", {
+          [fixture.uniqueFieldPublicId]: "EXT-1",
+        });
+        expect(replayAfterSchemaChange.status).toBe(200);
+        expect(await replayAfterSchemaChange.json()).toMatchObject({ recordId: firstBody.recordId, version: 1, replayed: true });
+
+        const [expiredReceipt] = await sql<Array<{ id: string; bindingId: string }>>`
+          SELECT operation.id::text AS id, operation.binding_id::text AS "bindingId"
+          FROM grids.record_external_operations operation
+          JOIN grids.record_external_bindings binding ON binding.id = operation.binding_id
+          WHERE binding.record_id = ${identityCounts!.internal_record_id}::uuid AND operation.created = TRUE
+        `;
+        expect(expiredReceipt).toBeDefined();
+        await sql`
+          UPDATE grids.record_external_operations
+          SET created_at = now() - interval '31 days'
+          WHERE id = ${expiredReceipt!.id}::uuid
+        `;
+        await deleteExpiredExternalRecordOperations();
+        const [retentionState] = await sql<Array<{ expired: number; fresh: number }>>`
+          SELECT
+            count(*) FILTER (WHERE id = ${expiredReceipt!.id}::uuid)::int AS expired,
+            count(*) FILTER (WHERE binding_id = ${expiredReceipt!.bindingId}::uuid AND id <> ${expiredReceipt!.id}::uuid)::int AS fresh
+          FROM grids.record_external_operations
+        `;
+        expect(retentionState).toEqual({ expired: 0, fresh: 2 });
+        const [bindingsAfterRetention] = await sql<Array<{ count: number }>>`
+          SELECT count(*)::int AS count FROM grids.record_external_bindings WHERE table_id = ${fixture.tableId}::uuid
+        `;
+        expect(bindingsAfterRetention?.count).toBe(2);
         expect(await count("records", "table_id", fixture.tableId)).toBe(2);
       } catch (error) {
         primaryError = error;

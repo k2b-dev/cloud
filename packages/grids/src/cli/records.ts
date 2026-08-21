@@ -56,7 +56,9 @@ type RecordListBodyFlags = {
 };
 
 type ExternalRecordPutResponse = {
-  record: GridRecord;
+  recordId: string;
+  tableId: string;
+  version: number;
   created: boolean;
   changed: boolean;
   replayed: boolean;
@@ -300,7 +302,7 @@ export const recordCommands = [
         ),
       );
       const verb = payload.replayed ? "Replayed" : payload.created ? "Created" : payload.changed ? "Updated" : "Kept";
-      printJsonOrMessage(ctx, payload, `${verb} record ${payload.record.id} at version ${payload.record.version}.`);
+      printJsonOrMessage(ctx, payload, `${verb} record ${payload.recordId} at version ${payload.version}.`);
     },
   }),
   command("records import", {

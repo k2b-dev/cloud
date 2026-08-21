@@ -1286,7 +1286,9 @@ describe("grids CLI", () => {
 
   test("upserts externally identified records with retry and version headers", async () => {
     const payload = {
-      record: { ...record, version: 2, data: { [fieldId]: "Octavia Butler" } },
+      recordId,
+      tableId,
+      version: 2,
       created: false,
       changed: true,
       replayed: false,

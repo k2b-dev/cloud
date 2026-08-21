@@ -175,6 +175,16 @@ describe("Grids capabilities", () => {
         values: { Field1: "value" },
       }).success,
     ).toBeFalse();
+    for (const part of ["provider", "providerAccount", "resourceKind", "externalId"] as const) {
+      const externalRef = { provider: "crm", providerAccount: "main", resourceKind: "contact", externalId: "003ABC" };
+      expect(
+        RecordExternalUpsertInputSchema.safeParse({
+          tableId: "Table1",
+          externalRef: { ...externalRef, [part]: `${externalRef[part]}\0x` },
+          values: { Field1: "value" },
+        }).success,
+      ).toBeFalse();
+    }
     expect(
       BaseListDataSchema.safeParse([
         {
@@ -425,12 +435,12 @@ describe("Grids capabilities", () => {
       const externalCreated = await invoke("action", "record.upsertExternal", externalInput, externalContext);
       expect(externalCreated).toMatchObject({
         ok: true,
-        data: { data: { created: true, changed: true, replayed: false, record: { tableId: tablePublicId, version: 1 } } },
+        data: { data: { created: true, changed: true, replayed: false, tableId: tablePublicId, version: 1 } },
       });
       const externalRetry = await invoke("action", "record.upsertExternal", externalInput, externalContext);
       expect(externalRetry).toMatchObject({
         ok: true,
-        data: { data: { created: true, changed: true, replayed: true, record: { tableId: tablePublicId, version: 1 } } },
+        data: { data: { created: true, changed: true, replayed: true, tableId: tablePublicId, version: 1 } },
       });
       const externalMismatch = await invoke(
         "action",
@@ -438,7 +448,14 @@ describe("Grids capabilities", () => {
         { ...externalInput, values: { [fieldPublicId]: "Different request" } },
         externalContext,
       );
-      expect(externalMismatch).toMatchObject({ ok: false, error: { code: "CONFLICT", status: 409 } });
+      expect(externalMismatch).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_CONFLICT", status: 409 } });
+      const externalScopeMismatch = await invoke(
+        "action",
+        "record.upsertExternal",
+        { ...externalInput, externalRef: { ...externalInput.externalRef, providerAccount: "secondary" } },
+        externalContext,
+      );
+      expect(externalScopeMismatch).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_CONFLICT", status: 409 } });
       if (!externalCreated.ok) throw new Error("Expected external Record capability create");
       const externalUpdated = await invoke(
         "action",
@@ -448,7 +465,12 @@ describe("Grids capabilities", () => {
       );
       expect(externalUpdated).toMatchObject({
         ok: true,
-        data: { data: { created: false, changed: true, replayed: false, record: { version: 2 } } },
+        data: { data: { created: false, changed: true, replayed: false, version: 2 } },
+      });
+      const externalOldReplay = await invoke("action", "record.upsertExternal", externalInput, externalContext);
+      expect(externalOldReplay).toMatchObject({
+        ok: true,
+        data: { data: { created: true, changed: true, replayed: true, version: 1 } },
       });
 
       const loadedRecord = await invoke("query", "record.read", { id: record.id }, context);
@@ -718,6 +740,8 @@ describe("Grids capabilities", () => {
         { tableId: tablePublicId, recordId: record.id, values: reviewInput, ifVersion: 3 },
         context,
       );
+      const externalReview = await review("record.upsertExternal", externalInput, context);
+      expect(externalReview).toMatchObject({ ok: true, data: { approvalScope: `table:${tablePublicId}` } });
       expect(updateReview.ok).toBe(true);
       if (updateReview.ok) {
         expect(updateReview.data.details).toContainEqual({

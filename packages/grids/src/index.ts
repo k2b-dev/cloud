@@ -14,6 +14,10 @@ import { stopControlledDestructionJobs } from "./service/controlled-destruction"
 import { stopEvidenceExportJobs } from "./service/evidence-exports";
 import { startFieldIndexMaintenance, stopFieldIndexMaintenance } from "./service/field-index-maintenance";
 import { startRecordEventOutbox, stopRecordEventOutbox } from "./service/record-event-outbox";
+import {
+  startExternalRecordOperationRetention,
+  stopExternalRecordOperationRetention,
+} from "./service/record-external-identity";
 import { startWorkflowRuntime, stopWorkflowRuntime } from "./service/workflow-runtime";
 
 const router = new Hono<AuthContext>()
@@ -28,6 +32,7 @@ const router = new Hono<AuthContext>()
 const gridsRuntimeLifecycle = createRuntimeLifecycle({
   start: async () => {
     await startRecordEventOutbox();
+    await startExternalRecordOperationRetention();
     await startWorkflowRuntime();
     startFieldIndexMaintenance();
   },
@@ -36,6 +41,7 @@ const gridsRuntimeLifecycle = createRuntimeLifecycle({
       stopFieldIndexMaintenance,
       stopWorkflowRuntime,
       stopRecordEventOutbox,
+      stopExternalRecordOperationRetention,
       stopBoundedQueryPool,
       stopControlledDestructionJobs,
       stopEvidenceExportJobs,

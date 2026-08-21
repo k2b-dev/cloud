@@ -794,15 +794,41 @@ const runRecordExternalUpsert = async (input: z.infer<typeof RecordExternalUpser
   const access = accessContext(context);
   const table = await requireTableRecordAccess(input.tableId, access, "write");
   if (!table.ok) return table;
+  const operationScope = `capability:record.upsertExternal:${gridsService.record.external.externalRecordRequestHash(context.accessSubject)}`;
+  const requestHash = gridsService.record.external.externalRecordRequestHash(input);
+  const replay = await gridsService.record.external.replay({
+    operationScope,
+    operationKey: context.idempotencyKey,
+    requestHash,
+    conflictKind: "capability",
+  });
+  if (!replay.ok) return replay;
+  const receipt = replay.data;
+  if (receipt) {
+    const base = await gridsService.base.get(table.data.table.baseId);
+    return ok({
+      data: {
+        recordId: receipt.recordShortId,
+        tableId: table.data.table.shortId,
+        version: receipt.version,
+        created: receipt.created,
+        changed: receipt.changed,
+        replayed: true,
+      },
+      summary: `Replayed external record ${receipt.recordShortId} in “${table.data.table.name}” at version ${receipt.version}.`,
+      refs: [{ type: "grids.record", id: receipt.recordShortId }],
+      ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data.table, receipt.recordShortId) }] } : {}),
+    });
+  }
   const values = await resolveRecordValues(table.data.table.id, input.values);
   if (!values.ok) return values;
-  const operationKey = new Bun.CryptoHasher("sha256")
-    .update(`grids:record.upsertExternal\0${JSON.stringify(context.accessSubject)}\0${context.idempotencyKey}`)
-    .digest("hex");
   const result = await gridsService.record.external.put({
     tableId: table.data.table.id,
     identity: input.externalRef,
-    operationKey,
+    operationScope,
+    operationKey: context.idempotencyKey,
+    requestHash,
+    conflictKind: "capability",
     values: values.data.values,
     ifVersion: input.ifVersion,
     audit: input.audit,
@@ -816,14 +842,16 @@ const runRecordExternalUpsert = async (input: z.infer<typeof RecordExternalUpser
   const verb = result.data.replayed ? "Replayed" : result.data.created ? "Created" : result.data.changed ? "Updated" : "Kept";
   return ok({
     data: {
-      record: mapRecord(result.data.record, table.data.table),
+      recordId: result.data.recordShortId,
+      tableId: table.data.table.shortId,
+      version: result.data.version,
       created: result.data.created,
       changed: result.data.changed,
       replayed: result.data.replayed,
     },
-    summary: `${verb} external record ${result.data.record.shortId} in “${table.data.table.name}” at version ${result.data.record.version}.`,
-    refs: [{ type: "grids.record", id: result.data.record.shortId }],
-    ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data.table, result.data.record.shortId) }] } : {}),
+    summary: `${verb} external record ${result.data.recordShortId} in “${table.data.table.name}” at version ${result.data.version}.`,
+    refs: [{ type: "grids.record", id: result.data.recordShortId }],
+    ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data.table, result.data.recordShortId) }] } : {}),
   });
 };
 
@@ -995,6 +1023,7 @@ export const gridsCapabilities = defineCapabilities({
         if (!values.ok) return values;
         return ok({
           message: `Create or conditionally update one externally identified record in ${table.data.table.name}.`,
+          approvalScope: `table:${input.tableId}`,
           details: [
             { label: "Table", value: table.data.table.name },
             { label: "Provider", value: input.externalRef.provider },

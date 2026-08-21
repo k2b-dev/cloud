@@ -51,12 +51,20 @@ const RecordImportResponseSchema = z.object({
   items: z.array(PublicGridRecordSchema),
 });
 
+const externalIdentityPart = (max: number) =>
+  z
+    .string()
+    .min(1)
+    .max(max)
+    .refine((value) => value.trim() === value, "Must not start or end with whitespace")
+    .refine((value) => !value.includes("\0"), "Must not contain NUL");
+
 const ExternalRecordIdentitySchema = z
   .object({
-    provider: z.string().min(1).max(100).refine((value) => value.trim() === value, "Must not start or end with whitespace"),
-    providerAccount: z.string().min(1).max(200).refine((value) => value.trim() === value, "Must not start or end with whitespace"),
-    resourceKind: z.string().min(1).max(100).refine((value) => value.trim() === value, "Must not start or end with whitespace"),
-    externalId: z.string().min(1).max(500).refine((value) => value.trim() === value, "Must not start or end with whitespace"),
+    provider: externalIdentityPart(100),
+    providerAccount: externalIdentityPart(200),
+    resourceKind: externalIdentityPart(100),
+    externalId: externalIdentityPart(500),
   })
   .strict();
 const ExternalRecordPutBodySchema = z
@@ -69,7 +77,9 @@ const ExternalRecordPutBodySchema = z
   .strict();
 const ExternalRecordPutResponseSchema = z
   .object({
-    record: PublicGridRecordSchema,
+    recordId: ShortIdSchema,
+    tableId: ShortIdSchema,
+    version: z.number().int().positive(),
     created: z.boolean(),
     changed: z.boolean(),
     replayed: z.boolean(),
@@ -764,13 +774,31 @@ export const recordsRoutes = new Hono<AuthContext>()
         return c.json({ message: "Idempotency-Key must contain between 1 and 200 characters" }, 400);
       }
       const body = c.req.valid("json");
-      const fields = await gridsService.field.listByTable(tableId);
+      const operationScope = gridsService.record.external.restExternalRecordOperationScope(body.externalRef);
+      const requestHash = gridsService.record.external.externalRecordRequestHash({ tableId: table.shortId, ...body });
+      const replay = await gridsService.record.external.replay({ operationScope, operationKey, requestHash });
+      if (!replay.ok) return c.json({ message: replay.error.message }, replay.error.status);
+      if (replay.data) {
+        return c.json(
+          ExternalRecordPutResponseSchema.parse({
+            recordId: replay.data.recordShortId,
+            tableId: table.shortId,
+            version: replay.data.version,
+            created: replay.data.created,
+            changed: replay.data.changed,
+            replayed: true,
+          }),
+          200,
+        );
+      }
       const values = await fromPublicRecordValues(tableId, body.values);
       if (!values.ok) return c.json({ message: values.error.message }, values.error.status);
       const result = await gridsService.record.external.put({
         tableId,
         identity: body.externalRef,
+        operationScope,
         operationKey,
+        requestHash,
         values: values.data,
         ifVersion: body.ifVersion,
         audit: body.audit,
@@ -781,7 +809,9 @@ export const recordsRoutes = new Hono<AuthContext>()
       });
       if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
       const response = ExternalRecordPutResponseSchema.parse({
-        record: await toPublicRecord(result.data.record, fields),
+        recordId: result.data.recordShortId,
+        tableId: table.shortId,
+        version: result.data.version,
         created: result.data.created,
         changed: result.data.changed,
         replayed: result.data.replayed,
