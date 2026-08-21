@@ -5,7 +5,7 @@ section: Work
 order: 140
 description: Structured data with Bases, Views, Forms, Custom Apps, documents, and workflows.
 tags: [grids, tables, workflows]
-updated: 2026-08-19
+updated: 2026-08-21
 ---
 
 # Grids
@@ -163,6 +163,8 @@ cld grids records list --base "Operations" --table "Requests" --limit 20 --json
 ```
 
 Record updates patch only the named fields. Integrations can pass the current positive Record version with `--if-version` so a stale projection conflicts instead of overwriting a newer edit. An update whose normalized scalar and Relation values are already current returns the Record without creating another version, history revision, audit entry, or live event.
+
+For repeated connector projections, use `cld grids records upsert-external`. The provider, provider account, resource kind, and external ID form a case-sensitive durable binding to one Record; they do not replace its public Grids ID or become editable fields. Reuse one `--idempotency-key` after an uncertain response. Creating the binding needs no version, while a later update needs the current `--if-version`; a different request under the same key or a stale version conflicts without another write.
 
 Run `cld grids help` for bases, schema, records, views, forms, Custom Apps,
 documents, templates, and workflows. Run `cld grids <area> <command> --help`

@@ -589,4 +589,154 @@ describe("classic resource route contracts", () => {
     },
     20_000,
   );
+
+  postgresTest(
+    "atomically binds external identities and replays conditional Record upserts",
+    async () => {
+      const fixture = newFixture();
+      let primaryError: unknown;
+      let primaryFailed = false;
+      try {
+        await setupFixture(fixture);
+        const path = `/records/by-table/${fixture.tablePublicId}/external`;
+        const externalRef = {
+          provider: "crm",
+          providerAccount: "main",
+          resourceKind: "contact",
+          externalId: "003ABC",
+        };
+        const request = (
+          token: string,
+          operationKey: string | undefined,
+          values: Record<string, unknown>,
+          ifVersion?: number,
+          ref = externalRef,
+        ) =>
+          app.request(path, {
+            method: "PUT",
+            headers: {
+              authorization: `Bearer ${token}`,
+              "content-type": "application/json",
+              ...(operationKey === undefined ? {} : { "Idempotency-Key": operationKey }),
+            },
+            body: JSON.stringify({ externalRef: ref, values, ...(ifVersion === undefined ? {} : { ifVersion }) }),
+          });
+
+        const beforeDenied = await sideEffectCounts(fixture.baseId);
+        expect((await request(fixture.tokens.read, "denied", { [fixture.uniqueFieldPublicId]: "EXT-1" })).status).toBe(403);
+        expect((await request(fixture.tokens.write, undefined, { [fixture.uniqueFieldPublicId]: "EXT-1" })).status).toBe(400);
+        expect(await count("records", "table_id", fixture.tableId)).toBe(0);
+        expect(await sideEffectCounts(fixture.baseId)).toEqual(beforeDenied);
+
+        const [first, retry] = await Promise.all([
+          request(fixture.tokens.write, "create-003ABC", { [fixture.uniqueFieldPublicId]: "EXT-1" }),
+          request(fixture.tokens.write, "create-003ABC", { [fixture.uniqueFieldPublicId]: "EXT-1" }),
+        ]);
+        expect([first.status, retry.status].sort()).toEqual([200, 201]);
+        const firstBody = (await first.json()) as {
+          record: { id: string; tableId: string; version: number; data: Record<string, unknown> };
+          created: boolean;
+          changed: boolean;
+          replayed: boolean;
+        };
+        const retryBody = (await retry.json()) as typeof firstBody;
+        expect(firstBody.record.id).toBe(retryBody.record.id);
+        expect(firstBody.record.id).toMatch(/^[A-Za-z0-9]{6}$/);
+        expect(firstBody.record.tableId).toBe(fixture.tablePublicId);
+        expect([firstBody.replayed, retryBody.replayed].sort()).toEqual([false, true]);
+        expect(firstBody).toMatchObject({ created: true, changed: true, record: { version: 1 } });
+        expect(retryBody).toMatchObject({ created: true, changed: true, record: { version: 1 } });
+        expect(await count("records", "table_id", fixture.tableId)).toBe(1);
+        const [identityCounts] = await sql<Array<{ bindings: number; operations: number; internal_record_id: string }>>`
+          SELECT
+            (SELECT count(*)::int FROM grids.record_external_bindings WHERE table_id = ${fixture.tableId}::uuid) AS bindings,
+            (
+              SELECT count(*)::int
+              FROM grids.record_external_operations operation
+              JOIN grids.record_external_bindings binding ON binding.id = operation.binding_id
+              WHERE binding.table_id = ${fixture.tableId}::uuid
+            ) AS operations,
+            (SELECT record_id::text FROM grids.record_external_bindings WHERE table_id = ${fixture.tableId}::uuid) AS internal_record_id
+        `;
+        expect(identityCounts).toMatchObject({ bindings: 1, operations: 1 });
+        expect(identityCounts?.internal_record_id).not.toBe(firstBody.record.id);
+        const afterCreate = await sideEffectCounts(fixture.baseId);
+        expect(afterCreate).toEqual({ audit: beforeDenied.audit + 1, outbox: beforeDenied.outbox + 1 });
+
+        const mismatchedReplay = await request(fixture.tokens.write, "create-003ABC", {
+          [fixture.uniqueFieldPublicId]: "EXT-CHANGED",
+        });
+        expect(mismatchedReplay.status).toBe(409);
+        const missingVersion = await request(fixture.tokens.write, "update-003ABC-missing-version", {
+          [fixture.uniqueFieldPublicId]: "EXT-2",
+        });
+        expect(missingVersion.status).toBe(409);
+        expect(await sideEffectCounts(fixture.baseId)).toEqual(afterCreate);
+
+        const updated = await request(
+          fixture.tokens.write,
+          "update-003ABC-v2",
+          { [fixture.uniqueFieldPublicId]: "EXT-2" },
+          1,
+        );
+        expect(updated.status).toBe(200);
+        expect(await updated.json()).toMatchObject({
+          created: false,
+          changed: true,
+          replayed: false,
+          record: { id: firstBody.record.id, version: 2, data: { [fixture.uniqueFieldPublicId]: "EXT-2" } },
+        });
+        const afterUpdate = await sideEffectCounts(fixture.baseId);
+        expect(afterUpdate).toEqual({ audit: afterCreate.audit + 1, outbox: afterCreate.outbox + 1 });
+
+        const replayedUpdate = await request(
+          fixture.tokens.write,
+          "update-003ABC-v2",
+          { [fixture.uniqueFieldPublicId]: "EXT-2" },
+          1,
+        );
+        expect(replayedUpdate.status).toBe(200);
+        expect(await replayedUpdate.json()).toMatchObject({ changed: true, replayed: true, record: { version: 2 } });
+        const noop = await request(
+          fixture.tokens.write,
+          "noop-003ABC-v2",
+          { [fixture.uniqueFieldPublicId]: "EXT-2" },
+          2,
+        );
+        expect(noop.status).toBe(200);
+        expect(await noop.json()).toMatchObject({ created: false, changed: false, replayed: false, record: { version: 2 } });
+        const stale = await request(
+          fixture.tokens.write,
+          "stale-003ABC-v1",
+          { [fixture.uniqueFieldPublicId]: "EXT-3" },
+          1,
+        );
+        expect(stale.status).toBe(409);
+        expect(await sideEffectCounts(fixture.baseId)).toEqual(afterUpdate);
+
+        const otherAccount = await request(
+          fixture.tokens.write,
+          "create-003ABC-other-account",
+          { [fixture.uniqueFieldPublicId]: "EXT-OTHER" },
+          undefined,
+          { ...externalRef, providerAccount: "secondary" },
+        );
+        expect(otherAccount.status).toBe(201);
+        expect((await otherAccount.json()) as { record: { id: string } }).not.toMatchObject({ record: { id: firstBody.record.id } });
+        expect(await count("records", "table_id", fixture.tableId)).toBe(2);
+      } catch (error) {
+        primaryError = error;
+        primaryFailed = true;
+        throw error;
+      } finally {
+        try {
+          await cleanupFixture(fixture);
+        } catch (cleanupError) {
+          if (primaryFailed) throw new AggregateError([primaryError, cleanupError], "External Record route test and cleanup failed");
+          throw cleanupError;
+        }
+      }
+    },
+    20_000,
+  );
 });

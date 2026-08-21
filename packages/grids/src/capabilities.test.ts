@@ -10,7 +10,13 @@ import {
 } from "@valentinkolb/cloud/contracts";
 import { sql } from "bun";
 import { gridsCapabilities } from "./capabilities";
-import { BaseListDataSchema, BaseReadInputSchema, GqlResultDataSchema, RecordCreateInputSchema } from "./capability-contracts";
+import {
+  BaseListDataSchema,
+  BaseReadInputSchema,
+  GqlResultDataSchema,
+  RecordCreateInputSchema,
+  RecordExternalUpsertInputSchema,
+} from "./capability-contracts";
 import { migrate } from "./migrate";
 
 const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
@@ -18,11 +24,11 @@ if (process.env.GRIDS_DB_TEST === "1") setDefaultTimeout(60_000);
 const uuid = () => Bun.randomUUIDv7();
 const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
-test("only exposes remembered approval for record updates", () => {
+test("only exposes remembered approval for record updates and external upserts", () => {
   const rememberable = (Object.entries(gridsCapabilities.actions) as Array<[string, CapabilityActionDefinition]>)
     .filter(([, action]) => action.approval === "rememberable")
     .map(([localId]) => localId);
-  expect(rememberable).toEqual(["record.update"]);
+  expect(rememberable).toEqual(["record.upsertExternal", "record.update"]);
 });
 
 const testUser = (id: string): User => ({
@@ -109,12 +115,12 @@ describe("Grids capabilities", () => {
       "table.read",
       "view.read",
     ]);
-    expect(Object.keys(gridsCapabilities.actions ?? {}).sort()).toEqual(["record.create", "record.update"]);
+    expect(Object.keys(gridsCapabilities.actions ?? {}).sort()).toEqual(["record.create", "record.update", "record.upsertExternal"]);
     expect(
       Object.entries(gridsCapabilities.actions ?? {})
         .filter(([, action]) => "review" in action && action.review)
         .map(([id]) => id),
-    ).toEqual(["record.update"]);
+    ).toEqual(["record.upsertExternal", "record.update"]);
     expect(gridsCapabilities.queries?.["base.list"]?.description).toContain("Normal entry for Base-scoped Grids work");
     expect(gridsCapabilities.queries?.["gql.context"]?.description).toContain("request tables first");
     expect(gridsCapabilities.queries?.["gql.execute"]?.description).toContain("normally gql.preview");
@@ -155,6 +161,20 @@ describe("Grids capabilities", () => {
     expect(BaseReadInputSchema.safeParse({ id: uuid() }).success).toBeFalse();
     expect(RecordCreateInputSchema.safeParse({ tableId: "Table1", values: { Field1: "value" } }).success).toBeTrue();
     expect(RecordCreateInputSchema.safeParse({ tableId: "Table1", values: { [uuid()]: "value" } }).success).toBeFalse();
+    expect(
+      RecordExternalUpsertInputSchema.safeParse({
+        tableId: "Table1",
+        externalRef: { provider: "crm", providerAccount: "main", resourceKind: "contact", externalId: "003ABC" },
+        values: { Field1: "value" },
+      }).success,
+    ).toBeTrue();
+    expect(
+      RecordExternalUpsertInputSchema.safeParse({
+        tableId: "Table1",
+        externalRef: { provider: " crm", providerAccount: "main", resourceKind: "contact", externalId: "003ABC" },
+        values: { Field1: "value" },
+      }).success,
+    ).toBeFalse();
     expect(
       BaseListDataSchema.safeParse([
         {
@@ -395,6 +415,41 @@ describe("Grids capabilities", () => {
       expect(record.version).toBe(1);
       expect(created.data.summary).toBe(`Created record ${record.id} in “Items”.`);
       expect(record).not.toHaveProperty("data");
+
+      const externalInput = {
+        tableId: tablePublicId,
+        externalRef: { provider: "crm", providerAccount: "main", resourceKind: "contact", externalId: "capability-1" },
+        values: { [fieldPublicId]: "External capability" },
+      };
+      const externalContext = { ...context, idempotencyKey: "external-capability-create" };
+      const externalCreated = await invoke("action", "record.upsertExternal", externalInput, externalContext);
+      expect(externalCreated).toMatchObject({
+        ok: true,
+        data: { data: { created: true, changed: true, replayed: false, record: { tableId: tablePublicId, version: 1 } } },
+      });
+      const externalRetry = await invoke("action", "record.upsertExternal", externalInput, externalContext);
+      expect(externalRetry).toMatchObject({
+        ok: true,
+        data: { data: { created: true, changed: true, replayed: true, record: { tableId: tablePublicId, version: 1 } } },
+      });
+      const externalMismatch = await invoke(
+        "action",
+        "record.upsertExternal",
+        { ...externalInput, values: { [fieldPublicId]: "Different request" } },
+        externalContext,
+      );
+      expect(externalMismatch).toMatchObject({ ok: false, error: { code: "CONFLICT", status: 409 } });
+      if (!externalCreated.ok) throw new Error("Expected external Record capability create");
+      const externalUpdated = await invoke(
+        "action",
+        "record.upsertExternal",
+        { ...externalInput, values: { [fieldPublicId]: "External capability updated" }, ifVersion: 1 },
+        { ...context, idempotencyKey: "external-capability-update" },
+      );
+      expect(externalUpdated).toMatchObject({
+        ok: true,
+        data: { data: { created: false, changed: true, replayed: false, record: { version: 2 } } },
+      });
 
       const loadedRecord = await invoke("query", "record.read", { id: record.id }, context);
       expect(loadedRecord.ok && loadedRecord.data.data).toMatchObject({ id: record.id, version: 1 });
@@ -761,6 +816,17 @@ describe("Grids capabilities", () => {
       });
       const write = await invoke("action", "record.create", { tableId: tablePublicId, values: {} }, context);
       expect(write).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
+      const externalWrite = await invoke(
+        "action",
+        "record.upsertExternal",
+        {
+          tableId: tablePublicId,
+          externalRef: { provider: "crm", providerAccount: "main", resourceKind: "contact", externalId: "denied" },
+          values: {},
+        },
+        { ...context, idempotencyKey: "denied-external-write" },
+      );
+      expect(externalWrite).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
     } finally {
       await sql`DELETE FROM grids.bases WHERE id IN (${boundBaseId}::uuid, ${otherBaseId}::uuid)`;
       for (const accessId of accessIds) await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;

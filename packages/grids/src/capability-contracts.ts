@@ -293,6 +293,59 @@ export const RecordCreateInputSchema = z
   })
   .strict();
 
+const ExternalRecordIdentitySchema = z
+  .object({
+    provider: z
+      .string()
+      .min(1)
+      .max(100)
+      .refine((value) => value.trim() === value, "Must not start or end with whitespace")
+      .describe("External system or connector name."),
+    providerAccount: z
+      .string()
+      .min(1)
+      .max(200)
+      .refine((value) => value.trim() === value, "Must not start or end with whitespace")
+      .describe("Stable provider account or tenant identity."),
+    resourceKind: z
+      .string()
+      .min(1)
+      .max(100)
+      .refine((value) => value.trim() === value, "Must not start or end with whitespace")
+      .describe("External resource kind."),
+    externalId: z
+      .string()
+      .min(1)
+      .max(500)
+      .refine((value) => value.trim() === value, "Must not start or end with whitespace")
+      .describe("Stable id within the external system."),
+  })
+  .strict();
+
+export const RecordExternalUpsertInputSchema = z
+  .object({
+    tableId: ShortIdSchema.describe("Public ID of the writable stored Table that owns the Record."),
+    externalRef: ExternalRecordIdentitySchema,
+    values: RecordValuesSchema.describe("Public Field IDs mapped to explicitly supplied values."),
+    ifVersion: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Required current Record version when the external identity already exists."),
+    audit: RecordAuditSchema.optional().describe("Answers required by the Table audit policy for an existing Record update."),
+  })
+  .strict();
+
+export const RecordExternalUpsertDataSchema = z
+  .object({
+    record: RecordCapabilityDataSchema,
+    created: z.boolean(),
+    changed: z.boolean(),
+    replayed: z.boolean(),
+  })
+  .strict();
+
 export const RecordUpdateInputSchema = z
   .object({
     tableId: ShortIdSchema.describe("Public ID of the writable stored Table containing the record."),

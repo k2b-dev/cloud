@@ -820,6 +820,42 @@ const migrateCoreRecords = async (sql: SQL): Promise<void> => {
   await sql`CREATE INDEX IF NOT EXISTS idx_grids_records_table_trash ON grids.records(table_id, deleted_at) WHERE deleted_at IS NOT NULL`.simple();
   console.log("  ✓ grids.records");
 
+  // Connector identities are durable bindings, not user-editable Record
+  // fields. Operations keep only a hash of the caller's idempotency key.
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.record_external_bindings (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      provider TEXT NOT NULL CHECK (char_length(provider) BETWEEN 1 AND 100),
+      provider_account TEXT NOT NULL CHECK (char_length(provider_account) BETWEEN 1 AND 200),
+      resource_kind TEXT NOT NULL CHECK (char_length(resource_kind) BETWEEN 1 AND 100),
+      external_id TEXT NOT NULL CHECK (char_length(external_id) BETWEEN 1 AND 500),
+      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE CASCADE,
+      record_id UUID NOT NULL REFERENCES grids.records(id) ON DELETE CASCADE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (provider, provider_account, resource_kind, external_id)
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_external_bindings_record
+    ON grids.record_external_bindings(record_id)
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.record_external_operations (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      provider TEXT NOT NULL CHECK (char_length(provider) BETWEEN 1 AND 100),
+      provider_account TEXT NOT NULL CHECK (char_length(provider_account) BETWEEN 1 AND 200),
+      resource_kind TEXT NOT NULL CHECK (char_length(resource_kind) BETWEEN 1 AND 100),
+      operation_key_hash TEXT NOT NULL CHECK (char_length(operation_key_hash) = 64),
+      binding_id UUID NOT NULL REFERENCES grids.record_external_bindings(id) ON DELETE CASCADE,
+      request_hash TEXT NOT NULL CHECK (char_length(request_hash) = 64),
+      created BOOLEAN NOT NULL,
+      changed BOOLEAN NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (provider, provider_account, resource_kind, operation_key_hash)
+    )
+  `.simple();
+  console.log("  ✓ grids.record_external_bindings");
+
   // Record comments inherit the record's live access policy. The repeated
   // base/table keys keep bounded thread reads indexed without copying ACLs.
   await sql`

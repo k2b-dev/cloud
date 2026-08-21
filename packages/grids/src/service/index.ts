@@ -30,6 +30,7 @@ import {
 } from "./permission-resolver";
 import * as preservationHolds from "./preservation-holds";
 import * as recordComments from "./record-comments";
+import * as recordExternalIdentity from "./record-external-identity";
 import { listDeadRecordEventDeliveryFailures } from "./record-event-delivery-failures";
 import * as recordFinalization from "./record-finalization";
 import * as recordHistory from "./record-history";
@@ -143,6 +144,7 @@ export const gridsService = {
     findTableId: records.findTableId,
     create: records.create,
     createMany: records.createMany,
+    external: recordExternalIdentity,
     eventOutboxStats: records.recordEventOutboxStats,
     redriveEventOutbox: records.redriveRecordEventOutbox,
     update: records.update,

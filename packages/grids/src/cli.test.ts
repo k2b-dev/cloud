@@ -401,7 +401,7 @@ describe("grids CLI", () => {
     const commands = commandGroups.flat();
     const paths = commands.map((item) => item.path.join(" "));
 
-    expect(commands).toHaveLength(174);
+    expect(commands).toHaveLength(175);
     expect(new Set(paths).size).toBe(paths.length);
 
     for (const path of paths) {
@@ -1282,6 +1282,44 @@ describe("grids CLI", () => {
     expect(calls[2]?.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({ [fieldId]: "Octavia Butler" });
     expect(lines).toEqual([`Created record ${recordId}.`]);
+  });
+
+  test("upserts externally identified records with retry and version headers", async () => {
+    const payload = {
+      record: { ...record, version: 2, data: { [fieldId]: "Octavia Butler" } },
+      created: false,
+      changed: true,
+      replayed: false,
+    };
+    const { ctx, calls, lines } = createContext(
+      ["records", "upsert-external", baseId, "Authors"],
+      {
+        body: JSON.stringify({ [fieldId]: "Octavia Butler" }),
+        provider: "crm",
+        "provider-account": "main",
+        "resource-kind": "contact",
+        "external-id": "003ABC",
+        "idempotency-key": "sync-003ABC-v2",
+        "if-version": "1",
+      },
+      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(payload)],
+    );
+
+    await gridsCli.run(ctx);
+
+    expect(calls.map((call) => call.path)).toEqual([
+      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
+      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/records/by-table/${tableId}/external`,
+    ]);
+    expect(calls[2]?.init?.method).toBe("PUT");
+    expect(new Headers(calls[2]?.init?.headers).get("Idempotency-Key")).toBe("sync-003ABC-v2");
+    expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({
+      externalRef: { provider: "crm", providerAccount: "main", resourceKind: "contact", externalId: "003ABC" },
+      values: { [fieldId]: "Octavia Butler" },
+      ifVersion: 1,
+    });
+    expect(lines).toEqual([`Updated record ${recordId} at version 2.`]);
   });
 
   test("shows and fully enables durable table history", async () => {

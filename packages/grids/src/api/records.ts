@@ -51,6 +51,31 @@ const RecordImportResponseSchema = z.object({
   items: z.array(PublicGridRecordSchema),
 });
 
+const ExternalRecordIdentitySchema = z
+  .object({
+    provider: z.string().min(1).max(100).refine((value) => value.trim() === value, "Must not start or end with whitespace"),
+    providerAccount: z.string().min(1).max(200).refine((value) => value.trim() === value, "Must not start or end with whitespace"),
+    resourceKind: z.string().min(1).max(100).refine((value) => value.trim() === value, "Must not start or end with whitespace"),
+    externalId: z.string().min(1).max(500).refine((value) => value.trim() === value, "Must not start or end with whitespace"),
+  })
+  .strict();
+const ExternalRecordPutBodySchema = z
+  .object({
+    externalRef: ExternalRecordIdentitySchema,
+    values: RecordPayloadSchema,
+    ifVersion: z.number().int().positive().optional(),
+    audit: RecordUpdateBodySchema.shape.audit,
+  })
+  .strict();
+const ExternalRecordPutResponseSchema = z
+  .object({
+    record: PublicGridRecordSchema,
+    created: z.boolean(),
+    changed: z.boolean(),
+    replayed: z.boolean(),
+  })
+  .strict();
+
 const RecordCommentBodySchema = z.object({ body: z.string().max(10_000) }).strict();
 const RecordCommentPermissionsSchema = z.object({
   actorUserId: z.string().uuid().nullable(),
@@ -697,6 +722,71 @@ export const recordsRoutes = new Hono<AuthContext>()
       return result.ok
         ? c.json(await toPublicRecord(result.data, fields), 201)
         : c.json({ message: result.error.message }, result.error.status);
+    },
+  )
+
+  .put(
+    "/by-table/:tableId/external",
+    requirePublicIdParam("tableId", "table", "Table"),
+    describeRoute({
+      tags: ["Grids:Record"],
+      summary: "Create or conditionally update a Record by scoped external identity",
+      description:
+        "The external identity is provider + providerAccount + resourceKind + externalId. " +
+        "Idempotency-Key identifies one retry-safe request; updating an existing binding also requires ifVersion.",
+      parameters: [
+        {
+          name: "Idempotency-Key",
+          in: "header",
+          required: true,
+          description: "Stable key for this logical external Record request and its uncertain retries.",
+          schema: { type: "string", minLength: 1, maxLength: 200 },
+        },
+      ],
+      responses: {
+        200: jsonResponse(ExternalRecordPutResponseSchema, "Existing external Record resolved or updated"),
+        201: jsonResponse(ExternalRecordPutResponseSchema, "External Record created"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid input or idempotency key"),
+        403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+        404: jsonResponse(ErrorResponseSchema, "Not found"),
+        409: jsonResponse(ErrorResponseSchema, "Identity, version, or idempotency conflict"),
+      },
+    }),
+    v("json", ExternalRecordPutBodySchema),
+    async (c) => {
+      const tableId = internalIdParam(c, "tableId")!;
+      const table = await gridsService.table.get(tableId);
+      if (!table) return c.json({ message: "Table not found" }, 404);
+      const gate = await gateAt(c, { baseId: table.baseId }, "write");
+      if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+      const operationKey = c.req.header("Idempotency-Key")?.trim();
+      if (!operationKey || operationKey.length > 200) {
+        return c.json({ message: "Idempotency-Key must contain between 1 and 200 characters" }, 400);
+      }
+      const body = c.req.valid("json");
+      const fields = await gridsService.field.listByTable(tableId);
+      const values = await fromPublicRecordValues(tableId, body.values);
+      if (!values.ok) return c.json({ message: values.error.message }, values.error.status);
+      const result = await gridsService.record.external.put({
+        tableId,
+        identity: body.externalRef,
+        operationKey,
+        values: values.data,
+        ifVersion: body.ifVersion,
+        audit: body.audit,
+        actorId: currentActorUserId(c),
+        dateConfig: await getDateConfig(c),
+        viewer: currentActorViewer(c),
+        recordAccess: ALL_RECORD_ACCESS,
+      });
+      if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
+      const response = ExternalRecordPutResponseSchema.parse({
+        record: await toPublicRecord(result.data.record, fields),
+        created: result.data.created,
+        changed: result.data.changed,
+        replayed: result.data.replayed,
+      });
+      return c.json(response, result.data.created && !result.data.replayed ? 201 : 200);
     },
   )
 

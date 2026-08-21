@@ -45,6 +45,8 @@ import {
   GqlViewExecuteInputSchema,
   RecordCapabilityDataSchema,
   RecordCreateInputSchema,
+  RecordExternalUpsertDataSchema,
+  RecordExternalUpsertInputSchema,
   RecordReadInputSchema,
   RecordUpdateInputSchema,
   TableCapabilityDataSchema,
@@ -787,6 +789,44 @@ const runRecordCreate = async (input: z.infer<typeof RecordCreateInputSchema>, c
     : result;
 };
 
+const runRecordExternalUpsert = async (input: z.infer<typeof RecordExternalUpsertInputSchema>, context: CapabilityExecutionContext) => {
+  if (!context.idempotencyKey) return fail(err.badInput("Idempotency-Key is required"));
+  const access = accessContext(context);
+  const table = await requireTableRecordAccess(input.tableId, access, "write");
+  if (!table.ok) return table;
+  const values = await resolveRecordValues(table.data.table.id, input.values);
+  if (!values.ok) return values;
+  const operationKey = new Bun.CryptoHasher("sha256")
+    .update(`grids:record.upsertExternal\0${JSON.stringify(context.accessSubject)}\0${context.idempotencyKey}`)
+    .digest("hex");
+  const result = await gridsService.record.external.put({
+    tableId: table.data.table.id,
+    identity: input.externalRef,
+    operationKey,
+    values: values.data.values,
+    ifVersion: input.ifVersion,
+    audit: input.audit,
+    actorId: accessActorUser(access)?.id ?? null,
+    dateConfig: await capabilityDateConfig(),
+    viewer: actorViewerFor(access),
+    recordAccess: table.data.recordAccess,
+  });
+  if (!result.ok) return result;
+  const base = await gridsService.base.get(table.data.table.baseId);
+  const verb = result.data.replayed ? "Replayed" : result.data.created ? "Created" : result.data.changed ? "Updated" : "Kept";
+  return ok({
+    data: {
+      record: mapRecord(result.data.record, table.data.table),
+      created: result.data.created,
+      changed: result.data.changed,
+      replayed: result.data.replayed,
+    },
+    summary: `${verb} external record ${result.data.record.shortId} in “${table.data.table.name}” at version ${result.data.record.version}.`,
+    refs: [{ type: "grids.record", id: result.data.record.shortId }],
+    ...(base ? { links: [{ rel: "open" as const, href: recordHref(base, table.data.table, result.data.record.shortId) }] } : {}),
+  });
+};
+
 const runRecordUpdate = async (input: z.infer<typeof RecordUpdateInputSchema>, context: CapabilityExecutionContext) => {
   if (Object.keys(input.values).length === 0) return fail(err.badInput("values must contain at least one field"));
   const access = accessContext(context);
@@ -935,6 +975,38 @@ export const gridsCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "none",
       run: runRecordCreate,
+    },
+    "record.upsertExternal": {
+      title: "Upsert external Grids Record",
+      description:
+        "Retry-safely bind provider + providerAccount + resourceKind + externalId to one Record. " +
+        "The first request creates it; later updates require ifVersion and patch only supplied Field IDs.",
+      input: RecordExternalUpsertInputSchema,
+      data: RecordExternalUpsertDataSchema,
+      destructive: true,
+      openWorld: false,
+      idempotency: "required",
+      approval: "rememberable",
+      review: async (input, context) => {
+        const access = accessContext(context);
+        const table = await requireTableRecordAccess(input.tableId, access, "write");
+        if (!table.ok) return table;
+        const values = await resolveRecordValues(table.data.table.id, input.values);
+        if (!values.ok) return values;
+        return ok({
+          message: `Create or conditionally update one externally identified record in ${table.data.table.name}.`,
+          details: [
+            { label: "Table", value: table.data.table.name },
+            { label: "Provider", value: input.externalRef.provider },
+            { label: "Provider account", value: input.externalRef.providerAccount },
+            { label: "Resource kind", value: input.externalRef.resourceKind },
+            { label: "External ID", value: input.externalRef.externalId },
+            ...(input.ifVersion === undefined ? [] : [{ label: "Expected version", value: String(input.ifVersion) }]),
+            ...recordValuesReview(input.values, values.data.fields),
+          ],
+        });
+      },
+      run: runRecordExternalUpsert,
     },
     "record.update": {
       title: "Update Grids Record",

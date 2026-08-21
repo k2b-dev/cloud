@@ -307,9 +307,9 @@ describe("grids schema migration", () => {
           WHERE table_schema = 'grids'
             AND table_type = 'BASE TABLE'
         `;
-        // Durable History and the evidence lifecycle add explicit owners
-        // without replacing the lightweight live rows.
-        expect(row?.tableCount).toBe(49);
+        // Durable History, external Record identity, and the evidence lifecycle
+        // add explicit owners without replacing the lightweight live rows.
+        expect(row?.tableCount).toBe(51);
         const historyTables = await database<Array<{ tableName: string }>>`
           SELECT table_name AS "tableName"
           FROM information_schema.tables

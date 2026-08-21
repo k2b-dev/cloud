@@ -55,6 +55,13 @@ type RecordListBodyFlags = {
   finalization?: "draft" | "awaiting-review" | "finalized";
 };
 
+type ExternalRecordPutResponse = {
+  record: GridRecord;
+  created: boolean;
+  changed: boolean;
+  replayed: boolean;
+};
+
 const AUDIT_INPUT = flag.input({
   name: "audit",
   fileName: "audit-file",
@@ -239,6 +246,61 @@ export const recordCommands = [
       const body = await readJsonInput<Record<string, unknown>>(flags.body, "record JSON", true);
       const record = await readApi<GridRecord>(ctx, `/records/by-table/${encodeURIComponent(table.id)}`, jsonRequest("POST", body));
       printJsonOrMessage(ctx, record, `Created record ${record.id}.`);
+    },
+  }),
+  command("records upsert-external", {
+    summary: "Create or conditionally update a record by external identity",
+    description:
+      "The provider, provider account, resource kind, and external id form one durable identity. " +
+      "Reuse the idempotency key for an uncertain retry. Updating an existing binding requires --if-version.",
+    args: tableArgs,
+    flags: {
+      ...baseFlag,
+      ...tableFlag,
+      body: JSON_BODY_INPUT,
+      provider: flag.string({ required: true, description: "External system or connector name" }),
+      providerAccount: flag.string({ name: "provider-account", required: true, description: "Provider account or tenant identity" }),
+      resourceKind: flag.string({ name: "resource-kind", required: true, description: "External resource kind" }),
+      externalId: flag.string({ name: "external-id", required: true, description: "Stable id in the external system" }),
+      idempotencyKey: flag.string({
+        name: "idempotency-key",
+        required: true,
+        description: "Stable key for this logical create or update request",
+      }),
+      ifVersion: flag.int({ name: "if-version", min: 1, description: "Required current Record version when the binding exists" }),
+      audit: AUDIT_INPUT,
+    },
+    examples: [
+      "cld grids records upsert-external Bookshop Authors --provider crm --provider-account main --resource-kind contact --external-id 003ABC --idempotency-key import-003ABC-v1 --body-file contact.json",
+      "cld grids records upsert-external Bookshop Authors --provider crm --provider-account main --resource-kind contact --external-id 003ABC --idempotency-key import-003ABC-v2 --if-version 1 --body-file contact.json",
+    ],
+    async run({ ctx, args, flags }) {
+      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
+      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const values = await readJsonInput<Record<string, unknown>>(flags.body, "record JSON", true);
+      const answers = await readJsonInput<Record<string, string>>(flags.audit, "record audit answers", false);
+      if (!flags.idempotencyKey) throw new Error("Missing required flag --idempotency-key");
+      const payload = await readApi<ExternalRecordPutResponse>(
+        ctx,
+        `/records/by-table/${encodeURIComponent(table.id)}/external`,
+        jsonRequest(
+          "PUT",
+          {
+            externalRef: {
+              provider: flags.provider,
+              providerAccount: flags.providerAccount,
+              resourceKind: flags.resourceKind,
+              externalId: flags.externalId,
+            },
+            values,
+            ...(flags.ifVersion !== undefined ? { ifVersion: flags.ifVersion } : {}),
+            ...(answers ? { audit: { answers } } : {}),
+          },
+          { "Idempotency-Key": flags.idempotencyKey },
+        ),
+      );
+      const verb = payload.replayed ? "Replayed" : payload.created ? "Created" : payload.changed ? "Updated" : "Kept";
+      printJsonOrMessage(ctx, payload, `${verb} record ${payload.record.id} at version ${payload.record.version}.`);
     },
   }),
   command("records import", {

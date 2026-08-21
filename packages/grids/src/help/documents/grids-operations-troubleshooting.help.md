@@ -33,6 +33,8 @@ If the message says this source is not allowed to change the table, a Base admin
 
 For API or CLI integrations, patch only the fields the integration owns. Send the current positive Record version as `If-Match` or `--if-version` when a stale projection must not overwrite a newer edit. A stale version returns a conflict; a malformed version is rejected as input. If the normalized scalar and Relation values are already current, Grids returns the Record without creating a new version, Durable History revision, audit entry, or live event.
 
+For a connector that repeatedly projects the same external object, use the external Record upsert instead of searching a visible field and then creating. Its provider, provider account, resource kind, and external ID form one case-sensitive binding; the Record keeps its separate public Grids ID. Reuse the same idempotency key only for an uncertain retry of the same request. A later projection uses a new key and the current Record version. Reusing a key with different input, omitting the version for an existing binding, or sending a stale version returns a conflict without creating a duplicate.
+
 ## A view or Grids App result is wrong {icon="layout"}
 
 Open the source query and verify it before changing presentation:
