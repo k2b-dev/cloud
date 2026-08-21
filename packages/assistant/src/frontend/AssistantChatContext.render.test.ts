@@ -7,7 +7,12 @@ import type { AiConversationSource } from "@valentinkolb/cloud/ai";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
 import type { AssistantChatContextSnapshot } from "../chat-context";
-import { assistantChatContextFor, assistantReferenceTitle, splitAssistantConversationSources } from "./assistant-context";
+import {
+  assistantChatContextFor,
+  assistantReferenceTitle,
+  assistantResourceTypeLabel,
+  splitAssistantConversationSources,
+} from "./assistant-context";
 
 const root = mkdtempSync(resolve(tmpdir(), "assistant-chat-context-"));
 const serovalLink = resolve(import.meta.dir, "../../node_modules/seroval");
@@ -57,6 +62,31 @@ describe("Assistant chat context", () => {
 
     expect(assistantReferenceTitle(item)).toBe("Mail message");
     expect(assistantReferenceTitle({ ...item, title: "Quarterly update" })).toBe("Quarterly update");
+    expect(assistantResourceTypeLabel(item.ref)).toBe("Mail message");
+  });
+
+  test("renders a concrete resource title above its stable resource type", () => {
+    const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+    const reference = source("resource", "mail.message:MsG123");
+    reference.ref = { type: "mail.message", id: "MsG123" };
+    reference.title = "Quarterly update";
+    reference.preview = "A preview that is not used as the resource type.";
+    const html = renderToString(() =>
+      createComponent(AssistantLiveProvider, {
+        value: live,
+        get children() {
+          return createComponent(AssistantChatContextContent, {
+            chatId: "cHt234",
+            initial: { chatId: "cHt234", sources: [reference], files: [], tasks: [] },
+          });
+        },
+      }),
+    );
+    live.dispose();
+
+    expect(html).toContain("Quarterly update");
+    expect(html).toContain("Mail message");
+    expect(html).not.toContain("A preview that is not used as the resource type.");
   });
 
   test("keeps used sources, Cloud references, and files in distinct user-facing groups", () => {
@@ -164,6 +194,14 @@ describe("Assistant chat context", () => {
 
   test("counts files in section titles and only adds View all for hidden rows", () => {
     const live = createAssistantLiveInvalidationHub({ onApplied: () => undefined });
+    const file = (path: string, mediaType: string) => ({
+      path,
+      size: 42,
+      mediaType,
+      origin: "user" as const,
+      updatedAt: "2026-08-12T08:00:00.000Z",
+      version: 1,
+    });
     const html = renderToString(() =>
       createComponent(AssistantLiveProvider, {
         value: live,
@@ -174,30 +212,14 @@ describe("Assistant chat context", () => {
               chatId: "cHt234",
               sources: [],
               files: [
-                {
-                  path: "first.png",
-                  size: 42,
-                  mediaType: "image/png",
-                  origin: "user",
-                  updatedAt: "2026-08-12T08:00:00.000Z",
-                  version: 1,
-                },
-                {
-                  path: "second.png",
-                  size: 42,
-                  mediaType: "image/png",
-                  origin: "user",
-                  updatedAt: "2026-08-12T08:00:00.000Z",
-                  version: 1,
-                },
-                {
-                  path: "notes.txt",
-                  size: 42,
-                  mediaType: "text/plain",
-                  origin: "user",
-                  updatedAt: "2026-08-12T08:00:00.000Z",
-                  version: 1,
-                },
+                file("image-one.png", "image/png"),
+                file("image-two.png", "image/png"),
+                file("image-three.png", "image/png"),
+                file("image-four.png", "image/png"),
+                file("file-one.txt", "text/plain"),
+                file("file-two.txt", "text/plain"),
+                file("file-three.txt", "text/plain"),
+                file("file-four.txt", "text/plain"),
               ],
               tasks: [],
             },
@@ -207,13 +229,17 @@ describe("Assistant chat context", () => {
     );
     live.dispose();
 
-    expect(html).toContain("2 Images");
-    expect(html).toContain("1 File");
+    expect(html).toContain("4 Images");
+    expect(html).toContain("4 Files");
     expect(html).not.toContain("Sources");
     expect(html).not.toContain("References");
     expect(html).not.toContain("Scheduled");
-    expect(html.match(/>View all</g)).toHaveLength(1);
-    expect(html.indexOf("first.png")).toBeLessThan(html.indexOf("View all"));
+    expect(html.match(/>View all</g)).toHaveLength(2);
+    for (const visible of ["image-one.png", "image-two.png", "image-three.png", "file-one.txt", "file-two.txt", "file-three.txt"]) {
+      expect(html).toContain(visible);
+    }
+    expect(html).not.toContain("image-four.png");
+    expect(html).not.toContain("file-four.txt");
   });
 
   test("uses direct context viewers instead of an intermediate DetailPanel", async () => {

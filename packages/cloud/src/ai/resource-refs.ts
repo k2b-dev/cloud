@@ -1,4 +1,10 @@
-import { type CloudResourceRef, CloudResourceRefSchema, type CloudResourceView, CloudResourceViewSchema } from "../contracts/capabilities";
+import {
+  type CloudResourceRef,
+  type CloudResourceReference,
+  CloudResourceReferenceSchema,
+  type CloudResourceView,
+  CloudResourceViewSchema,
+} from "../contracts/capabilities";
 import type { AiConversationResourceObservation } from "./types";
 
 const observationKey = (ref: CloudResourceRef): string => `${ref.type}\0${ref.id}`;
@@ -41,8 +47,19 @@ export const collectConversationResourceObservations = (...values: unknown[]): A
         href: resource.links.find((link) => link.rel === "open")?.href,
       });
     } else {
-      const ref = CloudResourceRefSchema.safeParse(value);
-      if (ref.success && !observations.has(observationKey(ref.data))) observations.set(observationKey(ref.data), { ref: ref.data });
+      const reference = CloudResourceReferenceSchema.safeParse(value);
+      if (reference.success) {
+        const resource: CloudResourceReference = reference.data;
+        const ref: CloudResourceRef = { type: resource.type, id: resource.id };
+        const previous = observations.get(observationKey(ref));
+        observations.set(observationKey(ref), {
+          ...previous,
+          ref,
+          ...(resource.title !== undefined ? { title: resource.title } : {}),
+          ...(resource.preview !== undefined ? { preview: resource.preview } : {}),
+          ...(resource.icon !== undefined ? { icon: resource.icon } : {}),
+        });
+      }
     }
 
     for (const nested of Object.values(value as Record<string, unknown>)) visit(nested);

@@ -64,6 +64,14 @@ export const CloudResourceRefSchema = z
 
 export type CloudResourceRef = z.infer<typeof CloudResourceRefSchema>;
 
+export const CloudResourceReferenceSchema = CloudResourceRefSchema.extend({
+  title: z.string().min(1).max(500).optional().describe("Optional current user-facing resource label."),
+  preview: z.string().max(2000).optional().describe("Optional short plain-text context for the resource."),
+  icon: z.string().min(1).max(120).optional().describe("Optional presentation icon for the resource."),
+}).strict();
+
+export type CloudResourceReference = z.infer<typeof CloudResourceReferenceSchema>;
+
 export const CapabilitySemanticLinkSchema = z
   .object({
     rel: z.enum(["open", "edit", "status", "preview", "download"]).describe("Semantic relationship; clients decide how to present it."),
@@ -136,7 +144,7 @@ export type CapabilityResult<T> = {
   data: T;
   /** Provider-authored, user-facing summary of the successful result. Render as escaped plain text. */
   summary?: string;
-  refs?: CloudResourceRef[];
+  refs?: CloudResourceReference[];
   page?: CapabilityPage;
   links?: CapabilitySemanticLink[];
 };
@@ -146,7 +154,7 @@ export const capabilityResultSchema = <T extends z.ZodType>(data: T): z.ZodType<
     .object({
       data,
       summary: z.string().trim().min(1).max(500).optional(),
-      refs: z.array(CloudResourceRefSchema).max(100).optional(),
+      refs: z.array(CloudResourceReferenceSchema).max(100).optional(),
       page: CapabilityPageSchema.optional(),
       links: z.array(CapabilitySemanticLinkSchema).max(20).optional(),
     })

@@ -952,6 +952,57 @@ describe("capability v1 compilation", () => {
     expect(result).toMatchObject({ ok: true, data: { summary: "Loaded Example" } });
   });
 
+  test("accepts optional presentation on result references", async () => {
+    const base = example();
+    const compiled = compileCapabilities("example", {
+      ...base,
+      queries: {
+        ...base.queries,
+        get: {
+          ...base.queries!.get!,
+          run: async () =>
+            ok({
+              data: { id: "one", name: "Example" },
+              refs: [
+                {
+                  type: "example.item",
+                  id: "one",
+                  title: "Example",
+                  preview: "Current inventory item",
+                  icon: "ti ti-package",
+                },
+              ],
+            }),
+        },
+      },
+    });
+
+    const result = await invokeCompiledCapability({
+      compiled,
+      kind: "query",
+      localId: "get",
+      input: { id: "one" },
+      expectedSchemaHash: compiled.manifest.queries[0]!.schemaHash,
+      context,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        data: { id: "one", name: "Example" },
+        refs: [
+          {
+            type: "example.item",
+            id: "one",
+            title: "Example",
+            preview: "Current inventory item",
+            icon: "ti ti-package",
+          },
+        ],
+      },
+    });
+  });
+
   test("rejects empty or oversized result summaries", async () => {
     for (const summary of ["", "x".repeat(501)]) {
       const base = example();

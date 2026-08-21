@@ -1,4 +1,5 @@
 import type { AiConversationSource } from "@valentinkolb/cloud/ai";
+import type { CloudResourceRef } from "@valentinkolb/cloud/contracts";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 
 export const splitAssistantConversationSources = (items: AiConversationSource[]) => ({
@@ -13,10 +14,10 @@ const resourceTypeLabel = (type: string): string =>
     .map((part, index) => (index === 0 ? `${part.charAt(0).toUpperCase()}${part.slice(1)}` : part))
     .join(" ");
 
+export const assistantResourceTypeLabel = (ref: CloudResourceRef): string => resourceTypeLabel(ref.type) || "Cloud resource";
+
 export const assistantReferenceTitle = (source: AiConversationSource): string =>
-  source.ref && source.title === `${source.ref.type} ${source.ref.id}`
-    ? resourceTypeLabel(source.ref.type) || "Cloud resource"
-    : source.title;
+  source.ref && source.title === `${source.ref.type} ${source.ref.id}` ? assistantResourceTypeLabel(source.ref) : source.title;
 
 export const assistantChatContextFor = (
   chatId: string,

@@ -24,7 +24,12 @@ import {
   openAssistantMarkdown,
 } from "./AssistantContextContent";
 import { AssistantTasksView, formatAssistantTaskSchedule } from "./AssistantTasksDialog";
-import { assistantChatContextFor, assistantReferenceTitle, splitAssistantConversationSources } from "./assistant-context";
+import {
+  assistantChatContextFor,
+  assistantReferenceTitle,
+  assistantResourceTypeLabel,
+  splitAssistantConversationSources,
+} from "./assistant-context";
 import {
   type AssistantLiveHub,
   type AssistantLiveInvalidation,
@@ -197,14 +202,16 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
           ...value().chat.references.map((source) => ({
             kind: "source" as const,
             title: assistantReferenceTitle(source),
-            description: source.preview ?? undefined,
+            description: source.ref ? assistantResourceTypeLabel(source.ref) : "Cloud resource",
+            searchText: source.preview ?? "",
             icon: source.icon,
             source,
           })),
           ...(value().projectContext?.references ?? []).map((reference) => ({
             kind: "project" as const,
             title: reference.label || `${reference.ref.type} · ${reference.ref.id}`,
-            description: "Project",
+            description: assistantResourceTypeLabel(reference.ref),
+            searchText: "Project",
             icon: "ti ti-link",
             reference,
           })),
@@ -217,7 +224,8 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
               return items
                 .filter(
                   (reference) =>
-                    !normalized || `${reference.title} ${reference.description ?? ""}`.toLocaleLowerCase().includes(normalized),
+                    !normalized ||
+                    `${reference.title} ${reference.description ?? ""} ${reference.searchText}`.toLocaleLowerCase().includes(normalized),
                 )
                 .map((reference) => ({
                   value: reference,
@@ -304,7 +312,7 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
                       <AssistantContextRow
                         icon={reference.icon}
                         title={reference.title}
-                        description={reference.kind === "source" ? reference.description : undefined}
+                        description={reference.description}
                         scope={reference.kind === "project" ? "project" : undefined}
                         showScope={reference.kind === "project" && value().chat.references.length > 0}
                         onClick={
@@ -326,42 +334,46 @@ function AssistantChatContextView(props: { state: AssistantChatContextState }) {
               </AssistantContextSection>
             </Show>
 
-            <Show when={images()[0]}>
-              {(file) => (
-                <AssistantContextSection title={assistantContextCountTitle(images().length, "Image", "Images")}>
-                  <AssistantContextRows>
-                    <AssistantContextRow
-                      icon="ti ti-photo"
-                      title={file().path.replace(/^.*\//u, "")}
-                      scope={file().scope}
-                      showScope={hasMixedScope(images())}
-                      onClick={() => void openImages(file())}
-                    />
-                    <Show when={images().length > 1}>
-                      <AssistantContextViewAll onClick={() => void openImages()} />
-                    </Show>
-                  </AssistantContextRows>
-                </AssistantContextSection>
-              )}
+            <Show when={images().length > 0}>
+              <AssistantContextSection title={assistantContextCountTitle(images().length, "Image", "Images")}>
+                <AssistantContextRows>
+                  <For each={images().slice(0, CONTEXT_PREVIEW_LIMIT)}>
+                    {(file) => (
+                      <AssistantContextRow
+                        icon="ti ti-photo"
+                        title={file.path.replace(/^.*\//u, "")}
+                        scope={file.scope}
+                        showScope={hasMixedScope(images())}
+                        onClick={() => void openImages(file)}
+                      />
+                    )}
+                  </For>
+                  <Show when={images().length > CONTEXT_PREVIEW_LIMIT}>
+                    <AssistantContextViewAll onClick={() => void openImages()} />
+                  </Show>
+                </AssistantContextRows>
+              </AssistantContextSection>
             </Show>
 
-            <Show when={regularFiles()[0]}>
-              {(file) => (
-                <AssistantContextSection title={assistantContextCountTitle(regularFiles().length, "File", "Files")}>
-                  <AssistantContextRows>
-                    <AssistantContextRow
-                      icon="ti ti-file"
-                      title={file().path.replace(/^.*\//u, "")}
-                      scope={file().scope}
-                      showScope={hasMixedScope(regularFiles())}
-                      onClick={() => void openAssistantContextFiles(regularFiles(), file())}
-                    />
-                    <Show when={regularFiles().length > 1}>
-                      <AssistantContextViewAll onClick={() => void openAssistantContextFiles(regularFiles())} />
-                    </Show>
-                  </AssistantContextRows>
-                </AssistantContextSection>
-              )}
+            <Show when={regularFiles().length > 0}>
+              <AssistantContextSection title={assistantContextCountTitle(regularFiles().length, "File", "Files")}>
+                <AssistantContextRows>
+                  <For each={regularFiles().slice(0, CONTEXT_PREVIEW_LIMIT)}>
+                    {(file) => (
+                      <AssistantContextRow
+                        icon="ti ti-file"
+                        title={file.path.replace(/^.*\//u, "")}
+                        scope={file.scope}
+                        showScope={hasMixedScope(regularFiles())}
+                        onClick={() => void openAssistantContextFiles(regularFiles(), file)}
+                      />
+                    )}
+                  </For>
+                  <Show when={regularFiles().length > CONTEXT_PREVIEW_LIMIT}>
+                    <AssistantContextViewAll onClick={() => void openAssistantContextFiles(regularFiles())} />
+                  </Show>
+                </AssistantContextRows>
+              </AssistantContextSection>
             </Show>
 
             <Show when={value().chat.tasks[0]}>

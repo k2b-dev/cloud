@@ -21,8 +21,8 @@ Assistant separates Project chats from general chats in the sidebar. Create a Pr
 - **Chat context:** On laptop and desktop screens, the compact context stays at the upper right. On smaller screens, use the Context button below the composer to open the same summary in a dialog. A Project chat includes its inherited Project context without Project editing actions.
 - **Live file context:** Uploads and generated files update in place. Images open in the image viewer; files open directly in the file browser. Project and chat files share the list and retain their origin.
 - **Cloud resources:** Use the composer plus menu to attach a supported Cloud resource without copying its contents into the chat. A chat opened from Mail or another app can begin with one or more resources already attached. Resource links open their owning app in a new tab; every read and Action still checks your current permission there.
-- **Sources and references:** Select a source or reference to review its destination before opening it in a new tab.
-- **View all:** Search complete knowledge, source, and reference lists; browse all files; open all images in the image viewer; or manage the chat's scheduled tasks.
+- **Sources and references:** A reference shows its current resource title with the resource type underneath when the owning app supplied both. Select a source or reference to review its destination before opening it in a new tab.
+- **View all:** The compact summary shows up to three entries per section. Use View all to search complete knowledge, source, and reference lists; browse all files; open all images in the image viewer; or manage the chat's scheduled tasks.
 - **Edit or archive:** Use the settings action on a chat to change its name, description, pinning, or archive it.
 :::
 

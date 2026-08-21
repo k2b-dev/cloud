@@ -7,6 +7,15 @@ describe("collectConversationResourceObservations", () => {
       collectConversationResourceObservations(
         { query: "look at notebooks.note/nT1234 and contacts.contact/cT1234" },
         {
+          refs: [
+            {
+              type: "contacts.contact",
+              id: "cT1234",
+              title: "Ada Lovelace",
+              preview: "Analytical Engines Ltd.",
+              icon: "ti ti-user",
+            },
+          ],
           data: [
             { type: "notebooks.note", id: "nT1234" },
             {
@@ -22,13 +31,18 @@ describe("collectConversationResourceObservations", () => {
       ),
     ).toEqual([
       {
+        ref: { type: "contacts.contact", id: "cT1234" },
+        title: "Ada Lovelace",
+        preview: "Analytical Engines Ltd.",
+        icon: "ti ti-user",
+      },
+      {
         ref: { type: "notebooks.note", id: "nT1234" },
         title: "Release notes",
         preview: "Current plan",
         icon: "ti ti-note",
         href: "/app/notebooks/nB1234/nT1234",
       },
-      { ref: { type: "contacts.contact", id: "cT1234" } },
     ]);
   });
 

@@ -129,7 +129,7 @@ export const inventoryCapabilities = defineCapabilities({
         }
         return ok({
           data: { id: item.id, name: item.name, quantity: item.quantity },
-          refs: [{ type: "inventory.item", id: item.id }],
+          refs: [{ type: "inventory.item", id: item.id, title: item.name, icon: "ti ti-package" }],
           links: [{ rel: "open", href: `/app/inventory/items/${item.id}` }],
         });
       },
@@ -189,7 +189,7 @@ export const inventoryCapabilities = defineCapabilities({
         return ok({
           data: { id: renamed.id, name: renamed.name },
           summary: `Renamed inventory item to ${renamed.name}`,
-          refs: [{ type: "inventory.item", id: renamed.id }],
+          refs: [{ type: "inventory.item", id: renamed.id, title: renamed.name, icon: "ti ti-package" }],
           links: [
             { rel: "edit", href: `/app/inventory/items/${renamed.id}/edit` },
           ],
@@ -309,6 +309,44 @@ from the qualified `ref.type`, find the matching Type, then invoke the Query in
 its optional `reader` field with `{ id: ref.id }`. They do not derive a Query
 name, persist one beside the reference, or fall back to semantic capability
 search.
+
+### Design operations that machines can compose
+
+Capability metadata is part of the machine contract. A person may infer that
+two bare IDs belong to different resources from the surrounding UI; a generic
+client or agent must not have to guess.
+
+- Start titles with the concrete verb and resource, such as **Search mail** or
+  **Read conversation**. Give overlapping operations distinct scopes instead
+  of repeating generic words such as “get” or “update.”
+- Make the description state the useful boundary: one known resource, one
+  mailbox, all accessible mailboxes, or an advanced structured search. When
+  one operation is the normal starting point and another is specialized, say
+  so directly.
+- Describe every opaque input by resource type and provenance. For example,
+  write “Exact mailbox ID returned by List mailboxes,” not merely “Mailbox
+  ID.” Do not advertise invented sentinel values such as `default` unless the
+  schema and implementation actually accept them.
+- Return qualified `CloudResourceRef` values for addressable results. A client
+  can pass that ref unchanged to the Type's current canonical reader. It must
+  never guess a reader name or pass an ID from one resource Type to a reader
+  for another Type.
+- Keep identity next to each independently usable list result. Prefer
+  `CloudResourceView[]` when its fixed projection is sufficient; otherwise use
+  clearly typed domain fields and semantic links. Do not make callers
+  correlate parallel arrays or infer resource type from a bare `id`.
+
+A common read flow should therefore remain short and typed:
+
+```text
+discover focused search -> search -> typed resource ref -> canonical reader
+```
+
+Use Universal Search as the normal cross-application or cross-scope search
+when its bounded resource-view contract fits. Publish a separate app-specific
+search only for materially different semantics such as structured filters,
+exhaustive traversal, or a required domain scope. Its title, description, and
+input descriptions must make that distinction visible during discovery.
 
 ### Actions change state
 
@@ -554,7 +592,13 @@ metadata the caller can use:
 type CapabilityResult<T> = {
   data: T;
   summary?: string;
-  refs?: Array<{ type: string; id: string }>;
+  refs?: Array<{
+    type: string;
+    id: string;
+    title?: string;
+    preview?: string;
+    icon?: string;
+  }>;
   page?:
     | { hasMore: true; nextCursor: string }
     | { hasMore: false };
@@ -566,23 +610,53 @@ type CapabilityResult<T> = {
 };
 ```
 
+Every result reference contains the stable identity fields `type` and `id`.
+When the provider already knows a useful current label, it may add `title`, a
+short plain-text `preview`, and an `icon`. These presentation fields are an
+optional snapshot for generic clients; they do not participate in identity,
+authorization, deduplication, or canonical-reader resolution. A bare
+`{ type, id }` reference remains valid.
+
+Prefer the name a person sees in the owning app: a mailbox name, note title,
+contact name, or mail subject. Use `preview` only for concise secondary context
+that helps distinguish similar resources. Use the Type's declared icon unless
+the individual resource has a more specific stable icon. Do not copy IDs into
+presentation fields, infer labels from unstructured content, or return stale
+cached presentation when current authorized state is already available.
+
 Use the optional `summary` for one concise, provider-authored description of a
 successful result. Describe the outcome the user cares about, the readable
 target, and any important resulting state. Prefer names and public labels from
 the validated result or authorized domain state; do not expose internal IDs or
-implementation steps. Be specific about one changed field, and group several
-changes into one readable result.
+implementation steps.
+
+For an Action, be specific about one changed field, and group several changes
+into one readable result. For a successful single-resource Query, name what was
+read, the resource kind, and its current readable name or label. Add current
+state only when it changes how the user understands the result. Write the
+complete result line, such as `Read message “Quarterly report”.`, rather than
+returning only `Quarterly report`.
+
+Do not promote a domain object's content summary into the top-level `summary`;
+the top-level text describes the operation result. For list and search Queries,
+omit `summary` when the structured results already communicate what matters.
+Use it only when a bounded count or scope is itself the useful result.
 
 Good summaries:
 
 - `Added #customer to Reiner Schmiedt.`
 - `Completed “Launch plan”.`
+- `Read message “Quarterly report”.`
+- `Read mailbox “Support” with 3 unread conversations.`
 
 Bad summaries:
 
 - `Updated tags successfully.` — it hides the affected person and actual tag.
 - `Contact mutation completed.` — it describes an implementation step instead
   of the user's outcome.
+- `Loaded item.` — it does not identify the resource.
+- `Read message abc123.` — it exposes an internal identifier instead of a
+  readable target.
 
 The summary is trimmed, limited to 500 characters, persisted with the result,
 and rendered as escaped plain text. Derive it from the operation's validated
@@ -590,9 +664,11 @@ result instead of asking an agent to describe what supposedly happened. Omit
 it when the operation title and structured data already say everything useful.
 
 Provider-owned `refs` use qualified declared Types. Foreign qualified refs are
-opaque cross-app identities and need not be redeclared by the provider. Links
-are root-relative same-origin Cloud paths. They are hints: a caller may open
-one, but an operation does not require UI merely because it returns a link.
+opaque cross-app identities and need not be redeclared by the provider. An app
+may enrich a foreign ref only when it has an authoritative user-facing label;
+otherwise it returns the bare identity. Links are root-relative same-origin
+Cloud paths. They are hints: a caller may open one, but an operation does not
+require UI merely because it returns a link.
 When `hasMore` is true, `nextCursor` is required; on the final page it must be
 absent. Treat cursors as opaque values.
 
@@ -602,13 +678,14 @@ Type's owning app defines whether and how it can be read. A ref never carries
 or caches a reader name; consumers resolve it from the current owning app
 manifest.
 
-Keep result metadata non-overlapping. For one primary resource, return its
-identity in top-level `refs` and its navigation in top-level `links`. For
-several independently navigable presentation results, use `CloudResourceView[]`
-as `data` so each title, ref, and link stays together. A rich domain list that
-must retain app-specific fields may instead add optional semantic `links`
-directly to each item. This keeps navigation next to the item without replacing
-the domain result or making clients correlate parallel top-level arrays.
+Keep result metadata non-overlapping. For one primary resource, return one
+optionally presented top-level ref and its navigation in top-level `links`.
+Do not repeat the same identity in a second resource array. For several
+independently navigable presentation results, use `CloudResourceView[]` as
+`data` so each title, ref, and link stays together. A rich domain list that must
+retain app-specific fields may instead add optional semantic `links` directly
+to each item. This keeps navigation next to the item without replacing the
+domain result or making clients correlate parallel top-level arrays.
 
 All result links are optional hints. Omit `links` when there is no stable,
 useful Cloud destination, and omit the field instead of returning an empty
@@ -626,6 +703,13 @@ Failures use the normal structured service-error shape:
   "details": {}
 }
 ```
+
+For `VALIDATION_FAILED`, Core includes bounded `details.issues` entries with a
+field path and message. Generic AI clients surface those entries so an agent
+can correct one argument instead of repeating the unchanged call. Issue
+details never include the rejected input value. Capability authors should
+still make semantic requirements and ID provenance clear in field
+descriptions; validation feedback is recovery, not primary documentation.
 
 Framework errors include `VALIDATION_FAILED`, `SCHEMA_MISMATCH`,
 `IDEMPOTENCY_KEY_REQUIRED`, `IDEMPOTENCY_KEY_NOT_ALLOWED`,
