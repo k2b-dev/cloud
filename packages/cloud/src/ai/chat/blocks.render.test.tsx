@@ -60,7 +60,7 @@ describe("capability tool presentation", () => {
       expect(html).toContain("List contacts");
       expect(html).not.toContain("Contacts: List contacts");
       expect(html).toContain("ti-address-book");
-      expect(html).not.toContain("<small>");
+      if (status !== "failed") expect(html).not.toContain("<small>");
       expect(html).toContain("--k2b-chat-activity-accent:#0f766e");
     }
   });
@@ -226,7 +226,7 @@ describe("capability tool presentation", () => {
     expect(hasOpenDetails(html)).toBe(false);
   });
 
-  test("keeps capability failures and validation details immediately visible", () => {
+  test("shows only the canonical capability error in a compact row", () => {
     const failed = block("failed");
     if (failed.kind !== "tool") throw new Error("tool block missing");
     failed.result = "VALIDATION_FAILED: Capability input did not match the registered schema Input issues: mailboxId: Must be a stable ID";
@@ -236,7 +236,9 @@ describe("capability tool presentation", () => {
     expect(html).toContain("List contacts failed");
     expect(html).toContain("mailboxId: Must be a stable ID");
     expect(html).toContain('data-tone="danger"');
-    expect(hasOpenDetails(html)).toBe(true);
+    expect(html).not.toContain(">Input</p>");
+    expect(html).not.toContain(">Response</p>");
+    expect(hasOpenDetails(html)).toBe(false);
   });
 
   test("does not turn malformed historical capability links into navigation", () => {
@@ -548,6 +550,56 @@ describe("capability tool presentation", () => {
     disclosureState.set("worked:turn-failure", false);
     const collapsedHtml = renderToString(() => createComponent(AiAssistantContent, { item: { ...item }, disclosureState }));
     expect(hasOpenDetailsContaining(collapsedHtml, "Worked for 2s")).toBe(false);
+  });
+
+  test("shows categorized fetch_file failures as a clear danger activity", () => {
+    const failed: AiTurnBlock = {
+      id: "fetch-file-failed",
+      kind: "tool",
+      callId: "fetch-call-1",
+      name: "fetch_file",
+      args: { url: "https://files.example/missing.pdf" },
+      status: "failed",
+      result: "File not found — The linked file does not exist or is no longer available.",
+      isError: true,
+    };
+
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: failed, turnId: "turn-fetch" }));
+
+    expect(html).toContain('data-tone="danger"');
+    expect(html).toContain("File not found");
+    expect(html).toContain("The linked file does not exist or is no longer available.");
+    expect(html).not.toContain("Fetch file failed");
+    expect(hasOpenDetailsContaining(html, "File not found")).toBe(true);
+    expect(html).toContain("https://files.example/missing.pdf");
+  });
+
+  test("shows fetched file identity, metadata, and destination with a first-party favicon", () => {
+    const completed: AiTurnBlock = {
+      id: "fetch-file-completed",
+      kind: "tool",
+      callId: "fetch-call-2",
+      name: "fetch_file",
+      args: { url: "https://github.com/example/repo/raw/main/guide.pdf" },
+      status: "completed",
+      result: {
+        path: "/imports/guide.pdf",
+        size: 2048,
+        mediaType: "application/pdf",
+        url: "https://raw.githubusercontent.com/example/repo/main/guide.pdf",
+      },
+      isError: false,
+    };
+
+    const html = renderToString(() => createComponent(AiTurnBlockView, { block: completed, turnId: "turn-fetch" }));
+
+    expect(html).toContain("Fetched guide.pdf");
+    expect(html).toContain("github.com · 2.0 KB · application/pdf");
+    expect(html).toContain('src="https://github.com/favicon.ico"');
+    expect(html).toContain("https://raw.githubusercontent.com/example/repo/main/guide.pdf");
+    expect(html).toContain("/imports/guide.pdf");
+    expect(html).not.toContain(">Input</p>");
+    expect(html).not.toContain(">Response</p>");
   });
 
   test("keeps the app identity on approval prompts", () => {

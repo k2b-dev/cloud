@@ -1,7 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import type { LoopAggregate, Message, Usage } from "@k2b/nessi";
 import type { AiStoredMessage } from "../types";
-import { aiToolIcon, displayToolName, latestLoopUsage, latestUsage, latestUsageSnapshot, memoryToolPresentation } from "./message-utils";
+import {
+  aiToolIcon,
+  capabilityErrorDescription,
+  displayToolName,
+  fetchFileErrorPresentation,
+  latestLoopUsage,
+  latestUsage,
+  latestUsageSnapshot,
+  memoryToolPresentation,
+} from "./message-utils";
 
 const storedAssistant = (input: { usage: Usage; aggregate?: LoopAggregate }): AiStoredMessage => {
   const message: Message = {
@@ -90,6 +99,7 @@ describe("AI tool icons", () => {
     ["list_files", "ti ti-file-spark"],
     ["read_file", "ti ti-file-spark"],
     ["write_file", "ti ti-file-spark"],
+    ["fetch_file", "ti ti-world-download"],
     ["markdown_to_pdf", "ti ti-file-type-pdf"],
     ["present", "ti ti-file-spark"],
     ["view_image", "ti ti-photo-spark"],
@@ -116,6 +126,34 @@ describe("AI tool icons", () => {
     expect(aiToolIcon("contacts__query__list", "ti ti-address-book")).toBe("ti ti-address-book");
     expect(aiToolIcon("contacts__query__list")).toBe("ti ti-ai-gateway");
     expect(aiToolIcon("custom_tool")).toBe("ti ti-tool");
+  });
+});
+
+describe("capability error presentation", () => {
+  test("uses the canonical error without exposing raw structured details", () => {
+    expect(capabilityErrorDescription({ code: "CONFLICT", message: "Reload the Skill before saving." })).toBe(
+      "CONFLICT: Reload the Skill before saving.",
+    );
+  });
+
+  test("bounds and flattens provider errors for a single chat row", () => {
+    expect(capabilityErrorDescription(`Bad input\n${"x".repeat(600)}`)).toBe(`Bad input ${"x".repeat(487)}...`);
+  });
+});
+
+describe("fetch_file error presentation", () => {
+  test("separates a categorized title from its actionable explanation", () => {
+    expect(fetchFileErrorPresentation("File not found — The linked file does not exist.")).toEqual({
+      label: "File not found",
+      description: "The linked file does not exist.",
+    });
+  });
+
+  test("keeps unknown failures useful without inventing a category", () => {
+    expect(fetchFileErrorPresentation({ error: "Connection reset" })).toEqual({
+      label: "File download failed",
+      description: "Connection reset",
+    });
   });
 });
 

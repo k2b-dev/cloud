@@ -1,5 +1,6 @@
 import { Chat } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
+import { formatAiFileSize } from "../attachments";
 import type { AiTurnBlock } from "../protocol";
 import { isRecord } from "./message-utils";
 import { AiToolActivity } from "./tool-disclosure";
@@ -129,6 +130,73 @@ export function WebExtractToolBlock(props: { block: ToolBlock }) {
           </Show>
         </div>
       </AiToolActivity>
+    </Show>
+  );
+}
+
+type FetchFileResult = { path: string; size: number; mediaType: string; url: string };
+
+const fetchFileResult = (value: unknown): FetchFileResult | null =>
+  isRecord(value) &&
+  typeof value.path === "string" &&
+  typeof value.size === "number" &&
+  typeof value.mediaType === "string" &&
+  typeof value.url === "string"
+    ? { path: value.path, size: value.size, mediaType: value.mediaType, url: value.url }
+    : null;
+
+const filenameOf = (value: string): string => {
+  try {
+    const name = new URL(value).pathname.split("/").filter(Boolean).at(-1);
+    return name ? decodeURIComponent(name) : domainOf(value);
+  } catch {
+    return value.split("/").filter(Boolean).at(-1) ?? "file";
+  }
+};
+
+/** Imported web file: source identity, useful metadata, and chat path without raw tool JSON. */
+export function FetchFileToolBlock(props: { block: ToolBlock }) {
+  const sourceUrl = () => (isRecord(props.block.args) && typeof props.block.args.url === "string" ? props.block.args.url : "");
+  const result = () => fetchFileResult(props.block.result);
+  const displayName = () => filenameOf(result()?.path ?? sourceUrl()) || "file";
+  const description = () => {
+    const file = result();
+    if (!file) return domainOf(sourceUrl());
+    return [domainOf(sourceUrl() || file.url), formatAiFileSize(file.size), file.mediaType].filter(Boolean).join(" · ");
+  };
+
+  return (
+    <Show
+      when={props.block.status === "completed" && result()}
+      fallback={
+        <Chat.Activity
+          label={`Fetching ${displayName()}`}
+          description={domainOf(sourceUrl())}
+          leading={<Favicon url={sourceUrl()} fallbackIcon="ti ti-world-download" />}
+          busy
+        />
+      }
+    >
+      {(file) => (
+        <AiToolActivity
+          blockId={props.block.id}
+          leading={<Favicon url={sourceUrl() || file().url} fallbackIcon="ti ti-world-download" />}
+          label={`Fetched ${displayName()}`}
+          description={description()}
+          bodyInset={false}
+        >
+          <dl class="grid w-full min-w-0 grid-cols-[max-content_minmax(0,1fr)] gap-x-3 gap-y-1 rounded-md bg-zinc-100/70 px-2 py-1.5 text-xs [box-shadow:var(--ui-control-recess)] dark:bg-zinc-950/70">
+            <dt class="font-medium text-dimmed">Source</dt>
+            <dd class="min-w-0 truncate">
+              <a href={file().url} target="_blank" rel="noreferrer noopener" class="text-secondary hover:text-primary">
+                {file().url}
+              </a>
+            </dd>
+            <dt class="font-medium text-dimmed">Saved as</dt>
+            <dd class="min-w-0 truncate text-secondary">{file().path}</dd>
+          </dl>
+        </AiToolActivity>
+      )}
     </Show>
   );
 }

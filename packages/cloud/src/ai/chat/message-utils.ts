@@ -279,6 +279,7 @@ const BUILT_IN_TOOL_ICONS = new Map<string, string>([
   ["list_files", "ti ti-file-spark"],
   ["read_file", "ti ti-file-spark"],
   ["write_file", "ti ti-file-spark"],
+  ["fetch_file", "ti ti-world-download"],
   ["markdown_to_pdf", "ti ti-file-type-pdf"],
   ["present", "ti ti-file-spark"],
   ["calculate", "ti ti-calculator"],
@@ -363,6 +364,46 @@ export type MemoryToolPresentation = {
   label: string;
   description: string;
   failed: boolean;
+};
+
+export type FetchFileErrorPresentation = {
+  label: string;
+  description: string;
+};
+
+const boundedErrorText = (value: string): string => {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length > 500 ? `${compact.slice(0, 497)}...` : compact;
+};
+
+/** Canonical capability failure text for the compact chat row. Raw input and output remain in the audit trail. */
+export const capabilityErrorDescription = (result: unknown): string => {
+  if (typeof result === "string") return boundedErrorText(result) || "The action could not be completed.";
+  if (isRecord(result)) {
+    const message = typeof result.message === "string" ? result.message : typeof result.error === "string" ? result.error : "";
+    const code = typeof result.code === "string" ? result.code : "";
+    const text = code && message && !message.startsWith(code) ? `${code}: ${message}` : message || code;
+    if (text) return boundedErrorText(text);
+  }
+  return "The action could not be completed.";
+};
+
+/** Compact user-facing copy for fetch_file failures; the full response remains in the disclosure and audit trail. */
+export const fetchFileErrorPresentation = (result: unknown): FetchFileErrorPresentation => {
+  const message =
+    typeof result === "string"
+      ? result.trim()
+      : isRecord(result) && typeof (result.error ?? result.message) === "string"
+        ? String(result.error ?? result.message).trim()
+        : "";
+  const separator = message.indexOf(" — ");
+  if (separator > 0) {
+    return { label: message.slice(0, separator), description: message.slice(separator + 3) };
+  }
+  return {
+    label: "File download failed",
+    description: message || "The linked file could not be imported into this chat.",
+  };
 };
 
 /** End-user copy for memory updates; full tool input/result remains available in persisted audit data. */

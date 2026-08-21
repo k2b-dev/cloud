@@ -194,6 +194,7 @@ describe("AI tools", () => {
       "text_editor",
       "list_files",
       "read_file",
+      "fetch_file",
       "write_file",
       "markdown_to_pdf",
       "present",
@@ -205,6 +206,7 @@ describe("AI tools", () => {
       "text_editor",
       "list_files",
       "read_file",
+      "fetch_file",
       "write_file",
       "markdown_to_pdf",
       "present",
@@ -218,6 +220,7 @@ describe("AI tools", () => {
       "text_editor",
       "list_files",
       "read_file",
+      "fetch_file",
       "write_file",
       "markdown_to_pdf",
       "present",
@@ -228,6 +231,9 @@ describe("AI tools", () => {
     const prepared = prepareAiTools({ tools: withWeb, actor });
     expect(prepared.tools.find((tool) => tool.def.name === "web_search")?.kind).toBe("server");
     expect(prepared.tools.find((tool) => tool.def.name === "web_extract")?.kind).toBe("server");
+    expect(prepared.tools.find((tool) => tool.def.name === "fetch_file")?.kind).toBe("server");
+    expect(CLOUD_AI_DEFERRED_BUILTIN_TOOL_NAMES.has("fetch_file")).toBe(false);
+    expect(prepared.approvalPolicies.get("fetch_file")).toBe("never");
     expect(prepared.approvalPolicies.get("web_search")).toBe("never");
     expect(prepared.approvalPolicies.get("web_extract")).toBe("never");
   });

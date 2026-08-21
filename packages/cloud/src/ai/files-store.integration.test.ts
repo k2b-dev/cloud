@@ -67,6 +67,39 @@ suite("aiFileStore integration", () => {
     }
   });
 
+  test("allocates distinct assistant file paths without replacing user uploads", async () => {
+    const userId = await insertUser();
+    const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+
+    try {
+      await aiFileStore.createUserUpload({
+        conversationId: conversation.id,
+        path: "/imports/report.pdf",
+        bytes: bytes("user source"),
+        mediaType: "application/pdf",
+      });
+      const fetched = await Promise.all(
+        Array.from({ length: 2 }, (_, index) =>
+          aiFileStore.createAssistantFile({
+            conversationId: conversation.id,
+            path: "/imports/report.pdf",
+            bytes: bytes(`fetched ${index}`),
+            mediaType: "application/pdf",
+          }),
+        ),
+      );
+
+      expect(fetched.map((file) => file.path).sort()).toEqual(["/imports/report-2.pdf", "/imports/report-3.pdf"]);
+      expect(fetched.every((file) => file.origin === "assistant")).toBe(true);
+      expect(
+        new TextDecoder().decode((await aiFileStore.read({ conversationId: conversation.id, path: "/imports/report.pdf" }))!.bytes),
+      ).toBe("user source");
+    } finally {
+      await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
+      await sql`DELETE FROM auth.users WHERE id = ${userId}::uuid`;
+    }
+  });
+
   test("write, stat, slice reads, rename, remove, totals", async () => {
     const userId = await insertUser();
     const conversation = await aiConversations.createConversation({ ownerUserId: userId });

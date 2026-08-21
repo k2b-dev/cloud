@@ -141,6 +141,19 @@ administrator-selected Vision tool model otherwise, and returns a bounded
 description. Image contents remain untrusted data. Without either usable Vision
 path, the tool reports that image inspection is unavailable.
 
+`fetch_file` is an always-loaded safe read that imports one exact public HTTPS
+file into the private conversation. It sends no cookies, credentials, or
+authorization headers. Cloud resolves and pins a public network address,
+repeats that check for every bounded redirect, and enforces both declared and
+streamed byte limits. The result is an assistant-owned conversation file below
+`/imports`; inspect it with `read_file` or `view_image`, then use `present` when
+the user should receive the original file. The tool does not clone or browse a
+repository, authenticate to a website, or reach private network targets.
+Download failures appear as a short category such as **File not found**,
+**Authorization required**, or **File server error**, followed by an actionable
+explanation; the activity disclosure retains the requested URL and full tool
+response for diagnosis.
+
 ## Search product Help
 
 A user-backed personal chat on a tool-capable model resolves `search_help` and

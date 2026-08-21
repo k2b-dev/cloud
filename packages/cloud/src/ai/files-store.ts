@@ -46,6 +46,44 @@ const numberedAiFilePath = (path: string, number: number): string => {
   return dot > 0 ? `${directory}${name.slice(0, dot)}-${number}${name.slice(dot)}` : `${directory}${name}-${number}`;
 };
 
+const createUniqueAiFile = async (input: {
+  conversationId: string;
+  path: string;
+  bytes: Uint8Array;
+  mediaType?: string;
+  origin: "user" | "assistant";
+  maxFileBytes?: number;
+  maxConversationBytes?: number;
+}): Promise<AiFileStat> => {
+  const maxFile = input.maxFileBytes ?? AI_FILES_MAX_FILE_BYTES_DEFAULT;
+  const maxConversation = input.maxConversationBytes ?? AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT;
+  if (input.bytes.byteLength > maxFile) {
+    throw new Error(`File exceeds the per-file limit of ${Math.floor(maxFile / (1024 * 1024))} MB.`);
+  }
+
+  return sql.begin(async (tx) => {
+    await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
+    const totals = await tx<{ total: number | string }[]>`
+      SELECT COALESCE(SUM(size), 0) AS total FROM ai.files WHERE conversation_id = ${input.conversationId}
+    `;
+    if (Number(totals[0]?.total ?? 0) + input.bytes.byteLength > maxConversation) {
+      throw new Error(`Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`);
+    }
+
+    for (let number = 1; number <= 100; number++) {
+      const path = numberedAiFilePath(input.path, number);
+      const rows = await tx<FileRow[]>`
+        INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, updated_at)
+        VALUES (${input.conversationId}, ${path}, ${input.bytes}, ${input.mediaType ?? "application/octet-stream"}, ${input.bytes.byteLength}, ${input.origin}, now())
+        ON CONFLICT (conversation_id, path) DO NOTHING
+        RETURNING path, size, media_type, origin, updated_at, version
+      `;
+      if (rows[0]) return toStat(rows[0]);
+    }
+    throw new Error("Could not allocate a unique file path.");
+  });
+};
+
 /** Normalize a VFS path: absolute, no `.`/`..` segments, no trailing slash. */
 export const normalizeAiFilePath = (path: string): string | null => {
   if (!path.startsWith("/")) return null;
@@ -113,33 +151,18 @@ export const aiFileStore = {
     maxFileBytes?: number;
     maxConversationBytes?: number;
   }): Promise<AiFileStat> {
-    const maxFile = input.maxFileBytes ?? AI_FILES_MAX_FILE_BYTES_DEFAULT;
-    const maxConversation = input.maxConversationBytes ?? AI_FILES_MAX_CONVERSATION_BYTES_DEFAULT;
-    if (input.bytes.byteLength > maxFile) {
-      throw new Error(`File exceeds the per-file limit of ${Math.floor(maxFile / (1024 * 1024))} MB.`);
-    }
+    return createUniqueAiFile({ ...input, origin: "user" });
+  },
 
-    return sql.begin(async (tx) => {
-      await tx`SELECT id FROM ai.conversations WHERE id = ${input.conversationId} FOR UPDATE`;
-      const totals = await tx<{ total: number | string }[]>`
-        SELECT COALESCE(SUM(size), 0) AS total FROM ai.files WHERE conversation_id = ${input.conversationId}
-      `;
-      if (Number(totals[0]?.total ?? 0) + input.bytes.byteLength > maxConversation) {
-        throw new Error(`Conversation storage limit of ${Math.floor(maxConversation / (1024 * 1024))} MB exceeded.`);
-      }
-
-      for (let number = 1; number <= 100; number++) {
-        const path = numberedAiFilePath(input.path, number);
-        const rows = await tx<FileRow[]>`
-          INSERT INTO ai.files (conversation_id, path, bytes, media_type, size, origin, updated_at)
-          VALUES (${input.conversationId}, ${path}, ${input.bytes}, ${input.mediaType ?? "application/octet-stream"}, ${input.bytes.byteLength}, 'user', now())
-          ON CONFLICT (conversation_id, path) DO NOTHING
-          RETURNING path, size, media_type, origin, updated_at, version
-        `;
-        if (rows[0]) return toStat(rows[0]);
-      }
-      throw new Error("Could not allocate a unique upload path.");
-    });
+  async createAssistantFile(input: {
+    conversationId: string;
+    path: string;
+    bytes: Uint8Array;
+    mediaType?: string;
+    maxFileBytes?: number;
+    maxConversationBytes?: number;
+  }): Promise<AiFileStat> {
+    return createUniqueAiFile({ ...input, origin: "assistant" });
   },
 
   async list(input: { conversationId: string; prefix?: string }): Promise<AiFileStat[]> {

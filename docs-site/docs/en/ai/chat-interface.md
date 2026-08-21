@@ -177,9 +177,12 @@ JSON-like payloads as structured data previews with at most eight visible rows
 and an optional raw view. Expanded data surfaces span the available message
 column. Built-in discovery, Skill, Help, Project, file, calculation, image, web,
 memory, and interaction tools use Cloud-owned readable renderers and omit raw
-input or output that adds no user value. Unknown tools and failures retain the
-generic technical details. Failures open those details immediately so the
-error and bounded validation issues are visible without another interaction.
+input or output that adds no user value. Imported web files show the source's
+first-party favicon, filename, domain, size, media type, final source URL, and
+conversation path; the web-download icon is the favicon fallback. Capability
+failures show their canonical bounded error directly in one danger row without
+repeating large inputs or responses. Unknown tool failures retain the generic
+technical disclosure and open it immediately.
 Rejected approvals collapse to one readable result row without input or
 response details; they are user decisions rather than tool failures.
 Approval prompts additionally show the owning application's saved name. The

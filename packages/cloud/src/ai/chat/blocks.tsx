@@ -11,7 +11,9 @@ import { PresentToolBlock } from "./file-tools";
 import { useAiChatActions } from "./message-actions";
 import {
   aiToolIcon,
+  capabilityErrorDescription,
   displayToolName,
+  fetchFileErrorPresentation,
   formatToolDetailText,
   isCardToolName,
   isRecord,
@@ -23,7 +25,7 @@ import {
 import { AssistantMarkdownBlock } from "./primitives";
 import { AiToolActivity, AiToolDisclosureProvider, type AiToolDisclosureState, createAiToolDisclosureState } from "./tool-disclosure";
 import { CloudCardBlock, CloudSurveyBlock, CloudSurveyResultBlock, CloudTextEditorBlock, CloudTextEditorResultBlock } from "./visual-tools";
-import { WebExtractToolBlock, WebSearchToolBlock } from "./web-tools";
+import { FetchFileToolBlock, WebExtractToolBlock, WebSearchToolBlock } from "./web-tools";
 
 type ToolBlock = Extract<AiTurnBlock, { kind: "tool" }>;
 type ReviewDetail = NonNullable<CapabilityActionReview["details"]>[number];
@@ -145,12 +147,15 @@ function ToolResultDisclosure(props: {
   icon?: string;
   accent?: string;
   labelOnError?: string;
+  errorLabel?: string;
+  errorDescription?: string;
 }) {
   return (
     <AiToolActivity
       blockId={props.blockId}
       icon={props.icon ?? (props.isError ? "ti ti-alert-circle" : aiToolIcon(props.toolName))}
-      label={props.isError ? `${props.labelOnError ?? props.name} failed` : props.name}
+      label={props.isError ? (props.errorLabel ?? `${props.labelOnError ?? props.name} failed`) : props.name}
+      description={props.isError ? props.errorDescription : undefined}
       tone={props.isError ? "danger" : "neutral"}
       accent={props.accent}
       defaultOpen={props.isError}
@@ -426,45 +431,58 @@ function CapabilityToolView(props: { block: ToolBlock }) {
       }
     >
       <Show
-        when={hasReadableResult()}
+        when={!props.block.isError}
         fallback={
-          <ToolResultDisclosure
-            blockId={props.block.id}
-            name={label()}
-            labelOnError={label()}
+          <Chat.Activity
             icon={aiToolIcon(props.block.name, presentation().appIcon)}
+            label={`${label()} failed`}
+            description={capabilityErrorDescription(props.block.result)}
+            tone="danger"
             accent={presentation().appAccent}
-            toolName={props.block.name}
-            args={props.block.args}
-            result={props.block.result}
-            isError={Boolean(props.block.isError)}
           />
         }
       >
-        <Chat.Activity
-          icon={aiToolIcon(props.block.name, presentation().appIcon)}
-          label={summary()}
-          accent={presentation().appAccent}
-          trailing={
-            links().length > 0 ? (
-              <span class="flex min-w-0 flex-wrap items-center justify-end gap-1">
-                <For each={links()}>
-                  {(link) => (
-                    <ButtonLink class="ai-chat-result-link" href={String(link.href)} size="xs" variant="ghost">
-                      {typeof link.title === "string"
-                        ? link.title
-                        : link.rel === "edit"
-                          ? "Edit"
-                          : link.rel === "download"
-                            ? "Download"
-                            : "Open"}
-                    </ButtonLink>
-                  )}
-                </For>
-              </span>
-            ) : undefined
+        <Show
+          when={hasReadableResult()}
+          fallback={
+            <ToolResultDisclosure
+              blockId={props.block.id}
+              name={label()}
+              labelOnError={label()}
+              icon={aiToolIcon(props.block.name, presentation().appIcon)}
+              accent={presentation().appAccent}
+              toolName={props.block.name}
+              args={props.block.args}
+              result={props.block.result}
+              isError={Boolean(props.block.isError)}
+            />
           }
-        />
+        >
+          <Chat.Activity
+            icon={aiToolIcon(props.block.name, presentation().appIcon)}
+            label={summary()}
+            accent={presentation().appAccent}
+            trailing={
+              links().length > 0 ? (
+                <span class="flex min-w-0 flex-wrap items-center justify-end gap-1">
+                  <For each={links()}>
+                    {(link) => (
+                      <ButtonLink class="ai-chat-result-link" href={String(link.href)} size="xs" variant="ghost">
+                        {typeof link.title === "string"
+                          ? link.title
+                          : link.rel === "edit"
+                            ? "Edit"
+                            : link.rel === "download"
+                              ? "Download"
+                              : "Open"}
+                      </ButtonLink>
+                    )}
+                  </For>
+                </span>
+              ) : undefined
+            }
+          />
+        </Show>
       </Show>
     </Show>
   );
@@ -583,6 +601,8 @@ function MemoryToolView(props: { block: ToolBlock }) {
 
 function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boolean }) {
   const status = () => props.block.status;
+  const fetchError = () =>
+    props.block.name === "fetch_file" && props.block.isError ? fetchFileErrorPresentation(props.block.result) : undefined;
   return (
     <Switch
       fallback={
@@ -593,6 +613,8 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
           args={props.block.args}
           result={props.block.result}
           isError={Boolean(props.block.isError)}
+          errorLabel={fetchError()?.label}
+          errorDescription={fetchError()?.description}
         />
       }
     >
@@ -613,6 +635,9 @@ function ToolBlockView(props: { turnId: string; block: ToolBlock; active?: boole
       </Match>
       <Match when={props.block.name === "web_extract" && !props.block.isError}>
         <WebExtractToolBlock block={props.block} />
+      </Match>
+      <Match when={props.block.name === "fetch_file" && !props.block.isError}>
+        <FetchFileToolBlock block={props.block} />
       </Match>
       <Match when={props.block.name === "memory"}>
         <MemoryToolView block={props.block} />

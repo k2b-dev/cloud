@@ -27,6 +27,11 @@ export {
   evaluateAiMath,
 } from "./file-tools";
 export {
+  CloudAiFetchFileInputSchema,
+  CloudAiFetchFileOutputSchema,
+  createCloudAiFetchFileTool,
+} from "./fetch-file-tool";
+export {
   CloudAiMarkdownToPdfInputSchema,
   CloudAiMarkdownToPdfOutputSchema,
   createCloudAiMarkdownToPdfTool,
