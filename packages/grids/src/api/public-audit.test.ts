@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { Field } from "../contracts";
 import type { CombinedAuditPage } from "../service/combined-audit";
 import type { projectPublicIds } from "../service/public-resources";
-import type { RecordHistoryEntry } from "../service/record-history";
+import type { RecordHistoryAction, RecordHistoryEntry } from "../service/record-history";
 import { PublicRecordHistoryEntrySchema, toPublicAuditEntries, toPublicCombinedAuditPage } from "./public-audit";
 
 const baseId = "11111111-1111-4111-8111-111111111111";
@@ -128,13 +128,12 @@ describe("public record audit boundary", () => {
     });
   });
 
-  test("keeps additive record events readable instead of crashing the record page", async () => {
-    const actions = [
+  test("projects every supported record event through the bounded public action contract", async () => {
+    const actions: RecordHistoryAction[] = [
       "record_snapshot.created",
       "document.generated",
       "workflow.record.updated",
-      "automation.document.generated",
-      "future.record.event",
+      "file.added",
     ];
     const projected = await toPublicAuditEntries(
       actions.map((action, index) => ({
@@ -187,5 +186,7 @@ describe("public record audit boundary", () => {
       false,
     );
     expect(PublicRecordHistoryEntrySchema.safeParse({ ...publicEntry, baseId: "SHORT" }).success).toBe(false);
+    expect(PublicRecordHistoryEntrySchema.safeParse({ ...publicEntry, action: "unknown", diff: null, context: null }).success).toBe(true);
+    expect(PublicRecordHistoryEntrySchema.safeParse({ ...publicEntry, action: "future.record.event" }).success).toBe(false);
   });
 });

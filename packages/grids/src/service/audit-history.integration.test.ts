@@ -4,7 +4,6 @@ import { projectPublicWorkspaceRecordDetail } from "../frontend/_components/work
 import { loadRecordDetailData } from "../frontend/_components/workspace/workspace-record-detail-state";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
-import { listByRecord } from "./audit";
 import { listByTable as listFields } from "./fields";
 import { ALL_RECORD_ACCESS } from "./record-access";
 import { get as getRecord } from "./record-read";
@@ -14,7 +13,7 @@ beforeAll(async () => {
 });
 
 describe("record history storage boundary", () => {
-  postgresTest("keeps valid events and degrades malformed legacy payloads per entry", async () => {
+  postgresTest("keeps Record events, omits operational events, and degrades unknown actions per entry", async () => {
     const baseId = testUuid();
     const tableId = testUuid();
     const recordId = testUuid();
@@ -59,17 +58,17 @@ describe("record history storage boundary", () => {
         VALUES
           (${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, 'record_snapshot.created',
            '{"snapshotId":{"old":null,"new":"snapshot"}}'::jsonb, NULL),
+          (${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, 'document.generated', NULL, NULL),
+          (${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, 'workflow.record.updated', NULL, NULL),
+          (${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, 'file.added', NULL, NULL),
           (${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, 'future.record.event',
            '"invalid-diff"'::jsonb, '{"unexpected":true}'::jsonb)
       `;
-
-      const history = await listByRecord(tableId, recordId);
-      expect(history.map((entry) => String(entry.action)).sort()).toEqual(["future.record.event", "record_snapshot.created"]);
-      const futureEvent = history.find((entry) => String(entry.action) === "future.record.event");
-      const snapshotEvent = history.find((entry) => entry.action === "record_snapshot.created");
-      expect(futureEvent?.diff).toBeNull();
-      expect(futureEvent?.context).toBeNull();
-      expect(snapshotEvent?.diff).toEqual({ snapshotId: { old: null, new: "snapshot" } });
+      await sql`
+        INSERT INTO grids.audit_log (base_id, table_id, record_id, action)
+        SELECT ${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, 'document_link.accessed'
+        FROM generate_series(1, 60)
+      `;
 
       const record = await getRecord(tableId, recordId, { recordAccess: ALL_RECORD_ACCESS });
       if (!record) throw new Error("Audit history fixture record missing");
@@ -81,10 +80,29 @@ describe("record history storage boundary", () => {
         fields,
         viewer: { userId: null, userGroups: [], isAdmin: true },
       });
+      expect(detail.auditEntries.map((entry) => entry.action).sort()).toEqual([
+        "document.generated",
+        "file.added",
+        "record_snapshot.created",
+        "unknown",
+        "workflow.record.updated",
+      ]);
+      const futureEvent = detail.auditEntries.find((entry) => entry.action === "unknown");
+      const snapshotEvent = detail.auditEntries.find((entry) => entry.action === "record_snapshot.created");
+      expect(futureEvent?.diff).toBeNull();
+      expect(futureEvent?.context).toBeNull();
+      expect(snapshotEvent?.diff).toEqual({ snapshotId: { old: null, new: "snapshot" } });
+
       const payload = await projectPublicWorkspaceRecordDetail(detail, fields);
       expect(payload.recordId).toBe(record.shortId);
       expect(payload.relationLabels).toEqual({ [targetRecordShortId]: "Camera" });
-      expect(payload.auditEntries.map((entry) => entry.action).sort()).toEqual(["future.record.event", "record_snapshot.created"]);
+      expect(payload.auditEntries.map((entry) => entry.action).sort()).toEqual([
+        "document.generated",
+        "file.added",
+        "record_snapshot.created",
+        "unknown",
+        "workflow.record.updated",
+      ]);
     } finally {
       await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
     }

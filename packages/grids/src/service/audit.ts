@@ -93,8 +93,15 @@ type AuditEntryWithUser = AuditEntry & {
  * The `(tableId, recordId)` scope is a security boundary: permission on
  * one table must never expose a guessed record ID from another table.
  */
-export const listByRecord = async (tableId: string, recordId: string, limit = 50): Promise<AuditEntryWithUser[]> => {
+export const listByRecord = async (
+  tableId: string,
+  recordId: string,
+  limit = 50,
+  excludedActions: readonly AuditAction[] = [],
+): Promise<AuditEntryWithUser[]> => {
   const cap = Math.min(Math.max(limit, 1), 200);
+  const actionCondition =
+    excludedActions.length > 0 ? sql`al.action <> ALL(${sql.array([...excludedActions], "TEXT")}::text[])` : sql`TRUE`;
   const rows = await sql<(DbRow & { user_display_name: string | null; user_avatar_hash: string | null })[]>`
     SELECT al.id, al.base_id, al.table_id, al.record_id, al.user_id, al.action,
            al.diff, al.context, al.ip, al.user_agent, al.created_at,
@@ -104,6 +111,7 @@ export const listByRecord = async (tableId: string, recordId: string, limit = 50
     LEFT JOIN auth.users u ON u.id = al.user_id
     WHERE al.table_id = ${tableId}::uuid
       AND al.record_id = ${recordId}::uuid
+      AND ${actionCondition}
     ORDER BY al.created_at DESC, al.id DESC
     LIMIT ${cap}
   `;

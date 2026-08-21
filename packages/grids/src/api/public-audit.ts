@@ -2,12 +2,17 @@ import { z } from "zod";
 import { type Field, RecordAuditContextSchema, ShortIdSchema } from "../contracts";
 import type { CombinedAuditPage } from "../service/combined-audit";
 import { projectPublicIds } from "../service/public-resources";
-import type { RecordHistoryEntry } from "../service/record-history";
+import {
+  isRecordHistoryAction,
+  projectRecordHistoryEntry,
+  type RecordHistoryAction,
+  type RecordHistoryEntry,
+} from "../service/record-history";
 
-// Audit actions are an additive server-owned event namespace. Record history
-// must remain readable when a newer producer or an older persisted row carries
-// an action that this UI does not yet render specially.
-const RecordAuditActionSchema = z.string();
+const RecordAuditActionSchema = z.custom<RecordHistoryAction>(
+  (value) => typeof value === "string" && isRecordHistoryAction(value),
+  "Unknown Record history action",
+);
 const PublicAuditDiffSchema = z.record(ShortIdSchema, z.object({ old: z.unknown(), new: z.unknown() }).strict());
 const AuditSourceSchema = z
   .object({
@@ -156,7 +161,14 @@ export const toPublicCombinedAuditPage = async (
   projectIds: ProjectIds = projectPublicIds,
 ): Promise<PublicCombinedAuditPage> =>
   PublicCombinedAuditPageSchema.parse({
-    items: await toPublicAuditEntries(page.items, fields, projectIds),
+    items: await toPublicAuditEntries(
+      page.items.flatMap((entry) => {
+        const projected = projectRecordHistoryEntry(entry);
+        return projected ? [projected] : [];
+      }),
+      fields,
+      projectIds,
+    ),
     sources: page.sources,
     nextCursor: page.nextCursor,
   });
