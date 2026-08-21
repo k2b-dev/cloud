@@ -11,8 +11,8 @@ import type { Field } from "./types";
  *
  * The contract here is small on purpose:
  *  - `project(field, alias)` returns the typed SQL projection used in
- *    WHERE / ORDER BY / aggregate expressions. NULL-on-parse-failure
- *    where applicable (`grids.try_numeric/try_iso_date/boolean/timestamptz`).
+ *    WHERE / ORDER BY / aggregate expressions. Value-field writers guarantee
+ *    the canonical scalar shapes consumed by `grids.canonical_*` casts.
  *  - `formatKind` drives UI cell formatting.
  *  - capability flags (sortable/filterable/etc) tell compilers whether
  *    the field type is supported in their op family. Compilers reject
@@ -33,10 +33,10 @@ import type { Field } from "./types";
  */
 export type ProjectionKind =
   | "text" // data->>id (text)
-  | "numeric" // try_numeric(data->>id)
-  | "boolean" // try_boolean(data->>id)
-  | "date" // try_iso_date(data->>id)
-  | "datetime" // try_timestamptz(data->>id)
+  | "numeric" // canonical_numeric(data->>id)
+  | "boolean" // canonical_boolean(data->>id)
+  | "date" // canonical_date(data->>id)
+  | "datetime" // canonical_timestamptz(data->>id)
   | "jsonbArray" // select arrays; consumers distinguish single/multiple config
   | "relationLink" // record_links junction
   | "computed" // formula/lookup/rollup; hydrated post-query
@@ -90,10 +90,10 @@ type FieldSqlOutputType = FieldSqlScalarType | "json";
 
 const data = (alias: string) => sql.unsafe(`${alias}.data`);
 
-const tryNumeric = (alias: string, fieldId: string) => sql`grids.try_numeric(${data(alias)}->>${fieldId})`;
-const tryDate = (alias: string, fieldId: string) => sql`grids.try_iso_date(${data(alias)}->>${fieldId})`;
-const tryTimestampTz = (alias: string, fieldId: string) => sql`grids.try_timestamptz(${data(alias)}->>${fieldId})`;
-const tryBoolean = (alias: string, fieldId: string) => sql`grids.try_boolean(${data(alias)}->>${fieldId})`;
+const canonicalNumeric = (alias: string, fieldId: string) => sql`grids.canonical_numeric(${data(alias)}->>${fieldId})`;
+const canonicalDate = (alias: string, fieldId: string) => sql`grids.canonical_date(${data(alias)}->>${fieldId})`;
+const canonicalTimestampTz = (alias: string, fieldId: string) => sql`grids.canonical_timestamptz(${data(alias)}->>${fieldId})`;
+const canonicalBoolean = (alias: string, fieldId: string) => sql`grids.canonical_boolean(${data(alias)}->>${fieldId})`;
 const textOf = (alias: string, fieldId: string) => sql`${data(alias)}->>${fieldId}`;
 
 const STORAGE: Record<string, StorageDescriptor> = {
@@ -135,7 +135,7 @@ const STORAGE: Record<string, StorageDescriptor> = {
   // ── Numeric family ───────────────────────────────────────────────
   number: {
     kind: "numeric",
-    project: (f, a) => tryNumeric(a, f.id),
+    project: (f, a) => canonicalNumeric(a, f.id),
     formatKind: "number",
     sortable: true,
     filterable: true,
@@ -146,7 +146,7 @@ const STORAGE: Record<string, StorageDescriptor> = {
   },
   percent: {
     kind: "numeric",
-    project: (f, a) => tryNumeric(a, f.id),
+    project: (f, a) => canonicalNumeric(a, f.id),
     formatKind: "percent",
     sortable: true,
     filterable: true,
@@ -157,7 +157,7 @@ const STORAGE: Record<string, StorageDescriptor> = {
   },
   duration: {
     kind: "numeric",
-    project: (f, a) => tryNumeric(a, f.id),
+    project: (f, a) => canonicalNumeric(a, f.id),
     formatKind: "duration",
     sortable: true,
     filterable: true,
@@ -169,7 +169,7 @@ const STORAGE: Record<string, StorageDescriptor> = {
   // ── Date / time ──────────────────────────────────────────────────
   date: {
     kind: "date",
-    project: (f, a) => ((f.config as { includeTime?: boolean }).includeTime ? tryTimestampTz(a, f.id) : tryDate(a, f.id)),
+    project: (f, a) => ((f.config as { includeTime?: boolean }).includeTime ? canonicalTimestampTz(a, f.id) : canonicalDate(a, f.id)),
     formatKind: "date",
     sortable: true,
     filterable: true,
@@ -181,7 +181,7 @@ const STORAGE: Record<string, StorageDescriptor> = {
   // ── Boolean ──────────────────────────────────────────────────────
   boolean: {
     kind: "boolean",
-    project: (f, a) => tryBoolean(a, f.id),
+    project: (f, a) => canonicalBoolean(a, f.id),
     formatKind: "boolean",
     sortable: true,
     filterable: true,

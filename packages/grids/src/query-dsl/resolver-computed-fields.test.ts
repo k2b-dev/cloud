@@ -144,7 +144,7 @@ describe("GQL lookup/rollup fields (C3)", () => {
     expect(compiled.ok).toBe(true);
     if (!compiled.ok) return;
     const text = normalizedSql(compiled.query.sql);
-    expect(text).toContain("grids.try_numeric(r.data->>");
+    expect(text).toContain("grids.canonical_numeric(r.data->>");
     expect(text).toContain("(SELECT 3) AS gk_1");
     expect(text).toContain("(SELECT 7) AS gk_2");
     expect(text).toContain('ORDER BY "gk_0" ASC NULLS LAST');

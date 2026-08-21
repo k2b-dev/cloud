@@ -88,7 +88,7 @@ export type GroupBucket = {
 // Type helpers — every capability check + SQL projection goes through
 // the storage descriptor (field-storage.ts) so this compiler stops
 // re-spelling rules already encoded once. The descriptor knows that
-// numeric/percent/duration cast through try_numeric,
+// numeric/percent/duration cast through canonical_numeric,
 // and that system fields are real columns not JSONB. Touching the
 // descriptor adds the new shape in one place instead of n compilers.
 // ──────────────────────────────────────────────────────────────────
@@ -174,8 +174,8 @@ const resolveGroupProjection = (
   }
   if (field.type === "date" && spec.granularity) {
     const value = (field.config as { includeTime?: boolean }).includeTime
-      ? sql`grids.try_timestamptz(r.data->>${field.id}) AT TIME ZONE ${timeZone}`
-      : sql`grids.try_iso_date(r.data->>${field.id})::timestamp`;
+      ? sql`grids.canonical_timestamptz(r.data->>${field.id}) AT TIME ZONE ${timeZone}`
+      : sql`grids.canonical_date(r.data->>${field.id})::timestamp`;
     return { spec, field, alias, expr: sql`date_trunc(${spec.granularity}, ${value})::date` };
   }
 
@@ -298,7 +298,7 @@ const buildFieldAggExpr = (req: FieldAggregationSpec, field: Field | null): Buil
   }
 
   // Typed projection from the storage descriptor: numerics cast through
-  // try_numeric, dates through try_date, system columns reference the
+  // canonical_numeric, dates through canonical_date, system columns reference the
   // column directly.
   // count* still operate on the raw "is this slot populated" text
   // because we want to count rows where the user wrote ANYTHING (even

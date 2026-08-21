@@ -7,6 +7,7 @@ import { newShortId, SHORT_ID_REGEX } from "./service/short-id";
 import { migrateGridsWorkflowTables } from "./workflows/migrate";
 
 const MIGRATION_LOCK_NAME = "grids:migrate";
+const CANONICAL_SCALAR_STORAGE_CONTRACT = "canonical_scalar_values_v1";
 
 const PUBLIC_ID_RESOURCES = [
   { table: "bases", key: "id", parent: null, index: "idx_grids_bases_short_id" },
@@ -186,53 +187,201 @@ const migrateSafeCastHelpers = async (sql: SQL): Promise<void> => {
   // ──────────────────────────────────────────────────────────────────
   // Safe-cast helpers
   // ──────────────────────────────────────────────────────────────────
-  // Query compilers route casts through these helpers so malformed JSONB
-  // values sort/filter as NULL instead of crashing the whole table read.
+  // Existing expression indexes depend on these function OIDs. The canonical
+  // storage migration renames the indexed helpers in place, then recreates
+  // only the tolerant conversions that formulas still need for arbitrary text.
   await sql`
-    CREATE OR REPLACE FUNCTION grids.try_numeric(t text) RETURNS numeric
-    LANGUAGE plpgsql IMMUTABLE STRICT AS $$
-    BEGIN RETURN t::numeric; EXCEPTION WHEN others THEN RETURN NULL; END $$
-  `.simple();
-  // Date / timestamptz parsing depends on session DateStyle and TimeZone,
-  // so technically these are STABLE not IMMUTABLE — using IMMUTABLE could
-  // poison constant-folded prepared plans across sessions. STABLE is the
-  // honest annotation; cost is the same for per-row scans.
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.try_date(t text) RETURNS date
-    LANGUAGE plpgsql STABLE STRICT AS $$
-    BEGIN RETURN t::date; EXCEPTION WHEN others THEN RETURN NULL; END $$
+    DO $$
+    BEGIN
+      IF to_regprocedure('grids.canonical_numeric(text)') IS NULL THEN
+        CREATE OR REPLACE FUNCTION grids.try_numeric(t text) RETURNS numeric
+        LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL UNSAFE AS $fn$
+        BEGIN RETURN t::numeric; EXCEPTION WHEN others THEN RETURN NULL; END $fn$;
+      END IF;
+    END $$
   `.simple();
   // Immutable ISO date parser for expression indexes. We only accept the
   // canonical app-written date shape (YYYY-MM-DD); anything else returns NULL
   // instead of depending on session DateStyle.
   await sql`
-    CREATE OR REPLACE FUNCTION grids.try_iso_date(t text) RETURNS date
-    LANGUAGE plpgsql IMMUTABLE STRICT AS $$
+    DO $$
     BEGIN
-      IF t !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN
-        RETURN NULL;
+      IF to_regprocedure('grids.canonical_date(text)') IS NULL THEN
+        CREATE OR REPLACE FUNCTION grids.try_iso_date(t text) RETURNS date
+        LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL UNSAFE AS $fn$
+        BEGIN
+          IF t !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN RETURN NULL; END IF;
+          RETURN make_date(substring(t, 1, 4)::int, substring(t, 6, 2)::int, substring(t, 9, 2)::int);
+        EXCEPTION WHEN others THEN RETURN NULL;
+        END $fn$;
       END IF;
-      RETURN make_date(substring(t, 1, 4)::int, substring(t, 6, 2)::int, substring(t, 9, 2)::int);
-    EXCEPTION WHEN others THEN
-      RETURN NULL;
     END $$
   `.simple();
   await sql`
-    CREATE OR REPLACE FUNCTION grids.try_timestamptz(t text) RETURNS timestamptz
-    LANGUAGE plpgsql STABLE STRICT AS $$
-    BEGIN RETURN t::timestamptz; EXCEPTION WHEN others THEN RETURN NULL; END $$
+    DO $$
+    BEGIN
+      IF to_regprocedure('grids.canonical_timestamptz(text)') IS NULL THEN
+        CREATE OR REPLACE FUNCTION grids.try_timestamptz(t text) RETURNS timestamptz
+        LANGUAGE plpgsql STABLE STRICT PARALLEL UNSAFE AS $fn$
+        BEGIN RETURN t::timestamptz; EXCEPTION WHEN others THEN RETURN NULL; END $fn$;
+      END IF;
+    END $$
   `.simple();
   await sql`
-    CREATE OR REPLACE FUNCTION grids.try_timestamp(t text) RETURNS timestamp
-    LANGUAGE plpgsql IMMUTABLE STRICT AS $$
-    BEGIN RETURN t::timestamp; EXCEPTION WHEN others THEN RETURN NULL; END $$
-  `.simple();
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.try_boolean(t text) RETURNS boolean
-    LANGUAGE plpgsql IMMUTABLE STRICT AS $$
-    BEGIN RETURN t::boolean; EXCEPTION WHEN others THEN RETURN NULL; END $$
+    DO $$
+    BEGIN
+      IF to_regprocedure('grids.canonical_boolean(text)') IS NULL THEN
+        CREATE OR REPLACE FUNCTION grids.try_boolean(t text) RETURNS boolean
+        LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL UNSAFE AS $fn$
+        BEGIN RETURN t::boolean; EXCEPTION WHEN others THEN RETURN NULL; END $fn$;
+      END IF;
+    END $$
   `.simple();
   console.log("  ✓ grids.try_* safe-cast helpers");
+};
+
+type CanonicalScalarField = {
+  id: string;
+  shortId: string;
+  tableId: string;
+  type: string;
+  config: unknown;
+};
+
+const scalarInvalidCondition = (sql: SQL, field: CanonicalScalarField): unknown => {
+  const value = sql`r.data->${field.id}`;
+  const text = sql`r.data->>${field.id}`;
+  const present = sql`r.data ? ${field.id} AND ${value} <> 'null'::jsonb`;
+  switch (field.type) {
+    case "number":
+      return sql`${present} AND NOT (
+        jsonb_typeof(${value}) = 'number'
+        OR (
+          jsonb_typeof(${value}) = 'string'
+          AND ${text} ~ '^-?(0|[1-9][0-9]*)(\.[0-9]+)?$'
+          AND grids.try_numeric(${text}) IS NOT NULL
+        )
+      )`;
+    case "percent":
+      return sql`${present} AND jsonb_typeof(${value}) IS DISTINCT FROM 'number'`;
+    case "duration":
+      return sql`${present} AND NOT (jsonb_typeof(${value}) = 'number' AND ${text} ~ '^[0-9]+$')`;
+    case "boolean":
+      return sql`${present} AND jsonb_typeof(${value}) IS DISTINCT FROM 'boolean'`;
+    case "date": {
+      const config = parseJsonbRow<{ includeTime?: boolean }>(field.config, {});
+      return config.includeTime
+        ? sql`${present} AND NOT (
+            jsonb_typeof(${value}) = 'string'
+            AND ${text} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$'
+            AND grids.try_timestamptz(${text}) IS NOT NULL
+          )`
+        : sql`${present} AND NOT (
+            jsonb_typeof(${value}) = 'string'
+            AND ${text} ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+            AND grids.try_iso_date(${text}) IS NOT NULL
+          )`;
+    }
+    default:
+      throw new Error(`unsupported canonical scalar field type ${field.type}`);
+  }
+};
+
+const assertCanonicalScalarStorage = async (sql: SQL): Promise<void> => {
+  const fields = await sql<Array<CanonicalScalarField>>`
+    SELECT id::text AS id, short_id AS "shortId", table_id::text AS "tableId", type, config
+    FROM grids.fields
+    WHERE deleted_at IS NULL AND type IN ('number', 'percent', 'duration', 'boolean', 'date')
+    ORDER BY table_id, position, id
+  `;
+  const byTable = Map.groupBy(fields, (field) => field.tableId);
+  for (const [tableId, tableFields] of byTable) {
+    const conditions = tableFields.map((field) => scalarInvalidCondition(sql, field));
+    const invalid = conditions.slice(1).reduce((combined, condition) => sql`${combined} OR ${condition}`, conditions[0]!);
+    const fieldCases = tableFields.map((field) => sql`WHEN ${scalarInvalidCondition(sql, field)} THEN ${field.shortId}`);
+    const fieldCase = fieldCases.slice(1).reduce((combined, item) => sql`${combined} ${item}`, fieldCases[0]!);
+    const [row] = await sql<Array<{ recordShortId: string; fieldShortId: string }>>`
+      SELECT r.short_id AS "recordShortId", CASE ${fieldCase} END AS "fieldShortId"
+      FROM grids.records r
+      WHERE r.table_id = ${tableId}::uuid AND (${invalid})
+      LIMIT 1
+    `;
+    if (row) {
+      throw new Error(
+        `cannot enable canonical scalar storage: Record ${row.recordShortId} has a non-canonical value in Field ${row.fieldShortId}`,
+      );
+    }
+  }
+};
+
+const migrateCanonicalScalarStorage = async (sql: SQL): Promise<void> => {
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.storage_contracts (
+      name TEXT PRIMARY KEY,
+      activated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `.simple();
+  const [contract] = await sql<Array<{ active: boolean }>>`
+    SELECT EXISTS (
+      SELECT 1 FROM grids.storage_contracts WHERE name = ${CANONICAL_SCALAR_STORAGE_CONTRACT}
+    ) AS active
+  `;
+  if (!contract?.active) await assertCanonicalScalarStorage(sql);
+
+  await sql`
+    DO $$
+    BEGIN
+      IF to_regprocedure('grids.canonical_numeric(text)') IS NULL THEN
+        ALTER FUNCTION grids.try_numeric(text) RENAME TO canonical_numeric;
+      END IF;
+      IF to_regprocedure('grids.canonical_date(text)') IS NULL THEN
+        ALTER FUNCTION grids.try_iso_date(text) RENAME TO canonical_date;
+      END IF;
+      IF to_regprocedure('grids.canonical_timestamptz(text)') IS NULL THEN
+        ALTER FUNCTION grids.try_timestamptz(text) RENAME TO canonical_timestamptz;
+      END IF;
+      IF to_regprocedure('grids.canonical_boolean(text)') IS NULL THEN
+        ALTER FUNCTION grids.try_boolean(text) RENAME TO canonical_boolean;
+      END IF;
+    END $$
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.canonical_numeric(t text) RETURNS numeric
+    LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$ SELECT t::numeric $$;
+    CREATE OR REPLACE FUNCTION grids.canonical_date(t text) RETURNS date
+    LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$ SELECT t::date $$;
+    CREATE OR REPLACE FUNCTION grids.canonical_timestamptz(t text) RETURNS timestamptz
+    LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$ SELECT t::timestamptz $$;
+    CREATE OR REPLACE FUNCTION grids.canonical_boolean(t text) RETURNS boolean
+    LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$ SELECT t::boolean $$
+  `.simple();
+
+  // Formula coercion accepts arbitrary text and intentionally keeps NULL-on-error
+  // semantics. These new OIDs are not used by stored-field indexes or hot reads.
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.try_numeric(t text) RETURNS numeric
+    LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL UNSAFE AS $$
+    BEGIN RETURN t::numeric; EXCEPTION WHEN others THEN RETURN NULL; END $$;
+    CREATE OR REPLACE FUNCTION grids.try_iso_date(t text) RETURNS date
+    LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL UNSAFE AS $$
+    BEGIN
+      IF t !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN RETURN NULL; END IF;
+      RETURN make_date(substring(t, 1, 4)::int, substring(t, 6, 2)::int, substring(t, 9, 2)::int);
+    EXCEPTION WHEN others THEN RETURN NULL;
+    END $$;
+    CREATE OR REPLACE FUNCTION grids.try_timestamptz(t text) RETURNS timestamptz
+    LANGUAGE plpgsql STABLE STRICT PARALLEL UNSAFE AS $$
+    BEGIN RETURN t::timestamptz; EXCEPTION WHEN others THEN RETURN NULL; END $$
+  `.simple();
+  await sql`DROP FUNCTION IF EXISTS grids.try_boolean(text)`.simple();
+  await sql`DROP FUNCTION IF EXISTS grids.try_date(text)`.simple();
+  await sql`DROP FUNCTION IF EXISTS grids.try_timestamp(text)`.simple();
+  await sql`
+    INSERT INTO grids.storage_contracts (name)
+    VALUES (${CANONICAL_SCALAR_STORAGE_CONTRACT})
+    ON CONFLICT (name) DO NOTHING
+  `;
+  console.log("  ✓ canonical scalar storage");
 };
 
 const assertNoDuplicateLiveTableNames = async (sql: SQL): Promise<void> => {
@@ -2566,6 +2715,7 @@ export const migrate = async (sql: SQL = defaultSql): Promise<void> => {
     await removeLegacyDashboards(connection);
     await migrateGridsWorkflowTables(connection);
     await migratePublicIds(connection);
+    await migrateCanonicalScalarStorage(connection);
     await removeObsoleteAccess(connection);
     await migrateRecordScanCodes(connection);
     await migrateOperationalHealth(connection);

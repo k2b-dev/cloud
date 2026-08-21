@@ -295,7 +295,7 @@ describe("GQL where predicates — first-class per field type", () => {
 
     const sql = planSql(`where Status = 'Open' and amount > cost`);
     expect(sql).toContain("->>0 =");
-    expect(sql).toContain("> (grids.try_numeric(r.data->>");
+    expect(sql).toContain("> (grids.canonical_numeric(r.data->>");
 
     // NOT compiles to a negated SQL group.
     const notSql = planSql(`where not (Status = 'Open')`);
@@ -316,7 +316,7 @@ describe("GQL where predicates — first-class per field type", () => {
 
     const sql = planSql(`where margin > 0`, context);
     // The margin formula is inlined into the WHERE as a numeric comparison.
-    expect(sql).toContain(")::numeric - (grids.try_numeric(r.data->>");
+    expect(sql).toContain(")::numeric - (grids.canonical_numeric(r.data->>");
     expect(sql).toMatch(/::numeric > \(\$\d+ ::numeric\)/);
   });
 });

@@ -33,13 +33,13 @@ const indexExpressionForType = (fieldId: string, type: string, config?: Record<s
     case "percent":
     case "duration":
       // All numeric field types share the numeric expression index.
-      return `grids.try_numeric(data->>'${fieldId}')`;
+      return `grids.canonical_numeric(data->>'${fieldId}')`;
     case "date":
       return (config as { includeTime?: boolean } | undefined)?.includeTime
-        ? `grids.try_timestamptz(data->>'${fieldId}')`
-        : `grids.try_iso_date(data->>'${fieldId}')`;
+        ? `grids.canonical_timestamptz(data->>'${fieldId}')`
+        : `grids.canonical_date(data->>'${fieldId}')`;
     case "boolean":
-      return `grids.try_boolean(data->>'${fieldId}')`;
+      return `grids.canonical_boolean(data->>'${fieldId}')`;
     case "text":
     case "longtext":
     case "id":

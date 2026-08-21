@@ -17,7 +17,7 @@ type AggregateColumn = {
 
 /** SQL fragment that extracts a numeric value for the given field.
  *  Delegates to the shared storage descriptor; corrupt JSONB
- *  resolves to NULL via try_numeric, so aggregates don't crash. */
+ *  is rejected by the canonical storage migration before direct casts activate. */
 const numericProjection = (field: Field): any => {
   const expr = storageOf(field).project(field, "r");
   return expr ?? sql`NULL::numeric`;

@@ -1657,8 +1657,8 @@ sort missing desc`),
     expect(compiled.ok).toBe(true);
     if (!compiled.ok) return;
     const sqlText = normalizedSql(compiled.query.sql);
-    expect(sqlText).toContain("grids.try_numeric(r.data->>");
-    expect(sqlText).toContain("grids.try_numeric(jq0.data->>");
+    expect(sqlText).toContain("grids.canonical_numeric(r.data->>");
+    expect(sqlText).toContain("grids.canonical_numeric(jq0.data->>");
   });
 
   test("query plan rejects unsupported scoped formula refs with direct diagnostics", () => {
@@ -1876,7 +1876,7 @@ sort missing desc`),
     ]);
     expect(typeof compiled.query.sql).toBe("object");
     const text = normalizedSql(compiled.query.sql);
-    expect(text).toContain("ORDER BY grids.try_numeric(r.data->>");
+    expect(text).toContain("ORDER BY grids.canonical_numeric(r.data->>");
     expect(text).toContain(" DESC NULLS LAST, jq0.data->>");
     expect(text).toContain(" ASC NULLS LAST, r.id DESC NULLS LAST, jq0.id DESC NULLS LAST");
   });
@@ -1931,8 +1931,8 @@ sort missing desc`),
     if (!compiled.ok) return;
     expect(compiled.query.columns.map((column) => column.label)).toEqual(["Amount", "margin"]);
     const text = normalizedSql(compiled.query.sql);
-    expect(text).toContain("ORDER BY ((grids.try_numeric");
-    expect(text).toContain("DESC NULLS LAST, grids.try_numeric");
+    expect(text).toContain("ORDER BY ((grids.canonical_numeric");
+    expect(text).toContain("DESC NULLS LAST, grids.canonical_numeric");
     expect(text).toContain("ASC NULLS LAST, r.id DESC NULLS LAST");
   });
 
@@ -2018,7 +2018,7 @@ sort missing desc`),
     ]);
     const text = normalizedSql(compiled.query.sql);
     expect(text).toContain("AS q_col_0");
-    expect(text).toContain("grids.try_numeric");
+    expect(text).toContain("grids.canonical_numeric");
   });
 
   test("SQL compiler rejects formula field selects without a SQL-projectable expression", () => {
@@ -2222,7 +2222,7 @@ sort missing desc`),
     expect(text).toContain("SELECT jsonb_build_object");
     expect(text).toContain("COUNT(*)");
     expect(text).toContain("SUM(");
-    expect(text).toContain("grids.try_iso_date");
+    expect(text).toContain("grids.canonical_date");
     expect(values).toContain("margin__sum");
     expect(text).toContain("r.table_id =");
     expect(text).toContain("r.deleted_at IS NULL");
@@ -2478,7 +2478,7 @@ sort missing desc`),
     const joinedAggregateSql = compileDslGroupedQueryPlanToSql(joinedAggregate.plan, { fieldsByTableId: ctx().fieldsByTableId });
     expect(joinedAggregateSql.ok).toBe(true);
     if (!joinedAggregateSql.ok) return;
-    expect(normalizedSql(joinedAggregateSql.query.sql)).toContain("SUM(grids.try_numeric(jq0.data->>");
+    expect(normalizedSql(joinedAggregateSql.query.sql)).toContain("SUM(grids.canonical_numeric(jq0.data->>");
 
     const joinedFormulaAggregate = resolveDslQueryToQueryPlan(
       parseOk(`
@@ -2510,7 +2510,7 @@ sort missing desc`),
     if (!joinedFormulaAggregateSql.ok) return;
     const joinedFormulaAggregateSqlText = normalizedSql(joinedFormulaAggregateSql.query.sql);
     expect(joinedFormulaAggregateSqlText).toContain('"margin__sum"');
-    expect(joinedFormulaAggregateSqlText).toContain("grids.try_numeric(jq0.data->>");
+    expect(joinedFormulaAggregateSqlText).toContain("grids.canonical_numeric(jq0.data->>");
     expect(joinedFormulaAggregateSqlText).toContain('ORDER BY "margin__sum" DESC NULLS LAST, "gk_0" ASC NULLS LAST');
   });
 
@@ -2674,7 +2674,7 @@ sort missing desc`),
     const formulaSql = compileDslGroupedQueryPlanToSql(formula.plan, { fieldsByTableId: context.fieldsByTableId });
     expect(formulaSql.ok).toBe(true);
     if (!formulaSql.ok) return;
-    expect(normalizedSql(formulaSql.query.sql)).toContain("grids.try_numeric(jq0.data->>");
+    expect(normalizedSql(formulaSql.query.sql)).toContain("grids.canonical_numeric(jq0.data->>");
 
     const lookup = resolveDslQueryToQueryPlan(
       parseOk(`

@@ -26,12 +26,12 @@ const predicateProjection = (predicate: PredicateClause, options: RenderOptions 
     rawJson,
     rawText,
     text: predicate.caseInsensitive ? sql`LOWER(${rawText})` : rawText,
-    numeric: sql`grids.try_numeric(${rawText})`,
-    date: predicate.dateIncludeTime ? sql`grids.try_timestamptz(${rawText})` : sql`grids.try_iso_date(${rawText})`,
+    numeric: sql`grids.canonical_numeric(${rawText})`,
+    date: predicate.dateIncludeTime ? sql`grids.canonical_timestamptz(${rawText})` : sql`grids.canonical_date(${rawText})`,
     dateOnly: predicate.dateIncludeTime
-      ? sql`(grids.try_timestamptz(${rawText}) AT TIME ZONE ${timeZone})::date`
-      : sql`grids.try_iso_date(${rawText})`,
-    bool: sql`grids.try_boolean(${rawText})`,
+      ? sql`(grids.canonical_timestamptz(${rawText}) AT TIME ZONE ${timeZone})::date`
+      : sql`grids.canonical_date(${rawText})`,
+    bool: sql`grids.canonical_boolean(${rawText})`,
   };
 };
 

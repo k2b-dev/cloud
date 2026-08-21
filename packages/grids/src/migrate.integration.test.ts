@@ -309,7 +309,7 @@ describe("grids schema migration", () => {
         `;
         // Durable History and the evidence lifecycle add explicit owners
         // without replacing the lightweight live rows.
-        expect(row?.tableCount).toBe(48);
+        expect(row?.tableCount).toBe(49);
         const historyTables = await database<Array<{ tableName: string }>>`
           SELECT table_name AS "tableName"
           FROM information_schema.tables
@@ -322,8 +322,27 @@ describe("grids schema migration", () => {
           "record_revisions",
           "table_schema_revisions",
         ]);
-        const [cast] = await database<Array<{ value: number | string }>>`SELECT grids.try_numeric('12.5') AS value`;
+        const [cast] = await database<Array<{ value: number | string }>>`SELECT grids.canonical_numeric('12.5') AS value`;
         expect(String(cast?.value)).toBe("12.5");
+        const [invalidFormulaCoercion] = await database<Array<{ value: number | null }>>`
+          SELECT grids.try_numeric('not a number') AS value
+        `;
+        expect(invalidFormulaCoercion?.value).toBeNull();
+        const functions = await database<Array<{ name: string; parallel: string; volatility: string; language: string }>>`
+          SELECT p.proname AS name, p.proparallel AS parallel, p.provolatile AS volatility, l.lanname AS language
+          FROM pg_proc p
+          JOIN pg_namespace n ON n.oid = p.pronamespace
+          JOIN pg_language l ON l.oid = p.prolang
+          WHERE n.nspname = 'grids'
+            AND p.proname IN ('canonical_boolean', 'canonical_date', 'canonical_numeric', 'canonical_timestamptz')
+          ORDER BY p.proname
+        `;
+        expect(functions).toEqual([
+          { name: "canonical_boolean", parallel: "s", volatility: "i", language: "sql" },
+          { name: "canonical_date", parallel: "s", volatility: "i", language: "sql" },
+          { name: "canonical_numeric", parallel: "s", volatility: "i", language: "sql" },
+          { name: "canonical_timestamptz", parallel: "s", volatility: "i", language: "sql" },
+        ]);
 
         const indexes = await database<Array<{ indexName: string }>>`
           SELECT indexname AS "indexName"
@@ -379,6 +398,105 @@ describe("grids schema migration", () => {
       });
     },
     30_000,
+  );
+
+  postgresTest(
+    "rejects non-canonical legacy scalar values with public diagnostics",
+    async () => {
+      await withIsolatedDatabase(async (database) => {
+        await migrateCoreWorkflows(database);
+        await migrate(database);
+        const baseId = uuid();
+        const tableId = uuid();
+        const fieldId = uuid();
+        const recordId = uuid();
+        const baseShortId = shortId("B");
+        const tableShortId = shortId("T");
+        const fieldShortId = shortId("F");
+        const recordShortId = shortId("R");
+        await database`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Canonical')`;
+        await database`
+          INSERT INTO grids.tables (id, short_id, base_id, name)
+          VALUES (${tableId}::uuid, ${tableShortId}, ${baseId}::uuid, 'Values')
+        `;
+        await database`
+          INSERT INTO grids.fields (id, short_id, table_id, name, type)
+          VALUES (${fieldId}::uuid, ${fieldShortId}, ${tableId}::uuid, 'Amount', 'number')
+        `;
+        await database`
+          INSERT INTO grids.records (id, short_id, table_id, data, deleted_at)
+          VALUES (
+            ${recordId}::uuid, ${recordShortId}, ${tableId}::uuid,
+            jsonb_build_object(${fieldId}::text, '12x'::text), now()
+          )
+        `;
+        await database`DELETE FROM grids.storage_contracts WHERE name = 'canonical_scalar_values_v1'`;
+
+        await expect(migrate(database)).rejects.toThrow(
+          `cannot enable canonical scalar storage: Record ${recordShortId} has a non-canonical value in Field ${fieldShortId}`,
+        );
+        const [contractAfterFailure] = await database<Array<{ active: boolean }>>`
+          SELECT EXISTS (
+            SELECT 1 FROM grids.storage_contracts WHERE name = 'canonical_scalar_values_v1'
+          ) AS active
+        `;
+        expect(contractAfterFailure?.active).toBe(false);
+
+        await database`
+          UPDATE grids.records SET data = jsonb_build_object(${fieldId}::text, 12.5)
+          WHERE id = ${recordId}::uuid
+        `;
+        await migrate(database);
+        const [contractAfterRepair] = await database<Array<{ active: boolean }>>`
+          SELECT EXISTS (
+            SELECT 1 FROM grids.storage_contracts WHERE name = 'canonical_scalar_values_v1'
+          ) AS active
+        `;
+        expect(contractAfterRepair?.active).toBe(true);
+      });
+    },
+    120_000,
+  );
+
+  postgresTest(
+    "upgrades legacy scalar indexes without rebuilding them",
+    async () => {
+      await withIsolatedDatabase(async (database) => {
+        await migrateCoreWorkflows(database);
+        await migrate(database);
+        const baseId = uuid();
+        const tableId = uuid();
+        const fieldId = uuid();
+        const indexName = `idx_legacy_scalar_${fieldId.replaceAll("-", "")}`;
+        await database`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${shortId("B")}, 'Legacy index')`;
+        await database`
+          INSERT INTO grids.tables (id, short_id, base_id, name)
+          VALUES (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Values')
+        `;
+        await database`
+          INSERT INTO grids.fields (id, short_id, table_id, name, type)
+          VALUES (${fieldId}::uuid, ${shortId("F")}, ${tableId}::uuid, 'Amount', 'number')
+        `;
+        await database`DROP FUNCTION grids.try_numeric(text)`.simple();
+        await database`ALTER FUNCTION grids.canonical_numeric(text) RENAME TO try_numeric`.simple();
+        await database.unsafe(
+          `CREATE INDEX ${indexName} ON grids.records ((grids.try_numeric(data->>'${fieldId}'))) WHERE table_id = '${tableId}'::uuid`,
+        );
+        const [before] = await database<Array<{ oid: number }>>`
+          SELECT oid::int AS oid FROM pg_class WHERE relname = ${indexName}
+        `;
+
+        await migrate(database);
+
+        const [after] = await database<Array<{ oid: number; definition: string }>>`
+          SELECT c.oid::int AS oid, pg_get_indexdef(c.oid) AS definition
+          FROM pg_class c WHERE c.relname = ${indexName}
+        `;
+        expect(after?.oid).toBe(before?.oid);
+        expect(after?.definition).toContain("grids.canonical_numeric");
+      });
+    },
+    120_000,
   );
 
   postgresTest(

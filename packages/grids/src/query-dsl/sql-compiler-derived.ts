@@ -575,13 +575,13 @@ const aggregateResultProjection = (column: DslDerivedViewColumn, sourceAlias = "
   const value = sql`${sql.unsafe(sourceAlias)}.result->>${column.key}`;
   switch (derivedColumnFormulaSqlType(column)) {
     case "numeric":
-      return sql`grids.try_numeric(${value})`;
+      return sql`grids.canonical_numeric(${value})`;
     case "boolean":
       return sql`(${value})::boolean`;
     case "date":
-      return sql`grids.try_iso_date(${value})`;
+      return sql`grids.canonical_date(${value})`;
     case "datetime":
-      return sql`grids.try_timestamptz(${value})`;
+      return sql`grids.canonical_timestamptz(${value})`;
     case "text":
       return value;
     case "unknown":

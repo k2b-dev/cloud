@@ -256,8 +256,8 @@ export const groupFieldProjection = (
   }
   if (field.type === "date" && group.granularity) {
     const expr = (field.config as { includeTime?: boolean }).includeTime
-      ? sql`grids.try_timestamptz(${sql.unsafe(recordAlias)}.data->>${field.id}) AT TIME ZONE ${options.timeZone ?? "UTC"}`
-      : sql`grids.try_iso_date(${sql.unsafe(recordAlias)}.data->>${field.id})::timestamp`;
+      ? sql`grids.canonical_timestamptz(${sql.unsafe(recordAlias)}.data->>${field.id}) AT TIME ZONE ${options.timeZone ?? "UTC"}`
+      : sql`grids.canonical_date(${sql.unsafe(recordAlias)}.data->>${field.id})::timestamp`;
     return { ok: true, expr: sql`date_trunc(${group.granularity}, ${expr})::date`, sqlType: "date" };
   }
   const projection = fieldProjection(field, recordAlias, {
