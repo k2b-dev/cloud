@@ -1312,7 +1312,15 @@ describe("mail capabilities", () => {
             links: [{ rel: "open", href: `/app/mail/${mailboxId}?conversation=${relatedConversationId}` }],
           },
         ],
-        refs: [{ type: "mail.conversation", id: relatedConversationId }],
+        refs: [
+          {
+            type: "mail.conversation",
+            id: relatedConversationId,
+            title: "Re: Release update",
+            preview: "A previous update",
+            icon: "ti ti-mail",
+          },
+        ],
       },
     });
     if (result.ok) expect(ConversationRelatedDataSchema.safeParse(result.data.data).success).toBeTrue();
@@ -1692,8 +1700,8 @@ describe("mail capabilities", () => {
       extraction: { status: "complete", available: true, format: "pdf" },
     });
     expect(result.data.refs).toEqual([
-      { type: "mail.attachment", id: attachmentId },
-      { type: "mail.message", id: messageId },
+      { type: "mail.attachment", id: attachmentId, title: "roadmap.pdf", icon: "ti ti-paperclip" },
+      { type: "mail.message", id: messageId, title: "(no subject)", icon: "ti ti-mail" },
     ]);
     expect(result.data.summary).toBe("Read attachment text from “roadmap.pdf”.");
   });

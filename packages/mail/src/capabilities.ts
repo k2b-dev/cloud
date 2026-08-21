@@ -217,6 +217,7 @@ const paginateSortedList = <Source, Data>(params: {
   limit: number;
   id: (source: Source) => string;
   map: (source: Source) => Data;
+  refs?: (source: Source) => CapabilityResult<Data[]>["refs"];
 }): CapabilityInvocationResult<Data[]> => {
   if (!params.result.ok) return params.result;
   const cursor = decodeListCursor(params.cursor, params.scope);
@@ -226,7 +227,11 @@ const paginateSortedList = <Source, Data>(params: {
   const items = remaining.slice(0, params.limit);
   const nextCursor =
     remaining.length > items.length && items.length > 0 ? encodeListCursor(params.scope, params.id(items.at(-1)!)) : undefined;
-  return ok({ data: items.map(params.map), page: capabilityPage(nextCursor) });
+  return ok({
+    data: items.map(params.map),
+    page: capabilityPage(nextCursor),
+    ...(params.refs ? { refs: items.flatMap((item) => params.refs?.(item) ?? []) } : {}),
+  });
 };
 
 const stableUuid = (value: string): string => {
@@ -249,12 +254,67 @@ const openLink = (href: string): CapabilitySemanticLink => ({ rel: "open", href 
 const editLink = (href: string): CapabilitySemanticLink => ({ rel: "edit", href });
 const statusLink = (href: string): CapabilitySemanticLink => ({ rel: "status", href });
 const mailboxApprovalScope = (mailboxId: string): string => `mailbox:${mailboxId}`;
-const draftMetadata = (mailboxId: string, draftId: string) => ({
-  refs: [{ type: "mail.draft" as const, id: draftId }],
+const mailSubject = (subject: string | null | undefined): string => subject?.trim() || "(no subject)";
+const mailboxRef = (id: string, name: string, description?: string | null) => ({
+  type: "mail.mailbox" as const,
+  id,
+  title: name,
+  ...(description ? { preview: description } : {}),
+  icon: "ti ti-inbox",
+});
+const draftRef = (id: string, subject?: string | null) => ({
+  type: "mail.draft" as const,
+  id,
+  ...(subject !== undefined ? { title: mailSubject(subject) } : {}),
+  icon: "ti ti-mail-pencil",
+});
+const conversationRef = (id: string, subject?: string | null, preview?: string | null) => ({
+  type: "mail.conversation" as const,
+  id,
+  ...(subject !== undefined ? { title: mailSubject(subject) } : {}),
+  ...(preview ? { preview } : {}),
+  icon: "ti ti-mail",
+});
+const messageRef = (id: string, subject: string | null | undefined) => ({
+  type: "mail.message" as const,
+  id,
+  title: mailSubject(subject),
+  icon: "ti ti-mail",
+});
+const attachmentRef = (id: string, filename: string | null | undefined) => ({
+  type: "mail.attachment" as const,
+  id,
+  title: filename?.trim() || "Unnamed attachment",
+  icon: "ti ti-paperclip",
+});
+const commentRef = (id: string, author?: string | null) => ({
+  type: "mail.comment" as const,
+  id,
+  title: author ? `Comment by ${author}` : "Conversation comment",
+  icon: "ti ti-message",
+});
+const commentAuthorName = (author: { kind: string; displayName?: string | null }): string | null =>
+  author.kind === "user" ? (author.displayName ?? null) : null;
+const reminderRef = (id: string, state?: string) => ({
+  type: "mail.reminder" as const,
+  id,
+  title: "Personal reminder",
+  ...(state ? { preview: state } : {}),
+  icon: "ti ti-bell",
+});
+const deliveryRef = (id: string, subject: string | null | undefined, state?: string) => ({
+  type: "mail.delivery" as const,
+  id,
+  title: mailSubject(subject),
+  ...(state ? { preview: state } : {}),
+  icon: "ti ti-clock-send",
+});
+const draftMetadata = (mailboxId: string, draftId: string, subject?: string | null) => ({
+  refs: [draftRef(draftId, subject)],
   links: [editLink(draftHref(mailboxId, draftId))],
 });
-const conversationMetadata = (mailboxId: string, conversationId: string) => ({
-  refs: [{ type: "mail.conversation" as const, id: conversationId }],
+const conversationMetadata = (mailboxId: string, conversationId: string, subject?: string | null, preview?: string | null) => ({
+  refs: [conversationRef(conversationId, subject, preview)],
   links: [openLink(conversationHref(mailboxId, conversationId))],
 });
 
@@ -685,6 +745,7 @@ const queryDefinitions = {
         limit: input.limit,
         id: (item) => item.id,
         map: (item) => mapMailboxListItem(item as Mailbox & { permission: "read" | "write" | "admin" }, requirePublicId(ids, item.id)),
+        refs: (item) => [mailboxRef(requirePublicId(ids, item.id), item.name, item.description)],
       });
     },
   },
@@ -706,7 +767,7 @@ const queryDefinitions = {
         : ok({
             data: mapMailbox({ ...mailbox.data, permission }, scope.data.shortId),
             summary: capabilitySummary(`Read mailbox “${mailbox.data.name}”.`),
-            refs: [{ type: "mail.mailbox", id: scope.data.shortId }],
+            refs: [mailboxRef(scope.data.shortId, mailbox.data.name, mailbox.data.description)],
             links: [openLink(mailboxHref(scope.data.shortId))],
           });
     },
@@ -854,8 +915,10 @@ const queryDefinitions = {
           result.data.items.flatMap((item) => item.activeFolderIds),
         ),
       ]);
+      const data = result.data.items.map((item) => mapConversation(scope.data.shortId, item, { conversations, folders }));
       return ok({
-        data: result.data.items.map((item) => mapConversation(scope.data.shortId, item, { conversations, folders })),
+        data,
+        refs: data.map((item) => conversationRef(item.id, item.subject, item.preview)),
         page: capabilityPage(result.data.nextCursor),
       });
     },
@@ -885,24 +948,26 @@ const queryDefinitions = {
           result.data.items.map((item) => item.mailboxId),
         ),
       ]);
+      const data = result.data.items.map((item) => {
+        const conversationId = requirePublicId(conversationIds, item.id);
+        const mailboxId = requirePublicId(mailboxIds, item.mailboxId);
+        const subject = truncateText(item.subject, 500);
+        const participantSummary = truncateText(item.participantSummary, 500);
+        return {
+          ...item,
+          ref: { type: "mail.conversation" as const, id: conversationId },
+          id: conversationId,
+          mailboxId,
+          subject: subject.text,
+          subjectTruncated: subject.truncated,
+          participantSummary: participantSummary.text,
+          participantSummaryTruncated: participantSummary.truncated,
+          links: [openLink(conversationHref(mailboxId, conversationId))],
+        };
+      });
       return ok({
-        data: result.data.items.map((item) => {
-          const conversationId = requirePublicId(conversationIds, item.id);
-          const mailboxId = requirePublicId(mailboxIds, item.mailboxId);
-          const subject = truncateText(item.subject, 500);
-          const participantSummary = truncateText(item.participantSummary, 500);
-          return {
-            ...item,
-            ref: { type: "mail.conversation" as const, id: conversationId },
-            id: conversationId,
-            mailboxId,
-            subject: subject.text,
-            subjectTruncated: subject.truncated,
-            participantSummary: participantSummary.text,
-            participantSummaryTruncated: participantSummary.truncated,
-            links: [openLink(conversationHref(mailboxId, conversationId))],
-          };
-        }),
+        data,
+        refs: data.map((item) => conversationRef(item.id, item.subject, item.participantSummary)),
         page: capabilityPage(result.data.nextCursor),
       });
     },
@@ -944,31 +1009,33 @@ const queryDefinitions = {
           items.flatMap((item) => (item.attachmentMatch ? [item.attachmentMatch.messageId] : [])),
         ),
       ]);
+      const data = items.map((item) => {
+        const conversation = mapConversation(
+          scope.data.shortId,
+          { ...item, id: item.conversationId!, workStatus: item.workStatus ?? "needs_action", preview: item.snippet },
+          { conversations, folders },
+        );
+        if (!item.attachmentMatch) return { ...conversation, attachmentMatch: null };
+        const attachmentId = requirePublicId(attachments, item.attachmentMatch.attachmentId);
+        const messageId = requirePublicId(messagesById, item.attachmentMatch.messageId);
+        const filename = boundedText(item.attachmentMatch.filename, 255).text;
+        const snippet = truncateText(item.attachmentMatch.snippet, 500).text;
+        return {
+          ...conversation,
+          attachmentMatch: {
+            attachmentId,
+            messageId,
+            filename,
+            snippet,
+            reason: "attachment_content" as const,
+            openHref: messageHref(scope.data.shortId, messageId),
+            downloadHref: `/api/mail/mailboxes/${scope.data.shortId}/messages/${messageId}/attachments/${attachmentId}`,
+          },
+        };
+      });
       return ok({
-        data: items.map((item) => {
-          const conversation = mapConversation(
-            scope.data.shortId,
-            { ...item, id: item.conversationId!, workStatus: item.workStatus ?? "needs_action", preview: item.snippet },
-            { conversations, folders },
-          );
-          if (!item.attachmentMatch) return { ...conversation, attachmentMatch: null };
-          const attachmentId = requirePublicId(attachments, item.attachmentMatch.attachmentId);
-          const messageId = requirePublicId(messagesById, item.attachmentMatch.messageId);
-          const filename = boundedText(item.attachmentMatch.filename, 255).text;
-          const snippet = truncateText(item.attachmentMatch.snippet, 500).text;
-          return {
-            ...conversation,
-            attachmentMatch: {
-              attachmentId,
-              messageId,
-              filename,
-              snippet,
-              reason: "attachment_content" as const,
-              openHref: messageHref(scope.data.shortId, messageId),
-              downloadHref: `/api/mail/mailboxes/${scope.data.shortId}/messages/${messageId}/attachments/${attachmentId}`,
-            },
-          };
-        }),
+        data,
+        refs: data.map((item) => conversationRef(item.id, item.subject, item.preview)),
         page: capabilityPage(result.data.nextCursor),
       });
     },
@@ -1005,7 +1072,7 @@ const queryDefinitions = {
       });
       return ok({
         data,
-        refs: data.map((item) => ({ type: "mail.conversation", id: item.id })),
+        refs: data.map((item) => conversationRef(item.id, item.subject, item.preview)),
       });
     },
   },
@@ -1075,7 +1142,7 @@ const queryDefinitions = {
           messagesTruncated: page.data.nextCursor !== null,
         },
         ...(subject ? { summary: capabilitySummary(`Read conversation ${quotedSubject(subject)}.`) } : {}),
-        ...conversationMetadata(mailboxShortId, input.id),
+        ...conversationMetadata(mailboxShortId, input.id, subject, boundedText(summary.data.summary, 1000).text),
       });
     },
   },
@@ -1103,8 +1170,10 @@ const queryDefinitions = {
         "messages",
         result.data.items.map((item) => item.id),
       );
+      const data = result.data.items.map((item) => mapNavigableMessageSummary(scope.data.shortId, input.conversationId, item, ids));
       return ok({
-        data: result.data.items.map((item) => mapNavigableMessageSummary(scope.data.shortId, input.conversationId, item, ids)),
+        data,
+        refs: data.map((item) => messageRef(item.id, item.subject)),
         page: capabilityPage(result.data.nextCursor),
       });
     },
@@ -1181,8 +1250,8 @@ const queryDefinitions = {
         },
         summary: capabilitySummary(`Read message ${quotedSubject(item.subject)}.`),
         refs: [
-          { type: "mail.message", id: input.id },
-          ...attachments.slice(0, 99).map((attachment) => ({ type: "mail.attachment", id: attachment.id })),
+          messageRef(input.id, item.subject),
+          ...attachments.slice(0, 99).map((attachment) => attachmentRef(attachment.id, attachment.filename)),
         ],
         links: [
           openLink(messageHref(mailboxShortId, input.id)),
@@ -1231,7 +1300,7 @@ const queryDefinitions = {
       return ok({
         data,
         summary: capabilitySummary(`Read attachment “${data.filename?.trim() || "unnamed attachment"}”.`),
-        refs: [{ type: "mail.attachment", id: input.id }],
+        refs: [attachmentRef(input.id, data.filename)],
         links: [{ rel: "download" as const, href: data.downloadHref, title: data.filename?.trim() || "Download attachment" }],
       });
     },
@@ -1320,10 +1389,7 @@ const queryDefinitions = {
             ? `Read attachment text from “${filename?.trim() || "unnamed attachment"}”.`
             : `Text extraction for “${filename?.trim() || "unnamed attachment"}” is ${metadata.status}.`,
         ),
-        refs: [
-          { type: "mail.attachment", id: input.id },
-          { type: "mail.message", id: messageId },
-        ],
+        refs: [attachmentRef(input.id, filename), messageRef(messageId, message.data.subject)],
         links: [
           openLink(messageHref(mailboxId, messageId)),
           { rel: "download" as const, href: downloadHref, title: attachment.filename?.trim() || "Download attachment" },
@@ -1351,6 +1417,7 @@ const queryDefinitions = {
         limit: input.limit,
         id: (item) => item.id,
         map: (item) => mapDraftSummary(item, ids),
+        refs: (item) => [draftRef(requirePublicId(ids.drafts, item.id), item.subject)],
       });
     },
   },
@@ -1373,7 +1440,7 @@ const queryDefinitions = {
       return ok({
         data,
         summary: capabilitySummary(`Read draft ${quotedSubject(data.subject)}.`),
-        ...draftMetadata(mailboxShortId, input.id),
+        ...draftMetadata(mailboxShortId, input.id, data.subject),
       });
     },
   },
@@ -1456,14 +1523,19 @@ const queryDefinitions = {
       });
       if (!serviceResult.ok) return serviceResult;
       const projected = await projectComments(serviceResult.data.items);
-      const result = await mapPage(ok({ ...serviceResult.data, items: projected }), (item) => {
-        const body = boundedText(item.body, 1000);
-        return { ...item, ref: { type: "mail.comment" as const, id: item.id }, body: body.text, bodyTruncated: body.truncated };
-      });
+      const result = await mapPage(
+        ok({ ...serviceResult.data, items: projected }),
+        (item) => {
+          const body = boundedText(item.body, 1000);
+          return { ...item, ref: { type: "mail.comment" as const, id: item.id }, body: body.text, bodyTruncated: body.truncated };
+        },
+        (item) => [commentRef(item.id, commentAuthorName(item.author))],
+      );
       return result.ok
         ? ok({
             ...result.data,
-            ...conversationMetadata(input.mailboxId, input.conversationId),
+            refs: [...(result.data.refs ?? []), conversationRef(input.conversationId)],
+            links: [openLink(conversationHref(input.mailboxId, input.conversationId))],
           })
         : result;
     },
@@ -1494,10 +1566,7 @@ const queryDefinitions = {
             ? `Read an internal comment by ${item.author.displayName}.`
             : "Read an internal conversation comment.",
         ),
-        refs: [
-          { type: "mail.comment", id: item.id },
-          { type: "mail.conversation", id: requirePublicId(conversations, parent.conversationId) },
-        ],
+        refs: [commentRef(item.id, commentAuthorName(item.author)), conversationRef(requirePublicId(conversations, parent.conversationId))],
         links: [
           openLink(conversationHref(requirePublicId(mailboxes, parent.mailboxId), requirePublicId(conversations, parent.conversationId))),
         ],
@@ -1559,7 +1628,7 @@ const queryDefinitions = {
         data: item,
         summary: capabilitySummary(item ? `Read a ${item.state} personal reminder.` : "No personal reminder is set for this conversation."),
         ...((item) => ({
-          refs: [{ type: "mail.conversation", id: input.conversationId }, ...(item ? [{ type: "mail.reminder", id: item.id }] : [])],
+          refs: [conversationRef(input.conversationId), ...(item ? [reminderRef(item.id, item.state)] : [])],
           links: [openLink(conversationHref(input.mailboxId, input.conversationId))],
         }))(item),
       });
@@ -1588,10 +1657,7 @@ const queryDefinitions = {
       return ok({
         data,
         summary: capabilitySummary(`Read a ${data.state} personal reminder.`),
-        refs: [
-          { type: "mail.reminder", id: data.id },
-          { type: "mail.conversation", id: data.conversationId },
-        ],
+        refs: [reminderRef(data.id, data.state), conversationRef(data.conversationId)],
         links: [
           openLink(conversationHref(requirePublicId(mailboxes, parent.mailboxId), requirePublicId(conversations, parent.conversationId))),
         ],
@@ -1616,21 +1682,23 @@ const queryDefinitions = {
       });
       if (!result.ok) return result;
       const projected = await projectDeliveries(result.data.items);
+      const data = projected.map((item) => ({
+        ref: { type: "mail.delivery" as const, id: item.id },
+        id: item.id,
+        commandId: item.commandId,
+        draftId: item.draftId,
+        conversationId: item.conversationId,
+        subject: truncateText(item.subject, 998).text,
+        scheduledAt: item.scheduledAt,
+        nextAttemptAt: item.nextAttemptAt,
+        state: item.state,
+        attempt: item.attempt,
+        lastError: boundedText(item.lastError, 1000).text,
+        createdAt: item.createdAt,
+      }));
       return ok({
-        data: projected.map((item) => ({
-          ref: { type: "mail.delivery" as const, id: item.id },
-          id: item.id,
-          commandId: item.commandId,
-          draftId: item.draftId,
-          conversationId: item.conversationId,
-          subject: truncateText(item.subject, 998).text,
-          scheduledAt: item.scheduledAt,
-          nextAttemptAt: item.nextAttemptAt,
-          state: item.state,
-          attempt: item.attempt,
-          lastError: boundedText(item.lastError, 1000).text,
-          createdAt: item.createdAt,
-        })),
+        data,
+        refs: data.map((item) => deliveryRef(item.id, item.subject, item.state)),
         page: capabilityPage(result.data.nextCursor),
         links: [statusLink(scheduledHref(scope.data.shortId))],
       });
@@ -1672,7 +1740,7 @@ const queryDefinitions = {
           createdAt: item.createdAt,
         },
         summary: capabilitySummary(`Read ${item.state} delivery ${quotedSubject(subject)}.`),
-        refs: [{ type: "mail.delivery", id: item.id }],
+        refs: [deliveryRef(item.id, subject, item.state)],
         links: [statusLink(scheduledHref(requirePublicId(mailboxes, mailboxId)))],
       });
     },
@@ -1908,7 +1976,7 @@ const actionDefinitions = {
       return ok({
         data,
         summary: capabilitySummary(`Created draft ${quotedSubject(data.subject)}.`),
-        ...draftMetadata(scope.data.shortId, publicDraftId),
+        ...draftMetadata(scope.data.shortId, publicDraftId, data.subject),
       });
     },
   },
@@ -1959,7 +2027,7 @@ const actionDefinitions = {
       return ok({
         data,
         summary: capabilitySummary(`Updated draft ${quotedSubject(data.subject)}.`),
-        ...draftMetadata(input.mailboxId, input.draftId),
+        ...draftMetadata(input.mailboxId, input.draftId, data.subject),
       });
     },
   },
@@ -2049,7 +2117,7 @@ const actionDefinitions = {
       return ok({
         data,
         summary: capabilitySummary(`Added ${input.attachment.filename} to draft ${quotedSubject(data.subject)}.`),
-        ...draftMetadata(input.mailboxId, input.draftId),
+        ...draftMetadata(input.mailboxId, input.draftId, data.subject),
       });
     },
   },
@@ -2103,7 +2171,7 @@ const actionDefinitions = {
       return ok({
         data: mapDraft(result.data, ids),
         summary: capabilitySummary(`Removed ${attachment.filename} from draft ${quotedSubject(draft.data.subject)}.`),
-        ...draftMetadata(input.mailboxId, input.draftId),
+        ...draftMetadata(input.mailboxId, input.draftId, draft.data.subject),
       });
     },
   },
@@ -2184,7 +2252,10 @@ const actionDefinitions = {
             ? `Scheduled ${draft.ok ? quotedSubject(draft.data.subject) : "the email"} for delivery.`
             : `Queued ${draft.ok ? quotedSubject(draft.data.subject) : "the email"} for delivery.`,
         ),
-        refs: [{ type: "mail.draft", id: input.draftId }, ...(conversationId ? [{ type: "mail.conversation", id: conversationId }] : [])],
+        refs: [
+          draftRef(input.draftId, draft.ok ? draft.data.subject : undefined),
+          ...(conversationId ? [conversationRef(conversationId, draft.ok ? draft.data.subject : undefined)] : []),
+        ],
         links: [
           statusLink(scheduledHref(input.mailboxId)),
           ...(conversationId ? [openLink(conversationHref(input.mailboxId, conversationId))] : []),
@@ -2250,7 +2321,7 @@ const actionDefinitions = {
             ? `Cancelled delivery of ${quotedSubject(delivery.data.subject)} and restored it as a draft.`
             : `Cancelled delivery of ${quotedSubject(delivery.data.subject)} and discarded its draft.`,
         ),
-        ...(data.disposition === "draft" ? draftMetadata(input.mailboxId, data.draftId) : {}),
+        ...(data.disposition === "draft" ? draftMetadata(input.mailboxId, data.draftId, delivery.data.subject) : {}),
       });
     },
   },
@@ -2316,7 +2387,7 @@ const actionDefinitions = {
           commands: result.data.commands.map((command) => ({ id: command.id, state: command.state })),
         },
         summary: capabilitySummary(`Marked ${quotedSubject(conversation.data.subject)} as ${states.join(" and ")}.`),
-        ...conversationMetadata(input.mailboxId, input.target.conversationId),
+        ...conversationMetadata(input.mailboxId, input.target.conversationId, conversation.data.subject),
       });
     },
   },
@@ -2395,7 +2466,7 @@ const actionDefinitions = {
           commands: result.data.commands.map((command) => ({ id: command.id, state: command.state })),
         },
         summary: capabilitySummary(`Moved ${quotedSubject(conversation.data.subject)} to ${destination}.`),
-        ...conversationMetadata(input.mailboxId, input.target.conversationId),
+        ...conversationMetadata(input.mailboxId, input.target.conversationId, conversation.data.subject),
       });
     },
   },
@@ -2472,7 +2543,7 @@ const actionDefinitions = {
           tags: result.data.tags.map((tag) => ({ ...tag, id: requirePublicId(tagIds, tag.id), mailboxId: input.mailboxId })),
         },
         summary: capabilitySummary(tagChangeSummary(conversation.data.subject, addedNames, removedNames)),
-        ...conversationMetadata(input.mailboxId, input.conversationId),
+        ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
       });
     },
   },
@@ -2531,7 +2602,7 @@ const actionDefinitions = {
               ? `Assigned ${quotedSubject(conversation.data.subject)} to ${item.assignee.displayName}.`
               : `Cleared the assignment of ${quotedSubject(conversation.data.subject)}.`,
           ),
-          ...conversationMetadata(input.mailboxId, input.conversationId),
+          ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
         }),
       );
     },
@@ -2577,7 +2648,7 @@ const actionDefinitions = {
               ? `Completed ${quotedSubject(conversation.data.subject)}.`
               : `Reopened ${quotedSubject(conversation.data.subject)}.`,
           ),
-          ...conversationMetadata(input.mailboxId, input.conversationId),
+          ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
         }),
       );
     },
@@ -2625,7 +2696,7 @@ const actionDefinitions = {
               ? `Snoozed ${quotedSubject(conversation.data.subject)}.`
               : `Cleared the snooze deadline of ${quotedSubject(conversation.data.subject)}.`,
           ),
-          ...conversationMetadata(input.mailboxId, input.conversationId),
+          ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
         }),
       );
     },
@@ -2668,10 +2739,7 @@ const actionDefinitions = {
       return ok({
         data: item,
         summary: capabilitySummary(`Set a reminder for ${quotedSubject(conversation.data.subject)}.`),
-        refs: [
-          { type: "mail.reminder", id: item.id },
-          { type: "mail.conversation", id: input.conversationId },
-        ],
+        refs: [reminderRef(item.id, item.state), conversationRef(input.conversationId, conversation.data.subject)],
         links: [openLink(conversationHref(input.mailboxId, input.conversationId))],
       });
     },
@@ -2726,10 +2794,7 @@ const actionDefinitions = {
       return ok({
         data: item,
         summary: capabilitySummary(`Cancelled the reminder for ${quotedSubject(conversation.data.subject)}.`),
-        refs: [
-          { type: "mail.reminder", id: item.id },
-          { type: "mail.conversation", id: input.conversationId },
-        ],
+        refs: [reminderRef(item.id, item.state), conversationRef(input.conversationId, conversation.data.subject)],
         links: [openLink(conversationHref(input.mailboxId, input.conversationId))],
       });
     },
@@ -2781,10 +2846,7 @@ const actionDefinitions = {
       return ok({
         data: item,
         summary: capabilitySummary(`Added an internal comment to ${quotedSubject(conversation.data.subject)}.`),
-        refs: [
-          { type: "mail.comment", id: item.id },
-          { type: "mail.conversation", id: input.conversationId },
-        ],
+        refs: [commentRef(item.id, commentAuthorName(item.author)), conversationRef(input.conversationId, conversation.data.subject)],
         links: [openLink(conversationHref(input.mailboxId, input.conversationId))],
       });
     },
@@ -2841,8 +2903,8 @@ const actionDefinitions = {
         data: item,
         summary: capabilitySummary(`Updated your internal comment on ${quotedSubject(review.data.conversation.subject)}.`),
         refs: [
-          { type: "mail.comment", id: item.id },
-          { type: "mail.conversation", id: input.conversationId },
+          commentRef(item.id, commentAuthorName(item.author)),
+          conversationRef(input.conversationId, review.data.conversation.subject),
         ],
         links: [openLink(conversationHref(input.mailboxId, input.conversationId))],
       });
@@ -2893,8 +2955,8 @@ const actionDefinitions = {
         data: item,
         summary: capabilitySummary(`Deleted your internal comment from ${quotedSubject(review.data.conversation.subject)}.`),
         refs: [
-          { type: "mail.comment", id: item.id },
-          { type: "mail.conversation", id: input.conversationId },
+          commentRef(item.id, commentAuthorName(item.author)),
+          conversationRef(input.conversationId, review.data.conversation.subject),
         ],
         links: [openLink(conversationHref(input.mailboxId, input.conversationId))],
       });
