@@ -266,8 +266,14 @@ describe("notebooks capabilities", () => {
     if (!result.ok) return;
     expect(getByShortId).toHaveBeenCalledWith({ shortId: note.shortId });
     expect(result.data.refs).toEqual([
-      { type: "notebooks.note", id: note.shortId },
-      { type: "notebooks.notebook", id: notebook.shortId },
+      { type: "notebooks.note", id: note.shortId, title: note.title, preview: notebook.name, icon: "ti ti-file-text" },
+      {
+        type: "notebooks.notebook",
+        id: notebook.shortId,
+        title: notebook.name,
+        preview: notebook.description,
+        icon: "ti ti-notebook",
+      },
     ]);
     expect(result.data.links).toEqual([{ rel: "open", href: `/app/notebooks/${notebook.shortId}/notes/${note.shortId}` }]);
     expect(result.data.data.content).toBe("# Knowledge ");
@@ -323,7 +329,15 @@ describe("notebooks capabilities", () => {
     expect(getByShortId).toHaveBeenCalledWith({ shortId: ref.id });
     if (!read.ok) return;
     expect(read.data.summary).toBe("Read notebook “Knowledge”.");
-    expect(read.data.refs).toEqual([ref]);
+    expect(read.data.refs).toEqual([
+      {
+        type: "notebooks.notebook",
+        id: ref.id,
+        title: notebook.name,
+        preview: notebook.description,
+        icon: "ti ti-notebook",
+      },
+    ]);
     expect(read.data.links).toEqual([{ rel: "open", href: `/app/notebooks/${notebook.shortId}` }]);
   });
 
@@ -360,7 +374,9 @@ describe("notebooks capabilities", () => {
     const links = await notebooksCapabilities.queries["note.links"].run({ noteId: note.shortId, direction: "all", limit: 25 }, userContext);
     expect(links.ok).toBeTrue();
     if (!links.ok) return;
-    expect(links.data.refs).toEqual([{ type: "notebooks.note", id: note.shortId }]);
+    expect(links.data.refs).toEqual([
+      { type: "notebooks.note", id: note.shortId, title: note.title, preview: notebook.name, icon: "ti ti-file-text" },
+    ]);
     expect(links.data.data[0]?.ref).toEqual({ type: "notebooks.note", id: note.shortId });
     expect(links.data.data[0]?.links).toEqual([{ rel: "open", href: `/app/notebooks/${notebook.shortId}/notes/${note.shortId}` }]);
   });
@@ -392,8 +408,14 @@ describe("notebooks capabilities", () => {
       expect(result.data.summary).toBe(`Added 1 line to “${note.title}”.`);
       expect(capabilityResultSchema(notebooksCapabilities.actions["note.edit"].data).safeParse(result.data).success).toBeTrue();
       expect(result.data.refs).toEqual([
-        { type: "notebooks.note", id: note.shortId },
-        { type: "notebooks.notebook", id: notebook.shortId },
+        { type: "notebooks.note", id: note.shortId, title: note.title, preview: notebook.name, icon: "ti ti-file-text" },
+        {
+          type: "notebooks.notebook",
+          id: notebook.shortId,
+          title: notebook.name,
+          preview: notebook.description,
+          icon: "ti ti-notebook",
+        },
       ]);
     }
     expect(editContent).toHaveBeenCalledWith({
@@ -444,7 +466,9 @@ describe("notebooks capabilities", () => {
     if (!result.ok) return;
     expect(result.data.data[0]?.updatedAt).toBe(createdAt);
     expect(result.data.data[0]?.ref).toEqual({ type: "notebooks.note", id: note.shortId });
-    expect(result.data.refs).toEqual([{ type: "notebooks.note", id: note.shortId }]);
+    expect(result.data.refs).toEqual([
+      { type: "notebooks.note", id: note.shortId, title: note.title, preview: "Knowledge", icon: "ti ti-file-text" },
+    ]);
     expect(result.data.data[0]?.links).toEqual([{ rel: "open", href: `/app/notebooks/${notebook.shortId}/notes/${note.shortId}` }]);
     expect(TagNotesDataSchema.safeParse(result.data.data).success).toBeTrue();
   });

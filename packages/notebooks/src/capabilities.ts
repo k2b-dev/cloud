@@ -169,6 +169,20 @@ const mapNote = (note: Note, notebookShortId: string, parentShortId: string | nu
 const notebookHref = (notebook: Pick<Notebook, "shortId">) => `/app/notebooks/${notebook.shortId}`;
 const noteHref = (notebook: Pick<Notebook, "shortId">, note: Pick<Note, "shortId">) =>
   `/app/notebooks/${notebook.shortId}/notes/${note.shortId}`;
+const notebookRef = (notebook: Pick<Notebook, "shortId" | "name" | "description" | "icon">) => ({
+  type: "notebooks.notebook" as const,
+  id: notebook.shortId,
+  title: notebook.name,
+  ...(notebook.description ? { preview: notebook.description } : {}),
+  icon: notebook.icon ?? "ti ti-notebook",
+});
+const noteRef = (note: Pick<Note, "shortId" | "title">, notebookName?: string) => ({
+  type: "notebooks.note" as const,
+  id: note.shortId,
+  title: note.title,
+  ...(notebookName ? { preview: notebookName } : {}),
+  icon: "ti ti-file-text",
+});
 const notebookApprovalScope = (notebook: Pick<Notebook, "shortId">): string => `notebook:${notebook.shortId}`;
 
 const resolveParentShortId = async (note: Note): Promise<string | null> => {
@@ -344,7 +358,7 @@ const runNotebookList = async (input: z.infer<typeof NotebookListInputSchema>, c
   return ok({
     data,
     page: capabilityPage(cursor.data * input.limit < page.total ? encodePageCursor(cursor.data + 1) : undefined),
-    refs: data.map((notebook) => ({ type: "notebooks.notebook", id: notebook.id })),
+    refs: page.items.map(notebookRef),
   });
 };
 
@@ -354,7 +368,7 @@ const runNotebookRead = async (input: z.infer<typeof NotebookReadInputSchema>, c
   return ok({
     data: mapNotebook(access.data.notebook, access.data.permission as Exclude<PermissionLevel, "none">),
     summary: `Read notebook “${access.data.notebook.name}”.`,
-    refs: [{ type: "notebooks.notebook", id: access.data.notebook.shortId }],
+    refs: [notebookRef(access.data.notebook)],
     links: [{ rel: "open" as const, href: notebookHref(access.data.notebook) }],
   });
 };
@@ -387,6 +401,7 @@ const runNoteTree = async (input: z.infer<typeof NoteTreeInputSchema>, context: 
   return ok({
     data,
     page: capabilityPage(hasMore && last ? encodeTreeCursor(last.id) : undefined),
+    refs: pageRows.map((note) => noteRef(note, access.data.notebook.name)),
   });
 };
 
@@ -416,10 +431,7 @@ const runNoteRead = async (input: z.infer<typeof NoteReadInputSchema>, context: 
       blocksTruncated: blocks.length > 500,
     },
     summary: `Read note “${note.title}”.`,
-    refs: [
-      { type: "notebooks.note", id: note.shortId },
-      { type: "notebooks.notebook", id: resolved.data.notebook.shortId },
-    ],
+    refs: [noteRef(note, resolved.data.notebook.name), notebookRef(resolved.data.notebook)],
     links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, note) }],
   });
 };
@@ -457,7 +469,13 @@ const runNoteLinks = async (input: z.infer<typeof NoteLinksInputSchema>, context
   return ok({
     data,
     page: capabilityPage(hasMore ? encodePageCursor(cursor.data + 1) : undefined),
-    refs: data.map((entry) => ({ type: "notebooks.note", id: entry.noteId })),
+    refs: data.map((entry) => ({
+      type: "notebooks.note",
+      id: entry.noteId,
+      title: entry.title,
+      preview: entry.notebookName,
+      icon: "ti ti-file-text",
+    })),
   });
 };
 
@@ -506,7 +524,13 @@ const runTagNotes = async (input: z.infer<typeof TagNotesInputSchema>, context: 
   return ok({
     data,
     page: capabilityPage(hasMore ? encodePageCursor(cursor.data + 1) : undefined),
-    refs: data.map((note) => ({ type: "notebooks.note", id: note.id })),
+    refs: data.map((note) => ({
+      type: "notebooks.note",
+      id: note.id,
+      title: note.title,
+      ...(note.preview ? { preview: note.preview } : {}),
+      icon: "ti ti-file-text",
+    })),
   });
 };
 
@@ -552,10 +576,7 @@ const noteMutationResult = async (result: MutationResult<Note>, notebook: Notebo
   return ok({
     data: mapNote(result.data, notebook.shortId, await resolveParentShortId(result.data)),
     summary: summary(result.data),
-    refs: [
-      { type: "notebooks.note", id: result.data.shortId },
-      { type: "notebooks.notebook", id: notebook.shortId },
-    ],
+    refs: [noteRef(result.data, notebook.name), notebookRef(notebook)],
     links: [{ rel: "open" as const, href: noteHref(notebook, result.data) }],
   });
 };
@@ -612,10 +633,7 @@ const runNoteEdit = async (input: z.infer<typeof NoteEditInputSchema>, context: 
         blocksTruncated: result.data.blocks.length > 500,
       },
       summary: noteEditCapabilitySummary(input.operations, result.data.note.title, result.data.changed),
-      refs: [
-        { type: "notebooks.note", id: result.data.note.shortId },
-        { type: "notebooks.notebook", id: resolved.data.notebook.shortId },
-      ],
+      refs: [noteRef(result.data.note, resolved.data.notebook.name), notebookRef(resolved.data.notebook)],
       links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, result.data.note) }],
     });
   });
