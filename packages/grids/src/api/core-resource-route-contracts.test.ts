@@ -54,6 +54,7 @@ describe("core resource OpenAPI contracts", () => {
       ["post", "/records/{tableId}/{recordId}/finalization/reject", ["200", "400", "403", "404", "409"]],
       ["post", "/records/by-table/{tableId}", ["201", "400", "403", "404", "409"]],
       ["post", "/records/by-table/{tableId}/import", ["201", "400", "403", "404", "409"]],
+      ["post", "/records/by-table/{tableId}/external/batch", ["200", "400", "403", "404", "500"]],
       ["get", "/records/by-base/{baseId}/changes", ["200", "400", "403", "404", "409"]],
       ["get", "/records/{tableId}/{recordId}", ["200", "400", "403", "404"]],
       ["patch", "/records/{tableId}/{recordId}", ["200", "400", "403", "404", "409"]],

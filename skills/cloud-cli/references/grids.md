@@ -239,6 +239,24 @@ file uploads, edits, deletes, and restores are unavailable.
 
 Use `--if-version` for optimistic concurrency when updating a previously read record. `records import` accepts an array or `{ "items": [...] }` and creates the batch in one transaction.
 
+For connector projections, `records upsert-external` binds the exact provider, provider account, resource kind, and external ID to one Record. Reuse its idempotency key only for an uncertain retry, and pass the current version for an existing binding. `records upsert-external-batch` accepts `{ "items": [...] }` with at most 100 independently committed items. Each item carries its own `idempotencyKey`, `externalRef`, `values`, optional `ifVersion`, and optional `audit`. The ordered response keeps per-item successes and errors. Retry an unchanged interrupted batch safely; completed items replay. Use `records import` only for an atomic all-create batch.
+
+```bash
+cld grids records upsert-external-batch Authors \
+  --body-file external-records.json \
+  --jsonl
+```
+
+For resumable connector sync, save the opaque cursor returned by `records changes`. The feed reports committed public Record identities,
+event types, versions, and deletion times from the last 30 days; read each current Record separately for its field values. `--table` narrows
+the Base feed, while `--all --max-events` bounds catch-up work. If a cursor has expired, perform a fresh full Record scan and start again from
+the new feed position.
+
+```bash
+cld grids records changes Operations --table Requests --limit 100 --json
+cld grids records changes Operations --table Requests --cursor <cursor> --all --max-events 1000 --jsonl
+```
+
 Read and transfer records with:
 
 ```bash
@@ -273,7 +291,7 @@ provide legal or regulatory compliance.
 entire Combined table and accepts record, source, action, time-range, cursor, and limit filters. Combined audit entries expose only
 canonical included fields, declared audit answers such as required deletion comments, and safe source labels.
 
-Record commands are `records shape|list|query|get|create|import|export|update|finalize|finalization request|finalization approve|finalization reject|delete|restore|audit|audit list|versions|versions download`.
+Record commands are `records changes|shape|list|query|get|create|upsert-external|upsert-external-batch|import|export|update|finalize|finalization request|finalization approve|finalization reject|delete|restore|audit|audit list|versions|versions download`.
 
 ### Files and snapshots
 
@@ -1112,7 +1130,7 @@ tables history enable|finalization enable|finalization disable|finalization poli
 tables mutation-policy impact|set
 tables combined get|candidates|publications|validate|draft|publish|revoke
 fields types|type|list|get|create|update|delete|restore|dependents|reorder
-records shape|list|query|get|create|import|export|update|finalize|finalization request|finalization approve|finalization reject|delete|restore|audit|audit list|versions
+records changes|shape|list|query|get|create|upsert-external|upsert-external-batch|import|export|update|finalize|finalization request|finalization approve|finalization reject|delete|restore|audit|audit list|versions
 records versions download
 records files list|upload|download|delete
 snapshots list|create|get

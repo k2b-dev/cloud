@@ -15,6 +15,8 @@ import {
   FormatSpecSchema,
   type GridRecord,
   GridRecordSchema,
+  RecordOperationBodySchema,
+  RecordPayloadSchema,
   ShortIdSchema,
   type Table,
   type TableAuditPolicy,
@@ -418,6 +420,82 @@ export const PublicRecordChangeFeedPageSchema = z
   .strict();
 export type PublicRecordChangeFeedItem = z.infer<typeof PublicRecordChangeFeedItemSchema>;
 export type PublicRecordChangeFeedPage = z.infer<typeof PublicRecordChangeFeedPageSchema>;
+
+const publicExternalIdentityPart = (max: number) =>
+  z
+    .string()
+    .min(1)
+    .max(max)
+    .refine((value) => value.trim() === value, "Must not start or end with whitespace")
+    .refine((value) => !value.includes("\0"), "Must not contain NUL");
+
+export const PublicExternalRecordIdentitySchema = z
+  .object({
+    provider: publicExternalIdentityPart(100),
+    providerAccount: publicExternalIdentityPart(200),
+    resourceKind: publicExternalIdentityPart(100),
+    externalId: publicExternalIdentityPart(500),
+  })
+  .strict();
+export const PublicExternalRecordPutBodySchema = z
+  .object({
+    externalRef: PublicExternalRecordIdentitySchema,
+    values: RecordPayloadSchema,
+    ifVersion: z.number().int().positive().optional(),
+    audit: RecordOperationBodySchema.shape.audit,
+  })
+  .strict();
+export const PublicExternalRecordPutResponseSchema = z
+  .object({
+    recordId: ShortIdSchema,
+    tableId: ShortIdSchema,
+    version: z.number().int().positive(),
+    created: z.boolean(),
+    changed: z.boolean(),
+    replayed: z.boolean(),
+  })
+  .strict();
+export const PublicExternalRecordBatchItemSchema = PublicExternalRecordPutBodySchema.extend({
+  idempotencyKey: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .refine((value) => !value.includes("\0"), "Must not contain NUL"),
+}).strict();
+export const PublicExternalRecordBatchBodySchema = z
+  .object({ items: z.array(PublicExternalRecordBatchItemSchema).min(1).max(100) })
+  .strict();
+const PublicExternalRecordBatchSuccessSchema = PublicExternalRecordPutResponseSchema.extend({
+  index: z.number().int().nonnegative(),
+  ok: z.literal(true),
+}).strict();
+const PublicExternalRecordBatchFailureSchema = z
+  .object({
+    index: z.number().int().nonnegative(),
+    ok: z.literal(false),
+    error: z
+      .object({
+        code: z.enum(["BAD_INPUT", "UNAUTHENTICATED", "FORBIDDEN", "NOT_FOUND", "CONFLICT"]),
+        message: z.string(),
+        status: z.union([z.literal(400), z.literal(401), z.literal(403), z.literal(404), z.literal(409)]),
+      })
+      .strict(),
+  })
+  .strict();
+export const PublicExternalRecordBatchResultSchema = z.discriminatedUnion("ok", [
+  PublicExternalRecordBatchSuccessSchema,
+  PublicExternalRecordBatchFailureSchema,
+]);
+export const PublicExternalRecordBatchResponseSchema = z
+  .object({
+    items: z.array(PublicExternalRecordBatchResultSchema).max(100),
+    complete: z.boolean(),
+  })
+  .strict();
+export type PublicExternalRecordPutBody = z.infer<typeof PublicExternalRecordPutBodySchema>;
+export type PublicExternalRecordPutResponse = z.infer<typeof PublicExternalRecordPutResponseSchema>;
+export type PublicExternalRecordBatchResponse = z.infer<typeof PublicExternalRecordBatchResponseSchema>;
 export type PublicGridFile = z.infer<typeof PublicGridFileSchema>;
 export type PublicRecordComment = z.infer<typeof PublicRecordCommentSchema>;
 export type PublicForm = z.infer<typeof PublicFormSchema>;

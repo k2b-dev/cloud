@@ -5,7 +5,7 @@ section: Work
 order: 140
 description: Structured data with Bases, Views, Forms, Custom Apps, documents, and workflows.
 tags: [grids, tables, workflows]
-updated: 2026-08-21
+updated: 2026-08-22
 ---
 
 # Grids
@@ -165,6 +165,15 @@ cld grids records list --base "Operations" --table "Requests" --limit 20 --json
 Record updates patch only the named fields. Integrations can pass the current positive Record version with `--if-version` so a stale projection conflicts instead of overwriting a newer edit. An update whose normalized scalar and Relation values are already current returns the Record without creating another version, history revision, audit entry, or live event.
 
 For repeated connector projections, use `cld grids records upsert-external`. The provider, provider account, resource kind, and external ID form a case-sensitive durable binding to one Record; they do not replace its public Grids ID or become editable fields. Reuse one `--idempotency-key` after an uncertain response. Creating the binding needs no version, while a later update needs the current `--if-version`; a different request under the same key or a stale version conflicts without another write. The response is an immutable receipt containing the public Record ID and the version produced by that request; read the Record separately when current values are needed. Retry receipts are retained for 30 days, while the external identity binding remains durable.
+
+Use `cld grids records upsert-external-batch` when up to 100 such projections
+should share one request. Items run sequentially and commit independently, each
+with its own `idempotencyKey`; the ordered response reports success, replay,
+no-op, or a bounded error for every attempted item. Retry the same complete
+batch after an uncertain or interrupted response: committed items replay and
+unfinished items continue. Use `records import` instead only when new Records
+must be created all-or-nothing in one transaction; that import is not an
+idempotent external-identity projection.
 
 To resume a connector after a short interruption, first scan the current
 Records it owns, then save the opaque cursor returned by `cld grids records

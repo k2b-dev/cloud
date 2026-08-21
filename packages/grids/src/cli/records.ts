@@ -3,6 +3,8 @@ import { basename } from "node:path";
 import { arg, command, confirmFlag, flag } from "@valentinkolb/cloud/cli";
 import type {
   PublicGridRecord as GridRecord,
+  PublicExternalRecordBatchResponse,
+  PublicExternalRecordPutResponse,
   PublicRecordChangeFeedItem,
   PublicRecordChangeFeedPage,
   PublicTableQueryResult as TableQueryResult,
@@ -60,15 +62,6 @@ type RecordListBodyFlags = {
   includeDeleted?: boolean;
   deletedOnly?: boolean;
   finalization?: "draft" | "awaiting-review" | "finalized";
-};
-
-type ExternalRecordPutResponse = {
-  recordId: string;
-  tableId: string;
-  version: number;
-  created: boolean;
-  changed: boolean;
-  replayed: boolean;
 };
 
 const AUDIT_INPUT = flag.input({
@@ -356,7 +349,7 @@ export const recordCommands = [
       const values = await readJsonInput<Record<string, unknown>>(flags.body, "record JSON", true);
       const answers = await readJsonInput<Record<string, string>>(flags.audit, "record audit answers", false);
       if (!flags.idempotencyKey) throw new Error("Missing required flag --idempotency-key");
-      const payload = await readApi<ExternalRecordPutResponse>(
+      const payload = await readApi<PublicExternalRecordPutResponse>(
         ctx,
         `/records/by-table/${encodeURIComponent(table.id)}/external`,
         jsonRequest(
@@ -377,6 +370,58 @@ export const recordCommands = [
       );
       const verb = payload.replayed ? "Replayed" : payload.created ? "Created" : payload.changed ? "Updated" : "Kept";
       printJsonOrMessage(ctx, payload, `${verb} record ${payload.recordId} at version ${payload.version}.`);
+    },
+  }),
+  command("records upsert-external-batch", {
+    summary: "Independently upsert a bounded batch by external identity",
+    description:
+      'Pass {"items":[...]} with at most 100 items. Each item has its own idempotencyKey, externalRef, values, optional ifVersion, and optional audit. Items commit independently and run in order.',
+    args: tableArgs,
+    flags: { ...baseFlag, ...tableFlag, body: JSON_BODY_INPUT },
+    examples: [
+      "cld grids records upsert-external-batch Bookshop Authors --body-file external-records.json --json",
+      "cat external-records.json | cld grids records upsert-external-batch --base Bookshop --table Authors --stdin --jsonl",
+    ],
+    async run({ ctx, args, flags }) {
+      const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? 0 : 1);
+      const table = await resolveTable(ctx, base.id, flags.table ?? requireRestArg(rest, 0, "table"));
+      const body = await readJsonInput<Record<string, unknown>>(flags.body, "external Record batch JSON", true);
+      const payload = await readApi<PublicExternalRecordBatchResponse>(
+        ctx,
+        `/records/by-table/${encodeURIComponent(table.id)}/external/batch`,
+        jsonRequest("POST", body),
+      );
+      if (ctx.options.output === "json") ctx.json(payload);
+      else if (ctx.options.output === "jsonl") payload.items.forEach((item) => ctx.jsonLine(item));
+      else {
+        ctx.table(
+          payload.items.map((item) =>
+            item.ok
+              ? {
+                  index: item.index,
+                  outcome: item.replayed ? "replayed" : item.created ? "created" : item.changed ? "updated" : "kept",
+                  recordId: item.recordId,
+                  version: item.version,
+                  message: "",
+                }
+              : {
+                  index: item.index,
+                  outcome: item.error.code,
+                  recordId: "",
+                  version: "",
+                  message: item.error.message,
+                },
+          ),
+          [
+            { key: "index", label: "INDEX" },
+            { key: "outcome", label: "OUTCOME" },
+            { key: "recordId", label: "RECORD" },
+            { key: "version", label: "VERSION" },
+            { key: "message", label: "MESSAGE" },
+          ],
+        );
+        if (!payload.complete) ctx.print("Batch stopped before every item was attempted; retry the same items safely.");
+      }
     },
   }),
   command("records import", {

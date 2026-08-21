@@ -401,7 +401,7 @@ describe("grids CLI", () => {
     const commands = commandGroups.flat();
     const paths = commands.map((item) => item.path.join(" "));
 
-    expect(commands).toHaveLength(176);
+    expect(commands).toHaveLength(177);
     expect(new Set(paths).size).toBe(paths.length);
 
     for (const path of paths) {
@@ -1386,6 +1386,61 @@ describe("grids CLI", () => {
       ifVersion: 1,
     });
     expect(lines).toEqual([`Updated record ${recordId} at version 2.`]);
+  });
+
+  test("prints ordered external Record batch outcomes without reshaping JSONL", async () => {
+    const body = {
+      items: [
+        {
+          idempotencyKey: "contact-1-v1",
+          externalRef: { provider: "crm", providerAccount: "main", resourceKind: "contact", externalId: "1" },
+          values: { [fieldId]: "Octavia Butler" },
+        },
+        {
+          idempotencyKey: "contact-2-v2",
+          externalRef: { provider: "crm", providerAccount: "main", resourceKind: "contact", externalId: "2" },
+          values: { [fieldId]: "Duplicate" },
+          ifVersion: 1,
+        },
+      ],
+    };
+    const response = {
+      items: [
+        {
+          index: 0,
+          ok: true,
+          recordId,
+          tableId,
+          version: 1,
+          created: true,
+          changed: true,
+          replayed: false,
+        },
+        {
+          index: 1,
+          ok: false,
+          error: { code: "CONFLICT", message: "Record version conflict", status: 409 },
+        },
+      ],
+      complete: true,
+    };
+    const batch = createContext(
+      ["records", "upsert-external-batch", baseId, "Authors"],
+      { body: JSON.stringify(body) },
+      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(response)],
+      { output: "jsonl" },
+    );
+
+    await gridsCli.run(batch.ctx);
+
+    expect(batch.calls.map((call) => call.path)).toEqual([
+      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
+      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/records/by-table/${tableId}/external/batch`,
+    ]);
+    expect(batch.calls[2]?.init?.method).toBe("POST");
+    expect(JSON.parse(String(batch.calls[2]?.init?.body))).toEqual(body);
+    expect(batch.jsonValues).toEqual(response.items);
   });
 
   test("shows and fully enables durable table history", async () => {

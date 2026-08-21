@@ -933,4 +933,185 @@ describe("classic resource route contracts", () => {
     },
     20_000,
   );
+
+  postgresTest(
+    "processes bounded external Record batches independently and in order",
+    async () => {
+      const fixture = newFixture();
+      let primaryError: unknown;
+      let primaryFailed = false;
+      try {
+        await setupFixture(fixture);
+        const relationFieldId = testUuid();
+        const relationFieldPublicId = testShortId("L");
+        const targetRecordId = testUuid();
+        const targetRecordPublicId = testShortId("R");
+        await sql`
+          INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
+          VALUES (
+            ${relationFieldId}::uuid,
+            ${relationFieldPublicId},
+            ${fixture.tableId}::uuid,
+            'Related',
+            'relation',
+            ${{ targetTableId: fixture.tableId }}::jsonb,
+            1
+          )
+        `;
+        await sql`
+          INSERT INTO grids.records (id, short_id, table_id, data)
+          VALUES (
+            ${targetRecordId}::uuid,
+            ${targetRecordPublicId},
+            ${fixture.tableId}::uuid,
+            ${{ [fixture.uniqueFieldId]: "TARGET" }}::jsonb
+          )
+        `;
+        const path = `/records/by-table/${fixture.tablePublicId}/external/batch`;
+        const item = (
+          externalId: string,
+          idempotencyKey: string,
+          value: string,
+          ifVersion?: number,
+          values: Record<string, unknown> = { [fixture.uniqueFieldPublicId]: value },
+        ) => ({
+          idempotencyKey,
+          externalRef: { provider: "crm", providerAccount: "batch", resourceKind: "contact", externalId },
+          values,
+          ...(ifVersion === undefined ? {} : { ifVersion }),
+        });
+        const request = (token: string, items: unknown[], signal?: AbortSignal) =>
+          app.request(path, { ...jsonRequest(token, { items }), ...(signal ? { signal } : {}) });
+
+        const before = await sideEffectCounts(fixture.baseId);
+        expect((await request(fixture.tokens.read, [item("denied", "denied-v1", "DENIED")])).status).toBe(403);
+        expect(
+          (
+            await request(
+              fixture.tokens.write,
+              Array.from({ length: 101 }, (_, index) => item(`${index}`, `limit-${index}`, `${index}`)),
+            )
+          ).status,
+        ).toBe(400);
+        expect((await request(fixture.tokens.write, [item("nul", "nul\0key", "NUL")])).status).toBe(400);
+        const aborted = new AbortController();
+        aborted.abort();
+        const stopped = await request(fixture.tokens.write, [item("stopped", "stopped-v1", "STOPPED")], aborted.signal);
+        expect(stopped.status).toBe(200);
+        expect(await stopped.json()).toEqual({ items: [], complete: false });
+        expect(await count("records", "table_id", fixture.tableId)).toBe(1);
+        expect(await sideEffectCounts(fixture.baseId)).toEqual(before);
+
+        const first = item("A", "a-v1", "A-1", undefined, {
+          [fixture.uniqueFieldPublicId]: "A-1",
+          [relationFieldPublicId]: [targetRecordPublicId],
+        });
+        const batchItems = [
+          first,
+          item("B", "b-v1", "B-1"),
+          item("invalid-field", "invalid-field-v1", "unused", undefined, { [testShortId("Z")]: "unknown" }),
+          item("unique-conflict", "unique-conflict-v1", "B-1"),
+          first,
+          item("A", "a-v2", "A-2", 1),
+          item("A", "a-noop-v2", "A-2", 2),
+          item("A", "a-stale-v1", "A-3", 1),
+        ];
+        const response = await request(fixture.tokens.write, batchItems);
+        expect(response.status).toBe(200);
+        const payload = (await response.json()) as {
+          complete: boolean;
+          items: Array<
+            | {
+                index: number;
+                ok: true;
+                recordId: string;
+                tableId: string;
+                version: number;
+                created: boolean;
+                changed: boolean;
+                replayed: boolean;
+              }
+            | { index: number; ok: false; error: { code: string; message: string; status: number } }
+          >;
+        };
+        expect(payload.complete).toBe(true);
+        expect(payload.items.map((outcome) => [outcome.index, outcome.ok])).toEqual([
+          [0, true],
+          [1, true],
+          [2, false],
+          [3, false],
+          [4, true],
+          [5, true],
+          [6, true],
+          [7, false],
+        ]);
+        expect(payload.items[0]).toMatchObject({
+          ok: true,
+          tableId: fixture.tablePublicId,
+          version: 1,
+          created: true,
+          changed: true,
+          replayed: false,
+        });
+        expect(payload.items[2]).toMatchObject({ ok: false, error: { code: "BAD_INPUT", status: 400 } });
+        expect(payload.items[3]).toMatchObject({ ok: false, error: { code: "CONFLICT", status: 409 } });
+        expect(payload.items[4]).toMatchObject({ ok: true, version: 1, created: true, changed: true, replayed: true });
+        expect(payload.items[5]).toMatchObject({ ok: true, version: 2, created: false, changed: true, replayed: false });
+        expect(payload.items[6]).toMatchObject({ ok: true, version: 2, created: false, changed: false, replayed: false });
+        expect(payload.items[7]).toMatchObject({ ok: false, error: { code: "CONFLICT", status: 409 } });
+        expect(payload.items[0] && "recordId" in payload.items[0] ? payload.items[0].recordId : null).toBe(
+          payload.items[4] && "recordId" in payload.items[4] ? payload.items[4].recordId : null,
+        );
+        const afterFirstBatch = await sideEffectCounts(fixture.baseId);
+        const retried = await request(fixture.tokens.write, batchItems);
+        expect(retried.status).toBe(200);
+        const retriedPayload = (await retried.json()) as typeof payload;
+        expect(retriedPayload.items.filter((outcome) => outcome.ok).map((outcome) => [outcome.index, outcome.replayed])).toEqual([
+          [0, true],
+          [1, true],
+          [4, true],
+          [5, true],
+          [6, true],
+        ]);
+        expect(await sideEffectCounts(fixture.baseId)).toEqual(afterFirstBatch);
+        const serialized = JSON.stringify(payload);
+        for (const internalId of [fixture.baseId, fixture.tableId, fixture.uniqueFieldId, relationFieldId, targetRecordId]) {
+          expect(serialized).not.toContain(internalId);
+        }
+
+        expect(await count("records", "table_id", fixture.tableId)).toBe(3);
+        const [relationCount] = await sql<Array<{ count: number }>>`
+          SELECT count(*)::int AS count
+          FROM grids.record_links link
+          JOIN grids.record_external_bindings binding ON binding.record_id = link.from_record_id
+          WHERE binding.external_id = 'A'
+            AND link.from_field_id = ${relationFieldId}::uuid
+            AND link.to_record_id = ${targetRecordId}::uuid
+        `;
+        expect(relationCount?.count).toBe(1);
+        const [identityCounts] = await sql<Array<{ bindings: number; operations: number }>>`
+          SELECT
+            count(DISTINCT binding.id)::int AS bindings,
+            count(operation.id)::int AS operations
+          FROM grids.record_external_bindings binding
+          LEFT JOIN grids.record_external_operations operation ON operation.binding_id = binding.id
+          WHERE binding.table_id = ${fixture.tableId}::uuid
+        `;
+        expect(identityCounts).toEqual({ bindings: 2, operations: 4 });
+        expect(afterFirstBatch).toEqual({ audit: before.audit + 3, outbox: before.outbox + 3 });
+      } catch (error) {
+        primaryError = error;
+        primaryFailed = true;
+        throw error;
+      } finally {
+        try {
+          await cleanupFixture(fixture);
+        } catch (cleanupError) {
+          if (primaryFailed) throw new AggregateError([primaryError, cleanupError], "External Record batch test and cleanup failed");
+          throw cleanupError;
+        }
+      }
+    },
+    20_000,
+  );
 });

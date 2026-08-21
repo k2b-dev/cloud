@@ -1,4 +1,4 @@
-import { err, fail } from "@k2b/stdlib";
+import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
 import { type AuthContext, auth, getDateConfig, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
@@ -20,6 +20,14 @@ import {
   toPublicCombinedAuditPage,
 } from "./public-audit";
 import {
+  PublicExternalRecordBatchBodySchema,
+  type PublicExternalRecordBatchResponse,
+  PublicExternalRecordBatchResponseSchema,
+  PublicExternalRecordBatchResultSchema,
+  type PublicExternalRecordPutBody,
+  PublicExternalRecordPutBodySchema,
+  type PublicExternalRecordPutResponse,
+  PublicExternalRecordPutResponseSchema,
   PublicGridFileSchema,
   PublicGridRecordSchema,
   PublicRecordChangeFeedPageSchema,
@@ -52,41 +60,6 @@ const RecordImportResponseSchema = z.object({
   items: z.array(PublicGridRecordSchema),
 });
 
-const externalIdentityPart = (max: number) =>
-  z
-    .string()
-    .min(1)
-    .max(max)
-    .refine((value) => value.trim() === value, "Must not start or end with whitespace")
-    .refine((value) => !value.includes("\0"), "Must not contain NUL");
-
-const ExternalRecordIdentitySchema = z
-  .object({
-    provider: externalIdentityPart(100),
-    providerAccount: externalIdentityPart(200),
-    resourceKind: externalIdentityPart(100),
-    externalId: externalIdentityPart(500),
-  })
-  .strict();
-const ExternalRecordPutBodySchema = z
-  .object({
-    externalRef: ExternalRecordIdentitySchema,
-    values: RecordPayloadSchema,
-    ifVersion: z.number().int().positive().optional(),
-    audit: RecordUpdateBodySchema.shape.audit,
-  })
-  .strict();
-const ExternalRecordPutResponseSchema = z
-  .object({
-    recordId: ShortIdSchema,
-    tableId: ShortIdSchema,
-    version: z.number().int().positive(),
-    created: z.boolean(),
-    changed: z.boolean(),
-    replayed: z.boolean(),
-  })
-  .strict();
-
 const RecordChangeFeedQuerySchema = z
   .object({
     tableId: ShortIdSchema.optional(),
@@ -100,6 +73,60 @@ const RecordCommentPermissionsSchema = z.object({
   canWrite: z.boolean(),
   canModerate: z.boolean(),
 });
+
+const putPublicExternalRecord = async (input: {
+  tableId: string;
+  tableShortId: string;
+  operationKey: string;
+  body: PublicExternalRecordPutBody;
+  actorId: string | null;
+  dateConfig: Awaited<ReturnType<typeof getDateConfig>>;
+  viewer: ReturnType<typeof currentActorViewer>;
+}): Promise<Result<PublicExternalRecordPutResponse>> => {
+  const operationScope = gridsService.record.external.restExternalRecordOperationScope(input.body.externalRef);
+  const requestHash = gridsService.record.external.externalRecordRequestHash({ tableId: input.tableShortId, ...input.body });
+  const replay = await gridsService.record.external.replay({ operationScope, operationKey: input.operationKey, requestHash });
+  if (!replay.ok) return replay;
+  if (replay.data) {
+    return ok(
+      PublicExternalRecordPutResponseSchema.parse({
+        recordId: replay.data.recordShortId,
+        tableId: input.tableShortId,
+        version: replay.data.version,
+        created: replay.data.created,
+        changed: replay.data.changed,
+        replayed: true,
+      }),
+    );
+  }
+  const values = await fromPublicRecordValues(input.tableId, input.body.values);
+  if (!values.ok) return values;
+  const result = await gridsService.record.external.put({
+    tableId: input.tableId,
+    identity: input.body.externalRef,
+    operationScope,
+    operationKey: input.operationKey,
+    requestHash,
+    values: values.data,
+    ifVersion: input.body.ifVersion,
+    audit: input.body.audit,
+    actorId: input.actorId,
+    dateConfig: input.dateConfig,
+    viewer: input.viewer,
+    recordAccess: ALL_RECORD_ACCESS,
+  });
+  if (!result.ok) return result;
+  return ok(
+    PublicExternalRecordPutResponseSchema.parse({
+      recordId: result.data.recordShortId,
+      tableId: input.tableShortId,
+      version: result.data.version,
+      created: result.data.created,
+      changed: result.data.changed,
+      replayed: result.data.replayed,
+    }),
+  );
+};
 const RecordCommentPageSchema = z.object({
   items: z.array(PublicRecordCommentSchema),
   nextCursor: z.string().nullable(),
@@ -804,15 +831,15 @@ export const recordsRoutes = new Hono<AuthContext>()
         },
       ],
       responses: {
-        200: jsonResponse(ExternalRecordPutResponseSchema, "Existing external Record resolved or updated"),
-        201: jsonResponse(ExternalRecordPutResponseSchema, "External Record created"),
+        200: jsonResponse(PublicExternalRecordPutResponseSchema, "Existing external Record resolved or updated"),
+        201: jsonResponse(PublicExternalRecordPutResponseSchema, "External Record created"),
         400: jsonResponse(ErrorResponseSchema, "Invalid input or idempotency key"),
         403: jsonResponse(ErrorResponseSchema, "Forbidden"),
         404: jsonResponse(ErrorResponseSchema, "Not found"),
         409: jsonResponse(ErrorResponseSchema, "Identity, version, or idempotency conflict"),
       },
     }),
-    v("json", ExternalRecordPutBodySchema),
+    v("json", PublicExternalRecordPutBodySchema),
     async (c) => {
       const tableId = internalIdParam(c, "tableId")!;
       const table = await gridsService.table.get(tableId);
@@ -824,49 +851,72 @@ export const recordsRoutes = new Hono<AuthContext>()
         return c.json({ message: "Idempotency-Key must contain between 1 and 200 characters" }, 400);
       }
       const body = c.req.valid("json");
-      const operationScope = gridsService.record.external.restExternalRecordOperationScope(body.externalRef);
-      const requestHash = gridsService.record.external.externalRecordRequestHash({ tableId: table.shortId, ...body });
-      const replay = await gridsService.record.external.replay({ operationScope, operationKey, requestHash });
-      if (!replay.ok) return c.json({ message: replay.error.message }, replay.error.status);
-      if (replay.data) {
-        return c.json(
-          ExternalRecordPutResponseSchema.parse({
-            recordId: replay.data.recordShortId,
-            tableId: table.shortId,
-            version: replay.data.version,
-            created: replay.data.created,
-            changed: replay.data.changed,
-            replayed: true,
-          }),
-          200,
-        );
-      }
-      const values = await fromPublicRecordValues(tableId, body.values);
-      if (!values.ok) return c.json({ message: values.error.message }, values.error.status);
-      const result = await gridsService.record.external.put({
+      const result = await putPublicExternalRecord({
         tableId,
-        identity: body.externalRef,
-        operationScope,
+        tableShortId: table.shortId,
         operationKey,
-        requestHash,
-        values: values.data,
-        ifVersion: body.ifVersion,
-        audit: body.audit,
+        body,
         actorId: currentActorUserId(c),
         dateConfig: await getDateConfig(c),
         viewer: currentActorViewer(c),
-        recordAccess: ALL_RECORD_ACCESS,
       });
       if (!result.ok) return c.json({ message: result.error.message }, result.error.status);
-      const response = ExternalRecordPutResponseSchema.parse({
-        recordId: result.data.recordShortId,
-        tableId: table.shortId,
-        version: result.data.version,
-        created: result.data.created,
-        changed: result.data.changed,
-        replayed: result.data.replayed,
-      });
-      return c.json(response, result.data.created && !result.data.replayed ? 201 : 200);
+      return c.json(result.data, result.data.created && !result.data.replayed ? 201 : 200);
+    },
+  )
+
+  .post(
+    "/by-table/:tableId/external/batch",
+    requirePublicIdParam("tableId", "table", "Table"),
+    describeRoute({
+      tags: ["Grids:Record"],
+      summary: "Independently upsert a bounded batch of externally identified Records",
+      description:
+        "Processes at most 100 items in order through the single external Record upsert contract. " +
+        "Each item commits independently and is safe to retry with its own idempotencyKey.",
+      responses: {
+        200: jsonResponse(PublicExternalRecordBatchResponseSchema, "Ordered per-item outcomes"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid batch input"),
+        403: jsonResponse(ErrorResponseSchema, "Forbidden before any item is attempted"),
+        404: jsonResponse(ErrorResponseSchema, "Table not found"),
+        500: jsonResponse(ErrorResponseSchema, "Unexpected processing failure; retry the batch safely"),
+      },
+    }),
+    v("json", PublicExternalRecordBatchBodySchema),
+    async (c) => {
+      const tableId = internalIdParam(c, "tableId")!;
+      const table = await gridsService.table.get(tableId);
+      if (!table) return c.json({ message: "Table not found" }, 404);
+      const gate = await gateAt(c, { baseId: table.baseId }, "write");
+      if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+
+      const actorId = currentActorUserId(c);
+      const dateConfig = await getDateConfig(c);
+      const viewer = currentActorViewer(c);
+      const outcomes: PublicExternalRecordBatchResponse["items"] = [];
+      const batch = c.req.valid("json");
+      for (const [index, item] of batch.items.entries()) {
+        if (c.req.raw.signal.aborted) {
+          return c.json(PublicExternalRecordBatchResponseSchema.parse({ items: outcomes, complete: false }));
+        }
+        const { idempotencyKey, ...body } = item;
+        const result = await putPublicExternalRecord({
+          tableId,
+          tableShortId: table.shortId,
+          operationKey: idempotencyKey,
+          body,
+          actorId,
+          dateConfig,
+          viewer,
+        });
+        if (!result.ok) {
+          if (result.error.status === 500) return c.json({ message: "External Record batch processing failed; retry the batch." }, 500);
+          outcomes.push(PublicExternalRecordBatchResultSchema.parse({ index, ok: false, error: result.error }));
+          continue;
+        }
+        outcomes.push({ index, ok: true, ...result.data });
+      }
+      return c.json(PublicExternalRecordBatchResponseSchema.parse({ items: outcomes, complete: true }));
     },
   )
 
