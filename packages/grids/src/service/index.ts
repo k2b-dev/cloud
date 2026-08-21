@@ -29,9 +29,10 @@ import {
   resolveEffectivePermission,
 } from "./permission-resolver";
 import * as preservationHolds from "./preservation-holds";
+import * as recordChangeFeed from "./record-change-feed";
 import * as recordComments from "./record-comments";
-import * as recordExternalIdentity from "./record-external-identity";
 import { listDeadRecordEventDeliveryFailures } from "./record-event-delivery-failures";
+import * as recordExternalIdentity from "./record-external-identity";
 import * as recordFinalization from "./record-finalization";
 import * as recordHistory from "./record-history";
 import * as records from "./records";
@@ -145,6 +146,7 @@ export const gridsService = {
     create: records.create,
     createMany: records.createMany,
     external: recordExternalIdentity,
+    changes: recordChangeFeed,
     eventOutboxStats: records.recordEventOutboxStats,
     redriveEventOutbox: records.redriveRecordEventOutbox,
     update: records.update,

@@ -396,6 +396,28 @@ export type PublicTable = z.infer<typeof PublicTableSchema>;
 export type PublicField = z.infer<typeof PublicFieldSchema>;
 export type PublicView = z.infer<typeof PublicViewSchema>;
 export type PublicGridRecord = z.infer<typeof PublicGridRecordSchema>;
+
+export const PublicRecordChangeFeedItemSchema = z
+  .object({
+    baseId: ShortIdSchema,
+    tableId: ShortIdSchema,
+    recordId: ShortIdSchema,
+    type: z.enum(["record.created", "record.updated", "record.deleted", "record.restored", "record.finalized"]),
+    version: z.number().int().positive(),
+    deletedAt: z.string().datetime({ offset: true }).nullable(),
+    occurredAt: z.string().datetime({ offset: true }),
+  })
+  .strict();
+export const PublicRecordChangeFeedPageSchema = z
+  .object({
+    items: z.array(PublicRecordChangeFeedItemSchema),
+    cursor: z.string().max(2_000).nullable(),
+    hasMore: z.boolean(),
+    retentionDays: z.literal(30),
+  })
+  .strict();
+export type PublicRecordChangeFeedItem = z.infer<typeof PublicRecordChangeFeedItemSchema>;
+export type PublicRecordChangeFeedPage = z.infer<typeof PublicRecordChangeFeedPageSchema>;
 export type PublicGridFile = z.infer<typeof PublicGridFileSchema>;
 export type PublicRecordComment = z.infer<typeof PublicRecordCommentSchema>;
 export type PublicForm = z.infer<typeof PublicFormSchema>;

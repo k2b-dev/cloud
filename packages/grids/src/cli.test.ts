@@ -401,7 +401,7 @@ describe("grids CLI", () => {
     const commands = commandGroups.flat();
     const paths = commands.map((item) => item.path.join(" "));
 
-    expect(commands).toHaveLength(175);
+    expect(commands).toHaveLength(176);
     expect(new Set(paths).size).toBe(paths.length);
 
     for (const path of paths) {
@@ -1282,6 +1282,70 @@ describe("grids CLI", () => {
     expect(calls[2]?.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[2]?.init?.body))).toEqual({ [fieldId]: "Octavia Butler" });
     expect(lines).toEqual([`Created record ${recordId}.`]);
+  });
+
+  test("resumes bounded Record changes through public ids", async () => {
+    const first = {
+      items: [
+        {
+          baseId,
+          tableId,
+          recordId,
+          type: "record.created",
+          version: 1,
+          deletedAt: null,
+          occurredAt: "2026-08-21T10:00:00.000Z",
+        },
+        {
+          baseId,
+          tableId,
+          recordId,
+          type: "record.updated",
+          version: 2,
+          deletedAt: null,
+          occurredAt: "2026-08-21T10:01:00.000Z",
+        },
+      ],
+      cursor: "cursor-1",
+      hasMore: true,
+      retentionDays: 30,
+    };
+    const second = {
+      items: [
+        {
+          baseId,
+          tableId,
+          recordId,
+          type: "record.deleted",
+          version: 3,
+          deletedAt: "2026-08-21T10:02:00.000Z",
+          occurredAt: "2026-08-21T10:02:00.000Z",
+        },
+      ],
+      cursor: "cursor-2",
+      hasMore: false,
+      retentionDays: 30,
+    };
+    const changes = createContext(
+      ["records", "changes", baseId],
+      { table: "Authors", limit: "2", all: true, "max-events": "3" },
+      [jsonResponse(basePage), jsonResponse([table]), jsonResponse(first), jsonResponse(second)],
+      { output: "json" },
+    );
+
+    await gridsCli.run(changes.ctx);
+
+    expect(changes.calls.map((call) => call.path)).toEqual([
+      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
+      `/api/grids/tables/by-base/${baseId}`,
+      `/api/grids/records/by-base/${baseId}/changes?tableId=${tableId}&limit=2`,
+      `/api/grids/records/by-base/${baseId}/changes?tableId=${tableId}&cursor=cursor-1&limit=1`,
+    ]);
+    expect(changes.jsonValues).toEqual([{ ...second, items: [...first.items, ...second.items] }]);
+
+    const invalid = createContext(["records", "changes", baseId], { "max-events": "1" });
+    await expect(gridsCli.run(invalid.ctx)).rejects.toThrow("--max-events requires --all.");
+    expect(invalid.calls).toEqual([]);
   });
 
   test("upserts externally identified records with retry and version headers", async () => {

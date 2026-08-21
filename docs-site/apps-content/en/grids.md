@@ -166,6 +166,15 @@ Record updates patch only the named fields. Integrations can pass the current po
 
 For repeated connector projections, use `cld grids records upsert-external`. The provider, provider account, resource kind, and external ID form a case-sensitive durable binding to one Record; they do not replace its public Grids ID or become editable fields. Reuse one `--idempotency-key` after an uncertain response. Creating the binding needs no version, while a later update needs the current `--if-version`; a different request under the same key or a stale version conflicts without another write. The response is an immutable receipt containing the public Record ID and the version produced by that request; read the Record separately when current values are needed. Retry receipts are retained for 30 days, while the external identity binding remains durable.
 
+To resume a connector after a short interruption, first scan the current
+Records it owns, then save the opaque cursor returned by `cld grids records
+changes`. The feed reports committed Record identities, event types, versions,
+and deletion times for the last 30 days; it does not return field values or
+replace a current Record read. Every page rechecks Base Read access, and an
+optional `--table` narrows the feed without creating a separate permission
+boundary. If a cursor has expired, perform a new full scan instead of guessing
+which changes were missed. Use `--all --max-events N` for a bounded catch-up.
+
 Run `cld grids help` for bases, schema, records, views, forms, Custom Apps,
 documents, templates, and workflows. Run `cld grids <area> <command> --help`
 before changing schema, data, access, or automation.

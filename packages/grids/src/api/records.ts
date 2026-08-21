@@ -22,6 +22,7 @@ import {
 import {
   PublicGridFileSchema,
   PublicGridRecordSchema,
+  PublicRecordChangeFeedPageSchema,
   PublicRecordCommentSchema,
   toPublicComment,
   toPublicComments,
@@ -86,6 +87,13 @@ const ExternalRecordPutResponseSchema = z
   })
   .strict();
 
+const RecordChangeFeedQuerySchema = z
+  .object({
+    tableId: ShortIdSchema.optional(),
+    cursor: z.string().max(2_000).optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
+  })
+  .strict();
 const RecordCommentBodySchema = z.object({ body: z.string().max(10_000) }).strict();
 const RecordCommentPermissionsSchema = z.object({
   actorUserId: z.string().uuid().nullable(),
@@ -141,6 +149,48 @@ export const recordsRoutes = new Hono<AuthContext>()
   // Record listing is served by the unified table query endpoint so
   // list, search, filter, sort, group, and aggregate reads share one
   // backend contract.
+
+  .get(
+    "/by-base/:baseId/changes",
+    requirePublicIdParam("baseId", "base", "Base"),
+    describeRoute({
+      tags: ["Grids:Record"],
+      summary: "Resume bounded Record changes for a Base",
+      description:
+        "Returns committed Record change receipts for the last 30 days. Save the returned cursor and reread current Records separately.",
+      responses: {
+        200: jsonResponse(PublicRecordChangeFeedPageSchema, "Record change page"),
+        400: jsonResponse(ErrorResponseSchema, "Invalid cursor or Table"),
+        403: jsonResponse(ErrorResponseSchema, "Forbidden"),
+        404: jsonResponse(ErrorResponseSchema, "Base or Table not found"),
+        409: jsonResponse(ErrorResponseSchema, "Cursor expired; full rescan required"),
+      },
+    }),
+    v("query", RecordChangeFeedQuerySchema),
+    async (c) => {
+      const baseId = internalIdParam(c, "baseId")!;
+      const base = await gridsService.base.get(baseId);
+      if (!base) return c.json({ message: "Base not found" }, 404);
+      const gate = await gateAt(c, { baseId }, "read");
+      if (!gate.ok) return respond(c, () => Promise.resolve(gate));
+
+      const query = c.req.valid("query");
+      let tableId: string | null = null;
+      if (query.tableId) {
+        tableId = await resolvePublicId("table", query.tableId);
+        if (!tableId) return c.json({ message: "Table not found" }, 404);
+        const table = await gridsService.table.get(tableId);
+        if (!table || table.baseId !== baseId || table.kind !== "stored") return c.json({ message: "Table not found" }, 404);
+      }
+
+      const result = await gridsService.record.changes.listRecordChanges({
+        scope: { baseId, tableId },
+        cursor: query.cursor,
+        limit: query.limit,
+      });
+      return result.ok ? c.json(PublicRecordChangeFeedPageSchema.parse(result.data)) : respond(c, () => Promise.resolve(result));
+    },
+  )
 
   .post(
     "/:tableId/finalization/preview",

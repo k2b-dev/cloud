@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
 import { dropFieldUniqueIndex, ensureFieldUniqueIndex } from "../service/field-indexes";
+import { encodeRecordChangeFeedCursor } from "../service/record-change-feed";
 import { deleteExpiredExternalRecordOperations } from "../service/record-external-identity";
 import basesRoutes from "./bases";
 import fieldsRoutes from "./fields";
@@ -247,6 +248,7 @@ const cleanupFixture = async (fixture: Fixture) => {
 };
 
 beforeAll(async () => {
+  process.env.APP_SECRET ??= "grids-core-resource-routes-integration-secret";
   if (process.env.GRIDS_DB_TEST === "1") await migrate();
 });
 
@@ -592,6 +594,170 @@ describe("classic resource route contracts", () => {
   );
 
   postgresTest(
+    "pages a permission-aware public-ID Record change feed",
+    async () => {
+      const fixture = newFixture();
+      let primaryError: unknown;
+      let primaryFailed = false;
+      try {
+        await setupFixture(fixture);
+        const feedPath = `/records/by-base/${fixture.basePublicId}/changes`;
+        expect((await app.request(feedPath)).status).toBe(401);
+        expect((await app.request(`/records/by-base/${fixture.foreignBasePublicId}/changes`, bearer(fixture.tokens.read))).status).toBe(
+          403,
+        );
+        expect(
+          (await app.request(`${feedPath}?tableId=${encodeURIComponent(fixture.foreignTablePublicId)}`, bearer(fixture.tokens.read)))
+            .status,
+        ).toBe(404);
+        expect((await app.request(`${feedPath}?cursor=invalid`, bearer(fixture.tokens.read))).status).toBe(400);
+
+        const expiredCursor = encodeRecordChangeFeedCursor(
+          { baseId: fixture.baseId, tableId: null },
+          { occurredAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1_000).toISOString(), eventId: testUuid() },
+          process.env.APP_SECRET!,
+        );
+        expect((await app.request(`${feedPath}?cursor=${encodeURIComponent(expiredCursor)}`, bearer(fixture.tokens.read))).status).toBe(
+          409,
+        );
+
+        const created = await app.request(
+          `/records/by-table/${fixture.tablePublicId}`,
+          jsonRequest(fixture.tokens.write, { [fixture.uniqueFieldPublicId]: "FEED-1" }),
+        );
+        expect(created.status).toBe(201);
+        const createdRecord = (await created.json()) as { id: string; version: number };
+        const updated = await app.request(`/records/${fixture.tablePublicId}/${createdRecord.id}`, {
+          method: "PATCH",
+          headers: {
+            authorization: `Bearer ${fixture.tokens.write}`,
+            "content-type": "application/json",
+            "if-match": "1",
+          },
+          body: JSON.stringify({ values: { [fixture.uniqueFieldPublicId]: "FEED-2" } }),
+        });
+        expect(updated.status).toBe(200);
+        const trashed = await app.request(
+          `/records/${fixture.tablePublicId}/${createdRecord.id}/trash`,
+          jsonRequest(fixture.tokens.write, {}),
+        );
+        expect(trashed.status).toBe(204);
+
+        const otherTableId = testUuid();
+        const otherTablePublicId = testShortId("C");
+        const otherRecordId = testUuid();
+        const otherRecordPublicId = testShortId("R");
+        await sql`
+          INSERT INTO grids.tables (id, short_id, base_id, name)
+          VALUES (${otherTableId}::uuid, ${otherTablePublicId}, ${fixture.baseId}::uuid, 'Other changes')
+        `;
+        await sql`
+          INSERT INTO grids.records (id, short_id, table_id)
+          VALUES (${otherRecordId}::uuid, ${otherRecordPublicId}, ${otherTableId}::uuid)
+        `;
+        const [otherEvent] = await sql<Array<{ id: string }>>`
+          SELECT grids.enqueue_record_event(
+            ${otherTableId}::uuid,
+            ${otherRecordId}::uuid,
+            ${JSON.stringify({
+              v: 1,
+              type: "record.created",
+              version: 1,
+              changedFieldIds: [],
+              actorId: null,
+            })}::jsonb
+          )::text AS id
+        `;
+        await sql`
+          INSERT INTO grids.record_event_snapshots (
+            id, base_id, table_id, record_id, event_type, record_version, data, deleted_at
+          ) VALUES (
+            ${otherEvent!.id}::uuid, ${fixture.baseId}::uuid, ${otherTableId}::uuid, ${otherRecordId}::uuid,
+            'record.created', 1, '{}'::jsonb, NULL
+          )
+        `;
+
+        const events = await sql<Array<{ id: string }>>`
+          SELECT id::text FROM grids.record_event_outbox WHERE base_id = ${fixture.baseId}::uuid ORDER BY created_at, id
+        `;
+        for (const [index, event] of events.entries()) {
+          await sql`
+            UPDATE grids.record_event_outbox
+            SET created_at = ${new Date(Date.now() - (events.length - index) * 1_000).toISOString()}::timestamptz
+            WHERE id = ${event.id}::uuid
+          `;
+        }
+
+        const first = await app.request(`${feedPath}?limit=1`, bearer(fixture.tokens.read));
+        expect(first.status).toBe(200);
+        const firstPage = (await first.json()) as {
+          items: Array<{ baseId: string; tableId: string; recordId: string; type: string; version: number }>;
+          cursor: string;
+          hasMore: boolean;
+          retentionDays: number;
+        };
+        expect(firstPage).toMatchObject({
+          items: [
+            {
+              baseId: fixture.basePublicId,
+              tableId: fixture.tablePublicId,
+              recordId: createdRecord.id,
+              type: "record.created",
+              version: 1,
+            },
+          ],
+          hasMore: true,
+          retentionDays: 30,
+        });
+        const second = await app.request(
+          `${feedPath}?limit=100&cursor=${encodeURIComponent(firstPage.cursor)}`,
+          bearer(fixture.tokens.read),
+        );
+        expect(second.status).toBe(200);
+        const secondPage = (await second.json()) as typeof firstPage;
+        expect(secondPage.items.map((item) => item.type)).toEqual(["record.updated", "record.deleted", "record.created"]);
+        expect(new Set([...firstPage.items, ...secondPage.items].map((item) => `${item.tableId}:${item.recordId}:${item.type}`)).size).toBe(
+          4,
+        );
+        const serialized = JSON.stringify([firstPage, secondPage]);
+        for (const internalId of [fixture.baseId, fixture.tableId, otherTableId, otherRecordId])
+          expect(serialized).not.toContain(internalId);
+
+        const tablePage = await app.request(`${feedPath}?tableId=${fixture.tablePublicId}&limit=100`, bearer(fixture.tokens.read));
+        expect(tablePage.status).toBe(200);
+        expect(((await tablePage.json()) as typeof firstPage).items.map((item) => item.type)).toEqual([
+          "record.created",
+          "record.updated",
+          "record.deleted",
+        ]);
+
+        const empty = await app.request(`${feedPath}?cursor=${encodeURIComponent(secondPage.cursor)}`, bearer(fixture.tokens.read));
+        expect(await empty.json()).toMatchObject({ items: [], cursor: secondPage.cursor, hasMore: false });
+
+        await sql`
+          DELETE FROM grids.base_access
+          WHERE base_id = ${fixture.baseId}::uuid AND access_id = ${fixture.accessIds[0]}::uuid
+        `;
+        expect((await app.request(`${feedPath}?cursor=${encodeURIComponent(secondPage.cursor)}`, bearer(fixture.tokens.read))).status).toBe(
+          403,
+        );
+      } catch (error) {
+        primaryError = error;
+        primaryFailed = true;
+        throw error;
+      } finally {
+        try {
+          await cleanupFixture(fixture);
+        } catch (cleanupError) {
+          if (primaryFailed) throw new AggregateError([primaryError, cleanupError], "Record change feed test and cleanup failed");
+          throw cleanupError;
+        }
+      }
+    },
+    20_000,
+  );
+
+  postgresTest(
     "atomically binds external identities and replays conditional Record upserts",
     async () => {
       const fixture = newFixture();
@@ -630,7 +796,10 @@ describe("classic resource route contracts", () => {
         expect(await sideEffectCounts(fixture.baseId)).toEqual(beforeDenied);
         for (const part of ["provider", "providerAccount", "resourceKind", "externalId"] as const) {
           const invalidRef = { ...externalRef, [part]: `${externalRef[part]}\0x` };
-          expect((await request(fixture.tokens.write, `nul-${part}`, { [fixture.uniqueFieldPublicId]: "EXT-NUL" }, undefined, invalidRef)).status).toBe(400);
+          expect(
+            (await request(fixture.tokens.write, `nul-${part}`, { [fixture.uniqueFieldPublicId]: "EXT-NUL" }, undefined, invalidRef))
+              .status,
+          ).toBe(400);
         }
         expect(await count("records", "table_id", fixture.tableId)).toBe(0);
         expect(await sideEffectCounts(fixture.baseId)).toEqual(beforeDenied);
@@ -682,12 +851,7 @@ describe("classic resource route contracts", () => {
         expect(missingVersion.status).toBe(409);
         expect(await sideEffectCounts(fixture.baseId)).toEqual(afterCreate);
 
-        const updated = await request(
-          fixture.tokens.write,
-          "update-003ABC-v2",
-          { [fixture.uniqueFieldPublicId]: "EXT-2" },
-          1,
-        );
+        const updated = await request(fixture.tokens.write, "update-003ABC-v2", { [fixture.uniqueFieldPublicId]: "EXT-2" }, 1);
         expect(updated.status).toBe(200);
         expect(await updated.json()).toMatchObject({
           created: false,
@@ -699,30 +863,15 @@ describe("classic resource route contracts", () => {
         const afterUpdate = await sideEffectCounts(fixture.baseId);
         expect(afterUpdate).toEqual({ audit: afterCreate.audit + 1, outbox: afterCreate.outbox + 1 });
 
-        const replayedUpdate = await request(
-          fixture.tokens.write,
-          "update-003ABC-v2",
-          { [fixture.uniqueFieldPublicId]: "EXT-2" },
-          1,
-        );
+        const replayedUpdate = await request(fixture.tokens.write, "update-003ABC-v2", { [fixture.uniqueFieldPublicId]: "EXT-2" }, 1);
         expect(replayedUpdate.status).toBe(200);
         expect(await replayedUpdate.json()).toMatchObject({ changed: true, replayed: true, version: 2 });
         const oldCreateReplay = await request(fixture.tokens.write, "create-003ABC", { [fixture.uniqueFieldPublicId]: "EXT-1" });
         expect(await oldCreateReplay.json()).toMatchObject({ created: true, changed: true, replayed: true, version: 1 });
-        const noop = await request(
-          fixture.tokens.write,
-          "noop-003ABC-v2",
-          { [fixture.uniqueFieldPublicId]: "EXT-2" },
-          2,
-        );
+        const noop = await request(fixture.tokens.write, "noop-003ABC-v2", { [fixture.uniqueFieldPublicId]: "EXT-2" }, 2);
         expect(noop.status).toBe(200);
         expect(await noop.json()).toMatchObject({ created: false, changed: false, replayed: false, version: 2 });
-        const stale = await request(
-          fixture.tokens.write,
-          "stale-003ABC-v1",
-          { [fixture.uniqueFieldPublicId]: "EXT-3" },
-          1,
-        );
+        const stale = await request(fixture.tokens.write, "stale-003ABC-v1", { [fixture.uniqueFieldPublicId]: "EXT-3" }, 1);
         expect(stale.status).toBe(409);
         expect(await sideEffectCounts(fixture.baseId)).toEqual(afterUpdate);
 

@@ -343,6 +343,20 @@ describe("grids schema migration", () => {
           "idx_grids_record_external_operations_created",
           "uq_grids_record_external_operations_scope_key",
         ]);
+        const changeFeedIndexes = await database<Array<{ name: string }>>`
+          SELECT indexname AS name
+          FROM pg_indexes
+          WHERE schemaname = 'grids'
+            AND indexname IN (
+              'idx_grids_record_event_outbox_feed_base',
+              'idx_grids_record_event_outbox_feed_table'
+            )
+          ORDER BY indexname
+        `;
+        expect(changeFeedIndexes.map((item) => item.name)).toEqual([
+          "idx_grids_record_event_outbox_feed_base",
+          "idx_grids_record_event_outbox_feed_table",
+        ]);
         const [cast] = await database<Array<{ value: number | string }>>`SELECT grids.canonical_numeric('12.5') AS value`;
         expect(String(cast?.value)).toBe("12.5");
         const [invalidFormulaCoercion] = await database<Array<{ value: number | null }>>`
@@ -439,11 +453,13 @@ describe("grids schema migration", () => {
         await database`INSERT INTO grids.records (id, short_id, table_id) VALUES (${recordId}::uuid, ${shortId("r")}, ${tableB}::uuid)`;
         let mismatchRejected = false;
         try {
-          await database.begin((transaction) => transaction`
+          await database.begin(
+            (transaction) => transaction`
             INSERT INTO grids.record_external_bindings (
               provider, provider_account, resource_kind, external_id, table_id, record_id
             ) VALUES ('test', 'main', 'row', 'mismatch', ${tableA}::uuid, ${recordId}::uuid)
-          `);
+          `,
+          );
         } catch {
           mismatchRejected = true;
         }

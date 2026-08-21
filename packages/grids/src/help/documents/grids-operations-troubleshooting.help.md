@@ -35,6 +35,8 @@ For API or CLI integrations, patch only the fields the integration owns. Send th
 
 For a connector that repeatedly projects the same external object, use the external Record upsert instead of searching a visible field and then creating. Its provider, provider account, resource kind, and external ID form one case-sensitive binding; the Record keeps its separate public Grids ID. Reuse the same idempotency key only for an uncertain retry of the same request. A later projection uses a new key and the current Record version. Reusing a key with different input, omitting the version for an existing binding, or sending a stale version returns a conflict without creating a duplicate. The result is an immutable receipt with the public Record ID and the version produced by that request; read the Record separately for current values. Retry receipts expire after 30 days, but the identity binding does not.
 
+For a resumable integration, keep the latest opaque cursor from `cld grids records changes`. The feed contains public Base, Table, and Record IDs plus the committed event type and Record version, not a field-value snapshot. Reread each current Record before projecting it. Base Read access is checked on every page; `--table` only narrows that Base feed. Cursors cover the last 30 days. If a cursor expires, make a fresh full Record scan and start from the new feed position. Bound automated catch-up with `--all --max-events N`.
+
 ## A view or Grids App result is wrong {icon="layout"}
 
 Open the source query and verify it before changing presentation:

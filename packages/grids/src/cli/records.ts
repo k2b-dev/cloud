@@ -1,7 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { arg, command, confirmFlag, flag } from "@valentinkolb/cloud/cli";
-import type { PublicGridRecord as GridRecord, PublicTableQueryResult as TableQueryResult } from "../api/public-dto";
+import type {
+  PublicGridRecord as GridRecord,
+  PublicRecordChangeFeedItem,
+  PublicRecordChangeFeedPage,
+  PublicTableQueryResult as TableQueryResult,
+} from "../api/public-dto";
 import type { PublicRecordFinalizationReadiness, PublicRecordFinalizationRequest } from "../api/record-finalization";
 import {
   type CombinedAuditResponse,
@@ -20,12 +25,14 @@ import {
   snapshotRows,
 } from "./records-support";
 import {
+  baseArgs,
   baseFlag,
   listFields,
   requirePublicId,
   resolveBaseFromCommand,
   resolveField,
   resolveTable,
+  resolveTableFromFlags,
   tableArgs,
   tableFlag,
 } from "./resources";
@@ -140,6 +147,73 @@ export const composeRecordExportBody = (suppliedBody: Record<string, unknown>, f
 };
 
 export const recordCommands = [
+  command("records changes", {
+    summary: "Resume recent Record changes in a Base",
+    description:
+      "Returns public Record identities and versions from the last 30 days. Save the cursor and read current Record values separately.",
+    args: baseArgs,
+    flags: {
+      ...baseFlag,
+      ...tableFlag,
+      cursor: flag.string({ description: "Resume cursor from the previous page" }),
+      limit: flag.int({ min: 1, max: 100, description: "Events in one page (default: 50)" }),
+      all: flag.boolean({ description: "Follow cursors until the feed ends or --max-events is reached" }),
+      maxEvents: flag.int({ name: "max-events", min: 1, max: 10_000, description: "Safety cap for --all (default: 10000)" }),
+    },
+    examples: [
+      "cld grids records changes Operations --limit 100 --json",
+      "cld grids records changes --base Operations --table Requests --cursor <cursor> --all --max-events 1000 --jsonl",
+    ],
+    async run({ ctx, args, flags }) {
+      if (flags.maxEvents !== undefined && !flags.all) throw new Error("--max-events requires --all.");
+      const { base } = await resolveBaseFromCommand(ctx, args.args, 0);
+      const table = await resolveTableFromFlags(ctx, base, flags.table);
+      const pageSize = flags.limit ?? 50;
+      const readPage = (cursor: string | undefined, limit: number) =>
+        readApi<PublicRecordChangeFeedPage>(
+          ctx,
+          `/records/by-base/${encodeURIComponent(base.id)}/changes${queryString({
+            tableId: table?.id,
+            cursor,
+            limit,
+          })}`,
+        );
+
+      const maxEvents = flags.all ? (flags.maxEvents ?? 10_000) : pageSize;
+      let payload = await readPage(flags.cursor, Math.min(pageSize, maxEvents));
+      if (flags.all) {
+        const items = [...payload.items];
+        while (payload.hasMore && items.length < maxEvents) {
+          if (!payload.cursor) throw new Error("Record change feed returned more events without a resume cursor.");
+          const previousCursor = payload.cursor;
+          payload = await readPage(previousCursor, Math.min(pageSize, maxEvents - items.length));
+          if (payload.cursor === previousCursor && payload.hasMore) {
+            throw new Error("Record change feed did not advance its resume cursor.");
+          }
+          items.push(...payload.items);
+        }
+        payload = { ...payload, items };
+      }
+
+      const rows = payload.items.map((item: PublicRecordChangeFeedItem) => ({
+        occurredAt: item.occurredAt,
+        type: item.type,
+        tableId: item.tableId,
+        recordId: item.recordId,
+        version: item.version,
+        deletedAt: item.deletedAt ?? "",
+      }));
+      printJsonOrTable(ctx, payload, rows, [
+        { key: "occurredAt", label: "OCCURRED" },
+        { key: "type", label: "TYPE" },
+        { key: "tableId", label: "TABLE" },
+        { key: "recordId", label: "RECORD" },
+        { key: "version", label: "VERSION" },
+        { key: "deletedAt", label: "DELETED" },
+      ]);
+      if (ctx.options.output === "text" && payload.cursor) ctx.print(`resume cursor: ${payload.cursor}`);
+    },
+  }),
   command("records shape", {
     summary: "Show the JSON payload shape for records in a table",
     description:

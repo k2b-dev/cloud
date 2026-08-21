@@ -2105,6 +2105,14 @@ const migrateFormsAndEvents = async (sql: SQL): Promise<void> => {
     ON grids.record_event_outbox(dead_at)
     WHERE status = 'dead'
   `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_feed_base
+    ON grids.record_event_outbox(base_id, created_at, id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_record_event_outbox_feed_table
+    ON grids.record_event_outbox(base_id, table_id, created_at, id)
+  `.simple();
 
   await sql`
     CREATE TABLE IF NOT EXISTS grids.record_event_snapshots (
