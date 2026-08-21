@@ -13,7 +13,9 @@ export const compileRelationJoin = (
   join: DslResolvedRelationJoin,
   index: number,
   joinAliases: Map<string, string>,
-  options: Pick<DslSqlCompileOptions, "joinFanoutLimit" | "recordSource" | "recordSourcesByTableId"> = {},
+  options: Pick<DslSqlCompileOptions, "joinFanoutLimit" | "recordSource" | "recordSourcesByTableId"> & {
+    correlateTarget?: boolean;
+  } = {},
 ): { ok: true; fragment: unknown; recordAlias: string } | { ok: false; error: string } => {
   const fromAlias = join.fromScope ? joinAliases.get(join.fromScope) : "r";
   if (!fromAlias) return { ok: false, error: `join "${join.alias}" depends on unknown join alias "${join.fromScope}"` };
@@ -83,6 +85,36 @@ export const compileRelationJoin = (
       };
     }
   }
+
+  if (options.correlateTarget && fanoutLimit && join.direction === "forward" && !targetSource) {
+    const targetRows = sql`
+      SELECT target_record.*
+      FROM grids.record_links target_link
+      JOIN grids.records target_record
+        ON target_record.id = target_link.to_record_id
+       AND target_record.table_id = ${join.tableId}::uuid
+       AND target_record.deleted_at IS NULL
+      WHERE target_link.from_record_id = ${sql.unsafe(fromAlias)}.id
+        AND target_link.from_field_id = ${join.relationFieldId}::uuid
+        AND EXISTS (
+          SELECT 1
+          FROM grids.tables target_table
+          JOIN grids.bases target_base
+            ON target_base.id = target_table.base_id
+           AND target_base.deleted_at IS NULL
+          WHERE target_table.id = target_record.table_id
+            AND target_table.deleted_at IS NULL
+        )
+      ORDER BY target_link.to_record_id
+      LIMIT ${fanoutLimit}
+    `;
+    return {
+      ok: true,
+      recordAlias,
+      fragment: sql`${joinSql} LATERAL (${targetRows}) ${sql.unsafe(recordAlias)} ON TRUE`,
+    };
+  }
+
   const linkSourceColumn = join.direction === "reverse" ? "from_record_id" : "to_record_id";
   const linkMatchColumn = join.direction === "reverse" ? "to_record_id" : "from_record_id";
   const linkJoin = fanoutLimit

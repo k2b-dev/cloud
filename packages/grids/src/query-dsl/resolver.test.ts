@@ -1906,6 +1906,89 @@ sort missing desc`),
     expect(values).toContain(50);
   });
 
+  test("SQL compiler keeps bounded single-cardinality joins behind the base row order", () => {
+    const singleFields = fields.map((candidate) =>
+      candidate.id === customerLinkFieldId ? { ...candidate, config: { ...candidate.config, cardinality: "single" as const } } : candidate,
+    );
+    const context = ctx({ fieldsByTableId: { ...ctx().fieldsByTableId, [orders.id]: singleFields } });
+    const resolved = resolveDslQueryToQueryPlan(
+      parseOk(`
+        join table Custs as customer on customer_link = customer.id
+        select amount, customer.name as customer_name
+        where amount > 0
+        sort amount asc
+        limit 50
+      `),
+      context,
+    );
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+
+    const compiled = compileDslQueryPlanToSql(resolved.plan, {
+      fieldsByTableId: context.fieldsByTableId,
+      joinFanoutLimit: 50,
+    });
+
+    expect(compiled.ok).toBe(true);
+    if (!compiled.ok) return;
+    const text = normalizedSql(compiled.query.sql);
+    expect(text).toContain("JOIN LATERAL");
+    expect(text).toContain("SELECT target_record.*");
+    expect(text).toContain("FROM grids.record_links target_link");
+    expect(text).toContain("JOIN grids.records target_record");
+    expect(text).toContain("ORDER BY grids.canonical_numeric(r.data->>");
+    expect(text).toContain("ASC NULLS LAST, r.id ASC NULLS LAST");
+    expect(text).not.toContain("jq0.id ASC NULLS LAST");
+    expect(normalizedSqlParts(compiled.query.sql).values).toContain(1);
+  });
+
+  test("SQL compiler keeps joined predicates and sorting on the unrestricted planner path", () => {
+    const singleFields = fields.map((candidate) =>
+      candidate.id === customerLinkFieldId ? { ...candidate, config: { ...candidate.config, cardinality: "single" as const } } : candidate,
+    );
+    const context = ctx({ fieldsByTableId: { ...ctx().fieldsByTableId, [orders.id]: singleFields } });
+    const resolved = resolveDslQueryToQueryPlan(
+      parseOk(`
+        join table Custs as customer on customer_link = customer.id
+        select amount, customer.name as customer_name
+        sort customer.name asc
+        limit 50
+      `),
+      context,
+    );
+    expect(resolved.ok).toBe(true);
+    if (!resolved.ok) return;
+
+    const compiled = compileDslQueryPlanToSql(resolved.plan, {
+      fieldsByTableId: context.fieldsByTableId,
+      joinFanoutLimit: 50,
+    });
+
+    expect(compiled.ok).toBe(true);
+    if (!compiled.ok) return;
+    const text = normalizedSql(compiled.query.sql);
+    expect(text).toContain("FROM grids.record_links _dsl_link");
+    expect(text).toContain("ORDER BY jq0.data->>");
+
+    const filtered = resolveDslQueryToQueryPlan(
+      parseOk(`
+        join table Custs as customer on customer_link = customer.id
+        select amount, customer.name as customer_name
+        where customer.name = 'Alice'
+        limit 50
+      `),
+      context,
+    );
+    expect(filtered.ok).toBe(true);
+    if (!filtered.ok) return;
+    const filteredSql = compileDslQueryPlanToSql(filtered.plan, {
+      fieldsByTableId: context.fieldsByTableId,
+      joinFanoutLimit: 50,
+    });
+    expect(filteredSql.ok).toBe(true);
+    if (filteredSql.ok) expect(normalizedSql(filteredSql.query.sql)).toContain("FROM grids.record_links _dsl_link");
+  });
+
   test("SQL compiler accepts computed alias sorts and preserves mixed sort order in metadata", () => {
     const resolved = resolveDslQueryToQueryPlan(
       parseOk(`

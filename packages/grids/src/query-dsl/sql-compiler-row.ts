@@ -1,11 +1,12 @@
 import { sql } from "bun";
 import type { RecordQuery } from "../contracts";
+import { normalizeRefKey, parseQualifiedIdentifierRef } from "../ref-syntax";
 import { compileFilter, renderClause } from "../service/filter-compiler";
 import type { FormulaSqlExpression } from "../service/formula-sql-compiler";
 import { compileDslKeyset, type DslKeysetColumn } from "../service/keyset-compiler";
 import { compileRecordMetaFilter } from "../service/record-metadata";
 import type { Field } from "../service/types";
-import type { DslOutputColumn, DslResolvedSqlQueryPlan, DslResolvedSqlSort } from "./resolver";
+import type { DslOutputColumn, DslResolvedRelationJoin, DslResolvedSqlQueryPlan, DslResolvedSqlSort } from "./resolver";
 import {
   aliveFields,
   compileBaseFieldColumn,
@@ -47,6 +48,35 @@ const sortsForPlan = (plan: DslResolvedSqlQueryPlan): DslResolvedSqlSort[] =>
       : { kind: "field", fieldId: sort.fieldId, direction: sort.direction, nullsFirst: sort.nullsFirst },
   );
 
+const joinCanFanOut = (join: DslResolvedRelationJoin, fieldsByTableId: Record<string, Field[]>): boolean => {
+  if (join.direction === "reverse") return true;
+  const relationField = fieldsByTableId[join.fromTableId]?.find((field) => field.id === join.relationFieldId);
+  return (relationField?.config as { cardinality?: unknown } | undefined)?.cardinality !== "single";
+};
+
+const valueUsesJoinAlias = (value: unknown, aliases: ReadonlySet<string>): boolean => {
+  if (Array.isArray(value)) return value.some((item) => valueUsesJoinAlias(item, aliases));
+  if (!value || typeof value !== "object") return false;
+  const node = value as Record<string, unknown>;
+  if (node.kind === "field" && typeof node.fieldId === "string") {
+    const scope = parseQualifiedIdentifierRef(node.fieldId)?.scope;
+    if (scope && aliases.has(normalizeRefKey(scope))) return true;
+  }
+  return Object.values(node).some((item) => valueUsesJoinAlias(item, aliases));
+};
+
+const canCorrelateBoundedSingleJoins = (
+  plan: DslResolvedSqlQueryPlan,
+  fieldsByTableId: Record<string, Field[]>,
+  joinFanoutLimit: number | undefined,
+): boolean => {
+  const joins = plan.joins ?? [];
+  if (!joinFanoutLimit || joins.length === 0 || joins.some((join) => joinCanFanOut(join, fieldsByTableId))) return false;
+  const aliases = new Set(joins.map((join) => normalizeRefKey(join.alias)));
+  if ((plan.sqlSearch?.length ?? 0) > 0 || valueUsesJoinAlias(plan.wherePredicate, aliases)) return false;
+  return !(plan.sqlSort ?? []).some((sort) => sort.kind === "joined" || sort.kind === "joinedField" || sort.kind === "computed");
+};
+
 const outputColumnsForPlan = (plan: DslResolvedSqlQueryPlan, baseFields: Field[]): DslOutputColumn[] => {
   if (plan.outputColumns && plan.outputColumns.length > 0) return plan.outputColumns;
   const baseColumns: NonNullable<RecordQuery["columns"]> = plan.query.columns?.length
@@ -87,6 +117,7 @@ const compileSqlSort = (
     computedFieldSqlByJoinAlias?: Map<string, Map<string, FormulaSqlExpression>>;
     cursorValues?: unknown[];
     recordSource?: DslSqlCompileOptions["recordSource"];
+    joins?: DslResolvedRelationJoin[];
   },
 ): { ok: true; keyset: ReturnType<typeof compileDslKeyset> & { ok: true } } | { ok: false; error: string } => {
   const fieldsById = new Map(fields.map((field) => [field.id, field]));
@@ -165,7 +196,10 @@ const compileSqlSort = (
 
   const tieDirection = sorts[0]?.direction ?? "asc";
   cursorColumns.push({ expression: sql`r.id`, type: "uuid", direction: tieDirection });
-  for (const recordAlias of options.joinAliases.values()) {
+  for (const join of options.joins ?? []) {
+    if (!joinCanFanOut(join, options.fieldsByTableId)) continue;
+    const recordAlias = options.joinAliases.get(join.alias);
+    if (!recordAlias) continue;
     cursorColumns.push({ expression: sql`${sql.unsafe(recordAlias)}.id`, type: "uuid", direction: tieDirection, nullsFirst: false });
   }
   const keyset = compileDslKeyset(cursorColumns, options.cursorValues);
@@ -188,11 +222,13 @@ export const compileDslQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, options:
 
   const joinAliases = new Map<string, string>();
   const joinSql: unknown[] = [];
+  const correlateBoundedSingleJoins = canCorrelateBoundedSingleJoins(plan, options.fieldsByTableId, options.joinFanoutLimit);
   for (const [index, join] of (plan.joins ?? []).entries()) {
     const compiled = compileRelationJoin(join, index, joinAliases, {
-      joinFanoutLimit: options.joinFanoutLimit,
+      joinFanoutLimit: correlateBoundedSingleJoins ? 1 : options.joinFanoutLimit,
       recordSource: options.recordSource,
       recordSourcesByTableId: options.recordSourcesByTableId,
+      correlateTarget: correlateBoundedSingleJoins,
     });
     if (!compiled.ok) return fail(compiled.error);
     joinAliases.set(join.alias, compiled.recordAlias);
@@ -287,6 +323,7 @@ export const compileDslQueryPlanToSql = (plan: DslResolvedSqlQueryPlan, options:
     computedFieldSqlByJoinAlias: options.computedFieldSqlByJoinAlias,
     cursorValues: options.cursorValues,
     recordSource: options.recordSource,
+    joins: plan.joins,
   });
   if (!sort.ok) return fail(`sort: ${sort.error}`);
   selectFragments.push(sort.keyset.select);
