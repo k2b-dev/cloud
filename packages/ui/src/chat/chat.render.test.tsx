@@ -567,6 +567,14 @@ describe("@k2b/ui portable chat family", () => {
     expect(css).not.toContain(".k2b-ui .k2b-chat-composer textarea:focus-visible");
   });
 
+  test("uses the standard 14px chat body size for composer input", () => {
+    const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
+    const textareaRule = css.match(/\.k2b-ui \.k2b-chat-composer__input textarea \{([^}]+)\}/)?.[1] ?? "";
+
+    expect(textareaRule).toContain("font-size: 0.875rem");
+    expect(textareaRule).not.toContain("font-size: 0.8125rem");
+  });
+
   test("renders the minimal shared streaming indicator", () => {
     const css = readFileSync(resolve(import.meta.dir, "../styles/index.css"), "utf8");
     const dotsRule = css.match(/\.k2b-ui \.k2b-chat-progress-dots > span \{([^}]+)\}/)?.[1] ?? "";
