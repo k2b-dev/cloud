@@ -263,6 +263,15 @@ describe("contacts capabilities", () => {
       { rel: "open", href: `/app/contacts/${publicBookId}?contact=${publicContactId}&contactBook=${publicBookId}` },
     ]);
     expect(result.data.summary).toBe("Read contact “Ada Example”.");
+    expect(result.data.refs).toEqual([
+      {
+        type: "contacts.contact",
+        id: publicContactId,
+        title: "Ada Example",
+        preview: "ada@example.test",
+        icon: "ti ti-address-book",
+      },
+    ]);
   });
 
   test("rejects ambiguous or empty contact writes", () => {

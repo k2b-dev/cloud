@@ -76,6 +76,36 @@ const bookApprovalScope = (bookId: string): string => `book:${bookId}`;
 const contactApprovalScope = (contactId: string): string => `contact:${contactId}`;
 const FAVORITES_APPROVAL_SCOPE = "favorites";
 
+const contactRef = (contact: Contact) => {
+  const preview = contact.emails[0]?.email ?? contact.phones[0]?.phone;
+  return {
+    type: "contacts.contact" as const,
+    id: contact.id,
+    title: resolveContactName(contact),
+    ...(preview ? { preview } : {}),
+    icon: "ti ti-address-book",
+  };
+};
+const bookRef = (book: Pick<ContactBook, "id" | "name" | "description">) => ({
+  type: "contacts.book" as const,
+  id: book.id,
+  title: book.name,
+  ...(book.description ? { preview: book.description } : {}),
+  icon: "ti ti-book",
+});
+const tagRef = (tag: Pick<ContactTag, "id" | "name">) => ({
+  type: "contacts.tag" as const,
+  id: tag.id,
+  title: tag.name,
+  icon: "ti ti-tag",
+});
+const noteRef = (note: Pick<ContactNote, "id">, contactName: string) => ({
+  type: "contacts.note" as const,
+  id: note.id,
+  title: `Note on ${contactName}`,
+  icon: "ti ti-note",
+});
+
 const mapTag = (tag: ContactTag) => ({
   id: tag.id,
   bookId: tag.bookId,
@@ -546,11 +576,7 @@ const runContactSuggest = async (input: z.infer<typeof ContactSuggestInputSchema
     },
   });
   const contacts = await projectContacts(page.items);
-  return pageResult(
-    page,
-    contacts.map(mapContactSuggestion),
-    contacts.map((contact) => ({ type: "contacts.contact", id: contact.id })),
-  );
+  return pageResult(page, contacts.map(mapContactSuggestion), contacts.map(contactRef));
 };
 
 const runContactResolve = async (input: z.infer<typeof ContactResolveInputSchema>, context: CapabilityExecutionContext) => {
@@ -581,7 +607,13 @@ const runContactResolve = async (input: z.infer<typeof ContactResolveInputSchema
   };
   return ok({
     data,
-    refs: data.items.map((contact) => ({ type: "contacts.contact", id: contact.contactId })),
+    refs: data.items.map((contact) => ({
+      type: "contacts.contact",
+      id: contact.contactId,
+      title: contact.displayName,
+      preview: contact.bookName,
+      icon: "ti ti-address-book",
+    })),
     page: capabilityPage(nextCursor),
   });
 };
@@ -618,7 +650,7 @@ const runContactRead = async (input: z.infer<typeof ContactReadInputSchema>, con
   return ok({
     data: mapContactDetail(contact),
     summary: boundedCapabilitySummary(`Read contact “${resolveContactName(contact)}”.`),
-    refs: [{ type: "contacts.contact", id: contact.id }],
+    refs: [contactRef(contact)],
     links: [{ rel: "open" as const, href: contactHref(contact) }],
   });
 };
@@ -639,7 +671,7 @@ const runBookRead = async (input: z.infer<typeof ContactBookReadInputSchema>, co
       updatedAt: book.updatedAt,
     },
     summary: boundedCapabilitySummary(`Read address book “${book.name}”.`),
-    refs: [{ type: "contacts.book", id: book.id }],
+    refs: [bookRef(book)],
     links: [{ rel: "open" as const, href: `/app/contacts/${book.id}` }],
   });
 };
@@ -657,7 +689,7 @@ const runTagRead = async (input: z.infer<typeof ContactTagReadInputSchema>, cont
   return ok({
     data,
     summary: boundedCapabilitySummary(`Read contact tag “${publicTag.name}”.`),
-    refs: [{ type: "contacts.tag", id: publicTag.id }],
+    refs: [tagRef(publicTag)],
     links: data.links,
   });
 };
@@ -679,10 +711,7 @@ const runNoteRead = async (input: z.infer<typeof ContactNoteReadInputSchema>, co
   return ok({
     data: mapNote(publicNote),
     summary: boundedCapabilitySummary(`Read a contact note on “${resolveContactName(publicContact)}”.`),
-    refs: [
-      { type: "contacts.note", id: publicNote.id },
-      { type: "contacts.contact", id: publicNote.contactId },
-    ],
+    refs: [noteRef(publicNote, resolveContactName(publicContact)), contactRef(publicContact)],
     links: [{ rel: "open" as const, href: contactHref(publicContact) }],
   });
 };
@@ -717,7 +746,7 @@ const runBookList = async (input: z.infer<typeof ContactBookListInputSchema>, co
         createdAt: book.createdAt,
         updatedAt: book.updatedAt,
       })),
-      books.map((book) => ({ type: "contacts.book", id: book.id })),
+      books.map(bookRef),
     );
   }
   const page = await contactsService.book.listPage({
@@ -739,7 +768,7 @@ const runBookList = async (input: z.infer<typeof ContactBookListInputSchema>, co
       createdAt: book.createdAt,
       updatedAt: book.updatedAt,
     })),
-    books.map((book) => ({ type: "contacts.book", id: book.id })),
+    books.map(bookRef),
   );
 };
 
@@ -753,7 +782,7 @@ const runTagList = async (input: z.infer<typeof ContactTagListInputSchema>, cont
   return pageResult(
     page,
     tags.map((tag) => withRef("contacts.tag", mapTag(tag))),
-    tags.map((tag) => ({ type: "contacts.tag", id: tag.id })),
+    tags.map(tagRef),
   );
 };
 
@@ -773,7 +802,7 @@ const runNoteList = async (input: z.infer<typeof ContactNoteListInputSchema>, co
   return pageResult(
     page,
     notes.map((note) => withRef("contacts.note", mapNote(note))),
-    notes.map((note) => ({ type: "contacts.note", id: note.id })),
+    notes.map((note) => noteRef(note, resolveContactName(contact))),
     [{ rel: "open" as const, href: contactHref(contact) }],
   );
 };
@@ -834,7 +863,7 @@ const runContactCreate = async (input: z.infer<typeof ContactCreateInputSchema>,
         ? ok({
             data: { contact: mapContactDetail(publicContact) },
             summary: boundedCapabilitySummary(`Created ${resolveContactName(publicContact)} in ${access.data.book.name}.`),
-            refs: [{ type: "contacts.contact", id: publicContact.id }],
+            refs: [contactRef(publicContact)],
             links: [{ rel: "edit", href: contactHref(publicContact) }],
           })
         : fail(err.conflict("The contact created by this idempotency key no longer exists"));
@@ -864,7 +893,7 @@ const runContactUpdate = async (input: z.infer<typeof ContactUpdateInputSchema>,
           summary: boundedCapabilitySummary(
             contactUpdateSummary(resolved.data.contact, result.data, Object.keys(data) as ContactReviewField[]),
           ),
-          refs: [{ type: "contacts.contact", id: contact!.id }],
+          refs: [contactRef(contact!)],
           links: [{ rel: "edit", href: contactHref(contact!) }],
         })
       : result;
@@ -889,7 +918,7 @@ const runContactMove = async (input: z.infer<typeof ContactMoveInputSchema>, con
       ? ok({
           data: { contact: mapContactDetail(contact!) },
           summary: boundedCapabilitySummary(`Moved ${resolveContactName(contact!)} to ${target.data.book.name}.`),
-          refs: [{ type: "contacts.contact", id: contact!.id }],
+          refs: [contactRef(contact!)],
           links: [{ rel: "edit", href: contactHref(contact!) }],
         })
       : result;
@@ -933,7 +962,7 @@ const runFavoriteSet = async (input: z.infer<typeof FavoriteSetInputSchema>, con
       summary: boundedCapabilitySummary(
         `${resolveContactName(resolved.data.contact)} ${input.favorite ? "is in favorites" : "is no longer in favorites"}.`,
       ),
-      refs: [{ type: "contacts.contact", id: input.contactId }],
+      refs: [contactRef(resolved.data.contact)],
       links: [{ rel: "open" as const, href: contactHref((await projectContacts([resolved.data.contact]))[0]!) }],
     });
   });
@@ -965,7 +994,7 @@ const runTagChange = async (input: z.infer<typeof ContactTagChangeInputSchema>, 
           summary: boundedCapabilitySummary(
             contactTagSummary(resolved.data.contact.tags, result.data, resolveContactName(resolved.data.contact)),
           ),
-          refs: [{ type: "contacts.contact", id: input.contactId }],
+          refs: [contactRef(resolved.data.contact)],
           links: [{ rel: "open" as const, href: contactHref(contact!) }],
         })
       : result;
@@ -1001,10 +1030,7 @@ const runNoteCreate = async (input: z.infer<typeof ContactNoteCreateInputSchema>
       return ok({
         data: { note: mapNote(note!) },
         summary: boundedCapabilitySummary(`Added a note to ${resolveContactName(resolved.data.contact)}.`),
-        refs: [
-          { type: "contacts.note", id: note!.id },
-          { type: "contacts.contact", id: input.contactId },
-        ],
+        refs: [noteRef(note!, resolveContactName(resolved.data.contact)), contactRef(resolved.data.contact)],
         links: [{ rel: "open" as const, href: contactHref(contact!) }],
       });
     },
