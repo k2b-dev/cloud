@@ -2,6 +2,7 @@ import * as access from "./access";
 import * as audit from "./audit";
 import * as baseCatalog from "./base-catalog";
 import * as bases from "./bases";
+import * as businessDocuments from "./business-documents";
 import * as combinedAudit from "./combined-audit";
 import * as controlledDestruction from "./controlled-destruction";
 import * as customApps from "./custom-apps";
@@ -84,6 +85,7 @@ export const gridsService = {
       summary: bases.adminSummary,
     },
   },
+  businessDocument: businessDocuments.businessDocumentService,
   table: {
     listByBase: tables.listByBase,
     adminOverview: tableAdminOverview,

@@ -13,6 +13,7 @@ Grids stores structured operational data in bases made of tables, fields, record
 - [Create views and forms](#create-views-and-forms)
 - [Publish a Grids App](#publish-a-grids-app)
 - [Generate documents](#generate-documents)
+- [Immutable Business Documents](#immutable-business-documents)
 - [Verify evidence packages](#verify-evidence-packages)
 - [Manage access](#manage-access)
 - [Build and operate workflows](#build-and-operate-workflows)
@@ -749,6 +750,24 @@ cld grids documents links revoke <link-id> --json
 
 Supported lifetimes are `1d`, `7d`, `30d`, and `90d`; the default is `30d`.
 
+### Immutable Business Documents
+
+Business Documents are profile-owned issuance records, not editable Document Templates. One installed code profile validates a canonical snapshot and produces a readable PDF, structured data, and validation evidence from the same frozen input. The transaction allocates the number and retains the source revision, artifact hashes, profile/renderer/validator versions, actor, time, and correction or replacement chain. Issued metadata and bytes cannot be edited.
+
+```bash
+cld grids business-documents profiles --json
+cld grids business-documents issue Bookshop --body-file native-issue.json --json
+cld grids business-documents issue-from-gql Bookshop --body-file gql-issue.json --json
+cld grids business-documents list Bookshop --json
+cld grids business-documents get <document-id> --json
+cld grids business-documents download <document-id> pdf --out statement.pdf
+cld grids business-documents download <document-id> structured --out statement.json
+```
+
+Use `issue` when a native Cloud application can supply the exact typed `snapshot`, `source`, and `sourceRevision`. Use `issue-from-gql` when Grids should freeze one permission-safe result; the body includes `query`, optional public `currentTableId` or `currentSource`, and a stable `observedAt`. GQL issuance is limited to one complete result of at most 100 rows. Both forms require `profileId`, `profileVersion`, and an `idempotencyKey`. Keep the complete request stable for an uncertain retry. Changed input under the same key fails with a conflict.
+
+Original documents omit `predecessorId`; corrections and replacements require the earlier six-character Business Document ID. Base Write is required to issue, and Base Read is required to list, inspect, or download. UUIDs are not public resource references. Profile validation establishes only the technical checks named by that profile/version; it does not establish general tax, accounting, legal, signature, or custody compliance. Native snapshot JSON and one GQL result are each bounded to 5 MiB; one profile may emit 2–8 artifacts totaling at most 100 MiB. Base-scoped evidence exports include these documents and exact artifacts; table-scoped exports do not guess a table for Base-level native sources.
+
 ## Verify evidence packages
 
 `evidence verify` checks a downloaded Grids evidence TAR locally. It does not
@@ -1143,6 +1162,7 @@ document-templates reference|list|get|create|update|delete
 document-templates preview-data|preview-pdf|preview-draft-data|preview-draft-pdf
 documents list|browse|by-record|generate|update|download
 documents links list|create|revoke
+business-documents profiles|list|issue|issue-from-gql|get|download
 evidence verify
 email-templates reference|list|get|create|update|delete
 workflows reference|list|get|create|update|history|restore|delete|validate|autocomplete|invoke

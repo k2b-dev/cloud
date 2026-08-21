@@ -11,6 +11,16 @@ Each template belongs to one table and defines one document family. A generated 
 
 Use a document template when output must be formatted for people, printed, shared by an expiring link, or redownloaded later. Use CSV or JSON export when you only need data for another system.
 
+## Ordinary Documents and Business Documents {icon="shield-check"}
+
+Ordinary Documents are record-bound PDFs made from editable GQL, Liquid, and CSS templates. They remain the right choice for normal letters, labels, reports, and other user-designed output.
+
+A **Business Document** is a different issuance path for document families where the readable PDF and structured data must come from one frozen, typed snapshot. Its profile is code-owned and versioned. One atomic issuance stores the source revision, number, correction or replacement link, validation result, renderer and validator versions, and the exact artifact bytes and hashes. Issued rows and bytes cannot be edited; issue a linked correction or replacement instead.
+
+Business Documents accept either a native application snapshot or one bounded, permission-safe GQL result. Both require Base Write access and a stable idempotency key. Retrying the same request returns the original result; reusing the key for different input fails. Snapshot JSON and one GQL result are each limited to 5 MiB; GQL issuance also accepts at most 100 rows and requires a stable `observedAt` timestamp for retry-safe source evidence. A profile may produce 2–8 artifacts totaling at most 100 MiB.
+
+A successful profile validation proves only the technical checks named by that profile and version. It is not a general tax, accounting, signature, custody, or legal-compliance decision. Use `cld grids business-documents profiles --json` to see which profiles this installation actually provides.
+
 ## From record to PDF {icon="table"}
 
 The template separates data selection from page layout. **GQL** loads the rows and columns the document may use. **Liquid HTML and CSS** turn those values into wording, tables, conditions, loops, images, barcodes, page breaks, headers, and footers. Grids then creates the PDF.

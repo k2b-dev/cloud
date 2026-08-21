@@ -28,6 +28,7 @@ const AUDIT_ACTION_VISIBILITY = {
   "workflow.document_link.created": "record",
   "document.generated": "record",
   "document.metadata.updated": "record",
+  "business_document.issued": "operational",
   "record_snapshot.created": "record",
   "document_link.created": "record",
   "document_link.revoked": "record",

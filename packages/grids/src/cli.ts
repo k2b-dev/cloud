@@ -1,6 +1,7 @@
 import { defineCliCommands } from "@valentinkolb/cloud/cli";
 import { accessCommands } from "./cli/access";
 import { baseCrudCommands } from "./cli/bases";
+import { businessDocumentCommands } from "./cli/business-documents";
 import { customAppCommands } from "./cli/custom-apps";
 import { documentCommands, documentTemplateCommands } from "./cli/documents";
 import { evidenceCommands } from "./cli/evidence";
@@ -20,6 +21,7 @@ export default defineCliCommands({
     bases: "Create, inspect, and manage Grids bases",
     "document-templates": "Create, preview, and manage document templates",
     documents: "Generate, browse, and manage stored documents",
+    "business-documents": "Issue, inspect, and download immutable profiled documents",
     evidence: "Verify downloaded evidence packages",
     "email-templates": "Create and manage workflow email templates",
     fields: "Create, inspect, and manage table fields",
@@ -53,6 +55,7 @@ export default defineCliCommands({
     ...formCommands,
     ...documentTemplateCommands,
     ...documentCommands,
+    ...businessDocumentCommands,
     ...evidenceCommands,
     ...snapshotCommands,
     ...emailTemplateCommands,

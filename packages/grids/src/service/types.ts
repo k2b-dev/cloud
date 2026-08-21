@@ -98,6 +98,7 @@ export type AuditAction =
   | "document_template.created"
   | "document.generated"
   | "document.metadata.updated"
+  | "business_document.issued"
   | "record_snapshot.created"
   | "document_link.created"
   | "document_link.revoked"

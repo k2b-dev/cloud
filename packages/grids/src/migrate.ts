@@ -24,6 +24,7 @@ const PUBLIC_ID_RESOURCES = [
   { table: "email_templates", key: "id", parent: "base_id", index: "idx_grids_email_templates_short_id" },
   { table: "record_snapshots", key: "id", parent: "table_id", index: "idx_grids_record_snapshots_short_id" },
   { table: "document_runs", key: "id", parent: "table_id", index: "idx_grids_document_runs_short_id" },
+  { table: "business_documents", key: "id", parent: "base_id", index: "idx_grids_business_documents_short_id" },
   { table: "document_links", key: "id", parent: "document_run_id", index: "idx_grids_document_links_short_id" },
   { table: "evidence_exports", key: "id", parent: "base_id", index: "idx_grids_evidence_exports_short_id" },
   { table: "preservation_holds", key: "id", parent: "base_id", index: "idx_grids_preservation_holds_short_id" },
@@ -1506,6 +1507,124 @@ const migrateDocumentTemplates = async (sql: SQL): Promise<void> => {
   console.log("  ✓ grids.email_templates");
 };
 
+const migrateBusinessDocuments = async (sql: SQL): Promise<void> => {
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.business_document_counters (
+      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE RESTRICT,
+      profile_id TEXT NOT NULL,
+      profile_version INTEGER NOT NULL CHECK (profile_version > 0),
+      next_value BIGINT NOT NULL DEFAULT 1 CHECK (next_value > 0),
+      PRIMARY KEY (base_id, profile_id, profile_version),
+      CONSTRAINT business_document_counters_profile_id_chk
+        CHECK (profile_id ~ '^[a-z][a-z0-9.-]{2,99}$')
+    )
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.business_documents (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      short_id TEXT NOT NULL,
+      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE RESTRICT,
+      profile_id TEXT NOT NULL,
+      profile_version INTEGER NOT NULL CHECK (profile_version > 0),
+      operation_key_hash TEXT NOT NULL CHECK (operation_key_hash ~ '^[a-f0-9]{64}$'),
+      request_hash TEXT NOT NULL CHECK (request_hash ~ '^[a-f0-9]{64}$'),
+      source JSONB NOT NULL,
+      source_revision JSONB NOT NULL,
+      snapshot JSONB NOT NULL,
+      snapshot_sha256 TEXT NOT NULL CHECK (snapshot_sha256 ~ '^[a-f0-9]{64}$'),
+      document_number TEXT NOT NULL,
+      relationship_kind TEXT NOT NULL DEFAULT 'original'
+        CHECK (relationship_kind IN ('original', 'correction', 'replacement')),
+      predecessor_id UUID REFERENCES grids.business_documents(id) ON DELETE RESTRICT,
+      renderer_version TEXT NOT NULL,
+      validator_version TEXT NOT NULL,
+      validation_status TEXT NOT NULL CHECK (validation_status IN ('valid', 'warning')),
+      validation_report JSONB NOT NULL,
+      issued_actor JSONB NOT NULL,
+      issued_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      issued_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT business_documents_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
+      CONSTRAINT business_documents_profile_id_chk CHECK (profile_id ~ '^[a-z][a-z0-9.-]{2,99}$'),
+      CONSTRAINT business_documents_source_object_chk CHECK (jsonb_typeof(source) = 'object'),
+      CONSTRAINT business_documents_source_revision_object_chk CHECK (jsonb_typeof(source_revision) = 'object'),
+      CONSTRAINT business_documents_snapshot_object_chk CHECK (jsonb_typeof(snapshot) = 'object'),
+      CONSTRAINT business_documents_validation_report_object_chk CHECK (jsonb_typeof(validation_report) = 'object'),
+      CONSTRAINT business_documents_issued_actor_object_chk CHECK (jsonb_typeof(issued_actor) = 'object'),
+      CONSTRAINT business_documents_relationship_chk CHECK (
+        (relationship_kind = 'original' AND predecessor_id IS NULL)
+        OR (relationship_kind IN ('correction', 'replacement') AND predecessor_id IS NOT NULL)
+      ),
+      UNIQUE (base_id, operation_key_hash),
+      UNIQUE (base_id, profile_id, profile_version, document_number)
+    )
+  `.simple();
+  await sql`
+    ALTER TABLE grids.business_documents
+    ADD COLUMN IF NOT EXISTS issued_actor JSONB NOT NULL DEFAULT '{"kind":"system"}'::jsonb
+  `.simple();
+  await sql`
+    ALTER TABLE grids.business_documents
+    DROP CONSTRAINT IF EXISTS business_documents_issued_actor_object_chk
+  `.simple();
+  await sql`
+    ALTER TABLE grids.business_documents
+    ADD CONSTRAINT business_documents_issued_actor_object_chk CHECK (jsonb_typeof(issued_actor) = 'object')
+  `.simple();
+  await sql`
+    ALTER TABLE grids.business_documents
+    ALTER COLUMN issued_actor DROP DEFAULT
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_business_documents_short_id
+    ON grids.business_documents(short_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_business_documents_base_issued
+    ON grids.business_documents(base_id, issued_at DESC, id DESC)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_grids_business_documents_predecessor
+    ON grids.business_documents(predecessor_id) WHERE predecessor_id IS NOT NULL
+  `.simple();
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.business_document_artifacts (
+      document_id UUID NOT NULL REFERENCES grids.business_documents(id) ON DELETE CASCADE,
+      artifact_key TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      media_type TEXT NOT NULL,
+      bytes BYTEA NOT NULL,
+      size_bytes BIGINT NOT NULL CHECK (size_bytes > 0),
+      sha256 TEXT NOT NULL CHECK (sha256 ~ '^[a-f0-9]{64}$'),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (document_id, artifact_key),
+      CONSTRAINT business_document_artifacts_key_chk CHECK (artifact_key ~ '^[a-z][a-z0-9._-]{0,63}$'),
+      CONSTRAINT business_document_artifacts_size_chk CHECK (octet_length(bytes) = size_bytes)
+    )
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.reject_business_document_mutation()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      RAISE EXCEPTION 'issued Business Documents are immutable' USING ERRCODE = '55000';
+    END
+    $$
+  `.simple();
+  await sql`DROP TRIGGER IF EXISTS business_documents_immutable ON grids.business_documents`.simple();
+  await sql`
+    CREATE TRIGGER business_documents_immutable
+    BEFORE UPDATE ON grids.business_documents
+    FOR EACH ROW EXECUTE FUNCTION grids.reject_business_document_mutation()
+  `.simple();
+  await sql`DROP TRIGGER IF EXISTS business_document_artifacts_immutable ON grids.business_document_artifacts`.simple();
+  await sql`
+    CREATE TRIGGER business_document_artifacts_immutable
+    BEFORE UPDATE ON grids.business_document_artifacts
+    FOR EACH ROW EXECUTE FUNCTION grids.reject_business_document_mutation()
+  `.simple();
+  console.log("  ✓ grids.business_documents");
+};
+
 const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
   await sql`
     CREATE TABLE IF NOT EXISTS grids.record_snapshots (
@@ -2794,6 +2913,7 @@ export const migrate = async (sql: SQL = defaultSql): Promise<void> => {
     await migrateViews(connection);
     await migrateDocumentTemplates(connection);
     await migrateDocumentArtifacts(connection);
+    await migrateBusinessDocuments(connection);
     await migrateNumberSeries(connection);
     await migrateRecordFinalization(connection);
     await finalizeDocumentArtifacts(connection);

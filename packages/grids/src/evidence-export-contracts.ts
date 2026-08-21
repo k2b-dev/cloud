@@ -129,6 +129,7 @@ export const EvidenceExportPreflightSchema = z
         files: z.number().int().nonnegative(),
         fileBytes: z.number().int().nonnegative(),
         documents: z.number().int().nonnegative(),
+        documentEntries: z.number().int().nonnegative(),
         documentBytes: z.number().int().nonnegative(),
         numberSeries: z.number().int().nonnegative(),
         numberSeriesVersions: z.number().int().nonnegative(),

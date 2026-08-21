@@ -172,6 +172,7 @@ export const preflight = async (params: {
       files: number | string;
       file_bytes: number | string;
       documents: number | string;
+      document_entries: number | string;
       document_bytes: number | string;
       number_series: number | string;
       number_series_versions: number | string;
@@ -200,6 +201,12 @@ export const preflight = async (params: {
       WHERE table_id IN (SELECT id FROM selected_tables)
         AND (${params.from}::timestamptz IS NULL OR generated_at >= ${params.from}::timestamptz)
         AND (${params.to}::timestamptz IS NULL OR generated_at <= ${params.to}::timestamptz)
+    ), selected_business_documents AS (
+      SELECT document.id
+      FROM grids.business_documents document
+      WHERE document.base_id = ${params.baseId}::uuid AND ${params.tableId}::uuid IS NULL
+        AND (${params.from}::timestamptz IS NULL OR document.issued_at >= ${params.from}::timestamptz)
+        AND (${params.to}::timestamptz IS NULL OR document.issued_at <= ${params.to}::timestamptz)
     )
     SELECT
       (SELECT count(*) FROM grids.records WHERE table_id IN (SELECT id FROM selected_tables))::int AS records,
@@ -210,8 +217,14 @@ export const preflight = async (params: {
         AND (${params.to}::timestamptz IS NULL OR created_at <= ${params.to}::timestamptz))::int AS audit_events,
       (SELECT count(*) FROM selected_files)::int AS files,
       COALESCE((SELECT sum(file.size_bytes) FROM grids.files file WHERE file.id IN (SELECT file_id FROM selected_files)), 0)::bigint AS file_bytes,
-      (SELECT count(*) FROM selected_documents)::int AS documents,
-      COALESCE((SELECT sum(artifact_size_bytes) FROM selected_documents), 0)::bigint AS document_bytes,
+      ((SELECT count(*) FROM selected_documents) + (SELECT count(*) FROM selected_business_documents))::int AS documents,
+      ((SELECT count(*) * 2 FROM selected_documents)
+        + (SELECT count(*) FROM selected_business_documents)
+        + (SELECT count(*) FROM grids.business_document_artifacts
+          WHERE document_id IN (SELECT id FROM selected_business_documents)))::int AS document_entries,
+      (COALESCE((SELECT sum(artifact_size_bytes) FROM selected_documents), 0)
+        + COALESCE((SELECT sum(size_bytes) FROM grids.business_document_artifacts
+          WHERE document_id IN (SELECT id FROM selected_business_documents)), 0))::bigint AS document_bytes,
       (SELECT count(DISTINCT series.id) FROM grids.number_series series
         LEFT JOIN grids.fields field ON field.id = series.field_id
         LEFT JOIN grids.document_templates template ON template.id = series.document_template_id
@@ -263,6 +276,7 @@ export const preflight = async (params: {
     files: Number(counts?.files ?? 0),
     fileBytes: Number(counts?.file_bytes ?? 0),
     documents: Number(counts?.documents ?? 0),
+    documentEntries: Number(counts?.document_entries ?? 0),
     documentBytes: Number(counts?.document_bytes ?? 0),
     numberSeries: Number(counts?.number_series ?? 0),
     numberSeriesVersions: Number(counts?.number_series_versions ?? 0),
@@ -274,7 +288,7 @@ export const preflight = async (params: {
     (selected.has("revisions") ? known.revisions : 0) +
     (selected.has("audit") ? known.auditEvents : 0) +
     (selected.has("files") ? known.files * 2 : 0) +
-    (selected.has("documents") ? known.documents * 3 : 0) +
+    (selected.has("documents") ? known.documentEntries : 0) +
     (selected.has("numbers") ? known.numberSeries + known.numberSeriesVersions + known.numberAllocations : 0) +
     100;
   const estimatedBytes = (selected.has("files") ? known.fileBytes : 0) + (selected.has("documents") ? known.documentBytes : 0);
@@ -348,7 +362,7 @@ export const create = async (params: {
     (selected.has("revisions") ? preview.known.revisions : 0) +
     (selected.has("audit") ? preview.known.auditEvents : 0) +
     (selected.has("files") ? preview.known.files * 2 : 0) +
-    (selected.has("documents") ? preview.known.documents * 3 : 0) +
+    (selected.has("documents") ? preview.known.documentEntries : 0) +
     (selected.has("numbers") ? preview.known.numberSeries + preview.known.numberSeriesVersions + preview.known.numberAllocations : 0) +
     100;
   const row = await sql.begin((tx) =>
@@ -419,6 +433,8 @@ const loadPublicIds = async (db: SQL, scope: ExportScope): Promise<Map<string, s
     )
     UNION ALL SELECT template.id::text, template.short_id FROM grids.document_templates template WHERE template.table_id IN (SELECT id FROM scoped_tables)
     UNION ALL SELECT run.id::text, run.short_id FROM grids.document_runs run WHERE run.table_id IN (SELECT id FROM scoped_tables)
+    UNION ALL SELECT document.id::text, document.short_id FROM grids.business_documents document
+      WHERE document.base_id = ${scope.baseId}::uuid AND ${scope.tableId}::uuid IS NULL
     UNION ALL SELECT snapshot.id::text, snapshot.short_id FROM grids.record_snapshots snapshot WHERE snapshot.table_id IN (SELECT id FROM scoped_tables)
     UNION ALL SELECT series.id::text, series.short_id FROM grids.number_series series
       LEFT JOIN grids.fields field ON field.id = series.field_id
@@ -658,6 +674,20 @@ type EvidenceDocumentRow = DbRow & {
   artifact_size_bytes: number | string;
 };
 
+type EvidenceBusinessDocumentRow = DbRow & {
+  id: string;
+  public_id: string;
+  predecessor_public_id: string | null;
+};
+
+type EvidenceBusinessDocumentArtifactRow = DbRow & {
+  artifact_key: string;
+  filename: string;
+  media_type: string;
+  bytes: Uint8Array;
+  size_bytes: number | string;
+};
+
 const addFiles = async (ctx: BuildContext): Promise<number> => {
   let cursor: string | null = null;
   let count = 0;
@@ -746,6 +776,53 @@ const addDocuments = async (ctx: BuildContext): Promise<number> => {
         Number(row.artifact_size_bytes),
         assetBytes(ctx.db, row.artifact_file_id, Number(row.artifact_size_bytes)),
       );
+      count += 1;
+    }
+    if (rows.length < PAGE_SIZE) break;
+  }
+
+  if (ctx.scope.tableId) return count;
+  cursor = null;
+  for (;;) {
+    const rows: EvidenceBusinessDocumentRow[] = await ctx.db<EvidenceBusinessDocumentRow[]>`
+      SELECT document.id::text AS id, document.short_id AS public_id, document.profile_id, document.profile_version,
+             document.source, document.source_revision, document.snapshot, document.snapshot_sha256,
+             document.document_number, document.relationship_kind, predecessor.short_id AS predecessor_public_id,
+             document.renderer_version, document.validator_version, document.validation_status,
+             document.validation_report, document.issued_actor, document.issued_by,
+             issuer.display_name AS issued_by_display_name, document.issued_at
+      FROM grids.business_documents document
+      LEFT JOIN grids.business_documents predecessor ON predecessor.id = document.predecessor_id
+      LEFT JOIN auth.users issuer ON issuer.id = document.issued_by
+      WHERE document.base_id = ${ctx.scope.baseId}::uuid
+        AND ${timeRangeSql(ctx.scope, sql`document.issued_at`)}
+        AND (${cursor}::uuid IS NULL OR document.id > ${cursor}::uuid)
+      ORDER BY document.id
+      LIMIT ${PAGE_SIZE}
+    `;
+    for (const row of rows) {
+      if (count >= MAX_SOURCE_ROWS)
+        throw new EvidenceExportBoundError(`Evidence export exceeds the ${MAX_SOURCE_ROWS} Document-row budget.`);
+      cursor = row.id;
+      const artifacts = await ctx.db<EvidenceBusinessDocumentArtifactRow[]>`
+        SELECT artifact_key, filename, media_type, bytes, size_bytes, sha256
+        FROM grids.business_document_artifacts WHERE document_id = ${row.id}::uuid ORDER BY artifact_key
+      `;
+      await addRow(ctx, "business-documents/metadata", row.public_id, {
+        ...withoutPrivateColumns(row),
+        artifacts: artifacts.map(({ bytes: _bytes, ...artifact }) => artifact),
+      });
+      for (const artifact of artifacts) {
+        ctx.processed += 1;
+        await checkBudgetAndCancellation(ctx);
+        const filename = safeArchiveSegment(String(artifact.filename), String(artifact.artifact_key));
+        await ctx.writer.addBytes(
+          `business-documents/${row.public_id}/${filename}`,
+          "documents",
+          String(artifact.media_type),
+          artifact.bytes,
+        );
+      }
       count += 1;
     }
     if (rows.length < PAGE_SIZE) return count;
@@ -868,7 +945,14 @@ const sourceCoverage = (scope: ExportScope, cutAt: Date) =>
           note: "Current attachments at the cut plus files protected by revisions in the requested period.",
         };
       case "documents":
-        return { section, currentAt: null, ...range, note: "Exact stored Document runs generated in the requested period." };
+        return {
+          section,
+          currentAt: null,
+          ...range,
+          note: scope.tableId
+            ? "Exact stored table Document runs generated in the requested period; Base-level Business Documents are outside a table-scoped export."
+            : "Exact stored Document runs and immutable Business Documents issued in the requested period.",
+        };
       case "numbers":
         return {
           section,

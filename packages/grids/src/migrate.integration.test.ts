@@ -309,7 +309,7 @@ describe("grids schema migration", () => {
         `;
         // Durable History, external Record identity, and the evidence lifecycle
         // add explicit owners without replacing the lightweight live rows.
-        expect(row?.tableCount).toBe(51);
+        expect(row?.tableCount).toBe(54);
         const historyTables = await database<Array<{ tableName: string }>>`
           SELECT table_name AS "tableName"
           FROM information_schema.tables
@@ -322,6 +322,28 @@ describe("grids schema migration", () => {
           "record_revisions",
           "table_schema_revisions",
         ]);
+        const businessDocumentTables = await database<Array<{ tableName: string }>>`
+          SELECT table_name AS "tableName"
+          FROM information_schema.tables
+          WHERE table_schema = 'grids'
+            AND table_name IN ('business_document_artifacts', 'business_document_counters', 'business_documents')
+          ORDER BY table_name
+        `;
+        expect(businessDocumentTables.map((item) => item.tableName)).toEqual([
+          "business_document_artifacts",
+          "business_document_counters",
+          "business_documents",
+        ]);
+        const immutableTriggers = await database<Array<{ tableName: string }>>`
+          SELECT event_object_table AS "tableName"
+          FROM information_schema.triggers
+          WHERE trigger_schema = 'grids' AND trigger_name IN (
+            'business_documents_immutable',
+            'business_document_artifacts_immutable'
+          )
+          ORDER BY event_object_table
+        `;
+        expect(immutableTriggers.map((item) => item.tableName)).toEqual(["business_document_artifacts", "business_documents"]);
         const constraints = await database<Array<{ name: string }>>`
           SELECT conname AS name
           FROM pg_constraint

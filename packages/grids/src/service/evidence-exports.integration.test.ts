@@ -42,6 +42,83 @@ beforeAll(async () => {
 });
 
 describe("evidence export integration", () => {
+  postgresTest("includes immutable Business Document metadata and exact artifacts only in Base-scoped document evidence", async () => {
+    const baseId = testUuid();
+    const tableId = testUuid();
+    const documentId = testUuid();
+    const exportId = testUuid();
+    const tableExportId = testUuid();
+    const serviceAccountId = testUuid();
+    const baseShortId = testShortId("B");
+    const tableShortId = testShortId("T");
+    const documentShortId = testShortId("D");
+    const exportShortId = testShortId("E");
+    const tableExportShortId = testShortId("X");
+    const pdf = new TextEncoder().encode("%PDF-1.7\nimmutable statement");
+    const structured = new TextEncoder().encode('{"number":"STAT-0001","total":"119.00"}');
+    const digest = (bytes: Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+    try {
+      await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Business evidence')`;
+      await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${tableShortId}, ${baseId}::uuid, 'Orders')`;
+      await sql`
+        INSERT INTO grids.business_documents (
+          id, short_id, base_id, profile_id, profile_version, operation_key_hash, request_hash,
+          source, source_revision, snapshot, snapshot_sha256, document_number, relationship_kind,
+          renderer_version, validator_version, validation_status, validation_report, issued_actor, issued_at
+        ) VALUES (
+          ${documentId}::uuid, ${documentShortId}, ${baseId}::uuid, 'test.statement', 1, ${"a".repeat(64)}, ${"b".repeat(64)},
+          ${{ appId: "orders", resourceType: "order", resourceId: "42" }}::jsonb,
+          ${{ id: "v7", observedAt: "2026-08-22T10:00:00.000Z", evidence: { version: 7 } }}::jsonb,
+          ${{ number: "STAT-0001", total: "119.00" }}::jsonb, ${"c".repeat(64)}, 'STAT-0001', 'original',
+          'renderer-v1', 'validator-v1', 'valid', ${{ arithmetic: "exact-decimal" }}::jsonb,
+          ${{ kind: "service_account", serviceAccountId, delegatedUserId: null, credentialId: null }}::jsonb,
+          '2026-08-22T10:00:00.000Z'
+        )
+      `;
+      await sql`
+        INSERT INTO grids.business_document_artifacts (document_id, artifact_key, filename, media_type, bytes, size_bytes, sha256) VALUES
+          (${documentId}::uuid, 'pdf', 'statement.pdf', 'application/pdf', ${pdf}, ${pdf.byteLength}, ${digest(pdf)}),
+          (${documentId}::uuid, 'structured', 'statement.json', 'application/json', ${structured}, ${structured.byteLength}, ${digest(structured)})
+      `;
+      const preview = await preflight({ baseId, tableId: null, from: null, to: null, sections: ["documents"] });
+      expect(preview.known).toMatchObject({ documents: 1, documentEntries: 3, documentBytes: pdf.byteLength + structured.byteLength });
+
+      await sql`
+        INSERT INTO grids.evidence_exports (id, short_id, base_id, sections)
+        VALUES (${exportId}::uuid, ${exportShortId}, ${baseId}::uuid, ARRAY['documents'])
+      `;
+      await processExport(exportId);
+      const result = await download(exportShortId);
+      if (!result.ok) throw result.error;
+      const entries = readTar(await collect(result.data.body));
+      expect(entries.get(`business-documents/${documentShortId}/statement.pdf`)).toEqual(pdf);
+      expect(entries.get(`business-documents/${documentShortId}/statement.json`)).toEqual(structured);
+      const metadata = new TextDecoder().decode(entries.get(`business-documents/metadata/${documentShortId}.json`));
+      expect(metadata).toContain('"total": "119.00"');
+      expect(metadata).toContain('"document_number": "STAT-0001"');
+      expect(metadata).toContain('"kind": "service_account"');
+      expect(metadata).toContain('"serviceAccountId": "private:');
+      expect(metadata).not.toContain(documentId);
+      expect(metadata).not.toContain(baseId);
+      expect(metadata).not.toContain(serviceAccountId);
+
+      await sql`
+        INSERT INTO grids.evidence_exports (id, short_id, base_id, table_id, sections)
+        VALUES (${tableExportId}::uuid, ${tableExportShortId}, ${baseId}::uuid, ${tableId}::uuid, ARRAY['documents'])
+      `;
+      await processExport(tableExportId);
+      const tableResult = await download(tableExportShortId);
+      if (!tableResult.ok) throw tableResult.error;
+      const tableEntries = readTar(await collect(tableResult.data.body));
+      expect([...tableEntries.keys()].some((path) => path.startsWith("business-documents/"))).toBe(false);
+    } finally {
+      await sql`DELETE FROM grids.evidence_exports WHERE base_id = ${baseId}::uuid`;
+      await sql`DELETE FROM grids.business_document_artifacts WHERE document_id = ${documentId}::uuid`;
+      await sql`DELETE FROM grids.business_documents WHERE id = ${documentId}::uuid`;
+      await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+    }
+  });
+
   postgresTest("packages the exact bounded evidence cut from every existing owner without private IDs", async () => {
     const actorId = testUuid();
     const baseId = testUuid();
