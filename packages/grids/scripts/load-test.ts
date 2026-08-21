@@ -13,15 +13,18 @@ import {
 } from "../src/service/field-indexes";
 import {
   buildLoadReport,
-  deterministicRecordId,
   LOAD_FIXTURE_MARKER,
+  LOAD_MANIFEST_VERSION,
+  LOAD_SHORT_ID_ALPHABET,
   type LoadHealthSnapshot,
   type LoadManifest,
   LoadManifestSchema,
   type LoadProfile,
+  loadRecordShortId,
   parsePositiveInteger,
   parseProfile,
   renderLoadReport,
+  reserveLoadRecordShortIds,
 } from "./load-test-support";
 
 const BASE_URL = (process.env.GRIDS_LOAD_BASE_URL ?? "http://localhost:3000").replace(/\/$/, "");
@@ -82,7 +85,7 @@ const INDEXED_FIXTURE_FIELDS = ["Asset ID", "Name", "Status", "Quantity", "Repla
 const fieldTrigramIndexName = (fieldId: string): string => `idx_grids_trgm_${fieldId.replaceAll("-", "")}`;
 
 const prepareFixtureIndexes = async (manifest: LoadManifest): Promise<void> => {
-  const fields = await gridsService.field.listByTable(manifest.tables.items);
+  const fields = await gridsService.field.listByTable(manifest.internal.tables.items);
   const selected = INDEXED_FIXTURE_FIELDS.map((name) => fieldByName(fields, name));
   const names = selected.flatMap((field) => [
     fieldPerformanceIndexName(field.id),
@@ -104,7 +107,7 @@ const prepareFixtureIndexes = async (manifest: LoadManifest): Promise<void> => {
       keyColumns.get(fieldPerformanceIndexName(field.id)) === 2 && keyColumns.get(fieldReverseSortIndexName(field.id)) === 2;
     const textIndexCurrent = field.type !== "text" && field.type !== "longtext" ? true : keyColumns.has(fieldTrigramIndexName(field.id));
     if (sortIndexesCurrent && textIndexCurrent) continue;
-    await ensureFieldIndex(field.id, field.type, manifest.tables.items, field.config);
+    await ensureFieldIndex(field.id, field.type, manifest.internal.tables.items, field.config);
   }
   await sql`
     UPDATE grids.fields
@@ -118,16 +121,22 @@ const prepareFixtureIndexes = async (manifest: LoadManifest): Promise<void> => {
 
 const seedRecords = async (manifest: LoadManifest, categoryIds: string[], locationIds: string[]): Promise<void> => {
   const batchSize = parsePositiveInteger(process.env.GRIDS_LOAD_SEED_BATCH, 10_000, "GRIDS_LOAD_SEED_BATCH");
-  const f = manifest.fields;
+  const f = manifest.internal.fields;
   for (let offset = 0; offset < manifest.rows; offset += batchSize) {
     const count = Math.min(batchSize, manifest.rows - offset);
     const first = offset + 1;
     const last = offset + count;
     await sql`
-      INSERT INTO grids.records (id, table_id, data, version)
+      INSERT INTO grids.records (id, short_id, table_id, data, version)
       SELECT
         (${manifest.recordIdPrefix} || '-0000-4000-8000-' || lpad(to_hex(i), 12, '0'))::uuid,
-        ${manifest.tables.items}::uuid,
+        substr(${LOAD_SHORT_ID_ALPHABET}, ((((${manifest.recordShortIdStart}::bigint + i - 1) / 916132832) % 62)::int + 1), 1) ||
+        substr(${LOAD_SHORT_ID_ALPHABET}, ((((${manifest.recordShortIdStart}::bigint + i - 1) / 14776336) % 62)::int + 1), 1) ||
+        substr(${LOAD_SHORT_ID_ALPHABET}, ((((${manifest.recordShortIdStart}::bigint + i - 1) / 238328) % 62)::int + 1), 1) ||
+        substr(${LOAD_SHORT_ID_ALPHABET}, ((((${manifest.recordShortIdStart}::bigint + i - 1) / 3844) % 62)::int + 1), 1) ||
+        substr(${LOAD_SHORT_ID_ALPHABET}, ((((${manifest.recordShortIdStart}::bigint + i - 1) / 62) % 62)::int + 1), 1) ||
+        substr(${LOAD_SHORT_ID_ALPHABET}, ((((${manifest.recordShortIdStart}::bigint + i - 1)) % 62)::int + 1), 1),
+        ${manifest.internal.tables.items}::uuid,
         jsonb_build_object(
           ${f.assetId}::text, 'LOAD-' || lpad(i::text, 7, '0'),
           ${f.name}::text, 'Load item ' || i::text || CASE WHEN i % 100 = 0 THEN ' needle' ELSE '' END,
@@ -263,38 +272,63 @@ const seed = async (): Promise<LoadManifest> => {
     const templates = await gridsService.document.listTemplatesForTable(items.id);
     const enabledTemplate = templates.find((template) => template.enabled);
     const prefix = base.id.slice(0, 8).toLowerCase();
+    const existingRecordShortIds = await sql<Array<{ shortId: string }>>`SELECT short_id AS "shortId" FROM grids.records`;
+    const recordShortIdStart = reserveLoadRecordShortIds(
+      existingRecordShortIds.map((record) => record.shortId),
+      rows,
+    );
     const manifest: LoadManifest = {
-      version: 1,
+      version: LOAD_MANIFEST_VERSION,
       marker: LOAD_FIXTURE_MARKER,
       createdAt,
       baseUrl: BASE_URL,
-      baseId: base.id,
+      baseId: base.shortId,
       baseName: base.name,
       rows,
       recordIdPrefix: prefix,
+      recordShortIdStart,
       serviceAccountId: serviceAccount.id,
       credentialId: credential.credential.id,
       accessId: access.accessId,
       apiToken: credential.token,
       sessionToken: login.sessionToken,
-      tables: { items: items.id, categories: categories.id, locations: locations.id },
+      tables: { items: items.shortId, categories: categories.shortId, locations: locations.shortId },
       fields: {
-        assetId: fieldByName(fields, "Asset ID").id,
-        name: fieldByName(fields, "Name").id,
-        category: fieldByName(fields, "Category").id,
-        location: fieldByName(fields, "Location").id,
-        status: fieldByName(fields, "Status").id,
-        condition: fieldByName(fields, "Condition").id,
-        serialNumber: fieldByName(fields, "Serial number").id,
-        tags: fieldByName(fields, "Tags").id,
-        quantity: fieldByName(fields, "Quantity").id,
-        replacementValue: fieldByName(fields, "Replacement value").id,
-        purchaseDate: fieldByName(fields, "Purchase date").id,
-        notes: fieldByName(fields, "Notes").id,
+        assetId: fieldByName(fields, "Asset ID").shortId,
+        name: fieldByName(fields, "Name").shortId,
+        category: fieldByName(fields, "Category").shortId,
+        location: fieldByName(fields, "Location").shortId,
+        status: fieldByName(fields, "Status").shortId,
+        condition: fieldByName(fields, "Condition").shortId,
+        serialNumber: fieldByName(fields, "Serial number").shortId,
+        tags: fieldByName(fields, "Tags").shortId,
+        quantity: fieldByName(fields, "Quantity").shortId,
+        replacementValue: fieldByName(fields, "Replacement value").shortId,
+        purchaseDate: fieldByName(fields, "Purchase date").shortId,
+        notes: fieldByName(fields, "Notes").shortId,
       },
-      workflowId: workflow.id,
-      documentTemplateId: enabledTemplate?.id,
-      documentRecordId: deterministicRecordId(prefix, 1),
+      workflowId: workflow.shortId,
+      documentTemplateId: enabledTemplate?.shortId,
+      documentRecordId: loadRecordShortId(recordShortIdStart),
+      internal: {
+        baseId: base.id,
+        tables: { items: items.id, categories: categories.id, locations: locations.id },
+        fields: {
+          assetId: fieldByName(fields, "Asset ID").id,
+          name: fieldByName(fields, "Name").id,
+          category: fieldByName(fields, "Category").id,
+          location: fieldByName(fields, "Location").id,
+          status: fieldByName(fields, "Status").id,
+          condition: fieldByName(fields, "Condition").id,
+          serialNumber: fieldByName(fields, "Serial number").id,
+          tags: fieldByName(fields, "Tags").id,
+          quantity: fieldByName(fields, "Quantity").id,
+          replacementValue: fieldByName(fields, "Replacement value").id,
+          purchaseDate: fieldByName(fields, "Purchase date").id,
+          notes: fieldByName(fields, "Notes").id,
+        },
+        workflowId: workflow.id,
+      },
     };
     await seedRecords(manifest, [categoryRecords[0].id], [locationRecords[0].id]);
     await prepareFixtureIndexes(manifest);
@@ -326,7 +360,7 @@ const cleanup = async (allowMissing = false): Promise<void> => {
     if (allowMissing && error instanceof Error && error.message.startsWith("No load fixture")) return;
     throw error;
   }
-  const base = await gridsService.base.get(manifest.baseId, { includeDeleted: true });
+  const base = await gridsService.base.get(manifest.internal.baseId, { includeDeleted: true });
   if (base && !base.description?.startsWith(`${LOAD_FIXTURE_MARKER}:`)) {
     throw new Error(`Refusing to delete base ${base.id}: fixture marker is missing`);
   }
@@ -413,17 +447,17 @@ const captureHealth = async (manifest: LoadManifest): Promise<LoadHealthSnapshot
   >`
     SELECT
       (SELECT count(*)::int FROM workflows.run
-        WHERE app_id = 'grids' AND workflow_id = ${manifest.workflowId}::uuid
+        WHERE app_id = 'grids' AND workflow_id = ${manifest.internal.workflowId}::uuid
           AND state IN ('queued', 'running', 'waiting')) AS workflow_active,
       (SELECT count(*)::int FROM workflows.run
-        WHERE app_id = 'grids' AND workflow_id = ${manifest.workflowId}::uuid
+        WHERE app_id = 'grids' AND workflow_id = ${manifest.internal.workflowId}::uuid
           AND state IN ('failed', 'needs_attention')) AS workflow_failed,
       (SELECT count(*)::int FROM grids.record_event_outbox
-        WHERE base_id = ${manifest.baseId}::uuid AND status = 'pending') AS record_events_pending,
+        WHERE base_id = ${manifest.internal.baseId}::uuid AND status = 'pending') AS record_events_pending,
       (SELECT count(*)::int FROM grids.record_event_outbox
-        WHERE base_id = ${manifest.baseId}::uuid AND status = 'failed') AS record_events_failed,
+        WHERE base_id = ${manifest.internal.baseId}::uuid AND status = 'failed') AS record_events_failed,
       (SELECT count(*)::int FROM grids.record_event_outbox
-        WHERE base_id = ${manifest.baseId}::uuid AND status = 'dead') AS record_events_dead
+        WHERE base_id = ${manifest.internal.baseId}::uuid AND status = 'dead') AS record_events_dead
   `;
   if (!fixture) throw new Error("Could not read fixture health");
   return {

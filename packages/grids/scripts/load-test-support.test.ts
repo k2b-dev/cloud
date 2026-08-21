@@ -5,8 +5,10 @@ import {
   LOAD_FIXTURE_MARKER,
   type LoadHealthSnapshot,
   LoadManifestSchema,
+  loadRecordShortId,
   parsePositiveInteger,
   parseProfile,
+  reserveLoadRecordShortIds,
 } from "./load-test-support";
 
 const health = (overrides: Partial<LoadHealthSnapshot["operational"]> = {}): LoadHealthSnapshot => ({
@@ -43,6 +45,14 @@ describe("load test support", () => {
     expect(() => deterministicRecordId("abcdef12", 0)).toThrow();
   });
 
+  test("reserves a collision-free contiguous public Record ID range", () => {
+    expect(loadRecordShortId(0)).toBe("000000");
+    expect(loadRecordShortId(62)).toBe("000010");
+    expect(loadRecordShortId(62 ** 6 - 1)).toBe("zzzzzz");
+    expect(reserveLoadRecordShortIds(["000000", "000003"], 2)).toBe(1);
+    expect(reserveLoadRecordShortIds(["000000", "000001", "000003"], 2)).toBe(4);
+  });
+
   test("validates profiles and positive integers", () => {
     expect(parseProfile("soak")).toBe("soak");
     expect(() => parseProfile("fast")).toThrow();
@@ -51,7 +61,7 @@ describe("load test support", () => {
   });
 
   test("rejects manifests without the safety marker", () => {
-    const result = LoadManifestSchema.safeParse({ version: 1, marker: "other" });
+    const result = LoadManifestSchema.safeParse({ version: 3, marker: "other" });
     expect(result.success).toBe(false);
     expect(LOAD_FIXTURE_MARKER).toBe("grids-local-load-fixture");
   });

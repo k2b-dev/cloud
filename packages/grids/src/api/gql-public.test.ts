@@ -55,4 +55,22 @@ describe("GQL public ID boundary", () => {
       rows: [{ recordId: "RECD01", tableId: "TABL01", values: { FILD01: ["RECD02"] } }],
     });
   });
+
+  test("preserves relation labels in grouped results", async () => {
+    const response: DslQueryPreviewResponse = {
+      ok: true,
+      mode: "groups",
+      columns: [{ key: "gk_0", label: "Customer", tableId, fieldId, type: "relation", sqlType: "text" }],
+      rows: [{ values: { gk_0: "Cameras" } }],
+      limit: 100,
+    };
+    const projected = await toPublicGqlResponse(response, {
+      projectIds: async (type, internalIds) => {
+        if (type === "record") expect(internalIds).toEqual([]);
+        return new Map(internalIds.map((id) => [id, id === tableId ? "TABL01" : "FILD01"]));
+      },
+    });
+
+    expect(projected).toMatchObject({ rows: [{ values: { gk_0: "Cameras" } }] });
+  });
 });

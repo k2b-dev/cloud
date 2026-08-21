@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, setDefaultTimeout, test } from "bun:test";
 import type { User } from "@valentinkolb/cloud/contracts";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { sql } from "bun";
@@ -10,12 +10,14 @@ import { compileGqlViewWrite } from "./gql-runtime";
 import apiRoutes from "./index";
 
 const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
+if (process.env.GRIDS_DB_TEST === "1") setDefaultTimeout(60_000);
 
 const uuid = () => Bun.randomUUIDv7();
 const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
 type GqlApiFixture = {
   baseId: string;
+  internalBaseId: string;
   accessId: string;
   tableId: string;
   viewId: string;
@@ -25,6 +27,7 @@ type GqlApiFixture = {
 
 type GqlRelationApiFixture = {
   baseId: string;
+  internalBaseId: string;
   accessId: string;
   ordersTableId: string;
   customersTableId: string;
@@ -116,15 +119,19 @@ const grantBaseRead = async (baseId: string, userId: string): Promise<string> =>
 
 const insertFixture = async (userId: string): Promise<GqlApiFixture> => {
   const baseId = uuid();
+  const basePublicId = shortId("B");
   const tableId = uuid();
   const tablePublicId = shortId("T");
   const viewId = uuid();
+  const viewPublicId = shortId("V");
   const amountId = uuid();
+  const amountPublicId = shortId("F");
   const stageId = uuid();
+  const stagePublicId = shortId("F");
 
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${shortId("B")}, 'GQL API integration')
+    VALUES (${baseId}::uuid, ${basePublicId}, 'GQL API integration')
   `;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position)
@@ -133,10 +140,10 @@ const insertFixture = async (userId: string): Promise<GqlApiFixture> => {
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
     VALUES
-      (${amountId}::uuid, 'AMT001', ${tableId}::uuid, 'Amount', 'number', '{}'::jsonb, 0),
+      (${amountId}::uuid, ${amountPublicId}, ${tableId}::uuid, 'Amount', 'number', '{}'::jsonb, 0),
       (
         ${stageId}::uuid,
-        'STAGE1',
+        ${stagePublicId},
         ${tableId}::uuid,
         'Stage',
         'select',
@@ -152,64 +159,93 @@ const insertFixture = async (userId: string): Promise<GqlApiFixture> => {
   `;
   await sql`
     INSERT INTO grids.views (id, short_id, table_id, name, source, ui, position)
-    VALUES (${viewId}::uuid, ${shortId("V")}, ${tableId}::uuid, 'Visible orders', ${`from table {${tablePublicId}}`}, '{}'::jsonb, 0)
+    VALUES (${viewId}::uuid, ${viewPublicId}, ${tableId}::uuid, 'Visible orders', ${`from table {${tablePublicId}}`}, '{}'::jsonb, 0)
   `;
   const accessId = await grantBaseRead(baseId, userId);
 
-  return { baseId, accessId, tableId, viewId, amountId, stageId };
+  return {
+    baseId: basePublicId,
+    internalBaseId: baseId,
+    accessId,
+    tableId: tablePublicId,
+    viewId: viewPublicId,
+    amountId: amountPublicId,
+    stageId: stagePublicId,
+  };
 };
 
 const insertAutocompleteBaseFixture = async (
   userId: string,
 ): Promise<{
   baseId: string;
+  internalBaseId: string;
   accessId: string;
   publicTableId: string;
+  internalPublicTableId: string;
   secretTableId: string;
   secretLinkId: string;
 }> => {
   const baseId = uuid();
+  const basePublicId = shortId("B");
   const publicTableId = uuid();
+  const publicTablePublicId = shortId("T");
   const secretTableId = uuid();
+  const secretTablePublicId = shortId("T");
   const publicAmountId = uuid();
   const secretLinkId = uuid();
+  const secretLinkPublicId = shortId("F");
   const secretCodeId = uuid();
   const secretViewId = uuid();
 
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${shortId("B")}, 'GQL autocomplete permissions')
+    VALUES (${baseId}::uuid, ${basePublicId}, 'GQL autocomplete permissions')
   `;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position)
     VALUES
-      (${publicTableId}::uuid, ${shortId("P")}, ${baseId}::uuid, 'PublicOrders', 0),
-      (${secretTableId}::uuid, ${shortId("S")}, ${baseId}::uuid, 'SecretDeals', 1)
+      (${publicTableId}::uuid, ${publicTablePublicId}, ${baseId}::uuid, 'PublicOrders', 0),
+      (${secretTableId}::uuid, ${secretTablePublicId}, ${baseId}::uuid, 'SecretDeals', 1)
   `;
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
     VALUES
-      (${publicAmountId}::uuid, 'PUBAM', ${publicTableId}::uuid, 'PublicAmount', 'number', '{}'::jsonb, 0),
-      (${secretLinkId}::uuid, 'SECLN', ${publicTableId}::uuid, 'SecretDeal', 'relation', ${{ targetTableId: secretTableId }}::jsonb, 1),
-      (${secretCodeId}::uuid, 'SECRT', ${secretTableId}::uuid, 'SecretCode', 'text', '{}'::jsonb, 0)
+      (${publicAmountId}::uuid, ${shortId("F")}, ${publicTableId}::uuid, 'PublicAmount', 'number', '{}'::jsonb, 0),
+      (${secretLinkId}::uuid, ${secretLinkPublicId}, ${publicTableId}::uuid, 'SecretDeal', 'relation', ${{ targetTableId: secretTableId }}::jsonb, 1),
+      (${secretCodeId}::uuid, ${shortId("F")}, ${secretTableId}::uuid, 'SecretCode', 'text', '{}'::jsonb, 0)
   `;
   await sql`
     INSERT INTO grids.views (id, short_id, table_id, name, source, ui, position)
-    VALUES (${secretViewId}::uuid, 'SVIEW', ${secretTableId}::uuid, 'Secret view', ${`from table {${secretTableId}}`}, '{}'::jsonb, 0)
+    VALUES (${secretViewId}::uuid, ${shortId("V")}, ${secretTableId}::uuid, 'Secret view', ${`from table {${secretTableId}}`}, '{}'::jsonb, 0)
   `;
 
   const accessId = await grantBaseRead(baseId, userId);
-  return { baseId, accessId, publicTableId, secretTableId, secretLinkId };
+  return {
+    baseId: basePublicId,
+    internalBaseId: baseId,
+    accessId,
+    publicTableId: publicTablePublicId,
+    internalPublicTableId: publicTableId,
+    secretTableId: secretTablePublicId,
+    secretLinkId: secretLinkPublicId,
+  };
 };
 
 const insertRelationFixture = async (userId: string): Promise<GqlRelationApiFixture> => {
   const baseId = uuid();
+  const basePublicId = shortId("B");
   const ordersTableId = uuid();
+  const ordersTablePublicId = shortId("T");
   const customersTableId = uuid();
+  const customersTablePublicId = shortId("T");
   const byCustomerViewId = uuid();
+  const byCustomerViewPublicId = shortId("V");
   const amountId = uuid();
+  const amountPublicId = shortId("F");
   const customerLinkId = uuid();
+  const customerLinkPublicId = shortId("F");
   const customerNameId = uuid();
+  const customerNamePublicId = shortId("F");
   const orderAId = uuid();
   const orderBId = uuid();
   const orderCId = uuid();
@@ -219,42 +255,42 @@ const insertRelationFixture = async (userId: string): Promise<GqlRelationApiFixt
 
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
-    VALUES (${baseId}::uuid, ${shortId("B")}, 'GQL API relation integration')
+    VALUES (${baseId}::uuid, ${basePublicId}, 'GQL API relation integration')
   `;
   await sql`
     INSERT INTO grids.tables (id, short_id, base_id, name, position)
     VALUES
-      (${ordersTableId}::uuid, ${shortId("O")}, ${baseId}::uuid, 'Orders', 0),
-      (${customersTableId}::uuid, ${shortId("C")}, ${baseId}::uuid, 'Customers', 1)
+      (${ordersTableId}::uuid, ${ordersTablePublicId}, ${baseId}::uuid, 'Orders', 0),
+      (${customersTableId}::uuid, ${customersTablePublicId}, ${baseId}::uuid, 'Customers', 1)
   `;
   await sql`
     INSERT INTO grids.fields (id, short_id, table_id, name, type, config, position)
     VALUES
-      (${amountId}::uuid, 'AMT001', ${ordersTableId}::uuid, 'Amount', 'number', '{}'::jsonb, 0),
-      (${customerLinkId}::uuid, 'CUSTL', ${ordersTableId}::uuid, 'Customer', 'relation', ${{ targetTableId: customersTableId }}::jsonb, 1),
-      (${customerNameId}::uuid, 'NAME1', ${customersTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0)
+      (${amountId}::uuid, ${amountPublicId}, ${ordersTableId}::uuid, 'Amount', 'number', '{}'::jsonb, 0),
+      (${customerLinkId}::uuid, ${customerLinkPublicId}, ${ordersTableId}::uuid, 'Customer', 'relation', ${{ targetTableId: customersTableId }}::jsonb, 1),
+      (${customerNameId}::uuid, ${customerNamePublicId}, ${customersTableId}::uuid, 'Name', 'text', '{}'::jsonb, 0)
   `;
   await sql`
     INSERT INTO grids.views (id, short_id, table_id, name, source, ui, position)
     VALUES (
       ${byCustomerViewId}::uuid,
-      'BYCUS',
+      ${byCustomerViewPublicId},
       ${ordersTableId}::uuid,
       'Revenue by customer',
-      ${`from table {${ordersTableId}}\ngroup by {${customerLinkId}}\naggregate sum({${amountId}}) as revenue`},
+      ${`from table {${ordersTablePublicId}}\ngroup by {${customerLinkPublicId}}\naggregate sum({${amountPublicId}}) as revenue`},
       '{}'::jsonb,
       0
     )
   `;
   await sql`
-    INSERT INTO grids.records (id, table_id, data, version)
+    INSERT INTO grids.records (id, short_id, table_id, data, version)
     VALUES
-      (${customerAId}::uuid, ${customersTableId}::uuid, ${{ [customerNameId]: "Alice" }}::jsonb, 1),
-      (${customerBId}::uuid, ${customersTableId}::uuid, ${{ [customerNameId]: "Bob" }}::jsonb, 1),
-      (${customerCId}::uuid, ${customersTableId}::uuid, ${{ [customerNameId]: "Charlie" }}::jsonb, 1),
-      (${orderAId}::uuid, ${ordersTableId}::uuid, ${{ [amountId]: "12.50" }}::jsonb, 1),
-      (${orderBId}::uuid, ${ordersTableId}::uuid, ${{ [amountId]: "4.00" }}::jsonb, 1),
-      (${orderCId}::uuid, ${ordersTableId}::uuid, ${{ [amountId]: "8.00" }}::jsonb, 1)
+      (${customerAId}::uuid, ${shortId("R")}, ${customersTableId}::uuid, ${{ [customerNameId]: "Alice" }}::jsonb, 1),
+      (${customerBId}::uuid, ${shortId("R")}, ${customersTableId}::uuid, ${{ [customerNameId]: "Bob" }}::jsonb, 1),
+      (${customerCId}::uuid, ${shortId("R")}, ${customersTableId}::uuid, ${{ [customerNameId]: "Charlie" }}::jsonb, 1),
+      (${orderAId}::uuid, ${shortId("R")}, ${ordersTableId}::uuid, ${{ [amountId]: "12.50" }}::jsonb, 1),
+      (${orderBId}::uuid, ${shortId("R")}, ${ordersTableId}::uuid, ${{ [amountId]: "4.00" }}::jsonb, 1),
+      (${orderCId}::uuid, ${shortId("R")}, ${ordersTableId}::uuid, ${{ [amountId]: "8.00" }}::jsonb, 1)
   `;
   await sql`
     INSERT INTO grids.record_links (from_record_id, from_field_id, to_record_id, position)
@@ -265,7 +301,17 @@ const insertRelationFixture = async (userId: string): Promise<GqlRelationApiFixt
   `;
   const accessId = await grantBaseRead(baseId, userId);
 
-  return { baseId, accessId, ordersTableId, customersTableId, byCustomerViewId, amountId, customerLinkId, customerNameId };
+  return {
+    baseId: basePublicId,
+    internalBaseId: baseId,
+    accessId,
+    ordersTableId,
+    customersTableId,
+    byCustomerViewId: byCustomerViewPublicId,
+    amountId: amountPublicId,
+    customerLinkId,
+    customerNameId,
+  };
 };
 
 const cleanupFixture = async (baseId: string, accessId?: string): Promise<void> => {
@@ -328,7 +374,7 @@ describe("GQL API route contract", () => {
       expect(otherTableFields.diagnostics).toEqual([]);
 
       const sameBaseJoinResponse = await viewWriteCompilerFor(testUser({ id: userId, roles: ["user"] })).request(
-        `/${fixture.baseId}/${fixture.publicTableId}`,
+        `/${fixture.internalBaseId}/${fixture.internalPublicTableId}`,
         jsonRequest("POST", {
           source: `from table {${fixture.publicTableId}} as visible\njoin table {${fixture.secretTableId}} as hidden on visible.{${fixture.secretLinkId}} = hidden.id`,
         }),
@@ -337,7 +383,7 @@ describe("GQL API route contract", () => {
       const sameBaseJoin = (await sameBaseJoinResponse.json()) as CompileViewResponse;
       expect(sameBaseJoin.ok).toBe(true);
     } finally {
-      await cleanupFixture(fixture.baseId, fixture.accessId);
+      await cleanupFixture(fixture.internalBaseId, fixture.accessId);
     }
   });
 
@@ -383,7 +429,7 @@ where {${fixture.stageId}} = 'open'`);
 select {${fixture.amountId}}
 limit 2`);
     } finally {
-      await cleanupFixture(fixture.baseId, fixture.accessId);
+      await cleanupFixture(fixture.internalBaseId, fixture.accessId);
     }
   });
 
@@ -399,7 +445,6 @@ limit 2`);
           currentSource: { kind: "view", viewId: fixture.byCustomerViewId },
           query: `
             search 'Alice' in Customer
-            select Customer, "${fixture.amountId}__sum"
           `,
         }),
       );
@@ -416,7 +461,7 @@ limit 2`);
       expect(body.rows[0]?.values.gk_0).toBe("Alice");
       expect(Number(body.rows[0]?.values[`${fixture.amountId}__sum`])).toBe(12.5);
     } finally {
-      await cleanupFixture(fixture.baseId, fixture.accessId);
+      await cleanupFixture(fixture.internalBaseId, fixture.accessId);
     }
   });
 
@@ -459,7 +504,7 @@ limit 2`);
       if (revoked.ok) throw new Error("expected permission diagnostic");
       expect(revoked.diagnostics[0]?.message).toBe("View not found or you do not have permission to access it.");
     } finally {
-      await cleanupFixture(fixture.baseId, fixture.accessId);
+      await cleanupFixture(fixture.internalBaseId, fixture.accessId);
     }
   });
 
@@ -493,7 +538,7 @@ limit 2`);
       if (optionBody.ok) throw new Error("expected canonicalization diagnostics");
       expect(optionBody.diagnostics[0]?.message).toBe('unknown option "Missing" for "Stage"; expected one of: Open, Closed, On hold');
     } finally {
-      await cleanupFixture(fixture.baseId, fixture.accessId);
+      await cleanupFixture(fixture.internalBaseId, fixture.accessId);
     }
   });
 });

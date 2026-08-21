@@ -142,7 +142,7 @@ export const toPublicGqlResponse = async (response: DslQueryPreviewResponse, dep
   const recordIds = response.rows.flatMap((row) => (row.recordId ? [row.recordId] : []));
   const relationRecordIds = response.rows.flatMap((row) =>
     response.columns.flatMap((column) => {
-      if (column.type !== "relation") return [];
+      if (column.type !== "relation" || (column.sqlType !== "uuid" && column.sqlType !== "uuid[]")) return [];
       const value = row.values[column.key];
       return Array.isArray(value)
         ? value.filter((item): item is string => typeof item === "string")
@@ -177,7 +177,7 @@ export const toPublicGqlResponse = async (response: DslQueryPreviewResponse, dep
         response.columns.map((column, index) => {
           const value = row.values[column.key];
           const projected =
-            column.type === "relation"
+            column.type === "relation" && (column.sqlType === "uuid" || column.sqlType === "uuid[]")
               ? Array.isArray(value)
                 ? value.map((item) => (typeof item === "string" ? requiredPublicId(records, item, "record") : item))
                 : typeof value === "string"

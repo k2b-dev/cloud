@@ -1,46 +1,109 @@
 import { z } from "zod";
 
 export const LOAD_FIXTURE_MARKER = "grids-local-load-fixture";
-export const LOAD_MANIFEST_VERSION = 1;
+export const LOAD_MANIFEST_VERSION = 3;
 
 const UuidSchema = z.string().uuid();
+const ShortIdSchema = z.string().regex(/^[A-Za-z0-9]{6}$/);
+
+export const LOAD_SHORT_ID_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const LOAD_SHORT_ID_SPACE = LOAD_SHORT_ID_ALPHABET.length ** 6;
+
+const loadShortIdOrdinal = (shortId: string): number => {
+  if (!ShortIdSchema.safeParse(shortId).success) throw new Error(`invalid load-test Record ID: ${shortId}`);
+  let ordinal = 0;
+  for (const character of shortId) {
+    ordinal = ordinal * LOAD_SHORT_ID_ALPHABET.length + LOAD_SHORT_ID_ALPHABET.indexOf(character);
+  }
+  return ordinal;
+};
+
+export const loadRecordShortId = (ordinal: number): string => {
+  if (!Number.isSafeInteger(ordinal) || ordinal < 0 || ordinal >= LOAD_SHORT_ID_SPACE) {
+    throw new Error(`load-test Record ID ordinal must be between 0 and ${LOAD_SHORT_ID_SPACE - 1}`);
+  }
+  let remaining = ordinal;
+  let shortId = "";
+  for (let power = 5; power >= 0; power--) {
+    const divisor = LOAD_SHORT_ID_ALPHABET.length ** power;
+    const digit = Math.floor(remaining / divisor);
+    shortId += LOAD_SHORT_ID_ALPHABET[digit];
+    remaining %= divisor;
+  }
+  return shortId;
+};
+
+export const reserveLoadRecordShortIds = (existingShortIds: string[], count: number): number => {
+  if (!Number.isSafeInteger(count) || count <= 0 || count > LOAD_SHORT_ID_SPACE) {
+    throw new Error(`load-test Record count must be between 1 and ${LOAD_SHORT_ID_SPACE}`);
+  }
+  const occupied = [...new Set(existingShortIds.map(loadShortIdOrdinal))].sort((a, b) => a - b);
+  let start = 0;
+  for (const ordinal of occupied) {
+    if (ordinal < start) continue;
+    if (ordinal - start >= count) return start;
+    start = ordinal + 1;
+  }
+  if (LOAD_SHORT_ID_SPACE - start >= count) return start;
+  throw new Error(`No contiguous public Record ID range is available for ${count} load-test Records`);
+};
 
 export const LoadManifestSchema = z.object({
   version: z.literal(LOAD_MANIFEST_VERSION),
   marker: z.literal(LOAD_FIXTURE_MARKER),
   createdAt: z.string().datetime(),
   baseUrl: z.string().url(),
-  baseId: UuidSchema,
+  baseId: ShortIdSchema,
   baseName: z.string().min(1),
   rows: z.number().int().positive(),
   recordIdPrefix: z.string().regex(/^[0-9a-f]{8}$/),
+  recordShortIdStart: z.number().int().nonnegative(),
   serviceAccountId: UuidSchema,
   credentialId: UuidSchema,
   accessId: UuidSchema,
   apiToken: z.string().min(1),
   sessionToken: z.string().min(1),
   tables: z.object({
-    items: UuidSchema,
-    categories: UuidSchema,
-    locations: UuidSchema,
+    items: ShortIdSchema,
+    categories: ShortIdSchema,
+    locations: ShortIdSchema,
   }),
   fields: z.object({
-    assetId: UuidSchema,
-    name: UuidSchema,
-    category: UuidSchema,
-    location: UuidSchema,
-    status: UuidSchema,
-    condition: UuidSchema,
-    serialNumber: UuidSchema,
-    tags: UuidSchema,
-    quantity: UuidSchema,
-    replacementValue: UuidSchema,
-    purchaseDate: UuidSchema,
-    notes: UuidSchema,
+    assetId: ShortIdSchema,
+    name: ShortIdSchema,
+    category: ShortIdSchema,
+    location: ShortIdSchema,
+    status: ShortIdSchema,
+    condition: ShortIdSchema,
+    serialNumber: ShortIdSchema,
+    tags: ShortIdSchema,
+    quantity: ShortIdSchema,
+    replacementValue: ShortIdSchema,
+    purchaseDate: ShortIdSchema,
+    notes: ShortIdSchema,
   }),
-  workflowId: UuidSchema,
-  documentTemplateId: UuidSchema.optional(),
-  documentRecordId: UuidSchema,
+  workflowId: ShortIdSchema,
+  documentTemplateId: ShortIdSchema.optional(),
+  documentRecordId: ShortIdSchema,
+  internal: z.object({
+    baseId: UuidSchema,
+    tables: z.object({ items: UuidSchema, categories: UuidSchema, locations: UuidSchema }),
+    fields: z.object({
+      assetId: UuidSchema,
+      name: UuidSchema,
+      category: UuidSchema,
+      location: UuidSchema,
+      status: UuidSchema,
+      condition: UuidSchema,
+      serialNumber: UuidSchema,
+      tags: UuidSchema,
+      quantity: UuidSchema,
+      replacementValue: UuidSchema,
+      purchaseDate: UuidSchema,
+      notes: UuidSchema,
+    }),
+    workflowId: UuidSchema,
+  }),
 });
 
 export type LoadManifest = z.infer<typeof LoadManifestSchema>;

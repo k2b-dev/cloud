@@ -207,7 +207,17 @@ const responseOk = (response, label, validate) => {
   return transportOk && bodyOk;
 };
 
-const recordId = (index) => `${manifest.recordIdPrefix}-0000-4000-8000-${index.toString(16).padStart(12, "0")}`;
+const shortIdAlphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+const recordId = (index) => {
+  let remaining = manifest.recordShortIdStart + index - 1;
+  let id = "";
+  for (let power = 5; power >= 0; power--) {
+    const divisor = shortIdAlphabet.length ** power;
+    id += shortIdAlphabet[Math.floor(remaining / divisor)];
+    remaining %= divisor;
+  }
+  return id;
+};
 
 export function readFlow() {
   const roll = Math.random();
