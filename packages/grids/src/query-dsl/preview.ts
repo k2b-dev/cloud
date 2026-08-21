@@ -152,7 +152,7 @@ const rowColumns = (columns: DslSqlOutputColumn[]): DslQueryPreviewColumn[] =>
     ...(asOptionalUuid(column.fieldId) ? { fieldId: column.fieldId } : {}),
     ...(column.joinAlias ? { joinAlias: column.joinAlias } : {}),
     type: column.type,
-    sqlType: column.sqlType,
+    sqlType: column.type === "relation" ? "uuid[]" : column.sqlType,
   }));
 
 const groupColumns = (columns: DslSqlGroupOutputColumn[], tableId?: string): DslQueryPreviewColumn[] =>
@@ -162,7 +162,7 @@ const groupColumns = (columns: DslSqlGroupOutputColumn[], tableId?: string): Dsl
     ...(column.kind === "group" && asOptionalUuid(column.tableId ?? tableId) ? { tableId: column.tableId ?? tableId } : {}),
     ...(asOptionalUuid(column.fieldId) ? { fieldId: column.fieldId } : {}),
     type: column.kind === "group" ? column.type : "aggregate",
-    sqlType: column.sqlType,
+    sqlType: column.kind === "group" && column.type === "relation" ? "uuid" : column.sqlType,
     ...(column.kind === "aggregate" ? { aggregate: column.agg } : {}),
   }));
 
@@ -389,7 +389,7 @@ const labelRelationPreviewValues = async (
   rows: DslQueryPreviewRow[],
   columns: DslQueryPreviewColumn[],
   options: DslQueryPreviewOptions,
-): Promise<DslQueryPreviewRow[]> => {
+): Promise<{ rows: DslQueryPreviewRow[]; labeledColumnKeys: ReadonlySet<string> }> => {
   const relationColumnKeys = new Set<string>();
   const idsByTargetTable = new Map<string, Set<string>>();
 
@@ -408,20 +408,23 @@ const labelRelationPreviewValues = async (
     if (ids.size > 0) idsByTargetTable.set(targetTableId, ids);
   }
 
-  if (idsByTargetTable.size === 0) return rows;
+  if (idsByTargetTable.size === 0) return { rows, labeledColumnKeys: relationColumnKeys };
   const labels = await buildRelationLabelCacheForIds(idsByTargetTable, options.viewer);
 
-  return rows.map((row) => {
-    let values: Record<string, unknown> | undefined;
-    for (const key of relationColumnKeys) {
-      const value = row.values[key];
-      const ids = relationIdsFromValue(value);
-      if (ids.length === 0) continue;
-      values ??= { ...row.values };
-      values[key] = Array.isArray(value) ? ids.map((id) => labels[id] ?? "Unknown record") : (labels[ids[0]!] ?? "Unknown record");
-    }
-    return values ? { ...row, values } : row;
-  });
+  return {
+    rows: rows.map((row) => {
+      let values: Record<string, unknown> | undefined;
+      for (const key of relationColumnKeys) {
+        const value = row.values[key];
+        const ids = relationIdsFromValue(value);
+        if (ids.length === 0) continue;
+        values ??= { ...row.values };
+        values[key] = Array.isArray(value) ? ids.map((id) => labels[id] ?? "Unknown record") : (labels[ids[0]!] ?? "Unknown record");
+      }
+      return values ? { ...row, values } : row;
+    }),
+    labeledColumnKeys: relationColumnKeys,
+  };
 };
 
 const labelPrincipalPreviewValues = async (
@@ -450,7 +453,17 @@ const labelPreviewValues = async (
   rows: DslQueryPreviewRow[],
   columns: DslQueryPreviewColumn[],
   options: DslQueryPreviewOptions,
-): Promise<DslQueryPreviewRow[]> => labelPrincipalPreviewValues(await labelRelationPreviewValues(rows, columns, options), columns, options);
+): Promise<{ rows: DslQueryPreviewRow[]; columns: DslQueryPreviewColumn[] }> => {
+  const relations = await labelRelationPreviewValues(rows, columns, options);
+  return {
+    rows: await labelPrincipalPreviewValues(relations.rows, columns, options),
+    columns: columns.map((column) =>
+      relations.labeledColumnKeys.has(column.key)
+        ? { ...column, sqlType: column.sqlType === "uuid[]" ? "text[]" : "text" }
+        : column,
+    ),
+  };
+};
 
 const hydrateHtmlTemplatePreviewValues = async (
   rows: DslQueryPreviewRow[],
@@ -765,17 +778,18 @@ export const previewDslQuery = async (
       const previewRows = visible.map((row) => ({
         values: Object.fromEntries(columns.map((column) => [column.key, rowValue(row, column)])),
       }));
-      const displayRows = options.labelRelationValues === false ? previewRows : await labelPreviewValues(previewRows, columns, options);
+      const display =
+        options.labelRelationValues === false ? { rows: previewRows, columns } : await labelPreviewValues(previewRows, columns, options);
       const bounded = fitPagedResponse(
         rows,
-        displayRows,
+        display.rows,
         bounds,
         options,
         compiled.query.cursorValuesFromRow,
         (pageRows, page, truncated) => ({
           ok: true,
           mode: "groups",
-          columns,
+          columns: display.columns,
           rows: pageRows,
           limit: bounds.pageSize,
           truncated,
@@ -807,17 +821,18 @@ export const previewDslQuery = async (
       const previewRows = visible.map((row) => ({
         values: Object.fromEntries(columns.map((column) => [column.key, rowValue(row, column)])),
       }));
-      const displayRows = options.labelRelationValues === false ? previewRows : await labelPreviewValues(previewRows, columns, options);
+      const display =
+        options.labelRelationValues === false ? { rows: previewRows, columns } : await labelPreviewValues(previewRows, columns, options);
       const bounded = fitPagedResponse(
         rows,
-        displayRows,
+        display.rows,
         bounds,
         options,
         compiled.query.cursorValuesFromRow,
         (pageRows, page, truncated) => ({
           ok: true,
           mode: "groups",
-          columns,
+          columns: display.columns,
           rows: pageRows,
           limit: bounds.pageSize,
           truncated,
@@ -900,17 +915,18 @@ export const previewDslQuery = async (
       values: Object.fromEntries(columns.map((column) => [column.key, rowValue(row, column)])),
     }));
     const hydratedRows = await hydrateHtmlTemplatePreviewValues(previewRows, columns, plan, options);
-    const displayRows = options.labelRelationValues === false ? hydratedRows : await labelPreviewValues(hydratedRows, columns, options);
+    const display =
+      options.labelRelationValues === false ? { rows: hydratedRows, columns } : await labelPreviewValues(hydratedRows, columns, options);
     const bounded = fitPagedResponse(
       rows,
-      displayRows,
+      display.rows,
       bounds,
       options,
       compiled.query.cursorValuesFromRow,
       (pageRows, page, truncated) => ({
         ok: true,
         mode: "rows",
-        columns,
+        columns: display.columns,
         rows: pageRows,
         limit: bounds.pageSize,
         truncated,

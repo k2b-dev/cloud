@@ -420,7 +420,7 @@ describe("Grids capabilities", () => {
         },
         context,
       );
-      expect(relationCreated.ok && relationCreated.data.data).toMatchObject({ version: 1 });
+      expect(relationCreated).toMatchObject({ ok: true, data: { data: { version: 1 } } });
       if (!relationCreated.ok) throw new Error(relationCreated.error.message);
 
       const relationUpdated = await invoke(
@@ -462,6 +462,13 @@ describe("Grids capabilities", () => {
         context,
       );
       expect(rejectedFiveCharacterRelation).toMatchObject({ ok: false, error: { code: "BAD_INPUT", status: 400 } });
+      const rejectedUnknownRelation = await invoke(
+        "action",
+        "record.create",
+        { tableId: tablePublicId, values: { [singleRelationFieldPublicId]: "ZZZZZZ" } },
+        context,
+      );
+      expect(rejectedUnknownRelation).toMatchObject({ ok: false, error: { code: "BAD_INPUT", status: 400 } });
 
       const relationQuery = await invoke(
         "query",
@@ -484,6 +491,29 @@ describe("Grids capabilities", () => {
       if (!relationColumn || !singleRelationColumn) throw new Error("Expected both relation GQL columns");
       expect(relationQuery.data.data.rows[0]?.values[relationColumn.key]).toEqual([relatedBId]);
       expect(relationQuery.data.data.rows[0]?.values[singleRelationColumn.key]).toEqual([relatedBId]);
+
+      const groupedRelationQuery = await invoke(
+        "query",
+        "gql.execute",
+        {
+          baseId: basePublicId,
+          query: `from table {${tablePublicId}}\ngroup by {${relationFieldPublicId}}\naggregate count(*) as records`,
+          pageSize: 25,
+        },
+        context,
+      );
+      expect(groupedRelationQuery.ok).toBe(true);
+      if (!groupedRelationQuery.ok || !groupedRelationQuery.data.data.ok) throw new Error("Expected grouped relation GQL rows");
+      const groupedRelationColumn = groupedRelationQuery.data.data.columns.find(
+        (column: { fieldId?: string; key: string }) => column.fieldId === relationFieldPublicId,
+      );
+      if (!groupedRelationColumn) throw new Error("Expected grouped relation GQL column");
+      expect(groupedRelationColumn.sqlType).toBe("uuid");
+      expect(
+        groupedRelationQuery.data.data.rows.map(
+          (row: { values: Record<string, unknown> }) => row.values[groupedRelationColumn.key],
+        ),
+      ).toEqual([relatedBId]);
 
       const preview = await invoke(
         "query",

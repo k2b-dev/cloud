@@ -453,10 +453,12 @@ limit 2`);
       const body = (await response.json()) as {
         ok: true;
         mode: "groups";
+        columns: Array<{ key: string; type: string; sqlType: string }>;
         rows: Array<{ values: Record<string, unknown> }>;
       };
       if (!body.ok) throw new Error(JSON.stringify(body));
       expect(body.mode).toBe("groups");
+      expect(body.columns.find((column) => column.key === "gk_0")).toMatchObject({ type: "relation", sqlType: "text" });
       expect(body.rows).toHaveLength(1);
       expect(body.rows[0]?.values.gk_0).toBe("Alice");
       expect(Number(body.rows[0]?.values[`${fixture.amountId}__sum`])).toBe(12.5);

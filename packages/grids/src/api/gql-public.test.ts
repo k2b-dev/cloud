@@ -73,4 +73,43 @@ describe("GQL public ID boundary", () => {
 
     expect(projected).toMatchObject({ rows: [{ values: { gk_0: "Cameras" } }] });
   });
+
+  test("projects grouped relation ids and preserves redacted relation labels", async () => {
+    const ids = new Map([
+      [tableId, "TABL01"],
+      [fieldId, "FILD01"],
+      [relatedRecordId, "RECD02"],
+    ]);
+    const projectIds = async (_type: string, internalIds: readonly string[]) =>
+      new Map(internalIds.flatMap((id) => (ids.has(id) ? [[id, ids.get(id)!]] : [])));
+
+    const groupedIds = await toPublicGqlResponse(
+      {
+        ok: true,
+        mode: "groups",
+        columns: [{ key: "gk_0", label: "Customer", tableId, fieldId, type: "relation", sqlType: "uuid" }],
+        rows: [{ values: { gk_0: relatedRecordId } }],
+        limit: 100,
+      },
+      { projectIds },
+    );
+    expect(groupedIds).toMatchObject({ rows: [{ values: { gk_0: "RECD02" } }] });
+
+    const redactedLabels = await toPublicGqlResponse(
+      {
+        ok: true,
+        mode: "rows",
+        columns: [{ key: fieldId, label: "Customer", tableId, fieldId, type: "relation", sqlType: "text[]" }],
+        rows: [{ values: { [fieldId]: ["Unknown record"] } }],
+        limit: 100,
+      },
+      {
+        projectIds: async (type, internalIds) => {
+          if (type === "record") expect(internalIds).toEqual([]);
+          return projectIds(type, internalIds);
+        },
+      },
+    );
+    expect(redactedLabels).toMatchObject({ rows: [{ values: { FILD01: ["Unknown record"] } }] });
+  });
 });

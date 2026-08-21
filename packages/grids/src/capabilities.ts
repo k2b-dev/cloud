@@ -21,6 +21,7 @@ import {
   executeSavedViewSourceForContext,
   type GridsGqlRuntimeContext,
 } from "./api/gql-runtime";
+import { toPublicGqlResponse } from "./api/gql-public";
 import {
   accessActorUser,
   actorViewerFor,
@@ -54,7 +55,7 @@ import {
 import { type DslQueryPreviewResponse, ShortIdSchema } from "./contracts";
 import { isRecordWritableFieldType } from "./field-types";
 import { gridsService } from "./service";
-import { projectPublicIds, resolvePublicIds } from "./service/public-resources";
+import { resolvePublicIds } from "./service/public-resources";
 import { ALL_RECORD_ACCESS } from "./service/record-access";
 import type { Base, Field, GridRecord, Table } from "./service/types";
 
@@ -503,90 +504,31 @@ const gqlCapabilityResult = async (response: DslQueryPreviewResponse, base: Base
   const tables = tableIds.length > 0 ? await gridsService.table.listByBase(base.id) : [];
   const wantedTableIds = new Set(tableIds);
   const tablesById = new Map(tables.filter((table) => wantedTableIds.has(table.id)).map((table) => [table.id, table]));
-  const columnTableIds = response.columns.flatMap((column) => (column.tableId ? [column.tableId] : []));
-  const columnFieldIds = response.columns.flatMap((column) => (column.fieldId ? [column.fieldId] : []));
-  const rowRecordIds = response.rows.flatMap((row) => (row.recordId ? [row.recordId] : []));
-  const relationRecordIds = response.rows.flatMap((row) =>
-    response.columns.flatMap((column) => {
-      if (column.type !== "relation") return [];
-      const value = row.values[column.key];
-      return Array.isArray(value)
-        ? value.filter((item): item is string => typeof item === "string")
-        : typeof value === "string"
-          ? [value]
-          : [];
-    }),
-  );
-  const [publicTableIds, publicFieldIds, publicRecordIds] = await Promise.all([
-    projectPublicIds("table", [...tableIds, ...columnTableIds]),
-    projectPublicIds("field", columnFieldIds),
-    projectPublicIds("record", [...rowRecordIds, ...relationRecordIds]),
-  ]);
-  const publicColumns = response.columns.map((column) => {
-    const internalFieldId = column.fieldId;
-    const fieldId = internalFieldId ? publicFieldIds.get(internalFieldId) : undefined;
-    const tableId = column.tableId ? publicTableIds.get(column.tableId) : undefined;
-    let key = column.key;
-    if (internalFieldId && fieldId) {
-      if (column.key === internalFieldId) key = fieldId;
-      else if (column.key.startsWith(`${internalFieldId}__`)) key = `${fieldId}${column.key.slice(internalFieldId.length)}`;
-    }
-    return {
-      ...column,
-      key,
-      ...(column.tableId ? { tableId } : {}),
-      ...(column.fieldId ? { fieldId } : {}),
-    };
-  });
-  if (
-    publicColumns.some(
-      (column, index) => (response.columns[index]?.tableId && !column.tableId) || (response.columns[index]?.fieldId && !column.fieldId),
-    ) ||
-    response.rows.some((row) => Boolean(row.tableId) && !publicTableIds.has(row.tableId!)) ||
-    rowRecordIds.some((recordId) => !publicRecordIds.has(recordId)) ||
-    relationRecordIds.some((recordId) => !publicRecordIds.has(recordId))
-  ) {
+  let projected: Awaited<ReturnType<typeof toPublicGqlResponse>>;
+  try {
+    projected = await toPublicGqlResponse(response);
+  } catch {
     return fail(err.internal("Grids could not project a public resource ID."));
   }
-  const { page, ...resultData } = response;
+  if (!projected.ok) return fail(err.internal("Grids could not project a successful GQL result."));
+  const { page, ...resultData } = projected;
   const data = {
     ...resultData,
-    columns: publicColumns,
-    rows: response.rows.map((row) => {
-      const table = row.tableId ? tablesById.get(row.tableId) : undefined;
-      const publicRecordId = row.recordId ? publicRecordIds.get(row.recordId) : undefined;
-      const publicTableId = row.tableId ? publicTableIds.get(row.tableId) : undefined;
-      const values = Object.fromEntries(
-        response.columns.map((column, index) => {
-          const publicColumn = publicColumns[index]!;
-          const value = row.values[column.key];
-          const publicValue =
-            column.type === "relation"
-              ? Array.isArray(value)
-                ? value.map((item) => (typeof item === "string" ? (publicRecordIds.get(item) ?? item) : item))
-                : typeof value === "string"
-                  ? (publicRecordIds.get(value) ?? value)
-                  : value
-              : value;
-          return [publicColumn.key, publicValue];
-        }),
-      );
+    rows: projected.rows.map((row, index) => {
+      const internalRow = response.rows[index];
+      const table = internalRow?.tableId ? tablesById.get(internalRow.tableId) : undefined;
       return {
         ...row,
-        ...(row.recordId ? { recordId: publicRecordId } : {}),
-        ...(row.tableId ? { tableId: publicTableId } : {}),
-        values,
-        ...(publicRecordId && table ? { links: [{ rel: "open" as const, href: recordHref(base, table, publicRecordId) }] } : {}),
+        ...(row.recordId && table ? { links: [{ rel: "open" as const, href: recordHref(base, table, row.recordId) }] } : {}),
       };
     }),
   };
   const refs: CloudResourceRef[] = [{ type: "grids.base", id: base.shortId }];
   const seen = new Set<string>();
-  for (const row of response.rows) {
+  for (const row of projected.rows) {
     if (!row.recordId || seen.has(row.recordId)) continue;
     seen.add(row.recordId);
-    const publicRecordId = publicRecordIds.get(row.recordId);
-    if (publicRecordId) refs.push({ type: "grids.record", id: publicRecordId });
+    refs.push({ type: "grids.record", id: row.recordId });
   }
   const nextCursor = page?.nextCursor ?? undefined;
   return ok({
