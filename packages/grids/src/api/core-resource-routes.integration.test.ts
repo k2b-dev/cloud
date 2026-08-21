@@ -493,6 +493,8 @@ describe("classic resource route contracts", () => {
           jsonRequest(fixture.tokens.write, { [fixture.uniqueFieldPublicId]: "SERIAL-1" }),
         );
         expect(createdRecord.status).toBe(201);
+        const createdRecordBody = (await createdRecord.json()) as { id: string; version: number };
+        expect(createdRecordBody).toMatchObject({ version: 1 });
         expect(await count("records", "table_id", fixture.tableId)).toBe(1);
         expect(await sideEffectCounts(fixture.baseId)).toEqual({
           audit: beforeCreatedRecord.audit + 1,
@@ -518,6 +520,45 @@ describe("classic resource route contracts", () => {
         `;
         expect(recordAfterConflict).toEqual(recordBeforeConflict);
         expect(await sideEffectCounts(fixture.baseId)).toEqual(beforeConflict);
+
+        const recordPath = `/records/${fixture.tablePublicId}/${createdRecordBody.id}`;
+        const patchRecord = (values: Record<string, unknown>, ifMatch?: string) =>
+          app.request(recordPath, {
+            method: "PATCH",
+            headers: {
+              authorization: `Bearer ${fixture.tokens.write}`,
+              "content-type": "application/json",
+              ...(ifMatch === undefined ? {} : { "If-Match": ifMatch }),
+            },
+            body: JSON.stringify({ values }),
+          });
+        const beforeMalformedPatch = await sideEffectCounts(fixture.baseId);
+        for (const invalidVersion of ["", "0", "1.5", "1e2", "current", "9007199254740992"]) {
+          const invalidPatch = await patchRecord({ [fixture.uniqueFieldPublicId]: "SERIAL-2" }, invalidVersion);
+          expect(invalidPatch.status).toBe(400);
+          expect(await invalidPatch.json()).toEqual({ message: "If-Match must contain a positive integer Record version" });
+        }
+        expect(await sideEffectCounts(fixture.baseId)).toEqual(beforeMalformedPatch);
+
+        const missingGuardNoop = await patchRecord({ [fixture.uniqueFieldPublicId]: "SERIAL-1" });
+        expect(missingGuardNoop.status).toBe(200);
+        expect(await missingGuardNoop.json()).toMatchObject({ version: 1 });
+        expect(await sideEffectCounts(fixture.baseId)).toEqual(beforeMalformedPatch);
+
+        const updatedRecord = await patchRecord({ [fixture.uniqueFieldPublicId]: "SERIAL-2" }, "1");
+        expect(updatedRecord.status).toBe(200);
+        expect(await updatedRecord.json()).toMatchObject({ version: 2, data: { [fixture.uniqueFieldPublicId]: "SERIAL-2" } });
+        const afterUpdate = await sideEffectCounts(fixture.baseId);
+        expect(afterUpdate).toEqual({ audit: beforeMalformedPatch.audit + 1, outbox: beforeMalformedPatch.outbox + 1 });
+
+        const stalePatch = await patchRecord({ [fixture.uniqueFieldPublicId]: "SERIAL-3" }, "1");
+        expect(stalePatch.status).toBe(409);
+        expect(await sideEffectCounts(fixture.baseId)).toEqual(afterUpdate);
+
+        const guardedNoop = await patchRecord({ [fixture.uniqueFieldPublicId]: "SERIAL-2" }, "2");
+        expect(guardedNoop.status).toBe(200);
+        expect(await guardedNoop.json()).toMatchObject({ version: 2 });
+        expect(await sideEffectCounts(fixture.baseId)).toEqual(afterUpdate);
 
         const views = await app.request(`/views/by-table/${fixture.tablePublicId}`, bearer(fixture.tokens.read));
         expect(views.status).toBe(200);

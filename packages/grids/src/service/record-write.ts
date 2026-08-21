@@ -474,6 +474,10 @@ export const updateInTransaction = async (
 
   // Build the diff up front so we can pass it into the transaction.
   const diff = buildRecordDiff(existing.data, validated.data);
+  if (Object.keys(diff).length === 0) {
+    const mutable = await assertRecordMutable(client, tableId, recordId);
+    return mutable.ok ? ok({ record: existing, outboxId: null }) : mutable;
+  }
   const auditPolicy = await loadTableAuditPolicy(client, tableId);
   if (!auditPolicy.ok) return auditPolicy;
   const auditContext = buildRecordAuditContext(auditPolicy.data, "update", Object.keys(diff), opts.audit);
@@ -481,7 +485,6 @@ export const updateInTransaction = async (
   await prepareRecordMutation(client, tableId, recordId);
   const mutable = await assertRecordMutable(client, tableId, recordId);
   if (!mutable.ok) return mutable;
-  if (Object.keys(diff).length === 0) return ok({ record: existing, outboxId: null });
   const eventPayload = {
     v: 1,
     type: "record.updated",

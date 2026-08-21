@@ -310,7 +310,7 @@ export const recordCommands = [
       record: flag.string({ description: "Record public id" }),
       body: JSON_BODY_INPUT,
       audit: AUDIT_INPUT,
-      ifVersion: flag.int({ name: "if-version", min: 0, description: "Optimistic version guard" }),
+      ifVersion: flag.int({ name: "if-version", min: 1, description: "Optimistic version guard" }),
     },
     async run({ ctx, args, flags }) {
       const { base, rest } = await resolveBaseFromCommand(ctx, args.args, flags.table ? (flags.record ? 0 : 1) : 2);

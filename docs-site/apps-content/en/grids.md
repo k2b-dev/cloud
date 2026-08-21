@@ -162,6 +162,8 @@ cld grids list --json
 cld grids records list --base "Operations" --table "Requests" --limit 20 --json
 ```
 
+Record updates patch only the named fields. Integrations can pass the current positive Record version with `--if-version` so a stale projection conflicts instead of overwriting a newer edit. An update whose normalized scalar and Relation values are already current returns the Record without creating another version, history revision, audit entry, or live event.
+
 Run `cld grids help` for bases, schema, records, views, forms, Custom Apps,
 documents, templates, and workflows. Run `cld grids <area> <command> --help`
 before changing schema, data, access, or automation.

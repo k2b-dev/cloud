@@ -819,17 +819,19 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             ...(audit ? { audit } : {}),
           }),
         );
-        await logAudit(
-          {
-            baseId: scope.baseId,
-            tableId: record.tableId,
-            recordId: record.recordId,
-            userId: actorId(scope),
-            action: "workflow.record.updated",
-            diff: { workflowRecordUpdate: { old: null, new: { ...workflowAuditMeta(scope), fields: Object.keys(values) } } },
-          },
-          tx,
-        );
+        if (updated.outboxId) {
+          await logAudit(
+            {
+              baseId: scope.baseId,
+              tableId: record.tableId,
+              recordId: record.recordId,
+              userId: actorId(scope),
+              action: "workflow.record.updated",
+              diff: { workflowRecordUpdate: { old: null, new: { ...workflowAuditMeta(scope), fields: Object.keys(values) } } },
+            },
+            tx,
+          );
+        }
         return {
           state: "succeeded",
           output: { kind: "record", tableId: updated.record.tableId, recordId: updated.record.id } as WorkflowJsonValue,
@@ -1127,17 +1129,19 @@ export const GRIDS_WORKFLOW_ACTIONS = {
               },
             ),
           );
-          await logAudit(
-            {
-              baseId: scope.baseId,
-              tableId: record.tableId,
-              recordId: record.recordId,
-              userId: actorId(scope),
-              action: "workflow.record.updated",
-              diff: { workflowRecordUpdate: { old: null, new: { ...workflowAuditMeta(scope), fields: Object.keys(values) } } },
-            },
-            tx,
-          );
+          if (result.outboxId) {
+            await logAudit(
+              {
+                baseId: scope.baseId,
+                tableId: record.tableId,
+                recordId: record.recordId,
+                userId: actorId(scope),
+                action: "workflow.record.updated",
+                diff: { workflowRecordUpdate: { old: null, new: { ...workflowAuditMeta(scope), fields: Object.keys(values) } } },
+              },
+              tx,
+            );
+          }
           updated.push({ kind: "record", tableId: record.tableId, recordId: result.record.id });
         }
 

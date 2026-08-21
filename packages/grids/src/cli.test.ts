@@ -1618,7 +1618,7 @@ describe("grids CLI", () => {
     const audit = { [auditQuestionId]: "Annual inventory review" };
     const update = createContext(
       ["records", "update", baseId, "Authors", recordId],
-      { body: JSON.stringify({ [fieldId]: "Octavia Butler" }), audit: JSON.stringify(audit) },
+      { body: JSON.stringify({ [fieldId]: "Octavia Butler" }), audit: JSON.stringify(audit), "if-version": "3" },
       [jsonResponse(basePage), jsonResponse([table]), jsonResponse({ ...record, data: { [fieldId]: "Octavia Butler" } })],
     );
 
@@ -1626,10 +1626,26 @@ describe("grids CLI", () => {
 
     expect(update.calls[2]?.path).toBe(`/api/grids/records/${tableId}/${recordId}`);
     expect(update.calls[2]?.init?.method).toBe("PATCH");
+    expect(new Headers(update.calls[2]?.init?.headers).get("If-Match")).toBe("3");
     expect(JSON.parse(String(update.calls[2]?.init?.body))).toEqual({
       values: { [fieldId]: "Octavia Butler" },
       audit: { answers: audit },
     });
+
+    const unguarded = createContext(
+      ["records", "update", baseId, "Authors", recordId],
+      { body: JSON.stringify({ [fieldId]: "Octavia Butler" }) },
+      [jsonResponse(basePage), jsonResponse([table]), jsonResponse({ ...record, data: { [fieldId]: "Octavia Butler" } })],
+    );
+    await gridsCli.run(unguarded.ctx);
+    expect(new Headers(unguarded.calls[2]?.init?.headers).has("If-Match")).toBe(false);
+
+    const invalidVersion = createContext(
+      ["records", "update", baseId, "Authors", recordId],
+      { body: JSON.stringify({ [fieldId]: "Octavia Butler" }), "if-version": "0" },
+      [jsonResponse(basePage), jsonResponse([table])],
+    );
+    await expect(gridsCli.run(invalidVersion.ctx)).rejects.toThrow(/if-version.*at least 1/i);
 
     const remove = createContext(["records", "delete", baseId, "Authors", recordId], { audit: JSON.stringify(audit), yes: true }, [
       jsonResponse(basePage),

@@ -94,6 +94,13 @@ const CombinedAuditQuerySchema = z.object({
   cursor: z.string().max(2_000).optional(),
 });
 
+const parseIfMatchVersion = (value: string | undefined): number | null | undefined => {
+  if (value === undefined) return undefined;
+  if (!/^[1-9]\d*$/.test(value)) return null;
+  const version = Number(value);
+  return Number.isSafeInteger(version) ? version : null;
+};
+
 export const recordsRoutes = new Hono<AuthContext>()
 
   // Record listing is served by the unified table query endpoint so
@@ -801,8 +808,8 @@ export const recordsRoutes = new Hono<AuthContext>()
       if (!table) return c.json({ message: "Table not found" }, 404);
       const gate = await gateAt(c, { baseId: table.baseId }, "write");
       if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-      const ifMatchHeader = c.req.header("If-Match");
-      const ifMatchVersion = ifMatchHeader ? Number(ifMatchHeader) : undefined;
+      const ifMatchVersion = parseIfMatchVersion(c.req.header("If-Match"));
+      if (ifMatchVersion === null) return c.json({ message: "If-Match must contain a positive integer Record version" }, 400);
       const body = c.req.valid("json");
       const fields = await gridsService.field.listByTable(tableId);
       const values = await fromPublicRecordValues(tableId, body.values);

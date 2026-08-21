@@ -62,7 +62,59 @@ const destroy = async (baseId: string) => {
   `;
 };
 
+const recordMutationState = async (recordId: string) => {
+  const [state] = await sql<Array<{ version: number; revisions: number; audits: number; events: number }>>`
+    SELECT
+      record.version,
+      (SELECT count(*)::int FROM grids.record_revisions WHERE record_id = record.id) AS revisions,
+      (SELECT count(*)::int FROM grids.audit_log WHERE record_id = record.id) AS audits,
+      (SELECT count(*)::int FROM grids.record_event_outbox WHERE record_id = record.id) AS events
+    FROM grids.records record
+    WHERE record.id = ${recordId}::uuid
+  `;
+  if (!state) throw new Error("Durable history mutation fixture record missing");
+  return state;
+};
+
 describe("durable record history Postgres integration", () => {
+  postgresTest("does not advance an activating baseline for a normalized no-op patch", async () => {
+    const item = await fixture();
+    try {
+      const activated = await enable(item.tableId, null);
+      expect(activated.ok).toBe(true);
+      await sql`DELETE FROM grids.record_revisions WHERE record_id = ${item.recordId}::uuid`;
+      await sql`
+        UPDATE grids.durable_history_activations
+        SET status = 'activating', baseline_completed_at = NULL
+        WHERE table_id = ${item.tableId}::uuid
+      `;
+      const beforeNoop = await recordMutationState(item.recordId);
+
+      const noop = await records.update(
+        item.tableId,
+        item.recordId,
+        { [item.nameFieldId]: "FX3" },
+        null,
+        "direct",
+        beforeNoop.version,
+      );
+
+      expect(noop.ok && noop.data.version).toBe(beforeNoop.version);
+      expect(await recordMutationState(item.recordId)).toEqual(beforeNoop);
+
+      const competing = await Promise.all([
+        records.update(item.tableId, item.recordId, { [item.nameFieldId]: "FX4" }, null, "direct", beforeNoop.version),
+        records.update(item.tableId, item.recordId, { [item.nameFieldId]: "FX5" }, null, "direct", beforeNoop.version),
+      ]);
+      expect(competing.filter((result) => result.ok)).toHaveLength(1);
+      expect(competing.filter((result) => !result.ok && result.error.status === 409)).toHaveLength(1);
+      expect(competing.find((result) => result.ok)?.data.version).toBe(beforeNoop.version + 1);
+      expect((await recordMutationState(item.recordId)).revisions).toBe(2);
+    } finally {
+      await destroy(item.baseId);
+    }
+  });
+
   postgresTest("keeps defaults unchanged and captures exact record, relation, schema, and file states after opt-in", async () => {
     const item = await fixture();
     const actorId = testUuid();
@@ -100,6 +152,29 @@ describe("durable record history Postgres integration", () => {
       expect(activationAudit?.action).toBe("durable_history.enabled");
       expect(activationAudit?.diff).toMatchObject({ durableHistory: { old: false, new: { enabled: true } } });
       expect((await records.update(item.tableId, item.recordId, { [item.relationFieldId]: [item.targetRecordId] }, null, "direct")).ok).toBe(true);
+      const beforeNoop = await recordMutationState(item.recordId);
+      const noop = await records.update(
+        item.tableId,
+        item.recordId,
+        { [item.nameFieldId]: "FX3 II", [item.relationFieldId]: [item.targetRecordId] },
+        null,
+        "direct",
+        beforeNoop.version,
+      );
+      expect(noop.ok && noop.data.version).toBe(beforeNoop.version);
+      expect(await recordMutationState(item.recordId)).toEqual(beforeNoop);
+
+      const stale = await records.update(
+        item.tableId,
+        item.recordId,
+        { [item.nameFieldId]: "Must not land" },
+        null,
+        "direct",
+        beforeNoop.version - 1,
+      );
+      expect(stale.ok).toBe(false);
+      if (!stale.ok) expect(stale.error.status).toBe(409);
+      expect(await recordMutationState(item.recordId)).toEqual(beforeNoop);
       expect((await fields.update(item.nameFieldId, { name: "Asset name" }, null)).ok).toBe(true);
       expect((await records.update(item.tableId, item.recordId, { [item.nameFieldId]: "FX6" }, null, "direct")).ok).toBe(true);
 

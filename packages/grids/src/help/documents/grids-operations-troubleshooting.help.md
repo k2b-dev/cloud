@@ -31,6 +31,8 @@ If the message asks for change context, answer the questions configured under **
 
 If the message says this source is not allowed to change the table, a Base admin must open **Table settings → Data integrity → Record changes** and allow the matching source. The Base UI, API, CLI, Forms, Workflows, and Grids App actions all follow this setting; retrying through another client does not bypass it.
 
+For API or CLI integrations, patch only the fields the integration owns. Send the current positive Record version as `If-Match` or `--if-version` when a stale projection must not overwrite a newer edit. A stale version returns a conflict; a malformed version is rejected as input. If the normalized scalar and Relation values are already current, Grids returns the Record without creating a new version, Durable History revision, audit entry, or live event.
+
 ## A view or Grids App result is wrong {icon="layout"}
 
 Open the source query and verify it before changing presentation:

@@ -381,6 +381,54 @@ describe("declared Grids workflow actions", () => {
     }
   });
 
+  postgresTest("Record update workflows keep normalized no-ops free of Record side effects", async () => {
+    const fixture = createFixture();
+    try {
+      await insertFixture(fixture);
+      const activated = await enableDurableHistory(fixture.tableId, fixture.actorId);
+      expect(activated.ok).toBe(true);
+      const recordInput = { record: { kind: "record", tableId: fixture.tableId, recordId: fixture.recordId } };
+      const updateRunId = await queueRun(fixture, {
+        plan: boundPlan([actionStep(0, "updateRecord", { record: "inputs.record", set: { Status: "Open" } })], {
+          "steps.0.updateRecord.set.Status": fixture.statusFieldId,
+        }),
+        inputs: recordInput,
+      });
+      const atomicRunId = await queueRun(fixture, {
+        plan: boundPlan(
+          [
+            actionStep(0, "atomicRecords", {
+              locks: ["inputs.record"],
+              checks: [],
+              changes: [{ updateRecord: { record: "inputs.record", set: { Status: "Open" }, ifVersion: 1 } }],
+            }),
+          ],
+          { "steps.0.atomicRecords.changes.0.updateRecord.set.Status.$target": fixture.statusFieldId },
+        ),
+        inputs: recordInput,
+      });
+
+      expect(await drive(updateRunId)).toBe("succeeded");
+      expect(await drive(atomicRunId)).toBe("succeeded");
+
+      const [state] = await sql<Array<{ version: number; revisions: number; audits: number; events: number }>>`
+        SELECT
+          record.version,
+          (SELECT count(*)::int FROM grids.record_revisions WHERE record_id = record.id) AS revisions,
+          (
+            SELECT count(*)::int FROM grids.audit_log
+            WHERE record_id = record.id AND action IN ('updated', 'workflow.record.updated')
+          ) AS audits,
+          (SELECT count(*)::int FROM grids.record_event_outbox WHERE record_id = record.id) AS events
+        FROM grids.records record
+        WHERE record.id = ${fixture.recordId}::uuid
+      `;
+      expect(state).toEqual({ version: 1, revisions: 1, audits: 0, events: 0 });
+    } finally {
+      await cleanupFixture(fixture);
+    }
+  });
+
   postgresTest("workflow actions obey the table mutation policy at execution time", async () => {
     const fixture = createFixture();
     try {
