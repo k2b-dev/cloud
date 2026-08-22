@@ -368,10 +368,12 @@ export const finishWorkflowRun = async (
     return diagnoseLostLease(db, claim.runId, claim.executionGeneration);
   }
 
+  const serializedResult = result.state === "succeeded" ? JSON.stringify(result.result ?? null) : null;
+
   const rows = await db<{ id: string }[]>`
     UPDATE workflows.run
     SET state = ${result.state},
-        result = ${result.state === "succeeded" ? (result.result ?? null) : null},
+        result = (${serializedResult}::text)::jsonb,
         result_message = ${(result.state === "succeeded" || result.state === "canceled" ? result.message : null) ?? null},
         error = ${result.state === "failed" || result.state === "needs_attention" ? result.error : null},
         lease_owner = NULL,

@@ -106,6 +106,11 @@ const runState = async (runId: string) => {
   return row?.state;
 };
 
+const runResult = async (runId: string) => {
+  const [row] = await sql<{ result: unknown }[]>`SELECT result FROM workflows.run WHERE id = ${runId}::uuid`;
+  return row?.result;
+};
+
 const effectRow = async (runId: string) => {
   const [row] = await sql<{ effect_state: string | null }[]>`
     SELECT effect_state FROM workflows.step_outcome WHERE run_id = ${runId}::uuid
@@ -114,6 +119,19 @@ const effectRow = async (runId: string) => {
 };
 
 describe("workflow run store", () => {
+  test("stores scalar JSON workflow results without changing their type", async () => {
+    if (!(await ready())) return;
+
+    for (const result of [true, false, 42, "done"] as const) {
+      const { base } = await fixture();
+      const runId = await createWorkflowRun({ ...base, idempotencyKey: `scalar-${String(result)}` });
+      const claim = await claimWorkflowRun({ worker: "scalar", runId });
+
+      expect(await finishWorkflowRun(claim!, { state: "succeeded", result })).toEqual({ state: "finished" });
+      expect(await runResult(runId)).toBe(result);
+    }
+  });
+
   test("a claim fences with the generation, so a stale worker writes nothing", async () => {
     if (!(await ready())) return;
     const { base } = await fixture();
