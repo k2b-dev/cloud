@@ -25,7 +25,10 @@ import type { AiConversationService, AiRuntimeTool, AiToolPresentation } from ".
 export type AiCapabilityKind = "query" | "action";
 
 export type AiCapabilityCatalogItem = {
+  /** Stable public identity used by Skills, discovery, loading, and persistence. */
   name: string;
+  /** Provider-safe function name used only for model tool definitions and calls. */
+  providerName: string;
   appId: string;
   appName: string;
   appDescription: string;
@@ -87,6 +90,9 @@ export const aiCapabilityToolName = (appId: string, kind: AiCapabilityKind, loca
   return `${full.slice(0, 50)}__${suffix}`;
 };
 
+/** Stable qualified identity shared by capability consumers outside provider transports. */
+export const aiCapabilityId = (appId: string, localId: string): string => `${appId}.${localId}`;
+
 /** Build the compact, deterministic directory of apps in the current live registry. */
 export const buildAiCapabilityAppCatalog = (apps: readonly CapabilityRegistryEntry[]): AiCapabilityAppCatalogItem[] => {
   const seen = new Set<string>();
@@ -121,7 +127,8 @@ export const buildAiCapabilityCatalog = (apps: CapabilityRegistryEntry[]): AiCap
     ])
     .map(
       ({ app, operation, kind }): AiCapabilityCatalogEntry => ({
-        name: aiCapabilityToolName(app.appId, kind, operation.localId),
+        name: aiCapabilityId(app.appId, operation.localId),
+        providerName: aiCapabilityToolName(app.appId, kind, operation.localId),
         appId: app.appId,
         appName: app.appName,
         appDescription: app.appDescription,
@@ -506,7 +513,7 @@ export const createAiToolMetaTools = (input: {
   const load = defineAiTool({
     name: "load_tools",
     description:
-      "Load exact names returned by search_tools as ordinary tools for the next model turn. Built-ins named in the system prompt can be loaded directly without searching.",
+      "Load stable capability ids such as mail.conversation.list, or exact built-in names returned by search_tools, as ordinary tools for the next model turn. Skills may name capability ids directly, so load them without searching first.",
     inputSchema: z.object({ names: z.array(z.string().trim().min(1)).min(1).max(25) }).strict(),
     outputSchema: z
       .object({
@@ -556,7 +563,8 @@ export const createLoadedAiCapabilityTools = (input: {
     if (!entry) return [];
     return [
       defineAiTool({
-        name: entry.name,
+        name: entry.providerName,
+        canonicalName: entry.name,
         description: `${entry.title}. ${entry.description} Never retry ACTION_OUTCOME_UNKNOWN. Do not retry unchanged after INTERNAL or INVALID_APP_RESPONSE; report the provider error.`,
         inputSchema: aiCapabilityInputSchema(entry.operation.inputSchema),
         outputSchema: z.unknown(),
@@ -683,7 +691,7 @@ export const createAiToolResolver =
     for (const name of loadedNames) {
       const entry = catalogByName.get(name);
       if (!entry) continue;
-      presentations.set(name, {
+      presentations.set(entry.providerName, {
         kind: "capability",
         appId: entry.appId,
         appName: entry.appName,

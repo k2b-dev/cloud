@@ -265,6 +265,7 @@ describe("nessi block event mapping", () => {
       capabilityKind: "query" as const,
     };
     mapper.setPresentations(new Map([["contacts__query__list", presentation]]));
+    mapper.setCanonicalNames(new Map([["contacts__query__list", "contacts.list"]]));
     const start = mapper.translate({
       ...turn,
       type: "tool_execution_start",
@@ -272,7 +273,7 @@ describe("nessi block event mapping", () => {
       name: "contacts__query__list",
       args: {},
     } as OutboundEvent);
-    expect(start[0]).toMatchObject({ type: "block_set", block: { presentation } });
+    expect(start[0]).toMatchObject({ type: "block_set", block: { name: "contacts.list", presentation } });
 
     const done = mapper.translate({
       ...turn,
@@ -281,7 +282,7 @@ describe("nessi block event mapping", () => {
       name: "contacts__query__list",
       result: { data: [] },
     } as OutboundEvent);
-    expect(done[0]).toMatchObject({ type: "block_set", block: { status: "completed", presentation } });
+    expect(done[0]).toMatchObject({ type: "block_set", block: { name: "contacts.list", status: "completed", presentation } });
   });
 
   test("client tool action requests carry the tool's real frontend mode", () => {

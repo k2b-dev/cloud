@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-08-12
+updated: 2026-08-23
 ---
 
 # App capabilities
@@ -244,6 +244,11 @@ item        -> inventory.item
 item.read   -> inventory.item.read
 item.rename -> inventory.item.rename
 ```
+
+Applications declare only the local part. Cloud derives the qualified ID from
+the registered application ID and uses it as the stable operation identity for
+Skills, Assistant discovery, loaded-tool state, CLI, and transport metadata.
+Provider-safe function names are generated later and are not capability IDs.
 
 An application that publishes Capabilities uses a lowercase kebab-case ID
 matching `[a-z][a-z0-9-]*` (maximum 80 characters). This keeps qualified IDs,

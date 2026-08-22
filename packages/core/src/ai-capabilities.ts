@@ -14,7 +14,7 @@ import {
   AiSkillInputError,
   AiSkillRevisionConflictError,
   type AiStoredMessage,
-  aiCapabilityToolName,
+  aiCapabilityId,
   aiChatTasks,
   aiConversations,
   aiSkills,
@@ -55,7 +55,7 @@ const resourceCursorSchema = (scope: "conversation" | "user") =>
     .refine((value) => isConversationResourceCursor(value, scope), "Invalid resource cursor")
     .optional()
     .describe("Opaque cursor returned by the previous resource page.");
-const CHAT_MESSAGE_TOOL_NAME = aiCapabilityToolName(CORE_APP_ID, "action", "ai.chat.message");
+const CHAT_MESSAGE_TOOL_NAME = aiCapabilityId(CORE_APP_ID, "ai.chat.message");
 const ChatTaskCreateInputSchema = z
   .object({
     chatId: ChatIdSchema,

@@ -5,7 +5,7 @@ section: Platform services
 order: 565
 description: Connect MCP clients to live Cloud capabilities and registered app Help.
 tags: [mcp, capabilities, help, oauth, agents]
-updated: 2026-08-07
+updated: 2026-08-23
 ---
 
 # Cloud MCP server
@@ -60,6 +60,11 @@ Capability tool names are deterministic:
 
 Names up to 128 characters keep that literal form. Longer valid names keep the
 same app and kind prefix and end in a deterministic hash suffix.
+
+These are MCP transport names, not capability identities. Each projected tool
+also exposes the stable qualified ID, such as `inventory.item.read`, through
+its `cloud/capabilityId` metadata. Assistant Skills, `search_tools`, and
+`load_tools` use that qualified ID and never the MCP or provider encoding.
 
 Help resources use stable URIs:
 

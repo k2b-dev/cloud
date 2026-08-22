@@ -260,13 +260,13 @@ describe("capability tool presentation", () => {
     ["list_apps", {}, { apps: { contacts: "People and address books" } }, "People and address books"],
     [
       "load_tools",
-      { names: ["mail__query__activity_dot_list"] },
+      { names: ["mail.conversation.activity.list"] },
       {
-        loaded: ["mail__query__activity_dot_list"],
+        loaded: ["mail.conversation.activity.list"],
         alreadyLoaded: [],
         missing: [],
         evicted: [],
-        titles: { mail__query__activity_dot_list: "List mail activity" },
+        titles: { "mail.conversation.activity.list": "List mail activity" },
       },
       "List mail activity",
     ],
@@ -358,7 +358,7 @@ describe("capability tool presentation", () => {
     expect(html).not.toContain(">Response</p>");
     expect(html).not.toContain("k2b-content-structured-data");
     expect(hasOpenDetails(html)).toBe(name === "view_image");
-    if (name === "load_tools") expect(html).not.toContain("mail__query__activity_dot_list");
+    if (name === "load_tools") expect(html).not.toContain("mail.conversation.activity.list");
   });
 
   test("renders persisted local Bash calls without execution controls", () => {

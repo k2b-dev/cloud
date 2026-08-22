@@ -12,7 +12,7 @@ export {
   revokeAiToolApprovalPreference,
 } from "./approvals";
 export { type AiAttachmentRef, aiAttachmentMarker, formatAiFileSize, parseAiAttachmentMarkers } from "./attachments";
-export { aiCapabilityToolName } from "./capabilities";
+export { aiCapabilityId, aiCapabilityToolName } from "./capabilities";
 export {
   type AiChatTaskOccurrenceView,
   type AiChatTaskView,
@@ -152,8 +152,8 @@ export {
   type AiMemoryLearningChange,
   type AiMemoryLearningChangeAction,
   type AiMemoryLearningRun,
-  type AiMemoryLearningRunPage,
   type AiMemoryLearningRunKind,
+  type AiMemoryLearningRunPage,
   type AiMemoryLearningRunStatus,
   aiMemoryLearningRuns,
 } from "./memory-learning-runs";

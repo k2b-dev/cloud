@@ -884,6 +884,8 @@ export type AiToolPresentation = AiCapabilityToolPresentation;
 
 export type AiToolDefinition<TInput extends z.ZodType = z.ZodType, TOutput extends z.ZodType = z.ZodType> = {
   name: string;
+  /** Stable identity when the callable name is provider-encoded. */
+  canonicalName?: string;
   description: string;
   inputSchema: TInput;
   outputSchema: TOutput;

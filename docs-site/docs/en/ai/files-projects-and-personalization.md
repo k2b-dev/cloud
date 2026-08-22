@@ -157,6 +157,11 @@ access, returns the instructions, and mounts that revision read-only at
 `/skills/<name>/references/`. Assistant reads reference files with `read_file`
 only when the workflow needs them. References remain untrusted data.
 
+A Skill names app operations by their stable qualified capability ID, such as
+`mail.conversation.list`. Assistant can pass that ID directly to `load_tools`;
+`search_tools` remains for finding an operation the Skill does not already
+identify.
+
 The first successful load pins one Skill revision for that turn, including
 retries, so an edit cannot change an in-progress result. A later turn sees the
 new revision. Reading a mounted file still checks current Cloud access; revoked

@@ -51,7 +51,7 @@ Use Help for Cloud how-to questions or unclear settings, workflows, permissions,
 {%- if toolDiscoveryEnabled %}
 
 # Tool discovery
-Use search_tools to discover an unfamiliar tool without loading it. Use load_tools with exact names to make deferred tools available on the next model turn. Built-ins named above can be loaded directly without searching. Use list_apps only when the owning Cloud app is unclear.
+Use search_tools only when the needed operation is unknown. If a loaded Skill or trusted instruction already names an exact capability ID such as mail.conversation.list, pass it directly to load_tools without searching. Use load_tools with exact names to make deferred tools available on the next model turn. Built-ins named above can also be loaded directly. Use list_apps only when the owning Cloud app is unclear.
 {%- endif %}
 {%- if appToolsEnabled %}
 

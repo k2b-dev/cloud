@@ -373,14 +373,9 @@ describe("AI capability catalog", () => {
     const second = capabilityApp("spaces", "Spaces");
     const catalog = buildAiCapabilityCatalog([second, first, first]);
 
-    expect(catalog.map((entry) => entry.name)).toEqual([
-      "contacts__action__create",
-      "contacts__query__list",
-      "spaces__action__create",
-      "spaces__query__list",
-    ]);
+    expect(catalog.map((entry) => entry.name)).toEqual(["contacts.create", "contacts.list", "spaces.create", "spaces.list"]);
     const result = searchAiTools(buildAiToolCatalog([], catalog), { query: "create", appId: "spaces" });
-    expect(result.tools).toEqual([expect.objectContaining({ name: "spaces__action__create", title: "Create item" })]);
+    expect(result.tools).toEqual([expect.objectContaining({ name: "spaces.create", title: "Create item" })]);
     expect(JSON.stringify(result)).not.toContain("inputSchema");
     expect(JSON.stringify(result)).not.toContain("appIcon");
   });
@@ -520,17 +515,17 @@ describe("AI capability catalog", () => {
     const catalog = buildAiToolCatalog([], buildAiCapabilityCatalog([contacts, mail]));
 
     expect(searchAiTools(catalog, { query: "unread emails inbox" }).tools[0]).toMatchObject({
-      name: "mail__query__list",
+      name: "mail.list",
       appId: "mail",
       title: "List conversations",
     });
     expect(searchAiTools(catalog, { query: "read email messages", appId: "mail" }).tools).toEqual([
-      expect.objectContaining({ name: "mail__query__list" }),
+      expect.objectContaining({ name: "mail.list" }),
     ]);
     expect(searchAiTools(catalog, { query: "read", appId: "mail" }).tools).toEqual([]);
     expect(searchAiTools(catalog, { query: "missing phrase" }).tools).toEqual([]);
     expect(searchAiTools(catalog, { query: "create items", appId: "contacts" }).tools).toContainEqual(
-      expect.objectContaining({ name: "contacts__action__create" }),
+      expect.objectContaining({ name: "contacts.create" }),
     );
   });
 
@@ -546,7 +541,7 @@ describe("AI capability catalog", () => {
       appId: "mail",
     }).tools;
 
-    expect(tools.map((tool) => tool.name)).toEqual(["mail__query__list"]);
+    expect(tools.map((tool) => tool.name)).toEqual(["mail.list"]);
   });
 
   test("searches and returns the owning app description", () => {
@@ -565,7 +560,7 @@ describe("AI capability catalog", () => {
     expect(searchAiTools(catalog, { query: "email communication" }).tools).toContainEqual(
       expect.objectContaining({
         appId: "mail",
-        name: "mail__query__list",
+        name: "mail.list",
       }),
     );
   });
@@ -611,22 +606,22 @@ describe("AI capability catalog", () => {
     expect(load?.kind).toBe("server");
     if (!load || load.kind !== "server") throw new Error("load_tools missing");
     const result = await load.execute(
-      { names: ["contacts__query__list", "missing__query__thing"] },
+      { names: ["contacts.list", "contacts__query__list"] },
       { signal: AbortSignal.timeout(1_000), requestApproval: async () => true, requestClientTool: async <T>() => undefined as T },
     );
     expect(result).toEqual({
-      loaded: ["contacts__query__list"],
+      loaded: ["contacts.list"],
       alreadyLoaded: [],
-      missing: ["missing__query__thing"],
+      missing: ["contacts__query__list"],
       evicted: [],
-      titles: { contacts__query__list: "List items" },
+      titles: { "contacts.list": "List items" },
     });
-    expect(updates).toEqual([{ names: ["contacts__query__list"], maxLoadedTools: 2 }]);
+    expect(updates).toEqual([{ names: ["contacts.list"], maxLoadedTools: 2 }]);
 
     let called = "";
     const loaded = createLoadedAiCapabilityTools({
       catalog,
-      loadedNames: ["contacts__query__list", "removed__query__list"],
+      loadedNames: ["contacts.list", "removed.list"],
       execute: async (entry) => {
         called = entry.name;
         return { data: [] };
@@ -634,6 +629,7 @@ describe("AI capability catalog", () => {
     });
     const loadedPrepared = prepareAiTools({ tools: loaded, actor, conversationId: "conversation-1" });
     expect(loadedPrepared.tools.map((tool) => tool.def.name)).toEqual(["contacts__query__list"]);
+    expect(loadedPrepared.canonicalNames.get("contacts__query__list")).toBe("contacts.list");
     expect(loadedPrepared.approvalPolicies.get("contacts__query__list")).toBe("never");
     const tool = loadedPrepared.tools[0];
     if (!tool || tool.kind !== "server") throw new Error("loaded tool missing");
@@ -645,7 +641,7 @@ describe("AI capability catalog", () => {
     ).toEqual({
       data: [],
     });
-    expect(called).toBe("contacts__query__list");
+    expect(called).toBe("contacts.list");
 
     const approvalMessages: string[] = [];
     const actionReviews: Array<{ callId: string; review: CapabilityActionReview }> = [];
@@ -653,7 +649,7 @@ describe("AI capability catalog", () => {
     const actionPrepared = prepareAiTools({
       tools: createLoadedAiCapabilityTools({
         catalog,
-        loadedNames: ["contacts__action__create"],
+        loadedNames: ["contacts.create"],
         review: async () => ({
           message: "Create a contact.",
           approvalScope: "book:default",
@@ -722,7 +718,7 @@ describe("AI capability catalog", () => {
     const contacts = capabilityApp("contacts", "Contacts");
     const spaces = capabilityApp("spaces", "Spaces");
     let registry = [contacts];
-    let loaded = ["contacts__query__list"];
+    let loaded = ["contacts.list"];
     const resolver = createAiToolResolver({
       conversationId: "conversation-1",
       actor,
@@ -744,15 +740,15 @@ describe("AI capability catalog", () => {
       "Previously loaded tools currently absent",
     );
 
-    loaded.push("spaces__action__create");
+    loaded.push("spaces.create");
     registry = [spaces];
     expect(first.map((tool) => tool.def.name)).toContain("contacts__query__list");
     const second = await resolver();
     expect(second.map((tool) => tool.def.name)).toEqual(["search_tools", "load_tools", "list_apps", "spaces__action__create"]);
     const searchDescription = second.find((tool) => tool.def.name === "search_tools")?.def.description;
-    expect(searchDescription).toContain("Previously loaded tools currently absent from the live catalog: contacts__query__list");
+    expect(searchDescription).toContain("Previously loaded tools currently absent from the live catalog: contacts.list");
     expect(searchDescription).toContain("Treat them as temporarily unavailable");
-    expect(searchDescription).not.toContain("spaces__action__create");
+    expect(searchDescription).not.toContain("spaces.create");
   });
 
   test("snapshots presentation and remembered-approval scope for a loaded capability", async () => {
@@ -763,7 +759,7 @@ describe("AI capability catalog", () => {
       actor,
       staticTools: [],
       store: {
-        getLoadedTools: async () => ["contacts__action__create"],
+        getLoadedTools: async () => ["contacts.create"],
         loadTools: async ({ names }) => ({ loaded: names, alreadyLoaded: [], evicted: [] }),
       },
       listRegistry: async () => [capabilityApp("contacts", "Contacts")],
@@ -837,7 +833,7 @@ describe("AI capability catalog", () => {
   });
 
   test("persists automatic cleanup when a profile limit is reduced", async () => {
-    let loaded = ["first", "contacts__query__list", "contacts__action__create"];
+    let loaded = ["first", "contacts.list", "contacts.create"];
     const updates: Array<{ names: string[]; maxLoadedTools?: number }> = [];
     const resolver = createAiToolResolver({
       conversationId: "conversation-1",
@@ -887,7 +883,7 @@ describe("AI capability catalog", () => {
     const calls = [
       { id: "apps-1", name: "list_apps", args: {} },
       { id: "search-1", name: "search_tools", args: { query: "list contacts", appId: "contacts" } },
-      { id: "load-1", name: "load_tools", args: { names: ["contacts__query__list"] } },
+      { id: "load-1", name: "load_tools", args: { names: ["contacts.list"] } },
       { id: "query-1", name: "contacts__query__list", args: {} },
     ];
     let providerTurn = 0;
@@ -937,6 +933,6 @@ describe("AI capability catalog", () => {
     expect((requests[3]?.tools ?? []).map((tool) => tool.name)).toContain("contacts__query__list");
     expect(JSON.stringify(requests[0]?.tools)).not.toContain("schemaHash");
     expect(JSON.stringify(requests[0]?.tools)).not.toContain("Optional title text.");
-    expect(executed).toBe("contacts__query__list");
+    expect(executed).toBe("contacts.list");
   });
 });

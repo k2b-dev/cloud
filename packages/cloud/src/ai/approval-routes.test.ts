@@ -8,7 +8,7 @@ import type { CapabilityRegistryEntry } from "../contracts/registry";
 import type { AuthContext } from "../server";
 import { createAiApprovalPreferenceRoutes } from "./approval-routes";
 import type { AiToolApprovalPreference } from "./approvals";
-import { aiCapabilityToolName } from "./capabilities";
+import { aiCapabilityId } from "./capabilities";
 
 const userId = "11111111-1111-4111-8111-111111111111";
 const preferenceId = "22222222-2222-4222-8222-222222222222";
@@ -57,7 +57,7 @@ const capabilityApp: CapabilityRegistryEntry = {
 
 const preference: AiToolApprovalPreference = {
   id: preferenceId,
-  toolName: aiCapabilityToolName("demo", "action", "rename"),
+  toolName: aiCapabilityId("demo", "rename"),
   approvalScope: "demo.rename",
   createdAt: "2026-08-05T12:00:00.000Z",
   lastUsedAt: "2026-08-05T12:05:00.000Z",
@@ -102,7 +102,7 @@ describe("AI approval preference routes", () => {
     const response = await routes.request("/");
     expect(response.status).toBe(200);
     const body = (await response.json()) as { approvals: Array<{ title: string; app: unknown }> };
-    expect(body.approvals[0]).toMatchObject({ title: "Demo action rename", app: null });
+    expect(body.approvals[0]).toMatchObject({ title: "Demo rename", app: null });
   });
 
   test("revokes only through the current user's ownership boundary", async () => {

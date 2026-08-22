@@ -17,6 +17,8 @@ import type {
 
 export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType>(config: {
   name: string;
+  /** Stable identity when `name` is only a provider-safe transport encoding. */
+  canonicalName?: string;
   description: string;
   inputSchema: TInput;
   outputSchema: TOutput;
@@ -30,6 +32,7 @@ export const defineAiTool = <TInput extends z.ZodType, TOutput extends z.ZodType
 }) => {
   const def: AiToolDefinition<TInput, TOutput> = {
     name: config.name,
+    canonicalName: config.canonicalName,
     description: config.description,
     inputSchema: config.inputSchema,
     outputSchema: config.outputSchema,
@@ -81,6 +84,8 @@ export const aiToolPromptHints = (tools: AiRuntimeTool[]): { name: string; hint:
 
 export type PreparedAiTools = {
   tools: Tool[];
+  /** Provider tool name to stable tool identity. */
+  canonicalNames: Map<string, string>;
   approvalPolicies: Map<string, AiToolApprovalPolicy>;
   frontendModes: Map<string, AiFrontendToolMode>;
 };
@@ -97,12 +102,14 @@ export type AiToolPreparationContext = {
 };
 
 export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRuntimeTool[] }): PreparedAiTools => {
+  const canonicalNames = new Map<string, string>();
   const approvalPolicies = new Map<string, AiToolApprovalPolicy>();
   const frontendModes = new Map<string, AiFrontendToolMode>();
 
   const tools = (input.tools ?? []).map((tool): Tool => {
     if (!isCloudAiTool(tool)) return tool;
 
+    canonicalNames.set(tool.def.name, tool.def.canonicalName ?? tool.def.name);
     approvalPolicies.set(tool.def.name, tool.def.approval);
 
     const nessiTool = defineNessiTool({
@@ -138,5 +145,5 @@ export const prepareAiTools = (input: AiToolPreparationContext & { tools?: AiRun
     });
   });
 
-  return { tools, approvalPolicies, frontendModes };
+  return { tools, canonicalNames, approvalPolicies, frontendModes };
 };

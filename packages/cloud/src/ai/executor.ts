@@ -14,6 +14,7 @@ import { createCloudAiLocalBashTool, createConfiguredDefaultCloudAiTools } from 
 import { aiFileStore } from "./files-store";
 import { aiMemories } from "./memories";
 import { createCloudAiMemoryTool } from "./memory-tool";
+import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
 import { type AiUserPrefs, aiActorUser, aiUserPrefs } from "./prefs";
 import { createCloudAiReadProjectKnowledgeTool, createCloudAiSearchProjectTool } from "./project-tool";
 import { aiProjects } from "./projects";
@@ -30,7 +31,6 @@ import {
   toolBlockId,
 } from "./protocol";
 import { collectConversationResourceObservations } from "./resource-refs";
-import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
 import { isAiVisionModelConfigured, type resolveAiModel } from "./settings";
 import { selectAiSkillCatalog } from "./skill-catalog";
 import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool } from "./skill-tool";
@@ -350,6 +350,10 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[]) => {
   const setPresentations = (items: Map<string, AiToolPresentation>) => {
     presentations = items;
   };
+  let canonicalNames = new Map<string, string>();
+  const setCanonicalNames = (items: Map<string, string>) => {
+    canonicalNames = items;
+  };
   let approvalReviews = new Map<string, CapabilityActionReview>();
   const setApprovalReviews = (items: Map<string, CapabilityActionReview>) => {
     approvalReviews = items;
@@ -369,7 +373,8 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[]) => {
 
   const setTool = (callId: string, patch: ToolBlockPatch, displayCallId = callId): BlockOp => {
     const existing = toolBlocks.get(callId);
-    const name = patch.name ?? existing?.name ?? "tool";
+    const rawName = patch.name ?? existing?.name ?? "tool";
+    const name = canonicalNames.get(rawName) ?? rawName;
     const block: Extract<AiTurnBlock, { kind: "tool" }> = {
       id: toolBlockId(displayCallId),
       kind: "tool",
@@ -381,7 +386,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[]) => {
       isError: "isError" in patch ? patch.isError : existing?.isError,
       approval: patch.clearApproval ? undefined : "approval" in patch ? patch.approval : existing?.approval,
       frontendMode: patch.frontendMode ?? existing?.frontendMode,
-      presentation: patch.presentation ?? existing?.presentation ?? presentations.get(name),
+      presentation: patch.presentation ?? existing?.presentation ?? presentations.get(rawName) ?? presentations.get(name),
     };
     toolBlocks.set(callId, block);
     return { type: "block_set", block };
@@ -477,7 +482,16 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[]) => {
     }
   };
 
-  return { translate, compaction, setFrontendModes, setPresentations, setApprovalPolicies, setApprovalReviews, setRejectedCallIds };
+  return {
+    translate,
+    compaction,
+    setFrontendModes,
+    setPresentations,
+    setCanonicalNames,
+    setApprovalPolicies,
+    setApprovalReviews,
+    setRejectedCallIds,
+  };
 };
 
 // ---------------------------------------------------------------------------
@@ -755,6 +769,7 @@ export class AiTurnExecutor {
     const rememberableCapabilityApprovals = new Map<string, string>();
     const capabilityActionReviews = new Map<string, CapabilityActionReview>();
     pipeline.setFrontendModes(prepared.frontendModes);
+    pipeline.setCanonicalNames(prepared.canonicalNames);
     pipeline.setApprovalPolicies(prepared.approvalPolicies);
     const toolPresentations = new Map<string, AiToolPresentation>();
     const rejectedToolCallIds = new Set<string>();
@@ -885,15 +900,18 @@ export class AiTurnExecutor {
               }
             : {}),
           onPrepared: ({ prepared: snapshot, presentations, rememberableApprovals }) => {
+            prepared.canonicalNames.clear();
             prepared.approvalPolicies.clear();
             prepared.frontendModes.clear();
             rememberableCapabilityApprovals.clear();
             toolPresentations.clear();
+            for (const [name, canonicalName] of snapshot.canonicalNames) prepared.canonicalNames.set(name, canonicalName);
             for (const [name, policy] of snapshot.approvalPolicies) prepared.approvalPolicies.set(name, policy);
             for (const [name, mode] of snapshot.frontendModes) prepared.frontendModes.set(name, mode);
             for (const [name, scope] of rememberableApprovals) rememberableCapabilityApprovals.set(name, scope);
             for (const [name, presentation] of presentations) toolPresentations.set(name, presentation);
             pipeline.setFrontendModes(prepared.frontendModes);
+            pipeline.setCanonicalNames(prepared.canonicalNames);
             pipeline.setApprovalPolicies(prepared.approvalPolicies);
             pipeline.setPresentations(toolPresentations);
           },
@@ -1065,12 +1083,13 @@ export class AiTurnExecutor {
         }
 
         if (event.type === "tool_execution_start") {
+          const toolName = prepared.canonicalNames.get(event.name) ?? event.name;
           await aiToolAudit
             .noteToolCall({
               conversationId,
               turnId,
               callId: event.callId,
-              toolName: event.name,
+              toolName,
               location: prepared.frontendModes.get(event.name) ?? "server",
               args: event.args,
             })
@@ -1143,13 +1162,14 @@ export class AiTurnExecutor {
       capabilityActionReviews,
     } = input;
     const approvalPolicy = prepared.approvalPolicies.get(event.name);
+    const toolName = prepared.canonicalNames.get(event.name) ?? event.name;
     const frontendMode: AiFrontendToolMode | undefined =
       event.kind === "client_tool" ? (prepared.frontendModes.get(event.name) ?? "client") : undefined;
     const capabilityApprovalScope =
       event.kind === "custom_approval"
         ? rememberableCapabilityApprovals.get(customApprovalParentCallId(event.callId) ?? event.callId)
         : undefined;
-    const approvalScope = capabilityApprovalScope ?? aiToolApprovalScope(event.name, approvalPolicy);
+    const approvalScope = capabilityApprovalScope ?? aiToolApprovalScope(toolName, approvalPolicy);
     const allowAlways = capabilityApprovalScope !== undefined || aiToolAllowsAlways(approvalPolicy);
 
     // Display-only client_view tools (e.g. cards) never need user input — resolve
@@ -1175,7 +1195,7 @@ export class AiTurnExecutor {
 
     // Remembered approvals resolve inline too.
     if (event.kind !== "client_tool" && allowAlways && approvalContext) {
-      const remembered = await hasRememberedAiToolApproval(approvalContext, { toolName: event.name, approvalScope }).catch(() => false);
+      const remembered = await hasRememberedAiToolApproval(approvalContext, { toolName, approvalScope }).catch(() => false);
       if (remembered) {
         await aiToolAudit
           .noteApprovalResolved({ turnId, callId: event.callId, approvalState: "approved_by_preference" })
@@ -1191,7 +1211,7 @@ export class AiTurnExecutor {
       callId: event.callId,
       kind: event.kind,
       status: "pending",
-      name: event.name,
+      name: toolName,
       args: event.args,
       message: event.message,
       review: event.kind === "custom_approval" ? approvalReviewForCallId(capabilityActionReviews, event.callId) : undefined,
@@ -1207,7 +1227,7 @@ export class AiTurnExecutor {
           conversationId,
           turnId,
           callId: event.callId,
-          toolName: event.name,
+          toolName,
           location: frontendMode ?? "client",
           args: event.args,
           status: "waiting_for_frontend",
@@ -1215,7 +1235,7 @@ export class AiTurnExecutor {
         .catch(() => undefined);
     } else {
       await aiToolAudit
-        .noteApprovalRequested({ conversationId, turnId, callId: event.callId, toolName: event.name, location: "server", args: event.args })
+        .noteApprovalRequested({ conversationId, turnId, callId: event.callId, toolName, location: "server", args: event.args })
         .catch(() => undefined);
     }
 
@@ -1410,6 +1430,10 @@ class StreamPipeline {
 
   setPresentations(presentations: Map<string, AiToolPresentation>): void {
     this.mapper.setPresentations(presentations);
+  }
+
+  setCanonicalNames(names: Map<string, string>): void {
+    this.mapper.setCanonicalNames(names);
   }
 
   setApprovalReviews(reviews: Map<string, CapabilityActionReview>): void {

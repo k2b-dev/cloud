@@ -163,6 +163,7 @@ describe("composeAiSystemPrompt", () => {
 
     expect(disabled).not.toContain("# Cloud app tools");
     expect(enabled).toContain("# Tool discovery");
+    expect(enabled).toContain("pass it directly to load_tools without searching");
     expect(enabled).toContain("# Cloud app tools");
     expect(enabled).toContain("current user's permissions");
     expect(enabled).toContain("owning app authorizes every call");

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
-import { aiCapabilityToolName } from "./capabilities";
+import { aiCapabilityId } from "./capabilities";
 import { migrateCloudAi } from "./migrate";
 import { aiConversations } from "./store";
 import { aiToolAudit } from "./tool-audit";
@@ -100,9 +100,7 @@ describe.skipIf(!(await canUseAiDatabase()))("AI conversation resources and inte
     const archived = await aiConversations.createConversation({ ownerUserId: userId, title: "Archived" });
     const foreign = await aiConversations.createConversation({ ownerUserId: otherUserId, title: "Foreign" });
     try {
-      expect(await aiConversations.archiveConversation({ conversationId: archived.id, ownerUserId: userId })).toBe(
-        true,
-      );
+      expect(await aiConversations.archiveConversation({ conversationId: archived.id, ownerUserId: userId })).toBe(true);
       const sourceTurn = await aiConversations.createCompactionTurn({
         conversationId: source.id,
         modelProfileId: "test-model",
@@ -112,7 +110,7 @@ describe.skipIf(!(await canUseAiDatabase()))("AI conversation resources and inte
         conversationId: source.id,
         turnId: sourceTurn.id,
         callId: "call-message",
-        toolName: aiCapabilityToolName("assistant", "action", "chat.message"),
+        toolName: aiCapabilityId("assistant", "chat.message"),
         idempotencyKey: "ai-inter-chat-test",
       });
       expect(
@@ -123,7 +121,7 @@ describe.skipIf(!(await canUseAiDatabase()))("AI conversation resources and inte
       ).toBeNull();
       const origin = await aiConversations.getCapabilityInvocationOrigin({
         idempotencyKey: "ai-inter-chat-test",
-        toolName: aiCapabilityToolName("assistant", "action", "chat.message"),
+        toolName: aiCapabilityId("assistant", "chat.message"),
       });
       expect(origin).toMatchObject({
         conversationId: source.id,

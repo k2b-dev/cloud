@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { LoopAggregate, Message } from "@k2b/nessi";
 import { sql } from "bun";
+import { toPgTextArray } from "../services/postgres";
 import { session as authSession } from "../services/session";
 import {
   forgetAiToolApproval,
@@ -9,6 +10,7 @@ import {
   rememberAiToolApproval,
   revokeAiToolApprovalPreference,
 } from "./approvals";
+import { aiCapabilityToolName } from "./capabilities";
 import { aiFileStore } from "./files-store";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
@@ -97,10 +99,10 @@ suite("AI conversation store integration", () => {
       expect(
         await aiConversations.loadTools({
           conversationId: conversation.id,
-          names: ["contacts__query__list", "contacts__query__list", "mail__query__search"],
+          names: ["contacts.list", "contacts.list", "mail.search"],
         }),
       ).toEqual({
-        loaded: ["contacts__query__list", "mail__query__search"],
+        loaded: ["contacts.list", "mail.search"],
         alreadyLoaded: [],
         evicted: [],
       });
@@ -108,38 +110,73 @@ suite("AI conversation store integration", () => {
       expect(
         await aiConversations.loadTools({
           conversationId: conversation.id,
-          names: ["contacts__query__list", "spaces__action__task-create"],
+          names: ["contacts.list", "spaces.task-create"],
           maxLoadedTools: 2,
         }),
       ).toEqual({
-        loaded: ["spaces__action__task-create"],
-        alreadyLoaded: ["contacts__query__list"],
-        evicted: ["contacts__query__list"],
+        loaded: ["spaces.task-create"],
+        alreadyLoaded: ["contacts.list"],
+        evicted: ["contacts.list"],
       });
-      expect(await aiConversations.getLoadedTools({ conversationId: conversation.id })).toEqual([
-        "mail__query__search",
-        "spaces__action__task-create",
-      ]);
+      expect(await aiConversations.getLoadedTools({ conversationId: conversation.id })).toEqual(["mail.search", "spaces.task-create"]);
 
       await aiConversations.loadTools({
         conversationId: conversation.id,
-        names: ["weather__query__forecast"],
+        names: ["weather.forecast"],
         maxLoadedTools: 0,
       });
       expect(await aiConversations.getLoadedTools({ conversationId: conversation.id })).toEqual([
-        "mail__query__search",
-        "spaces__action__task-create",
-        "weather__query__forecast",
+        "mail.search",
+        "spaces.task-create",
+        "weather.forecast",
       ]);
 
       await Promise.all([
-        aiConversations.loadTools({ conversationId: conversation.id, names: ["contacts__query__get"] }),
-        aiConversations.loadTools({ conversationId: conversation.id, names: ["notebooks__query__list"] }),
+        aiConversations.loadTools({ conversationId: conversation.id, names: ["contacts.get"] }),
+        aiConversations.loadTools({ conversationId: conversation.id, names: ["notebooks.list"] }),
       ]);
       expect((await aiConversations.getLoadedTools({ conversationId: conversation.id })).slice(-2).sort()).toEqual([
-        "contacts__query__get",
-        "notebooks__query__list",
+        "contacts.get",
+        "notebooks.list",
       ]);
+    } finally {
+      await cleanupFixture({ userId, conversationIds });
+    }
+  });
+
+  test("migrates provider-encoded capability state once to canonical ids", async () => {
+    const userId = await insertUser();
+    const conversationIds: string[] = [];
+    try {
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+      conversationIds.push(conversation.id);
+      const legacyApproval = aiCapabilityToolName("contacts", "action", "contact.create");
+      const hashed = aiCapabilityToolName("contacts", "query", `contact.${"nested-".repeat(20)}list`);
+      const legacyLoaded = toPgTextArray([
+        aiCapabilityToolName("contacts", "query", "contact_list"),
+        "mail.conversation.list",
+        aiCapabilityToolName("mail", "query", "conversation.list"),
+        hashed,
+        "text_editor",
+      ]);
+      await sql`
+        UPDATE ai.conversations
+        SET loaded_tools = ${legacyLoaded}::text[]
+        WHERE id = ${conversation.id}::uuid
+      `;
+      await rememberAiToolApproval({ actorUserId: userId }, { toolName: legacyApproval, approvalScope: "address-book:default" });
+
+      await migrateCloudAi();
+
+      expect(await aiConversations.getLoadedTools({ conversationId: conversation.id })).toEqual([
+        "contacts.contact_list",
+        "mail.conversation.list",
+        "text_editor",
+      ]);
+      expect(await listAiToolApprovalPreferences(userId)).toEqual([
+        expect.objectContaining({ toolName: "contacts.contact.create", approvalScope: "address-book:default" }),
+      ]);
+      expect(hashed).toHaveLength(64);
     } finally {
       await cleanupFixture({ userId, conversationIds });
     }

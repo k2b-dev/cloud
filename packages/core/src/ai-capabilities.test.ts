@@ -6,7 +6,7 @@ import {
   type AiInterChatMessage,
   type AiSkill,
   type AiStoredMessage,
-  aiCapabilityToolName,
+  aiCapabilityId,
   aiChatTasks,
   aiConversations,
   aiSkills,
@@ -648,7 +648,7 @@ describe("Core AI capabilities", () => {
     });
     expect(origin).toHaveBeenCalledWith({
       idempotencyKey: "ai-test",
-      toolName: aiCapabilityToolName("core", "action", "ai.chat.message"),
+      toolName: aiCapabilityId("core", "ai.chat.message"),
     });
   });
 

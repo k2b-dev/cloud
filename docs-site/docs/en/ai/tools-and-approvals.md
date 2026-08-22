@@ -5,7 +5,7 @@ section: AI
 order: 1040
 description: Let models request application actions while keeping authorization and approval explicit.
 tags: [ai, tools, approvals]
-updated: 2026-08-12
+updated: 2026-08-23
 ---
 
 # Tools and approvals
@@ -175,11 +175,14 @@ toolSource: { kind: "default", appTools: true }
 
 Tool-capable personal chats keep three bounded discovery tools available:
 
-- `search_tools` searches Cloud built-ins and live app operations by task. Its
+- `search_tools` searches Cloud built-ins and live app operations by task. App
+  operations use their stable qualified capability ID, such as
+  `mail.conversation.list`. Its
   optional `appId` scopes app operations; `kind` is returned as metadata and is
   not a search filter. Searching never loads a tool;
-- `load_tools` retains exact names returned by search. Built-ins named in the
-  system prompt may be loaded directly without searching;
+- `load_tools` retains qualified capability IDs or stable built-in names.
+  Skills and the system prompt may name either directly, so the model does not
+  need a search call merely to translate an already known tool;
 - `list_apps` returns a bounded map of exact app IDs to their live descriptions
   when the owning app is unclear.
 
@@ -207,7 +210,9 @@ replays the user's browser cookie, bearer token, resource API key, or service
 account credential for this path. An unavailable app or denied resource fails
 that tool call without granting fallback access.
 
-The chat stores loaded tool names, not provider credentials or private contracts.
+The chat stores qualified capability IDs and stable built-in names, not
+provider-encoded function names, credentials, or private contracts. Cloud
+generates a provider-safe callable name only when preparing a model request.
 When a result contains a semantic `open` or `edit` link, clients use
 that exact path instead of inferring a route from a resource ref.
 

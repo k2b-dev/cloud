@@ -89,6 +89,41 @@ export const migrateCloudAi = async (): Promise<void> => {
     END $$
   `.simple();
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS loaded_tools TEXT[] NOT NULL DEFAULT '{}'`.simple();
+  // Capability tools used to persist provider-encoded function names. The
+  // encoding is reversible for every non-hashed valid capability id; hashed
+  // names were only cache state and are safely reloaded through discovery.
+  await sql`
+    UPDATE ai.conversations
+    SET loaded_tools = ARRAY(
+      SELECT converted_name
+      FROM (
+        SELECT
+          CASE
+            WHEN name ~ '^[a-z][a-z0-9-]*__(query|action)__'
+              THEN substring(name FROM '^([a-z][a-z0-9-]*)__') || '.' ||
+                replace(
+                  replace(regexp_replace(name, '^[a-z][a-z0-9-]*__(query|action)__', ''), '_dot_', '.'),
+                  '__',
+                  '_'
+                )
+            ELSE name
+          END AS converted_name,
+          position
+        FROM unnest(loaded_tools) WITH ORDINALITY AS loaded(name, position)
+        WHERE NOT (
+          length(name) = 64
+          AND name ~ '^[a-z][a-z0-9-]*__(query|action)__'
+          AND name ~ '__[0-9a-f]{12}$'
+        )
+      ) AS converted
+      GROUP BY converted_name
+      ORDER BY min(position)
+    )
+    WHERE EXISTS (
+      SELECT 1 FROM unnest(loaded_tools) AS name
+      WHERE name ~ '^[a-z][a-z0-9-]*__(query|action)__'
+    )
+  `.simple();
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS draft_content JSONB NOT NULL DEFAULT '[]'::jsonb`.simple();
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS draft_revision BIGINT NOT NULL DEFAULT 0`.simple();
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS draft_updated_at TIMESTAMPTZ`.simple();
@@ -527,6 +562,35 @@ export const migrateCloudAi = async (): Promise<void> => {
       expires_at TIMESTAMPTZ,
       CONSTRAINT ai_tool_approval_preferences_unique UNIQUE (actor_user_id, tool_name, approval_scope)
     )
+  `.simple();
+
+  // Remembered capability approvals use the same stable qualified identity as
+  // loaded tools. Revoke the rare hashed legacy identity rather than guessing.
+  await sql`
+    INSERT INTO ai.tool_approval_preferences (
+      id, actor_user_id, tool_name, approval_scope, created_at, last_used_at, expires_at
+    )
+    SELECT
+      gen_random_uuid(),
+      actor_user_id,
+      substring(tool_name FROM '^([a-z][a-z0-9-]*)__') || '.' ||
+        replace(
+          replace(regexp_replace(tool_name, '^[a-z][a-z0-9-]*__(query|action)__', ''), '_dot_', '.'),
+          '__',
+          '_'
+        ),
+      approval_scope,
+      created_at,
+      last_used_at,
+      expires_at
+    FROM ai.tool_approval_preferences
+    WHERE tool_name ~ '^[a-z][a-z0-9-]*__(query|action)__'
+      AND NOT (length(tool_name) = 64 AND tool_name ~ '__[0-9a-f]{12}$')
+    ON CONFLICT (actor_user_id, tool_name, approval_scope) DO NOTHING
+  `.simple();
+  await sql`
+    DELETE FROM ai.tool_approval_preferences
+    WHERE tool_name ~ '^[a-z][a-z0-9-]*__(query|action)__'
   `.simple();
 
   await sql`
