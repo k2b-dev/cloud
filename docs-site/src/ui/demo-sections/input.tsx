@@ -415,23 +415,8 @@ const NumberDemo = () => {
           step={0.5}
           clearable
         />
-        <NumberInput
-          label="Capacity"
-          value={capacity}
-          onValueChange={setCapacity}
-          suffix="%"
-          min={0}
-          max={100}
-          step={5}
-        />
-        <NumberInput
-          label="Workers"
-          value={count}
-          onValueChange={setCount}
-          min={1}
-          max={64}
-          step={1}
-        />
+        <NumberInput label="Capacity" value={capacity} onValueChange={setCapacity} suffix="%" min={0} max={100} step={5} />
+        <NumberInput label="Workers" value={count} onValueChange={setCount} min={1} max={64} step={1} />
       </div>
     </DemoCard>
   );
@@ -857,7 +842,9 @@ const TagEditorDemo = () => {
       <div class="ui-demo-form-grid">
         <div class="ui-demo-row">
           <Tag color="#0891b2">Platform</Tag>
-          <Tag color="#8b5cf6" icon="ti ti-palette">Design</Tag>
+          <Tag color="#8b5cf6" icon="ti ti-palette">
+            Design
+          </Tag>
           <Tag size="sm">Neutral</Tag>
           <Tag color="#2563eb" icon="ti ti-point" selected size="lg">
             Selected
@@ -865,8 +852,12 @@ const TagEditorDemo = () => {
         </div>
         <TagEditor
           items={items()}
-          onCreate={async (value) => { setItems((current) => [...current, { id: `tag-${nextId++}`, ...value }]); }}
-          onUpdate={async (tag, value) => { setItems((current) => current.map((item) => item.id === tag.id ? { ...item, ...value } : item)); }}
+          onCreate={async (value) => {
+            setItems((current) => [...current, { id: `tag-${nextId++}`, ...value }]);
+          }}
+          onUpdate={async (tag, value) => {
+            setItems((current) => current.map((item) => (item.id === tag.id ? { ...item, ...value } : item)));
+          }}
           onDelete={async (tag) => {
             setItems((current) => current.filter((item) => item.id !== tag.id));
             setSelected((current) => current.filter((id) => id !== tag.id));
@@ -878,7 +869,12 @@ const TagEditorDemo = () => {
           onValueChange={setSelected}
           options={items().map((tag) => ({ value: tag.id, label: tag.name, color: tag.color ?? undefined }))}
           renderValue={(option) => <strong>{option.label}</strong>}
-          renderOption={(option) => <span class="ui-demo-choice-copy"><strong>{option.label}</strong><small>Reusable project tag</small></span>}
+          renderOption={(option) => (
+            <span class="ui-demo-choice-copy">
+              <strong>{option.label}</strong>
+              <small>Reusable project tag</small>
+            </span>
+          )}
           searchPlaceholder="Search tags..."
           emptyLabel="No tags available"
           noResultsLabel="No matching tags"
@@ -1058,8 +1054,7 @@ const FileDemo = (props: { image?: boolean }) => {
 const CropDemo = () => {
   const [, setCrop] = createSignal<ImageCropState | null>(null);
   const [aspect, setAspect] = createSignal<CropAspectPreset>("square");
-  const cropAspect = () =>
-    aspect() === "square" ? { width: 1, height: 1 } : aspect() === "wide" ? { width: 16, height: 9 } : "free";
+  const cropAspect = () => (aspect() === "square" ? { width: 1, height: 1 } : aspect() === "wide" ? { width: 16, height: 9 } : "free");
   return (
     <DemoCard
       id="image-cropper"
@@ -1088,12 +1083,7 @@ const CropDemo = () => {
             { id: "free", label: "Free", icon: "ti ti-crop" },
           ]}
         />
-        <ImageCropper
-          source={cropDemoSource}
-          aspect={cropAspect()}
-          previewShape="rect"
-          onValueChange={setCrop}
-        />
+        <ImageCropper source={cropDemoSource} aspect={cropAspect()} previewShape="rect" onValueChange={setCrop} />
       </div>
     </DemoCard>
   );
@@ -1118,7 +1108,13 @@ const BooleanDemo = () => {
       <div class="ui-demo-form-grid">
         <Switch label="Automation" value={enabled} onValueChange={setEnabled} />
         <Checkbox label="Send a summary" description="Notify everyone when the run finishes." value={checked} onValueChange={setChecked} />
-        <CheckboxCard label="Early access" description="Preview new components." icon="ti ti-flask" value={checked} onValueChange={setChecked} />
+        <CheckboxCard
+          label="Early access"
+          description="Preview new components."
+          icon="ti ti-flask"
+          value={checked}
+          onValueChange={setChecked}
+        />
       </div>
     </DemoCard>
   );

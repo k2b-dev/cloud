@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { createSignal } from "solid-js";
 import { isServer, render } from "solid-js/web";
 import { createDomTestHarness } from "./dom";
@@ -134,6 +134,36 @@ describe("@k2b/ui AppWorkspace behavior", () => {
     expect(enhancedNavigations).toBe(3);
 
     dispose();
+    dom.cleanup();
+  });
+
+  test("keeps handlerless enhanced sidebar links on native document navigation", async () => {
+    const dom = createDomTestHarness();
+    const { default: AppWorkspace } = await import("../src/layout/AppWorkspace");
+    const pushState = spyOn(window.history, "pushState");
+    const dispose = render(
+      () => (
+        <div>
+          <AppWorkspace.SidebarItem href="/handlerless" navigation="enhanced">
+            Handlerless
+          </AppWorkspace.SidebarItem>
+          <AppWorkspace.SidebarIconAction
+            href="/handlerless-icon"
+            navigation="enhanced"
+            icon="ti ti-link"
+            label="Handlerless icon"
+          />
+        </div>
+      ),
+      dom.root,
+    );
+
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/handlerless"]')?.click();
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/handlerless-icon"]')?.click();
+    expect(pushState).not.toHaveBeenCalled();
+
+    dispose();
+    pushState.mockRestore();
     dom.cleanup();
   });
 });

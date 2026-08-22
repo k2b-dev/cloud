@@ -3097,9 +3097,7 @@
     pointer-events: none;
   }
 
-  .k2b-ui
-    .k2b-app-workspace__sidebar-section-header:is(:hover, :focus-within)
-    > .k2b-app-workspace__sidebar-section-actions {
+  .k2b-ui .k2b-app-workspace__sidebar-section-header:is(:hover, :focus-within) > .k2b-app-workspace__sidebar-section-actions {
     opacity: 1;
     pointer-events: auto;
   }
@@ -5204,9 +5202,7 @@
     display: block;
   }
 
-  .k2b-ui
-    .k2b-table-shell:is(:hover, :focus-within, [data-scrolling="true"])
-    > .k2b-data-table__scrollbar[data-overflow="true"] {
+  .k2b-ui .k2b-table-shell:is(:hover, :focus-within, [data-scrolling="true"]) > .k2b-data-table__scrollbar[data-overflow="true"] {
     opacity: 1;
     pointer-events: auto;
   }

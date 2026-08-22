@@ -69,6 +69,9 @@ Links use normal document navigation by default. Inside a hydrated SSR workspace
 </ButtonLink>
 ```
 
+Enhanced button links require `onNavigate`; without it they safely retain
+native document navigation.
+
 ## Accessibility
 
 All matching native button or anchor attributes pass through. The default button `type` is `button`, so form submission stays explicit. `IconButton` and `IconButtonLink` require `label`; `SplitButton` requires `menuLabel`. These labels supply the icon-only control's accessible name and title.

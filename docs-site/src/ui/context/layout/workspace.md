@@ -50,7 +50,8 @@ Provide both `SidebarMobile` and `SidebarDesktop` when the workspace has navigat
 Sidebar links use document navigation by default. Set `navigation="enhanced"`
 only inside an island that loads and applies the target state before committing
 history through `onNavigate`. The enhanced helper does not run server loaders
-or re-render an SSR page. See [URL state and navigation](/en/docs/frontend/url-state-and-navigation).
+or re-render an SSR page. If `onNavigate` is absent, the link safely keeps
+document navigation. See [URL state and navigation](/en/docs/frontend/url-state-and-navigation).
 
 Set `collapsible` on `Sidebar` to let the shared resize controller snap it to
 the compact rail. The collapsed flag is part of `AppWorkspaceLayoutState`, so

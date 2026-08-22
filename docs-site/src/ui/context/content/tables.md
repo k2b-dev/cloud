@@ -92,11 +92,20 @@ Do not filter or sort a paginated result in the browser. The client does not own
 
 Use `density="compact"` for dense operational tables. Headers are sticky unless `stickyHeader={false}`. `footer` accepts values and an optional cell renderer for server-computed totals.
 
+`DataTable` owns its scroll viewport. Its vertical and horizontal scrollbar
+thumbs overlay the table on hover-capable fine pointers, so a scrollbar never
+reduces the sticky header width. The thumbs appear while the table is hovered,
+contains keyboard focus, or is actively scrolling. Wheel and keyboard scrolling
+remain native; touch, coarse-pointer, and forced-color environments retain
+their native scrollbar treatment. Server-rendered tables also keep native
+scrollbars until hydration has installed the overlay behavior.
+
 Use `surface="paper"` for a standalone bordered table and `surface="plain"`
 when a surrounding section owns the border. Set it explicitly whenever the
-table also has a custom `class`; this keeps geometry such as
-`overflow-x-auto` independent from the intended visual frame while legacy
-callers retain their existing appearance.
+table also has a custom `class`. The class sizes the outer table shell; the
+component keeps scrolling on its inner viewport. Bound a scrolling table with
+`height`, `max-height`, or a correctly sized `min-h-0 flex-1` region instead of
+adding another scroll container.
 
 `hasMore`, `loadingMore`, and `onLoadMore` add an infinite-load sentinel. The owning island still fetches the next server page and appends its rows. The table keeps one request in flight until rows or loading state advance.
 

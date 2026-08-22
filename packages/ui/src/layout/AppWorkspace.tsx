@@ -731,7 +731,7 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
         </div>
       );
     }
-    if (props.navigation !== "enhanced") {
+    if (props.navigation !== "enhanced" || !props.onNavigate) {
       return (
         <div {...common()}>
           <a
@@ -772,7 +772,7 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
       </button>
     );
   }
-  if (props.navigation !== "enhanced") {
+  if (props.navigation !== "enhanced" || !props.onNavigate) {
     return (
       <a href={props.href} {...common()} tabIndex={props.tabIndex} aria-current={current()} onClick={props.onClick}>
         {props.children}
@@ -1187,7 +1187,7 @@ const AppWorkspaceSidebarIconAction = (props: AppWorkspaceSidebarIconActionProps
         {content}
       </button>
     );
-  if (props.navigation !== "enhanced")
+  if (props.navigation !== "enhanced" || !props.onNavigate)
     return (
       <a href={props.href} {...attrs()} onClick={props.onClick}>
         {content}

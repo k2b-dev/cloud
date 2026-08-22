@@ -43,6 +43,28 @@ describe("@k2b/ui action runtime behavior", () => {
     return;
   }
 
+  test("keeps handlerless enhanced button links on native document navigation", async () => {
+    const dom = createDomTestHarness();
+    const { ButtonLink } = await import("../src/actions/Button");
+    const pushState = spyOn(window.history, "pushState");
+    const dispose = render(
+      () =>
+        createComponent(ButtonLink, {
+          href: "/handlerless",
+          navigation: "enhanced",
+          children: "Handlerless",
+        }),
+      dom.root,
+    );
+
+    dom.root.querySelector<HTMLAnchorElement>('a[href="/handlerless"]')?.click();
+    expect(pushState).not.toHaveBeenCalled();
+
+    dispose();
+    pushState.mockRestore();
+    dom.cleanup();
+  });
+
   test("scopes dropdown viewport listeners, closes actions, and reacts to disabled", async () => {
     const dom = createDomTestHarness();
     installPopoverStub();

@@ -120,7 +120,7 @@ export function ButtonLink(props: ButtonLinkProps): JSX.Element {
     </Show>
   );
 
-  if (local.navigation === "enhanced" && local.href) {
+  if (local.navigation === "enhanced" && local.href && local.onNavigate) {
     return (
       <>
         <Link
