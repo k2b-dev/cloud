@@ -23,24 +23,7 @@ type MailboxOverviewItem = {
   subtitle: string;
   unread: number;
   needsAction: number;
-  layoutSmoke: boolean;
 };
-
-// Temporary scale smoke requested for the overview review. Remove after the
-// mailbox-density decision has been made.
-const MAILBOX_LAYOUT_SMOKE_TOTAL = 12;
-const MAILBOX_LAYOUT_SMOKE_NAMES = [
-  "Customer support",
-  "Orders",
-  "Accounting",
-  "Returns",
-  "Marketplace",
-  "Logistics",
-  "Suppliers",
-  "Press",
-  "People",
-  "Product feedback",
-] as const;
 
 const viewLabels: Record<MailFocusView, string> = {
   mine: "For me",
@@ -113,8 +96,8 @@ export default function MailOverview(props: {
   const counts = () => focusResults.pages()[0]?.counts ?? props.initialFocus.counts;
   const mailboxCounts = () => focusResults.pages()[0]?.mailboxCounts ?? props.initialFocus.mailboxCounts;
   const mailboxCountsById = createMemo(() => new Map(mailboxCounts().map((item) => [item.mailboxId, item])));
-  const mailboxOverviewItems = createMemo<MailboxOverviewItem[]>(() => {
-    const realItems = props.mailboxes.map((mailbox) => {
+  const mailboxOverviewItems = createMemo<MailboxOverviewItem[]>(() =>
+    props.mailboxes.map((mailbox) => {
       const mailboxStats = mailboxCountsById().get(mailbox.id) ?? { unread: 0, needsAction: 0 };
       return {
         id: mailbox.id,
@@ -123,26 +106,9 @@ export default function MailOverview(props: {
         subtitle: mailboxOverviewSubtitle(mailbox),
         unread: mailboxStats.unread,
         needsAction: mailboxStats.needsAction,
-        layoutSmoke: false,
       };
-    });
-    const items =
-      realItems.length === 0 || realItems.length >= MAILBOX_LAYOUT_SMOKE_TOTAL
-        ? realItems
-        : [
-            ...realItems,
-            ...Array.from({ length: MAILBOX_LAYOUT_SMOKE_TOTAL - realItems.length }, (_, index) => ({
-              id: `Smk${String(index).padStart(3, "0")}`,
-              href: realItems[index % realItems.length]!.href,
-              name: MAILBOX_LAYOUT_SMOKE_NAMES[index % MAILBOX_LAYOUT_SMOKE_NAMES.length]!,
-              subtitle: "Temporary mailbox layout preview",
-              unread: (index * 7 + 3) % 64,
-              needsAction: (index * 11 + 5) % 48,
-              layoutSmoke: true,
-            })),
-          ];
-    return items;
-  });
+    }),
+  );
   const orderedMailboxOverviewItems = createMemo(() => {
     return [...mailboxOverviewItems()].sort((left, right) => {
       const leftIndex = pinnedMailboxIds().indexOf(left.id);
@@ -463,7 +429,6 @@ export default function MailOverview(props: {
                         size="sm"
                         class="mail-focus-mailbox-button"
                         title={`${mailbox.name} · ${mailbox.subtitle}`}
-                        data-layout-smoke={mailbox.layoutSmoke ? "true" : undefined}
                       >
                         <i class={`ti ${pinned() ? "ti-flag" : "ti-mail"} app-accent-text`} aria-hidden="true" />
                         <span class="mail-focus-mailbox-copy">

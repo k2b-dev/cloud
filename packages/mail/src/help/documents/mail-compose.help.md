@@ -116,6 +116,17 @@ Scheduled messages appear under **Scheduled** with recipients, content preview, 
 
 After successful delivery, the message becomes normal sent mail. Scheduled delivery and Undo Send require an active mailbox transport. Pausing the mailbox stops queued delivery until an administrator resumes it.
 
+## Recover from a send problem {icon="alert-circle"}
+
+Select the delivery status below an outgoing message to see what happened and the safest available next step.
+
+- **Couldn’t send** means Mail knows the message was not sent. Choose **Review and resend** to reopen the preserved draft before trying again. Recipient, size, or delivery-option errors use a more specific review label.
+- **Partially sent** means the receiving server accepted some recipients but not others. Choose **Review remaining recipients** to create an independent draft containing only the addresses that were not accepted. **Review everyone again…** includes the original recipients too and can therefore create duplicate messages.
+- **Delivery status unclear** means the connection ended before Mail could prove the outcome. Choose **Check again** first. Only create a resend draft when you have considered that the original message may already have arrived.
+- **Sent, but not saved** means delivery succeeded but Mail could not store its copy in the Sent folder. Do not resend the message.
+
+Creating a recovery draft never sends immediately. Review its sender, recipients, content, and attachments in the composer, then use the normal send action.
+
 ## Choose priority and receipt requests {icon="mail-cog"}
 
 Open **Message options**, then **Delivery options**, to change the selected identity's defaults for this draft:

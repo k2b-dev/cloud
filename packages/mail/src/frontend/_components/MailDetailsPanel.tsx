@@ -522,7 +522,7 @@ export default function MailDetailsPanel(props: {
               <Placeholder
                 state="error"
                 variant="compact"
-                align="left"
+                align="center"
                 title="Some conversation details are temporarily unavailable"
                 description={`Could not refresh ${unavailableSections().join(", ")}. Previously loaded values remain visible where available.`}
                 action={

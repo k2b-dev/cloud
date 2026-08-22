@@ -271,11 +271,11 @@ export default function MailConversationContext(props: { mailboxId: string; conv
         <Show
           when={context()}
           fallback={
-            <Show when={contexts.error()} fallback={<Placeholder state="loading" align="left" title="Loading contacts..." />}>
+            <Show when={contexts.error()} fallback={<Placeholder state="loading" align="center" title="Loading contacts..." />}>
               {(error) => (
                 <Placeholder
                   state="error"
-                  align="left"
+                  align="center"
                   title="Contacts unavailable"
                   description={error().message}
                   icon="ti ti-address-book-off"
@@ -294,7 +294,7 @@ export default function MailConversationContext(props: { mailboxId: string; conv
             fallback={
               <Placeholder
                 state="error"
-                align="left"
+                align="center"
                 title="Contacts unavailable"
                 description={contexts.error()?.message ?? ""}
                 icon="ti ti-address-book-off"
@@ -311,7 +311,7 @@ export default function MailConversationContext(props: { mailboxId: string; conv
               fallback={
                 <Placeholder
                   state="error"
-                  align="left"
+                  align="center"
                   title="Contacts unavailable"
                   description="Contact context could not be refreshed."
                   icon="ti ti-address-book-off"
@@ -323,7 +323,10 @@ export default function MailConversationContext(props: { mailboxId: string; conv
                 />
               }
             >
-              <Show when={participantRows().length > 0} fallback={<Placeholder title="No external participants" icon="ti ti-user-off" />}>
+              <Show
+                when={participantRows().length > 0}
+                fallback={<Placeholder align="center" title="No external participants" icon="ti ti-user-off" />}
+              >
                 <div class="flex flex-col gap-2">
                   <For each={participantRows()}>
                     {(participant) => (
@@ -471,11 +474,11 @@ export default function MailConversationContext(props: { mailboxId: string; conv
         <Show
           when={context()}
           fallback={
-            <Show when={contexts.error()} fallback={<Placeholder state="loading" align="left" title="Loading Spaces..." />}>
+            <Show when={contexts.error()} fallback={<Placeholder state="loading" align="center" title="Loading Spaces..." />}>
               {(error) => (
                 <Placeholder
                   state="error"
-                  align="left"
+                  align="center"
                   title="Spaces unavailable"
                   description={error().message}
                   icon="ti ti-layout-kanban-off"
@@ -492,7 +495,7 @@ export default function MailConversationContext(props: { mailboxId: string; conv
           {(current) => (
             <Show
               when={current().spaces.status === "ready"}
-              fallback={<Placeholder state="error" align="left" title="Spaces unavailable" icon="ti ti-layout-kanban-off" />}
+              fallback={<Placeholder state="error" align="center" title="Spaces unavailable" icon="ti ti-layout-kanban-off" />}
             >
               <For each={current().spaces.status === "ready" ? current().spaces.items : []}>
                 {(item) => {

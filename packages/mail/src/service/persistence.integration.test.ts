@@ -27,6 +27,7 @@ import {
   uploadDraftAttachmentStream,
 } from "./draft-uploads";
 import {
+  createDeliveryRecoveryDraft,
   createDraft,
   deriveDraftFromMessage,
   discardDraft,
@@ -3178,7 +3179,7 @@ suite("mail PostgreSQL foundation", () => {
       input: {
         senderIdentityId: identity!.id,
         to: [{ address: "recipient@example.com" }],
-        cc: [],
+        cc: [{ address: "remaining@example.com" }],
         bcc: [],
         subject: "Sent copy retry",
         body: "Sent copy retry body",
@@ -3224,6 +3225,11 @@ suite("mail PostgreSQL foundation", () => {
     expect(retriedCopy?.last_error_code).toBe("CREDENTIAL_DECRYPTION_FAILED");
 
     await sql`
+      UPDATE mail.provider_connections
+      SET encrypted_secret = ${encryptedSecret}
+      WHERE id = ${connection!.id}::uuid
+    `;
+    await sql`
       UPDATE mail.outbox_submissions
       SET state = 'unknown', last_error_code = NULL, last_error_message = NULL
       WHERE id = ${retryOutbox!.id}::uuid
@@ -3260,12 +3266,53 @@ suite("mail PostgreSQL foundation", () => {
       command_attempt: 1,
       worker_heartbeat_at: null,
     });
+    const ambiguousRecovery = await createDeliveryRecoveryDraft({
+      context,
+      mailboxId: mailbox.data.id,
+      deliveryId: retryOutbox!.id,
+      input: {
+        recipientMode: "all",
+        includeAttachments: true,
+        idempotencyKey: `ambiguous-recovery-${suffix}`,
+      },
+    });
+    expect(ambiguousRecovery.ok).toBe(true);
+    if (ambiguousRecovery.ok) {
+      expect(ambiguousRecovery.data.to).toEqual([{ name: null, address: "recipient@example.com" }]);
+      expect(ambiguousRecovery.data.cc).toEqual([{ name: null, address: "remaining@example.com" }]);
+    }
     await sql`
-      UPDATE mail.provider_connections
-      SET encrypted_secret = ${encryptedSecret}
-      WHERE id = ${connection!.id}::uuid
+      UPDATE mail.outbox_submissions
+      SET
+        state = 'needs_attention',
+        last_error_code = 'SMTP_PARTIAL_ACCEPTANCE',
+        provider_response = ${{
+          accepted: ["recipient@example.com"],
+          rejected: ["remaining@example.com"],
+          response: "250 partial",
+        }}::jsonb
+      WHERE id = ${retryOutbox!.id}::uuid
     `;
-
+    const remainingRecoveryRequest = {
+      context,
+      mailboxId: mailbox.data.id,
+      deliveryId: retryOutbox!.id,
+      input: {
+        recipientMode: "remaining" as const,
+        includeAttachments: true,
+        idempotencyKey: `remaining-recovery-${suffix}`,
+      },
+    };
+    const remainingRecovery = await createDeliveryRecoveryDraft(remainingRecoveryRequest);
+    expect(remainingRecovery.ok).toBe(true);
+    if (remainingRecovery.ok) {
+      expect(remainingRecovery.data.to).toEqual([]);
+      expect(remainingRecovery.data.cc).toEqual([{ name: null, address: "remaining@example.com" }]);
+      expect(remainingRecovery.data.bcc).toEqual([]);
+    }
+    const repeatedRecovery = await createDeliveryRecoveryDraft(remainingRecoveryRequest);
+    expect(repeatedRecovery.ok).toBe(true);
+    if (repeatedRecovery.ok && remainingRecovery.ok) expect(repeatedRecovery.data.id).toBe(remainingRecovery.data.id);
     const [exhaustedMutation] = await sql<{ id: string }[]>`
       INSERT INTO mail.commands (
         mailbox_id,

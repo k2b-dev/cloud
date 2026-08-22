@@ -3070,6 +3070,17 @@ export const deriveDraftFromMessageInputSchema = z
   .strict();
 export type DeriveDraftFromMessageInput = z.input<typeof deriveDraftFromMessageInputSchema>;
 
+export const deliveryRecoveryRecipientModeSchema = z.enum(["remaining", "all"]);
+export type DeliveryRecoveryRecipientMode = z.infer<typeof deliveryRecoveryRecipientModeSchema>;
+export const createDeliveryRecoveryDraftInputSchema = z
+  .object({
+    recipientMode: deliveryRecoveryRecipientModeSchema,
+    includeAttachments: z.boolean().default(true),
+    idempotencyKey: z.string().trim().min(1).max(200),
+  })
+  .strict();
+export type CreateDeliveryRecoveryDraftInput = z.input<typeof createDeliveryRecoveryDraftInputSchema>;
+
 export const draftSeedOriginSchema = z.discriminatedUnion("kind", [
   z
     .object({

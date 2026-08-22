@@ -192,7 +192,12 @@ export const messageDeliveryPresentation = (delivery: MessageDeliveryInput): { l
     case "needs_attention":
       return {
         label:
-          typeof delivery !== "string" && delivery.lastErrorCode === "SMTP_PARTIAL_ACCEPTANCE" ? "Partially delivered" : "Needs attention",
+          typeof delivery !== "string" && delivery.lastErrorCode === "SMTP_PARTIAL_ACCEPTANCE"
+            ? "Partially sent"
+            : typeof delivery !== "string" &&
+                ["SENT_APPEND_FAILED", "SENT_COPY_LEASE_EXPIRED", "SENT_RECONCILIATION_FAILED"].includes(delivery.lastErrorCode ?? "")
+              ? "Sent, but not saved"
+              : "Needs attention",
         icon: "ti ti-alert-triangle",
         tone: "warning",
       };

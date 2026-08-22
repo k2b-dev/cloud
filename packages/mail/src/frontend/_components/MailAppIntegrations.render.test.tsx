@@ -70,6 +70,7 @@ describe("Mail app integration states", () => {
     expect(html).toContain('role="status"');
     expect(html).toContain("Loading contacts...");
     expect(html).toContain("Loading Spaces...");
+    expect(html.match(/data-align="center"/g)?.length).toBe(2);
     expect(html).not.toContain("Spaces unavailable");
     expect(html).toContain('aria-label="Contacts" class="bg-[var(--ui-surface)] p-3"');
     expect(html).toContain('aria-label="Spaces" class="space-y-1 bg-[var(--ui-surface)] p-3"');

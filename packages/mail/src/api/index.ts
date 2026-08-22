@@ -39,6 +39,7 @@ import {
   createAttachmentLinkInputSchema,
   createComposeTemplateInputSchema,
   createConversationCommentSchema,
+  createDeliveryRecoveryDraftInputSchema,
   createDraftAttachmentUploadSchema,
   createMailboxInputSchema,
   createSavedConversationViewSchema,
@@ -2010,6 +2011,23 @@ const mailOperationsApi = new Hono<MailApiContext>()
         drafts.deriveDraftFromMessage({
           context: requestContext(c),
           ...params,
+          input: await internalInput(c, c.req.valid("json")),
+        }),
+      );
+    },
+  )
+  .post(
+    "/mailboxes/:mailboxId/scheduled-sends/:scheduledSendId/recovery-draft",
+    v("param", mailboxAndIdParamSchema("scheduledSendId")),
+    v("json", createDeliveryRecoveryDraftInputSchema),
+    async (c) => {
+      const params = internalParams(c, c.req.valid("param")) as { mailboxId: string; scheduledSendId: string };
+      return respondDrafts(
+        c,
+        drafts.createDeliveryRecoveryDraft({
+          context: requestContext(c),
+          mailboxId: params.mailboxId,
+          deliveryId: params.scheduledSendId,
           input: await internalInput(c, c.req.valid("json")),
         }),
       );

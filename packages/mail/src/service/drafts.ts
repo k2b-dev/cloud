@@ -7,6 +7,8 @@ import { z } from "zod";
 import {
   type ActorRef,
   type ConversationDraftSummary,
+  type CreateDeliveryRecoveryDraftInput,
+  createDeliveryRecoveryDraftInputSchema,
   type DeriveDraftFromMessageInput,
   type DraftAttachment,
   type DraftContentInput,
@@ -47,6 +49,7 @@ const internalDraftContentSchema = draftContentInputSchema.extend({
   sourceMessageId: InternalIdSchema.nullable().optional(),
 });
 const internalDeriveDraftFromMessageInputSchema = deriveDraftFromMessageInputSchema.extend({ senderIdentityId: InternalIdSchema });
+const internalCreateDeliveryRecoveryDraftInputSchema = createDeliveryRecoveryDraftInputSchema;
 const internalDraftSeedOriginSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("compose"), input: internalDraftContentSchema }).strict(),
   z
@@ -1267,6 +1270,120 @@ export const deriveDraftFromMessage = async (params: {
       error,
     });
     return fail(err.internal("Failed to create draft from message"));
+  }
+};
+
+const deliveryRecipientAddresses = (value: Record<string, unknown> | string): { accepted: string[]; rejected: string[] } => {
+  try {
+    const parsed = typeof value === "string" ? (JSON.parse(value) as Record<string, unknown>) : value;
+    const addresses = (key: "accepted" | "rejected") =>
+      Array.isArray(parsed[key]) ? parsed[key].filter((address): address is string => typeof address === "string") : [];
+    return { accepted: addresses("accepted"), rejected: addresses("rejected") };
+  } catch {
+    return { accepted: [], rejected: [] };
+  }
+};
+
+const normalizedAddress = (value: string): string => value.trim().toLowerCase();
+
+export const createDeliveryRecoveryDraft = async (params: {
+  context: MailRequestContext;
+  mailboxId: string;
+  deliveryId: string;
+  input: CreateDeliveryRecoveryDraftInput;
+}): Promise<Result<MailDraft>> => {
+  const parsed = internalCreateDeliveryRecoveryDraftInputSchema.safeParse(params.input);
+  if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid delivery recovery request"));
+  const actor = mutableActor(params.context);
+  if (!actor) return fail(err.forbidden("Draft author is invalid"));
+  try {
+    const result = await sql.begin(async (tx) => {
+      const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", tx);
+      if (!allowed.ok) return allowed;
+      const [delivery] = await tx<
+        {
+          message_id: string;
+          sender_identity_id: string;
+          state: string;
+          last_error_code: string | null;
+          provider_response: Record<string, unknown> | string;
+        }[]
+      >`
+        SELECT message_id, sender_identity_id, state, last_error_code, provider_response
+        FROM mail.outbox_submissions
+        WHERE id = ${params.deliveryId}::uuid
+          AND mailbox_id = ${params.mailboxId}::uuid
+        FOR SHARE
+      `;
+      if (!delivery) return fail(err.notFound("Delivery"));
+      const partial = delivery.last_error_code === "SMTP_PARTIAL_ACCEPTANCE" && delivery.state === "needs_attention";
+      const ambiguous = delivery.state === "unknown" || delivery.last_error_code === "AMBIGUOUS_SMTP_OUTCOME";
+      if (parsed.data.recipientMode === "remaining" && !partial) {
+        return fail(err.badInput("Only a partially sent message has remaining recipients"));
+      }
+      if (parsed.data.recipientMode === "all" && !partial && !ambiguous) {
+        return fail(err.badInput("This delivery does not support creating a resend draft"));
+      }
+      const request = {
+        deliveryId: params.deliveryId,
+        recipientMode: parsed.data.recipientMode,
+        includeAttachments: parsed.data.includeAttachments,
+      };
+      const requestHash = await sha256Json(request);
+      const lockKey = [params.mailboxId, actor.kind, actorId(actor), "delivery-recovery", parsed.data.idempotencyKey].join(":");
+      await tx`SELECT pg_advisory_xact_lock(hashtextextended(${lockKey}, 0))`;
+      const [existing] = await tx<(DbDraft & { derivation_request_hash: string })[]>`
+        SELECT ${draftColumns}, d.derivation_request_hash
+        FROM mail.drafts d
+        WHERE d.mailbox_id = ${params.mailboxId}::uuid
+          AND d.author_kind = ${actor.kind}
+          AND d.author_id = ${actorId(actor)}::uuid
+          AND d.derivation_key = ${parsed.data.idempotencyKey}
+      `;
+      if (existing) {
+        return existing.derivation_request_hash === requestHash
+          ? ok(mapDraft(existing))
+          : fail(capabilityIdempotencyConflict("Delivery recovery idempotency key conflicts with a different request"));
+      }
+      const prepared = await prepareDerivedDraftInTransaction({
+        db: tx,
+        mailboxId: params.mailboxId,
+        messageId: delivery.message_id,
+        input: {
+          kind: "resend",
+          senderIdentityId: delivery.sender_identity_id,
+          includeAttachments: parsed.data.includeAttachments,
+        },
+      });
+      if (!prepared.ok) return prepared;
+      if (parsed.data.recipientMode === "remaining") {
+        const rejected = new Set(deliveryRecipientAddresses(delivery.provider_response).rejected.map(normalizedAddress));
+        if (rejected.size === 0) return fail(err.badInput("No remaining recipients were recorded for this delivery"));
+        const keepRejected = (address: MailAddress) => rejected.has(normalizedAddress(address.address));
+        prepared.data.content = {
+          ...prepared.data.content,
+          to: prepared.data.content.to.filter(keepRejected),
+          cc: prepared.data.content.cc.filter(keepRejected),
+          bcc: prepared.data.content.bcc.filter(keepRejected),
+        };
+        if (prepared.data.content.to.length + prepared.data.content.cc.length + prepared.data.content.bcc.length === 0) {
+          return fail(err.badInput("The remaining recipients could not be matched to the original message"));
+        }
+      }
+      return insertDerivedDraftInTransaction({
+        db: tx,
+        mailboxId: params.mailboxId,
+        actor,
+        prepared: prepared.data,
+        content: prepared.data.content,
+        idempotencyKey: parsed.data.idempotencyKey,
+        requestHash,
+      });
+    });
+    return wakeDraftProjection(result);
+  } catch (error) {
+    log.error("Failed to create delivery recovery draft", { mailboxId: params.mailboxId, deliveryId: params.deliveryId, error });
+    return fail(err.internal("Failed to create a recovery draft"));
   }
 };
 

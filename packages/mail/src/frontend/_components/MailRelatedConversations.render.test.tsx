@@ -33,13 +33,17 @@ describe("Related mail detail section", () => {
     expect(html).toContain("Related mail");
     expect(html).toContain("No related mail");
     expect(html).toContain('data-state="empty"');
+    expect(html).toContain('data-align="center"');
   });
 
   test("renders loading and retryable error states", () => {
-    expect(renderView({ loading: true })).toContain("Finding related mail...");
+    const loading = renderView({ loading: true });
+    expect(loading).toContain("Finding related mail...");
+    expect(loading).toContain('data-align="center"');
     const error = renderView({ error: "Mailbox unavailable" });
     expect(error).toContain("Related mail unavailable");
     expect(error).toContain("Mailbox unavailable");
+    expect(error).toContain('data-align="center"');
     expect(error).toContain('class="k2b-button__label">Retry</span>');
   });
 

@@ -76,10 +76,11 @@ describe("Mail overview", () => {
     expect(html).toContain('href="/app/mail/Mail01?view=needs_action"');
     expect(html).toContain("1 unread");
     expect(html).toContain("1 need action");
-    expect(html.match(/mail-focus-mailbox-button/g)).toHaveLength(12);
-    expect(html.match(/data-layout-smoke="true"/g)).toHaveLength(11);
+    expect(html.match(/mail-focus-mailbox-button/g)).toHaveLength(1);
+    expect(html).not.toContain("Temporary mailbox layout preview");
+    expect(html).not.toContain("Customer support");
     expect(html).toContain('aria-label="Pin Support"');
-    expect(html.indexOf("New mailbox")).toBeGreaterThan(html.indexOf("Product feedback"));
+    expect(html.indexOf("New mailbox")).toBeGreaterThan(html.indexOf("Support"));
     expect(html).toContain('role="tablist" aria-label="Mail focus view"');
     expect(html).toContain('role="tab" aria-selected="true"');
     expect(html).toContain('For me <span class="mail-focus-tab-count">1</span>');
@@ -104,10 +105,9 @@ describe("Mail overview", () => {
     expect(html).not.toContain("Nothing for me");
   });
 
-  test("renders pinned mailboxes first with an accessible unpin action", () => {
-    const html = renderOverview(null, ["Smk009"]);
-    expect(html.indexOf("Product feedback")).toBeLessThan(html.indexOf("Support"));
-    expect(html).toContain('aria-label="Unpin Product feedback"');
+  test("renders a persisted mailbox pin with an accessible unpin action", () => {
+    const html = renderOverview(null, ["Mail01"]);
+    expect(html).toContain('aria-label="Unpin Support"');
     expect(html).toContain('aria-pressed="true"');
     expect(html).toContain("ti-flag");
     expect(html).toContain("ti-flag-off");

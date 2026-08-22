@@ -2,8 +2,8 @@ import { type DateContext, dates } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
 import { Button, DetailPanel, Placeholder } from "@k2b/ui";
 import { For, Show } from "solid-js";
-import type { RelatedConversationSummary } from "../../contracts";
 import { apiClient } from "../../api/client";
+import type { RelatedConversationSummary } from "../../contracts";
 import { readApiError } from "./api-response";
 
 const reasonLabel = (reason: RelatedConversationSummary["reasons"][number]): string =>
@@ -19,14 +19,17 @@ export function MailRelatedConversationsView(props: {
 }) {
   return (
     <DetailPanel.Section title="Related mail" icon="ti ti-mail-search" tone="neutral" meta={props.items?.length}>
-      <Show when={!props.loading} fallback={<Placeholder state="loading" variant="compact" align="left" title="Finding related mail..." />}>
+      <Show
+        when={!props.loading}
+        fallback={<Placeholder state="loading" variant="compact" align="center" title="Finding related mail..." />}
+      >
         <Show
           when={!props.error}
           fallback={
             <Placeholder
               state="error"
               variant="compact"
-              align="left"
+              align="center"
               title="Related mail unavailable"
               description={props.error ?? undefined}
               action={
@@ -43,7 +46,7 @@ export function MailRelatedConversationsView(props: {
               <Placeholder
                 state="empty"
                 variant="compact"
-                align="left"
+                align="center"
                 icon="ti ti-mail-off"
                 title="No related mail"
                 description="No other conversation shares a participant or this subject."

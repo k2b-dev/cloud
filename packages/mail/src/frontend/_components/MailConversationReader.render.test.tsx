@@ -164,7 +164,7 @@ describe("Mail conversation reader", () => {
     expect(html).not.toContain("mail-delivery-action-badge");
   });
 
-  test("renders retry and partial-delivery states as compact visible controls", () => {
+  test("renders retry and partial-send states as compact visible controls", () => {
     const delivery = {
       submissionId: "Delivery02",
       draftId: "Draft02",
@@ -197,7 +197,7 @@ describe("Mail conversation reader", () => {
 
     expect(retryHtml).toContain("Trying again · 2/5");
     expect(retryHtml).toContain('data-variant="warning"');
-    expect(partialHtml).toContain("Partially delivered");
+    expect(partialHtml).toContain("Partially sent");
   });
 
   test("renders a terminal send failure as a compact red control", () => {

@@ -1,27 +1,30 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { prompts, toast, Button } from "@k2b/ui";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
+import { Button, prompts, toast } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
-import type { CancelScheduledSendResult } from "../../contracts";
+import type { CancelScheduledSendResult, DeliveryRecoveryRecipientMode, MailDraft } from "../../contracts";
 import type { MessageDetail } from "../../service/messages";
 import { readApiError } from "./api-response";
 import { mailDraftHref } from "./mail-compose-route";
-import { buildMailListHref } from "./mail-navigation";
 import { messageDeliveryControlLabel, undoSendSecondsRemaining } from "./mail-message-presentation";
+import { buildMailListHref } from "./mail-navigation";
 
 type MessageDelivery = NonNullable<MessageDetail["delivery"]>;
 
 const deliveryExplanation = (delivery: MessageDelivery): string => {
   if (delivery.lastErrorCode === "SMTP_PARTIAL_ACCEPTANCE") {
-    return "The receiving server accepted some recipients but rejected others. Mail will not resend automatically, which avoids duplicate messages.";
+    return "The receiving server accepted some recipients but not others. Review the remaining recipients before sending again. Mail will not resend automatically, which avoids duplicate messages.";
   }
   if (delivery.state === "unknown" || delivery.lastErrorCode === "AMBIGUOUS_SMTP_OUTCOME") {
     return "The connection ended before the receiving server confirmed the result. Mail will not send again automatically because that could create a duplicate.";
   }
   if (delivery.state === "scheduled" && delivery.lastErrorCode) {
     return `${delivery.attempt} of ${delivery.maxAttempts} delivery attempts did not succeed. Mail will try again automatically.`;
+  }
+  if (["SENT_APPEND_FAILED", "SENT_COPY_LEASE_EXPIRED", "SENT_RECONCILIATION_FAILED"].includes(delivery.lastErrorCode ?? "")) {
+    return "The message was sent, but Mail could not save its copy in the Sent folder. Do not send it again.";
   }
   if (["failed", "reconciled_unsent"].includes(delivery.state)) {
     const code = delivery.lastErrorCode ?? "";
@@ -37,6 +40,14 @@ const deliveryExplanation = (delivery: MessageDelivery): string => {
     return `${reason} It is still available as a draft so you can check it, edit it, and send it again.`;
   }
   return "This delivery needs attention before Mail can treat it as complete.";
+};
+
+const failedActionLabel = (delivery: MessageDelivery): string => {
+  const code = delivery.lastErrorCode ?? "";
+  if (["SMTP_NO_RECIPIENTS_ACCEPTED", "EENVELOPE"].includes(code)) return "Review recipients";
+  if (code === "SMTP_DSN_UNSUPPORTED") return "Review delivery options";
+  if (code.includes("SIZE")) return "Edit message";
+  return "Review and resend";
 };
 
 export default function MailMessageDeliveryControl(props: {
@@ -120,6 +131,25 @@ export default function MailMessageDeliveryControl(props: {
     onError: (error) => toast.error(error.message),
   });
 
+  const recoveryDraft = mutations.create<MailDraft, { mode: DeliveryRecoveryRecipientMode }>({
+    mutation: async ({ mode }, { abortSignal }) => {
+      const response = await apiClient.mailboxes[":mailboxId"]["scheduled-sends"][":scheduledSendId"]["recovery-draft"].$post(
+        {
+          param: { mailboxId: props.mailboxId, scheduledSendId: props.delivery.submissionId },
+          json: { recipientMode: mode, includeAttachments: true, idempotencyKey: crypto.randomUUID() },
+        },
+        { init: { signal: abortSignal } },
+      );
+      if (!response.ok) throw new Error(await readApiError(response, "Could not prepare a recovery draft"));
+      return response.json();
+    },
+    onSuccess: (draft) => {
+      const returnHref = buildMailListHref(new URL(props.requestUrl, window.location.origin));
+      navigateTo(mailDraftHref(props.mailboxId, draft.id, returnHref));
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
   const openDeliveryDetails = async () => {
     if (scheduledDialogOpen) return;
     scheduledDialogOpen = true;
@@ -131,6 +161,9 @@ export default function MailMessageDeliveryControl(props: {
     const failed = props.delivery.state === "failed" || props.delivery.state === "reconciled_unsent";
     const partial = props.delivery.lastErrorCode === "SMTP_PARTIAL_ACCEPTANCE";
     const unclear = props.delivery.state === "unknown" || props.delivery.lastErrorCode === "AMBIGUOUS_SMTP_OUTCOME";
+    const sentCopyProblem = ["SENT_APPEND_FAILED", "SENT_COPY_LEASE_EXPIRED", "SENT_RECONCILIATION_FAILED"].includes(
+      props.delivery.lastErrorCode ?? "",
+    );
     try {
       await prompts.dialog<void>(
         (close) => {
@@ -144,6 +177,25 @@ export default function MailMessageDeliveryControl(props: {
             close();
             const returnHref = buildMailListHref(new URL(props.requestUrl, window.location.origin));
             navigateTo(mailDraftHref(props.mailboxId, props.delivery.draftId, returnHref));
+          };
+
+          const prepareRecoveryDraft = async (mode: DeliveryRecoveryRecipientMode) => {
+            if (mode === "all") {
+              const confirmed = await prompts.confirm(
+                partial
+                  ? "Some recipients already received this message and may receive a duplicate if you send the new draft."
+                  : "The previous delivery may have succeeded. Sending a new draft could create a duplicate message.",
+                { title: "Create a draft for everyone again?", confirmText: "Create draft" },
+              );
+              if (!confirmed) return;
+            }
+            close();
+            recoveryDraft.mutate({ mode });
+          };
+
+          const checkAgain = async () => {
+            await props.onReconcile();
+            close();
           };
 
           return (
@@ -164,13 +216,13 @@ export default function MailMessageDeliveryControl(props: {
                 <div class="grid gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-3 py-2 text-xs">
                   <Show when={props.delivery.acceptedRecipients.length > 0}>
                     <div>
-                      <p class="font-semibold text-primary">Delivered to</p>
+                      <p class="font-semibold text-primary">Accepted by server</p>
                       <p class="mt-1 break-words text-secondary">{props.delivery.acceptedRecipients.join(", ")}</p>
                     </div>
                   </Show>
                   <Show when={props.delivery.rejectedRecipients.length > 0}>
                     <div>
-                      <p class="font-semibold text-primary">Not delivered to</p>
+                      <p class="font-semibold text-primary">Not accepted</p>
                       <p class="mt-1 break-words text-secondary">{props.delivery.rejectedRecipients.join(", ")}</p>
                     </div>
                   </Show>
@@ -190,20 +242,63 @@ export default function MailMessageDeliveryControl(props: {
                 </details>
               </Show>
               <div class="flex flex-wrap items-center justify-end gap-2">
-                <Button variant="secondary" size="sm" type="button" disabled={cancel.loading()} onClick={() => close()}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  type="button"
+                  disabled={cancel.loading() || recoveryDraft.loading()}
+                  onClick={() => close()}
+                >
                   {scheduled || retrying ? "Keep delivery" : "Close"}
                 </Button>
                 <Show when={props.canWrite && (scheduled || retrying)}>
                   <Button variant="danger" size="sm" type="button" disabled={cancel.loading()} onClick={() => void cancelQueuedSend()}>
                     <i class={`ti ${cancel.loading() ? "ti-loader-2 animate-spin" : "ti-calendar-cancel"}`} aria-hidden="true" />
-                    Cancel send
+                    {retrying ? "Cancel retry and edit" : "Cancel send"}
                   </Button>
                 </Show>
                 <Show when={props.canWrite && failed}>
                   <Button variant="primary" size="sm" type="button" onClick={editDraft}>
                     <i class="ti ti-pencil" aria-hidden="true" />
-                    Edit draft
+                    {failedActionLabel(props.delivery)}
                   </Button>
+                </Show>
+                <Show when={props.canWrite && partial}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    type="button"
+                    disabled={recoveryDraft.loading()}
+                    onClick={() => void prepareRecoveryDraft("all")}
+                  >
+                    Review everyone again…
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    type="button"
+                    loading={recoveryDraft.loading()}
+                    loadingLabel="Preparing draft"
+                    onClick={() => void prepareRecoveryDraft("remaining")}
+                  >
+                    Review remaining recipients
+                  </Button>
+                </Show>
+                <Show when={unclear}>
+                  <Button variant="secondary" size="sm" type="button" onClick={() => void checkAgain()}>
+                    Check again
+                  </Button>
+                  <Show when={props.canWrite}>
+                    <Button
+                      variant="warning"
+                      size="sm"
+                      type="button"
+                      disabled={recoveryDraft.loading()}
+                      onClick={() => void prepareRecoveryDraft("all")}
+                    >
+                      Review resend draft…
+                    </Button>
+                  </Show>
                 </Show>
               </div>
             </div>
@@ -215,12 +310,14 @@ export default function MailMessageDeliveryControl(props: {
             : retrying
               ? "Delivery delayed"
               : partial
-                ? "Partially delivered"
+                ? "Partially sent"
                 : unclear
                   ? "Delivery status unclear"
-                  : failed
-                    ? "Couldn’t send"
-                    : "Delivery needs attention",
+                  : sentCopyProblem
+                    ? "Sent, but not saved"
+                    : failed
+                      ? "Couldn’t send"
+                      : "Delivery needs attention",
           icon: scheduled ? "ti ti-calendar-time" : failed ? "ti ti-alert-circle" : "ti ti-alert-triangle",
         },
       );
@@ -235,6 +332,7 @@ export default function MailMessageDeliveryControl(props: {
     closeScheduledDialog?.();
     closeScheduledDialog = null;
     cancel.abort();
+    recoveryDraft.abort();
   });
 
   return (

@@ -103,7 +103,7 @@ describe("mail message presentation", () => {
     expect(messageDeliveryControlLabel("undo_window", false)).toBeNull();
   });
 
-  test("distinguishes retries, partial delivery, and an unclear outcome", () => {
+  test("distinguishes retries, partial sending, sent-copy trouble, and an unclear outcome", () => {
     const delivery = {
       submissionId: "delivery",
       draftId: "draft",
@@ -128,7 +128,11 @@ describe("mail message presentation", () => {
         acceptedRecipients: ["accepted@example.com"],
         rejectedRecipients: ["rejected@example.com"],
       }),
-    ).toMatchObject({ label: "Partially delivered", tone: "warning" });
+    ).toMatchObject({ label: "Partially sent", tone: "warning" });
+    expect(messageDeliveryPresentation({ ...delivery, state: "needs_attention", lastErrorCode: "SENT_APPEND_FAILED" })).toMatchObject({
+      label: "Sent, but not saved",
+      tone: "warning",
+    });
     expect(messageDeliveryPresentation({ ...delivery, state: "unknown" })).toMatchObject({
       label: "Delivery status unclear",
       tone: "warning",
