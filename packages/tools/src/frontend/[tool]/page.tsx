@@ -9,6 +9,7 @@ import DocumentMarkdown from "../tools/DocumentMarkdown.island";
 import EncodingTool from "../tools/EncodingTool.island";
 import EncryptionTool from "../tools/EncryptionTool.island";
 import HashGenerator from "../tools/HashGenerator.island";
+import ImageConverter from "../tools/ImageConverter.island";
 import ImageProcessor from "../tools/ImageProcessor.island";
 import LoremIpsumGenerator from "../tools/LoremIpsumGenerator.island";
 import MarkdownPdf from "../tools/MarkdownPdf.island";
@@ -33,6 +34,7 @@ const toolComponents: Record<
   color: () => <ColorConverter />,
   "document-markdown": () => <DocumentMarkdown />,
   "markdown-pdf": () => <MarkdownPdf />,
+  "image-converter": () => <ImageConverter />,
   image: () => <ImageProcessor />,
   encryption: () => <EncryptionTool />,
   password: () => <PasswordGenerator />,
@@ -61,8 +63,8 @@ export default ssr<AuthContext>(async (c) => {
       {tool.id === "webhooks" ? (
         renderTool?.({ webhookState, baseHref: `/tools/${tool.id}` })
       ) : (
-        <ToolsWorkspace activeToolId={tool.id} layout={tool.id === "image" ? "regions" : "main"}>
-          {tool.id === "image" ? (
+        <ToolsWorkspace activeToolId={tool.id} layout={tool.id === "image" || tool.id === "image-converter" ? "regions" : "main"}>
+          {tool.id === "image" || tool.id === "image-converter" ? (
             renderTool?.({ speedtestBase, baseHref: `/tools/${tool.id}` })
           ) : (
             <div class="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col gap-4">

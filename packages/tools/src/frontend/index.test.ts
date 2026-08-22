@@ -71,5 +71,6 @@ describe("Tools page routes", () => {
   test("uses the available Markdown icon throughout the Tools catalog", () => {
     expect(toolById("document-markdown")?.icon).toBe("ti ti-markdown");
     expect(toolById("markdown-pdf")?.icon).toBe("ti ti-file-type-pdf");
+    expect(toolById("image-converter")?.icon).toBe("ti ti-arrows-exchange");
   });
 });

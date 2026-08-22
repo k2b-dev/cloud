@@ -22,7 +22,7 @@ Tools is a workspace for small generators, encoders, security utilities, media t
 - **Generators:** Mailto links, QR codes, UUIDs, lorem ipsum text, and passwords.
 - **Encoders:** Base64, Hex, Base32, color conversion, server-backed document text extraction, and Markdown-to-PDF rendering.
 - **Security:** Hash generation, password generation, and encryption helpers.
-- **Media:** Image resize, crop, filter, rotate, and export.
+- **Media:** Bulk image conversion plus detailed resize, crop, filter, rotate, markup, and export.
 - **Network:** Speed tests against the cloud server and webhook endpoint testing.
 :::
 

@@ -5,7 +5,7 @@ section: Everyday
 order: 230
 description: Small generators, converters, security helpers, media utilities, and network tests.
 tags: [tools, utilities, generators, network, cli]
-updated: 2026-08-19
+updated: 2026-08-22
 ---
 
 # Tools
@@ -21,6 +21,7 @@ testing tasks that do not need their own application.
 - Extract readable document text as plain Markdown, then copy or download it.
 - Render Markdown as a styled PDF with a print preset or custom CSS.
 - Calculate hashes or encrypt and decrypt text for controlled workflows.
+- Convert mixed image batches to JPEG, PNG, WebP, or Base64 HTML in the browser.
 - Crop, adjust, annotate, redact, and export an image in the browser.
 - Measure a connection or create a temporary endpoint to inspect webhooks.
 
@@ -85,6 +86,29 @@ the PDF directly with a private no-store policy. The Markdown, CSS, and PDF are
 processed in memory and are not persisted. API callers may also combine a
 preset with CSS overrides; omitting the preset makes the CSS the complete
 stylesheet.
+
+## Convert images in bulk
+
+Open **Image Converter**, then select or drop any mixture of static images that
+the browser can decode. The workspace keeps every source in the page and lets
+you select, remove, or rotate individual previews before export. Nothing is
+uploaded or persisted. Export settings open automatically while the batch
+contains images.
+
+Choose JPEG, PNG, or WebP, then optionally limit the maximum width and height.
+The converter preserves aspect ratios, never enlarges smaller images, and
+applies the limits after rotation. JPEG and WebP expose quality controls; JPEG
+also lets you choose the background used for transparent pixels.
+
+Export one image as a direct download or several images in one ZIP. The split
+menu beside each export action copies complete Base64 HTML `<img>` tags instead.
+With an active selection, separate actions export all images or only the
+selected images. Base64 images are useful in controlled HTML, but uploaded or
+hosted images are usually more reliable across email editors and recipients.
+
+Input support follows the browser. Vector images are rasterized, animated
+images become still images, and converted output does not retain source image
+metadata.
 
 ## How Tools fits Cloud
 

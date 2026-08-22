@@ -164,6 +164,17 @@ export const tools: ToolDef[] = [
   },
   // Media
   {
+    id: "image-converter",
+    name: "Image Converter",
+    icon: "ti ti-arrows-exchange",
+    description: "Convert, resize, rotate, and export many images at once.",
+    category: "media",
+    taskGroup: "transform",
+    keywords: ["photo", "batch", "resize", "rotate", "jpg", "jpeg", "png", "webp", "base64", "html", "zip"],
+    color: "violet",
+    featured: true,
+  },
+  {
     id: "image",
     name: "Image Processor",
     icon: "ti ti-photo-edit",

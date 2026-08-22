@@ -23,6 +23,7 @@ The Tools overview groups utilities by what you want to accomplish. Search accep
 | Calculate a digest | `Hash Generator` | SHA-256 or FNV-1a output |
 | Create a credential | `Password Generator` | Random, memorable, or PIN-style password |
 | Protect or recover text | `Encryption` | AES-GCM or ECDH encryption and decryption data |
+| Convert a batch of images | `Image Converter` | JPEG, PNG, WebP, or Base64 HTML with shared size settings |
 | Prepare an image | `Image Processor` | Cropped, adjusted, annotated, redacted, or exported image |
 | Check this connection | `Internet Speed Test` | Download, upload, ping, and jitter measurements |
 | Inspect HTTP traffic | `Webhook Tester` | A receiving endpoint, request history, and test responses |

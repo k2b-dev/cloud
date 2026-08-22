@@ -8,6 +8,7 @@ describe("toolsHelp", () => {
       "tools-choose",
       "tools-document-markdown",
       "tools-markdown-pdf",
+      "tools-image-converter",
       "tools-safety",
     ]);
 
@@ -21,6 +22,8 @@ describe("toolsHelp", () => {
     expect(toolsHelp.getMarkdown("tools-markdown-pdf")).toContain("Markdown images appear as links");
     expect(toolsHelp.getMarkdown("tools-markdown-pdf")).toContain("does not persist the input or PDF");
     expect(toolsHelp.getMarkdown("tools-markdown-pdf")).toContain("no dedicated `cld tools` command");
+    expect(toolsHelp.getMarkdown("tools-image-converter")).toContain("does not upload or persist them");
+    expect(toolsHelp.getMarkdown("tools-image-converter")).toContain("Multiple files download together");
     expect(toolsHelp.getMarkdown("tools-safety")).toContain("Generators, encoders, color conversion");
   });
 });

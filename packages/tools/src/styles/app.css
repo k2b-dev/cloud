@@ -86,6 +86,46 @@
   line-height: 1rem;
 }
 
+.tools-image-converter-export .k2b-split-button {
+  width: 100%;
+}
+
+.tools-image-converter-export .k2b-split-button__primary {
+  flex: 1;
+}
+
+.tools-image-converter-card__selection,
+.tools-image-converter-card__actions {
+  transition:
+    opacity 120ms ease,
+    transform 120ms ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tools-image-converter-card__selection,
+  .tools-image-converter-card__actions {
+    opacity: 0;
+    transform: translateY(-0.25rem);
+  }
+
+  .tools-image-converter-card:hover .tools-image-converter-card__selection,
+  .tools-image-converter-card:hover .tools-image-converter-card__actions,
+  .tools-image-converter-card:focus-within .tools-image-converter-card__selection,
+  .tools-image-converter-card:focus-within .tools-image-converter-card__actions,
+  .tools-image-converter-card[data-selection-active="true"] .tools-image-converter-card__selection {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tools-image-converter-card__selection,
+  .tools-image-converter-card__actions,
+  .tools-image-converter-card img {
+    transition: none;
+  }
+}
+
 @container (max-width: 42rem) {
   .tools-qr-workbench {
     grid-template-columns: minmax(0, 1fr);
