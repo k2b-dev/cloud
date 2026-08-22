@@ -80,6 +80,46 @@ Creating, changing, and deleting Skills are reviewed mutations. Prepare the conc
 
 Sharing, access changes, imports, and exports are not available through these capabilities. Say so plainly rather than inventing a tool or bypassing Cloud permissions.`;
 
+const CLOUD_MAIL_INSTRUCTIONS = `# Work with Cloud Mail
+
+Use these defaults unless the user asks otherwise or a more specific loaded Skill overrides them.
+
+## Capabilities
+
+- Start: \`mail.search\` searches across mailboxes; \`mail.mailbox.list\`, \`mail.mailbox.read\`, and \`mail.folder.list\` establish a mailbox scope.
+- Read: \`mail.conversation.focus\`, \`mail.conversation.list\`, \`mail.conversation.search\`, \`mail.conversation.related\`, \`mail.conversation.read\`, \`mail.message.list\`, \`mail.message.read\`, \`mail.attachment.read\`, and \`mail.attachment.read-content\`.
+- Compose: \`mail.mailbox.identity.list\`, \`mail.draft.list\`, \`mail.draft.read\`, \`mail.draft.create\`, \`mail.draft.update\`, \`mail.draft.discard\`, \`mail.draft.attachment.add\`, \`mail.draft.attachment.remove\`, \`mail.draft.send.review\`, and \`mail.draft.send\`.
+- Organize: \`mail.conversation.mark\`, \`mail.conversation.move\`, \`mail.conversation.tag.update\`, \`mail.conversation.assign\`, \`mail.conversation.status.update\`, and \`mail.mailbox.member.list\`.
+- Follow up: \`mail.conversation.snooze\`, \`mail.conversation.reminder.get\`, \`mail.conversation.reminder.set\`, \`mail.conversation.reminder.cancel\`, and \`mail.reminder.read\`.
+- Collaborate: \`mail.mailbox.tag.list\`, \`mail.mailbox.tag.create\`, \`mail.mailbox.tag.update\`, \`mail.mailbox.tag.delete\`, \`mail.conversation.comment.list\`, \`mail.comment.read\`, \`mail.conversation.comment.create\`, \`mail.conversation.comment.update\`, \`mail.conversation.comment.delete\`, and \`mail.conversation.activity.list\`.
+- Delivery and lists: \`mail.delivery.list\`, \`mail.delivery.read\`, \`mail.delivery.cancel\`, \`mail.mailing-list.subscription.list\`, \`mail.mailing-list.subscription.get\`, and \`mail.mailing-list.unsubscribe\`.
+
+Load only the capabilities needed for the current flow. Treat returned resource IDs as typed and reuse them unchanged.
+
+## Normal flows
+
+- For a cross-mailbox work queue, start with \`mail.conversation.focus\`; no mailbox lookup is needed.
+- When no mailbox is known, use \`mail.search\`, then read the returned conversation or message refs.
+- Within a known mailbox, use \`mail.mailbox.list\`, then conversation list or search, \`mail.conversation.read\`, and \`mail.message.read\` for the actual body.
+- Read attachment metadata first. Use \`mail.attachment.read-content\` only when its extracted text is needed, and report pending extraction plainly.
+- For a new message, choose a verified identity with \`mail.mailbox.identity.list\`, create the draft, and return its link unless the user also asked to send it.
+- For a reply, Reply all, or forward, read the exact source message and pass its conversation, message, and intent to \`mail.draft.create\`; let Mail derive reply recipients and threading instead of guessing them.
+- Before sending, read the current draft revision, call \`mail.draft.send.review\`, address its warnings, then pass that exact revision and safety approval to \`mail.draft.send\`. Never describe a queued message as delivered.
+
+## Writing defaults
+
+- Match the language, tone, and formality of an existing conversation. For a new message, use the language and tone of the user's request.
+- Write as the user through the selected sender identity. Never introduce or sign as an AI or Cloud Assistant.
+- Preserve names, addresses, dates, amounts, commitments, quoted history, and the signature applied by Mail. Do not invent missing facts or add a second signature.
+- Keep the purpose and requested action clear. When material details or the intended recipient remain ambiguous, keep a draft and ask one focused question instead of sending.
+
+## Cross-app judgment
+
+- If a recipient's name is known but the address is ambiguous, consider Contacts and its Skill rather than guessing an address.
+- If a conversation should become a task, event, or shared work item, consider Spaces and preserve a link to the mail conversation.
+- If information should become durable reference material, consider Notebooks.
+- Use another app only when it helps the user's request; do not perform an unrelated cross-app mutation.`;
+
 export const seedCloudAiSkills = async (): Promise<void> => {
   await aiSkills.seedOnce({
     key: "core:skill-creator",
@@ -87,5 +127,12 @@ export const seedCloudAiSkills = async (): Promise<void> => {
     description:
       "Create and improve reusable Assistant Skills. Use this whenever the user wants to turn instructions or a recurring workflow into a Skill, revise an existing Skill, add supporting information, or enable, disable, or remove a Skill.",
     instructions: SKILL_CREATOR_INSTRUCTIONS,
+  });
+  await aiSkills.seedOnce({
+    key: "mail:cloud-mail",
+    name: "cloud-mail",
+    description:
+      "Use for work involving the user's Cloud mailboxes: finding, reading, summarizing, organizing, drafting, replying to, forwarding, sending, scheduling, or unsubscribing from email. Load it whenever a request involves Cloud Mail, an inbox, a mailbox, a message, or an email conversation.",
+    instructions: CLOUD_MAIL_INSTRUCTIONS,
   });
 };

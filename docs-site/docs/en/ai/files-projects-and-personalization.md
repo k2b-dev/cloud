@@ -5,7 +5,7 @@ section: AI
 order: 1050
 description: Give AI controlled access to chat files, shared Project context and Skills, and durable personal preferences.
 tags: [ai, files, projects, skills, memory]
-updated: 2026-08-20
+updated: 2026-08-22
 ---
 
 # Files, Projects, Skills, and personalization
@@ -158,14 +158,16 @@ retries, so an edit cannot change an in-progress result. A later turn sees the
 new revision. Reading a mounted file still checks current Cloud access; revoked
 access takes effect immediately.
 
-Cloud seeds a `skill-creator` Skill once with `read` access for every
-authenticated user. It explains how to draft a concise Skill and names the
+Cloud seeds two Skills once with `read` access for every authenticated user.
+`skill-creator` explains how to draft a concise Skill and names the
 `core.ai.skill` Capabilities Assistant can use to list, read, create, update,
-manage references, personally enable or disable, and delete Skills. After that
-initial seed it is an ordinary permission-owned Skill: platform administrators
-can grant themselves access, and Skill administrators can edit, share, or
-delete it. A deleted seed is not recreated during later starts. Like every
-readable Skill, it starts enabled and can be disabled personally.
+manage references, personally enable or disable, and delete Skills.
+`cloud-mail` provides the normal Cloud Mail capability paths, composition
+defaults, and cross-application guidance. After their initial seed they are
+ordinary permission-owned Skills: platform administrators can grant themselves
+access, and Skill administrators can edit, share, or delete them. A deleted
+seed is not recreated during later starts. Like every readable Skill, each
+starts enabled and can be disabled personally.
 
 The Skill management Actions are reviewed and recheck the current actor's
 Cloud permission. Updates and reference changes require the exact revision
