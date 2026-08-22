@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { migrateCloudAi } from "./migrate";
 import { aiProjects } from "./projects";
-import { __aiRoutesTest } from "./routes";
+import { __aiRoutesTest, aiRoutes } from "./routes";
 import { createAiShortId } from "./short-id";
 import { aiConversations } from "./store";
 
@@ -28,6 +28,14 @@ const insertUser = async (): Promise<string> => {
   `;
   return row!.id;
 };
+
+describe("global AI route registration", () => {
+  test("mounts personalization learning activity behind authentication", async () => {
+    const response = await aiRoutes.request("/memory-learning-runs?page=1&perPage=20");
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ message: "Authentication required" });
+  });
+});
 
 suite("global AI conversation boundaries", () => {
   test("replaces a turn waiting for action when its user message is retried", async () => {

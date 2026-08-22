@@ -10,13 +10,13 @@ import {
   prompts,
 } from "@k2b/ui";
 import type { AiProjectFile } from "@valentinkolb/cloud/ai";
-import { invokeCapability, listCapabilityCatalog } from "@valentinkolb/cloud/capabilities";
 import {
-  type CloudResourceRef,
-  CloudResourceViewSchema,
-  cloudResourceRefAppId,
-  resolveCapabilityResourceReader,
-} from "@valentinkolb/cloud/contracts";
+  type CapabilityCatalogClientResult,
+  type CapabilityClientResult,
+  invokeCapability,
+  listCapabilityCatalog,
+} from "@valentinkolb/cloud/capabilities";
+import { type CloudResourceRef, cloudResourceRefAppId, resolveCapabilityResourceReader } from "@valentinkolb/cloud/contracts";
 import { For, type JSX, Show } from "solid-js";
 
 export type AssistantContextScope = "chat" | "project";
@@ -179,29 +179,38 @@ export type ResolvedAssistantCloudResource = {
   href?: string;
 };
 
-export const resolveAssistantCloudResource = async (ref: CloudResourceRef): Promise<ResolvedAssistantCloudResource> => {
+type AssistantCloudResourceDependencies = {
+  listCatalog(input: { cursor?: string; limit?: number }): Promise<CapabilityCatalogClientResult>;
+  invoke(input: { appId: string; capabilityId: string; kind: "query"; input: { id: string } }): Promise<CapabilityClientResult<unknown>>;
+};
+
+const assistantCloudResourceDependencies: AssistantCloudResourceDependencies = {
+  listCatalog: listCapabilityCatalog,
+  invoke: invokeCapability,
+};
+
+export const resolveAssistantCloudResource = async (
+  ref: CloudResourceRef,
+  dependencies: AssistantCloudResourceDependencies = assistantCloudResourceDependencies,
+): Promise<ResolvedAssistantCloudResource> => {
   const appId = cloudResourceRefAppId(ref);
   let cursor: string | undefined;
   do {
-    const catalog = await listCapabilityCatalog({ cursor, limit: 25 });
+    const catalog = await dependencies.listCatalog({ cursor, limit: 25 });
     if (!catalog.ok) throw new Error(catalog.error.message);
     const app = catalog.data.apps.find((candidate) => candidate.appId === appId);
     if (app) {
       const reader = resolveCapabilityResourceReader(app.manifest, ref);
       if (!reader) throw new Error("This Cloud resource has no reader.");
-      const result = await invokeCapability({ appId, capabilityId: reader.localId, kind: "query", input: { id: ref.id } });
+      const result = await dependencies.invoke({ appId, capabilityId: reader.localId, kind: "query", input: { id: ref.id } });
       if (!result.ok) throw new Error(result.error.message);
-      const resource = CloudResourceViewSchema.safeParse(result.data.data);
-      if (!resource.success || resource.data.ref.type !== ref.type || resource.data.ref.id !== ref.id) {
-        throw new Error("The resource reader returned an invalid resource.");
-      }
-      const href =
-        result.data.links?.find((link) => link.rel === "open")?.href ?? resource.data.links.find((link) => link.rel === "open")?.href;
+      const localType = ref.type.slice(appId.length + 1);
+      const resourceType = app.manifest.types.find((candidate) => candidate.localId === localType);
       return {
-        ref: resource.data.ref,
-        title: resource.data.title,
-        icon: resource.data.icon ?? app.appIcon,
-        href,
+        ref,
+        title: resourceType?.title ?? app.appName,
+        icon: resourceType?.icon ?? app.appIcon,
+        href: result.data.links?.find((link) => link.rel === "open")?.href,
       };
     }
     cursor = catalog.data.page.hasMore ? catalog.data.page.nextCursor : undefined;

@@ -782,16 +782,36 @@ export const aiSkills = {
     subject: AccessSubject | null,
     input: { expectedRevision: number; path: string; content: string },
   ): Promise<AiSkill | null> {
-    const [reference] = validateAiSkillReferences([{ path: input.path, content: input.content }]);
+    return this.setReferences(skillId, subject, {
+      expectedRevision: input.expectedRevision,
+      references: [{ path: input.path, content: input.content }],
+    });
+  },
+
+  async setReferences(
+    skillId: string,
+    subject: AccessSubject | null,
+    input: { expectedRevision: number; references: readonly AiSkillReferenceInput[] },
+  ): Promise<AiSkill | null> {
+    if (input.references.length === 0) throw new AiSkillInputError("Set at least one Skill reference.");
+    const references = validateAiSkillReferences(input.references);
     return sql.begin(async (tx) => {
       const [row] = await tx<SkillRow[]>`SELECT * FROM ai.skills WHERE id = ${skillId}::uuid FOR UPDATE`;
       if (!row || !hasPermission(await permissionFor(row.id, subject, tx), "write")) return null;
       if (Number(row.revision) !== input.expectedRevision) throw new AiSkillRevisionConflictError();
-      await tx`
-        INSERT INTO ai.skill_references (skill_id, path, content)
-        VALUES (${skillId}::uuid, ${reference!.path}, ${reference!.content})
-        ON CONFLICT (skill_id, path) DO UPDATE SET content = EXCLUDED.content
+      const existing = await tx<AiSkillReferenceInput[]>`
+        SELECT path, content FROM ai.skill_references WHERE skill_id = ${skillId}::uuid
       `;
+      const merged = new Map(existing.map((reference) => [reference.path, reference]));
+      for (const reference of references) merged.set(reference.path, reference);
+      validateAiSkillReferences([...merged.values()]);
+      for (const reference of references) {
+        await tx`
+          INSERT INTO ai.skill_references (skill_id, path, content)
+          VALUES (${skillId}::uuid, ${reference.path}, ${reference.content})
+          ON CONFLICT (skill_id, path) DO UPDATE SET content = EXCLUDED.content
+        `;
+      }
       const [updated] = await tx<SkillRow[]>`
         UPDATE ai.skills SET revision = revision + 1, updated_at = now()
         WHERE id = ${skillId}::uuid RETURNING *

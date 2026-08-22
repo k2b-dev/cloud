@@ -156,6 +156,7 @@ const AI_VISION_MODEL_SETTING_KEY = "ai.vision_model_id";
 const AI_WORKFLOW_MODEL_SETTING_KEY = "ai.workflow_model_id";
 const AI_ENRICH_CRON_SETTING_KEY = "ai.enrich_cron";
 const AI_MEMORY_LEARNING_CRON_SETTING_KEY = "ai.memory_learning_cron";
+const AI_MEMORY_LEARNING_MONTHLY_TOKEN_BUDGET_SETTING_KEY = "ai.memory_learning_monthly_token_budget";
 
 const AI_SETTINGS_HANDLED_BY_PANEL = new Set<string>([
   AI_ENABLED_SETTING_KEY,
@@ -172,6 +173,7 @@ const AI_SETTINGS_HANDLED_BY_PANEL = new Set<string>([
   AI_WORKFLOW_MODEL_SETTING_KEY,
   AI_ENRICH_CRON_SETTING_KEY,
   AI_MEMORY_LEARNING_CRON_SETTING_KEY,
+  AI_MEMORY_LEARNING_MONTHLY_TOKEN_BUDGET_SETTING_KEY,
 ]);
 
 const AI_PROVIDER_OPTIONS: ReadonlyArray<{
@@ -1143,7 +1145,7 @@ function AiSettingsPanel(props: {
             </summary>
             <div class="mt-2 flex flex-col gap-1.5">
               <p class="text-xs text-dimmed">
-                Every conversation starts with this Liquid template, rendered per turn with the current user, time, app, available tools,
+                Every conversation starts with this Liquid template, rendered per turn with the current user, chat, time, available tools,
                 and memory state. Your global instructions are appended directly after it.
               </p>
               <pre class="max-h-72 overflow-auto whitespace-pre-wrap rounded-md bg-zinc-50 p-2.5 font-mono text-[11px] leading-relaxed text-zinc-700 [box-shadow:var(--ui-control-recess)] dark:bg-zinc-900 dark:text-zinc-300">
@@ -1265,12 +1267,23 @@ function AiSettingsPanel(props: {
 
           <TextInput
             label="Personalization learning schedule"
-            description="Cron for checking eligible private chats for durable personal facts and preferences."
+            description="Cron for checking newly completed private-chat turns for useful personalization."
             value={() => asString(props.valueOf(AI_MEMORY_LEARNING_CRON_SETTING_KEY))}
             onValueChange={(value) => props.onChange(AI_MEMORY_LEARNING_CRON_SETTING_KEY, value)}
             placeholder="*/10 * * * *"
             monospace
             error={() => props.errorFor(AI_MEMORY_LEARNING_CRON_SETTING_KEY)}
+          />
+
+          <NumberInput
+            label="Monthly personalization budget"
+            description="Maximum accounted background-personalization tokens per user and calendar month. Processing resumes automatically next month."
+            value={() => Number(props.valueOf(AI_MEMORY_LEARNING_MONTHLY_TOKEN_BUDGET_SETTING_KEY) ?? 100000)}
+            onValueChange={(value) => props.onChange(AI_MEMORY_LEARNING_MONTHLY_TOKEN_BUDGET_SETTING_KEY, value ?? 100000)}
+            min={10000}
+            max={10000000}
+            showSteppers={false}
+            error={() => props.errorFor(AI_MEMORY_LEARNING_MONTHLY_TOKEN_BUDGET_SETTING_KEY)}
           />
 
           <TextInput
@@ -1379,7 +1392,7 @@ const AI_PROMPT_TEMPLATE_VARIABLES: readonly TemplateVariable[] = [
   { name: "user.displayName" },
   { name: "user.uid" },
   { name: "user.mail", kind: "email" },
-  { name: "appId" },
+  { name: "chatId" },
   { name: "now" },
   { name: "today" },
   { name: "time" },

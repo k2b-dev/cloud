@@ -126,11 +126,24 @@ describe("Assistant frontend contracts", () => {
     expect(workspace).not.toContain("bg-amber-50");
   });
 
+  test("multiplexes live updates and the visible turn on one workspace connection", async () => {
+    const workspace = await read("./AssistantWorkspace.island.tsx");
+
+    expect(workspace.match(/createAiLiveConnection\(\{/g)).toHaveLength(1);
+    expect(workspace).toContain("streamTransport: liveConnection.streamTransport");
+    expect(workspace).not.toContain("createLiveWebSocket");
+    expect(workspace).not.toContain("subscribeAiStream");
+  });
+
   test("frames structured memories as personalization", async () => {
-    const [preferences, client] = await Promise.all([read("./AssistantPrefsModals.tsx"), read("../api/client.ts")]);
+    const [preferences, activity, client] = await Promise.all([
+      read("./AssistantPrefsModals.tsx"),
+      read("./AssistantMemoryLearningActivity.tsx"),
+      read("../api/client.ts"),
+    ]);
 
     expect(preferences).toContain('title="Personalization"');
-    expect(preferences).toContain("Facts and preferences Assistant may carry into future conversations.");
+    expect(preferences).toContain("Facts, preferences, and workflow defaults Assistant may carry into future conversations.");
     expect(preferences).toContain("Search personalization");
     expect(preferences).toContain("Add personalization");
     expect(preferences).toContain('variant="input"');
@@ -144,6 +157,18 @@ describe("Assistant frontend contracts", () => {
     expect(preferences).toContain("SettingsPanelFooter");
     expect(preferences).toContain("confirmDiscardIfDirty");
     expect(preferences).toContain("SettingsCollection.Item.Actions");
+    expect(preferences).toContain('class="font-medium text-blue-600 dark:text-blue-400">Pinned</span>');
+    expect(preferences).toContain('memory.priority === "pinned" ? "ti ti-xbox-x" : "ti ti-pin"');
+    expect(preferences).toContain('label="Go to source"');
+    expect(preferences).toContain('icon="ti ti-arrow-up-right"');
+    expect(preferences).not.toContain("<Link href={assistantConversationHref");
+    expect(preferences).toContain("openAssistantMemoryLearningActivity");
+    expect(activity).toContain("Personalization learning activity");
+    expect(activity).toContain("Repeated workflow");
+    expect(activity).toContain("Cloud resource");
+    expect(activity).toContain("View learning run details");
+    expect(activity).toContain("<DataTable");
+    expect(client).toContain("listMemoryLearningRuns");
     expect(preferences).not.toContain("Find personalization");
     expect(preferences).toContain("System prompt");
     expect(preferences).not.toContain("Custom instructions");
@@ -154,7 +179,7 @@ describe("Assistant frontend contracts", () => {
     expect(preferences).toContain('<Button variant="ghost" loading={busyId() === "new"}');
     expect(preferences).toContain("lines={8}");
     expect(preferences).toContain('class="grid gap-1"');
-    expect(preferences).toContain('memory.kind === "preference" ? "ti ti-adjustments" : "ti ti-info-circle"');
+    expect(preferences).toContain('if (kind === "workflow") return "ti ti-route"');
     expect(preferences).toContain("<Dropdown.Root");
     expect(preferences).toContain('label: memory.priority === "pinned" ? "Unpin" : "Pin"');
     expect(preferences).toContain('{ label: "Delete", icon: "ti ti-trash", variant: "danger"');
@@ -180,12 +205,18 @@ describe("Assistant frontend contracts", () => {
     expect(preferences).toContain("<AssistantSkillEditor");
     expect(skills).toContain("<NoticeCard");
     expect(skills).toContain("Skills teach Assistant how to handle specific tasks");
-    expect(skills).toContain('label="Enabled for me"');
+    expect(skills).not.toContain('label="Enabled for me"');
+    expect(skills).not.toContain("<Switch");
+    expect(skills).not.toContain("{skill.permission}</span>");
+    expect(skills).toContain('<StatusBadge tone="neutral" icon={null} label="Disabled" />');
+    expect(skills).toContain('label: skill.enabled ? "Disable" : "Enable"');
     expect(skills).toContain("setSkillEnabled");
     expect(skills).toContain("<MarkdownEditor");
     expect(skills).toContain("AssistantSkillReferenceEditor");
     expect(skills).toContain("AssistantSkillReferencesEditor");
     expect(skills).toContain("Description controls when this Skill loads");
+    expect(skills).toContain('tone="neutral"');
+    expect(skills).toContain('title="This Skill is read only"');
     expect(skills).toContain("Start with an action and say when to use it");
     expect(skills).toContain("Create weekly status reports from recent work");
     expect(skills).toContain('class="flex flex-col gap-4"');

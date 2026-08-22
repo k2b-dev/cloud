@@ -22,7 +22,7 @@ const memoryPath = (memoryId: string): string => `/memories/${encodeURIComponent
 
 export const assistantPersonalizationCommands = [
   command("personalization list", {
-    summary: "List or search personal facts and preferences",
+    summary: "List or search saved personalization",
     flags: {
       search: flag.string({ aliases: ["q"], description: "Search memory content" }),
       limit: flag.int({ default: 20, min: 1, max: 50 }),
@@ -72,7 +72,7 @@ export const assistantPersonalizationCommands = [
   }),
   ...(["pin", "unpin"] as const).map((action) =>
     command(`personalization ${action}`, {
-      summary: `${action === "pin" ? "Pin" : "Unpin"} a personal fact or preference`,
+      summary: `${action === "pin" ? "Pin" : "Unpin"} a personalization entry`,
       args: { memory: arg.required({ valueLabel: "memory-id" }) },
       async run({ ctx, args }) {
         const memory = await readApi<AiMemory>(
@@ -85,7 +85,7 @@ export const assistantPersonalizationCommands = [
     }),
   ),
   command("personalization forget", {
-    summary: "Forget a personal fact or preference",
+    summary: "Forget a personalization entry",
     args: { memory: arg.required({ valueLabel: "memory-id" }) },
     flags: { yes: confirmFlag("Confirm forgetting this personalization entry") },
     async run({ ctx, args, flags }) {
@@ -103,8 +103,8 @@ export const assistantPersonalizationCommands = [
   command("personalization configure", {
     summary: "Enable or disable personalization use and learning",
     flags: {
-      use: flag.enum(["on", "off"] as const, { description: "Use personal facts and preferences in Assistant chats" }),
-      learning: flag.enum(["on", "off"] as const, { description: "Learn durable facts and preferences from private chats" }),
+      use: flag.enum(["on", "off"] as const, { description: "Use saved facts, preferences, and workflow defaults in Assistant chats" }),
+      learning: flag.enum(["on", "off"] as const, { description: "Learn durable personalization from private chats" }),
     },
     async run({ ctx, flags }) {
       if (!flags.use && !flags.learning) throw new Error("Supply --use or --learning.");

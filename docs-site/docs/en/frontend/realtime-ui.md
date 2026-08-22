@@ -5,7 +5,7 @@ section: Frontend
 order: 870
 description: Update an open page from application events while preserving reload and recovery behavior.
 tags: [realtime, websocket, cursors]
-updated: 2026-08-10
+updated: 2026-08-22
 ---
 
 # Realtime UI
@@ -49,6 +49,13 @@ cursor resume, fatal close classification, and disposal.
 
 The application owns authentication, subscription payloads, runtime
 validation, permissions, and domain updates.
+
+When one application has two current realtime concerns, keep one physical
+socket and use typed logical channels. `onOpen` can send the additional current
+subscription through `controls.send()`, and the returned connection exposes the
+same `send()` operation for later subscribe or unsubscribe messages. Keep each
+channel's recovery state independent: a durable invalidation cursor must not be
+advanced by unrelated ephemeral stream events.
 
 ## Advance only after coverage
 

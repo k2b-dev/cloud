@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import type { AiInvalidation } from "./live-events";
-import { isAiLiveSubscriptionCurrent, parseAiLiveReplayEvent, resolveAiLiveCursor, resolveAiLiveSessionUser } from "./live-routes";
+import {
+  isAiLiveClientMessageFrame,
+  isAiLiveSubscriptionCurrent,
+  isAiTurnSubscriptionCurrent,
+  parseAiLiveReplayEvent,
+  resolveAiLiveCursor,
+  resolveAiLiveSessionUser,
+  sendAiLiveMessage,
+} from "./live-routes";
 
 describe("AI live cursors", () => {
   test("rejects deleted and expired users behind an otherwise valid session", async () => {
@@ -60,5 +68,32 @@ describe("AI live cursors", () => {
     release();
     expect(await continuation).toBe(false);
     expect(isAiLiveSubscriptionCurrent({ phase: "closing", userId: "user-1" }, "user-1", new AbortController().signal)).toBe(false);
+  });
+
+  test("rejects a replaced or aborted conversation stream", () => {
+    const active = new AbortController();
+    expect(isAiTurnSubscriptionCurrent({ phase: "subscribed", turnConversationId: "Chat01" }, "Chat01", active.signal)).toBe(true);
+    expect(isAiTurnSubscriptionCurrent({ phase: "subscribed", turnConversationId: "Chat02" }, "Chat01", active.signal)).toBe(false);
+    active.abort();
+    expect(isAiTurnSubscriptionCurrent({ phase: "subscribed", turnConversationId: "Chat01" }, "Chat01", active.signal)).toBe(false);
+  });
+
+  test("accepts a delivered zero-status send and rejects excessive outgoing buffering", () => {
+    const socket = (sendStatus: number, bufferedAmount: number) =>
+      ({
+        send: () => sendStatus,
+        getBufferedAmount: () => bufferedAmount,
+      }) as unknown as Parameters<typeof sendAiLiveMessage>[0];
+    const message = { type: "ai.live.ready", payload: { cursor: "0-0", recovered: false } } as const;
+
+    expect(sendAiLiveMessage(socket(1, 0), message)).toBe(true);
+    expect(sendAiLiveMessage(socket(0, 0), message)).toBe(true);
+    expect(sendAiLiveMessage(socket(1, 4 * 1024 * 1024 + 1), message)).toBe(false);
+  });
+
+  test("accepts only bounded text client frames", () => {
+    expect(isAiLiveClientMessageFrame("x".repeat(8_000))).toBe(true);
+    expect(isAiLiveClientMessageFrame("x".repeat(8_001))).toBe(false);
+    expect(isAiLiveClientMessageFrame(new Uint8Array())).toBe(false);
   });
 });

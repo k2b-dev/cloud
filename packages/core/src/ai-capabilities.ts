@@ -40,6 +40,7 @@ import { deliverPendingAiMessages } from "./ai-inter-chat-messages";
 const CORE_APP_ID = "core";
 const MAX_MESSAGE_TEXT_CHARS = 8_000;
 const MAX_CAPABILITY_SKILL_CONTENT_CHARS = 10_000;
+const MAX_CAPABILITY_SKILL_REFERENCE_BATCH_ITEMS = 20;
 const ChatIdSchema = z.string().regex(AI_SHORT_ID_PATTERN).describe("Readable six-character AI conversation ID.");
 const CursorSchema = z
   .string()
@@ -355,6 +356,24 @@ const SkillReferenceSetInputSchema = z
     expectedRevision: z.number().int().positive().describe("Exact revision returned by Read Skill."),
     path: SkillReferencePathSchema,
     content: z.string().max(MAX_CAPABILITY_SKILL_CONTENT_CHARS).describe("Complete Markdown content for this reference."),
+  })
+  .strict();
+const SkillReferencesSetInputSchema = z
+  .object({
+    skillId: SkillIdSchema,
+    expectedRevision: z.number().int().positive().describe("Exact revision returned by Read Skill."),
+    references: z
+      .array(
+        z
+          .object({
+            path: SkillReferencePathSchema,
+            content: z.string().max(MAX_CAPABILITY_SKILL_CONTENT_CHARS).describe("Complete Markdown content for this reference."),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(MAX_CAPABILITY_SKILL_REFERENCE_BATCH_ITEMS)
+      .describe("References to validate and write atomically in one Skill revision."),
   })
   .strict();
 const SkillReferenceRemoveInputSchema = SkillReferenceSetInputSchema.omit({ content: true }).strict();
@@ -810,12 +829,14 @@ export const aiCapabilities = defineCapabilities({
     },
     "ai.skill.reference.set": {
       title: "Set an Assistant Skill reference",
-      description: "Add or replace one Markdown reference on a writable Skill after reviewing its complete bounded content.",
+      description:
+        "Add or replace exactly one Markdown reference on a writable Skill. Use Set Assistant Skill references for two or more files.",
       input: SkillReferenceSetInputSchema,
       data: SkillDetailDataSchema,
       destructive: true,
       openWorld: false,
       idempotency: "none",
+      approval: "rememberable",
       async review(input, context) {
         const skill = await readableSkill(input.skillId, context, "write");
         if (!skill) return fail(err.notFound("Skill"));
@@ -826,6 +847,7 @@ export const aiCapabilities = defineCapabilities({
             { label: "Reference", value: input.path },
             { label: "Content", value: input.content, display: "block" },
           ],
+          approvalScope: "skills",
         });
       },
       async run(input, context) {
@@ -837,6 +859,48 @@ export const aiCapabilities = defineCapabilities({
           return ok({
             data: skillData(updated),
             summary: `Set “${input.path}” on Assistant Skill “${updated.name}”.`,
+            refs: [{ type: "core.ai.skill", id: updated.shortId }],
+          });
+        } catch (error) {
+          const result = skillRevisionError(error);
+          if (result) return result;
+          throw error;
+        }
+      },
+    },
+    "ai.skill.references.set": {
+      title: "Set Assistant Skill references",
+      description:
+        "Atomically add or replace multiple Markdown references on one writable Skill after reviewing every complete bounded file.",
+      input: SkillReferencesSetInputSchema,
+      data: SkillDetailDataSchema,
+      destructive: true,
+      openWorld: false,
+      idempotency: "none",
+      approval: "rememberable",
+      async review(input, context) {
+        const skill = await readableSkill(input.skillId, context, "write");
+        if (!skill) return fail(err.notFound("Skill"));
+        if (skill.revision !== input.expectedRevision) return fail(err.conflict(new AiSkillRevisionConflictError().message));
+        return ok({
+          message: `Set ${input.references.length} references on Assistant Skill “${skill.name}” in one revision.`,
+          details: input.references.map((reference: z.infer<typeof SkillReferencesSetInputSchema>["references"][number]) => ({
+            label: reference.path,
+            value: reference.content,
+            display: "block" as const,
+          })),
+          approvalScope: "skills",
+        });
+      },
+      async run(input, context) {
+        const skill = await readableSkill(input.skillId, context, "write");
+        if (!skill) return fail(err.notFound("Skill"));
+        try {
+          const updated = await aiSkills.setReferences(skill.id, context.accessSubject, input);
+          if (!updated) return fail(err.notFound("Skill"));
+          return ok({
+            data: skillData(updated),
+            summary: `Set ${input.references.length} references on Assistant Skill “${updated.name}”.`,
             refs: [{ type: "core.ai.skill", id: updated.shortId }],
           });
         } catch (error) {

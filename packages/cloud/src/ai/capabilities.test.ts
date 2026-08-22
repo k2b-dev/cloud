@@ -469,6 +469,7 @@ describe("AI capability catalog", () => {
       "load_tools",
       "list_apps",
       "read_file",
+      "fetch_file",
       "view_image",
       "search_help",
       "read_help",
@@ -531,6 +532,21 @@ describe("AI capability catalog", () => {
     expect(searchAiTools(catalog, { query: "create items", appId: "contacts" }).tools).toContainEqual(
       expect.objectContaining({ name: "contacts__action__create" }),
     );
+  });
+
+  test("does not let a scoped app description make every operation match", () => {
+    const mail = capabilityApp(
+      "mail",
+      "Mail",
+      { title: "Search mail", description: "Search email messages across accessible mailboxes." },
+      "Read, search, and organize email messages and mailboxes.",
+    );
+    const tools = searchAiTools(buildAiToolCatalog([], buildAiCapabilityCatalog([mail])), {
+      query: "search email messages",
+      appId: "mail",
+    }).tools;
+
+    expect(tools.map((tool) => tool.name)).toEqual(["mail__query__list"]);
   });
 
   test("searches and returns the owning app description", () => {

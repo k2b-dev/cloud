@@ -1,10 +1,4 @@
-import {
-  type AiInterChatMessage,
-  aiConversations,
-  aiProjects,
-  personalAiModelPolicy,
-  personalAiSystemPrompt,
-} from "@valentinkolb/cloud/ai";
+import { type AiInterChatMessage, aiConversations, aiProjects, personalAiModelPolicy } from "@valentinkolb/cloud/ai";
 import { deliverAiInterChatMessage } from "@valentinkolb/cloud/ai/runtime";
 import { accounts, logger } from "@valentinkolb/cloud/services";
 
@@ -51,9 +45,9 @@ export const deliverPendingAiMessages = async (targetConversationId?: string): P
       }
       const delivered = await deliverAiInterChatMessage({
         message,
+        chatId: target.shortId,
         actor: { kind: "user", user },
         modelPolicy: personalAiModelPolicy,
-        systemPrompt: personalAiSystemPrompt(target.shortId),
         project: project ?? undefined,
         sourceHref: `/app/assistant?conversation=${encodeURIComponent(message.sourceChatId)}`,
         toolSource: { kind: "default", appTools: true },

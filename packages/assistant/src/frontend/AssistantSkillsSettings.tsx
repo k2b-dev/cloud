@@ -12,7 +12,7 @@ import {
   panelDialogOptions,
   prompts,
   SettingsCollection,
-  Switch,
+  StatusBadge,
   TextInput,
   toast,
 } from "@k2b/ui";
@@ -217,17 +217,11 @@ export function AssistantSkillsSettings(props: { refreshKey: number; onOpenEdito
                 description={`${skill.description}${skill.referenceCount ? ` · ${skill.referenceCount} reference${skill.referenceCount === 1 ? "" : "s"}` : ""}`}
                 icon={<i class="ti ti-sparkles" aria-hidden="true" />}
               >
-                <SettingsCollection.Item.Status>
-                  <div class="flex items-center gap-3">
-                    <span class="text-xs capitalize text-dimmed">{skill.permission}</span>
-                    <Switch
-                      label="Enabled for me"
-                      value={skill.enabled}
-                      onValueChange={(enabled) => void setEnabled(skill, enabled)}
-                      disabled={Boolean(busyId())}
-                    />
-                  </div>
-                </SettingsCollection.Item.Status>
+                <Show when={!skill.enabled}>
+                  <SettingsCollection.Item.Status>
+                    <StatusBadge tone="neutral" icon={null} label="Disabled" />
+                  </SettingsCollection.Item.Status>
+                </Show>
                 <SettingsCollection.Item.Actions>
                   <Dropdown.Root
                     position="bottom-left"
@@ -238,6 +232,11 @@ export function AssistantSkillsSettings(props: { refreshKey: number; onOpenEdito
                         label: skill.permission === "read" ? "View" : "Edit",
                         icon: skill.permission === "read" ? "ti ti-eye" : "ti ti-pencil",
                         action: () => props.onOpenEditor({ skillId: skill.id }),
+                      },
+                      {
+                        label: skill.enabled ? "Disable" : "Enable",
+                        icon: skill.enabled ? "ti ti-player-pause" : "ti ti-player-play",
+                        action: () => void setEnabled(skill, !skill.enabled),
                       },
                       {
                         label: "Export ZIP",
@@ -566,12 +565,17 @@ export function AssistantSkillEditor(props: {
             fallback={<Placeholder state="error" title="Could not load skill" description={detail.error?.message} />}
           >
             <div class="flex min-h-[32rem] flex-1 flex-col gap-4">
-              <Show when={!readOnly()}>
-                <NoticeCard
-                  tone="info"
-                  title="Description controls when this Skill loads"
-                  detail="Assistant sees the name and description before deciding to load a Skill. Say what to do and when to use it."
-                />
+              <Show
+                when={readOnly()}
+                fallback={
+                  <NoticeCard
+                    tone="info"
+                    title="Description controls when this Skill loads"
+                    detail="Assistant sees the name and description before deciding to load a Skill. Say what to do and when to use it."
+                  />
+                }
+              >
+                <NoticeCard tone="neutral" title="This Skill is read only" detail="You can view and export it, but you cannot change it." />
               </Show>
               <div class="flex flex-col gap-4">
                 <TextInput

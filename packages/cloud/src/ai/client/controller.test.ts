@@ -4,6 +4,7 @@ import type { AiStreamSseEvent, AiTurnBlock } from "../protocol";
 import type { AiConversation } from "../types";
 import { __aiControllerTest, createAiChatController } from "./controller";
 import type { AiChatProjection } from "./projection";
+import type { AiConversationStreamTransport } from "./transport";
 
 const {
   claimFrontendCall,
@@ -363,6 +364,31 @@ describe("AI controller conversation transitions", () => {
 });
 
 describe("AI controller stream sessions", () => {
+  test("uses an injected stream transport and closes it with the controller owner", () => {
+    const calls: string[] = [];
+    const transport: AiConversationStreamTransport = {
+      subscribe: ({ conversationId }) => {
+        calls.push(`subscribe:${conversationId}`);
+        return { close: () => calls.push(`close:${conversationId}`) };
+      },
+    };
+    const current = conversation("Chat01");
+    let dispose!: () => void;
+    createRoot((rootDispose) => {
+      dispose = rootDispose;
+      createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: current.id,
+        initialDetail: { conversation: current, messages: [], activeTurn: null },
+        streamTransport: transport,
+      });
+    });
+
+    expect(calls).toEqual(["subscribe:Chat01"]);
+    dispose();
+    expect(calls).toEqual(["subscribe:Chat01", "close:Chat01"]);
+  });
+
   test("rejects an earlier session after leaving and reopening the same conversation", () => {
     const firstA = { conversationId: "a", generation: 1 };
     const b = { conversationId: "b", generation: 2 };

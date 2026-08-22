@@ -5,7 +5,7 @@ section: AI
 order: 1070
 description: Present conversation state, tools, approvals, and failures with the shared chat controller and components.
 tags: [ai, ui, solidjs]
-updated: 2026-08-18
+updated: 2026-08-22
 ---
 
 # Chat interface
@@ -113,6 +113,14 @@ The controller exposes:
 - file URLs and file counts;
 - one error state for the active chat.
 
+The controller consumes a transport-neutral conversation event stream. It uses
+the conversation SSE route by default, so application-owned chat endpoints and
+CLI-compatible integrations keep working unchanged. Core's Assistant injects
+the shared AI live connection instead: changing chats replaces only its turn
+channel, while the workspace WebSocket and user-wide invalidation channel stay
+alive. Both paths use the same projection, reconnect snapshot, and action
+deduplication behavior.
+
 ## Attach Cloud resources
 
 Treat a Cloud resource like another composer attachment: keep its structured
@@ -120,6 +128,10 @@ Treat a Cloud resource like another composer attachment: keep its structured
 metadata. `aiComposerSendInput()` preserves that data for the conversation
 draft, and sent messages render it as an attachment chip. A supplied `href`
 links the chip back to the owning application.
+
+Assistant also links every Cloud resource it mentions in an answer when the
+resource result or supplied context provides an exact open or edit URL. It
+never constructs a Cloud resource URL from an ID.
 
 The attachment does not copy resource contents into the draft and does not
 grant access. The model receives only the resource reference and presentation

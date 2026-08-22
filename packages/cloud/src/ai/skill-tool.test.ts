@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { createCloudAiLoadSkillTool } from "./skill-tool";
+import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool } from "./skill-tool";
 import { aiSkills } from "./skills";
 
 afterEach(() => mock.restore());
@@ -22,15 +22,12 @@ describe("load_skill", () => {
     if (tool.location !== "server") throw new Error("Expected server tool");
 
     expect(
-      await tool.run(
-        { name: "weekly-status" },
-        {
-          actor: { kind: "user", user: { id: subject.userId } },
-          conversationId: "conversation-1",
-          turnId: "22222222-2222-4222-8222-222222222222",
-          signal: new AbortController().signal,
-        } as never,
-      ),
+      await tool.run({ name: "weekly-status" }, {
+        actor: { kind: "user", user: { id: subject.userId } },
+        conversationId: "conversation-1",
+        turnId: "22222222-2222-4222-8222-222222222222",
+        signal: new AbortController().signal,
+      } as never),
     ).toEqual({
       name: "weekly-status",
       description: "Summarize recent work.",
@@ -39,11 +36,7 @@ describe("load_skill", () => {
       mount: "/skills/weekly-status",
       files: ["/skills/weekly-status/SKILL.md", "/skills/weekly-status/references/style.md"],
     });
-    expect(aiSkills.loadForTurn).toHaveBeenCalledWith(
-      "22222222-2222-4222-8222-222222222222",
-      "weekly-status",
-      subject,
-    );
+    expect(aiSkills.loadForTurn).toHaveBeenCalledWith("22222222-2222-4222-8222-222222222222", "weekly-status", subject);
   });
 
   test("does not expose a skill after its permission check fails", async () => {
@@ -52,10 +45,32 @@ describe("load_skill", () => {
     const tool = createCloudAiLoadSkillTool(subject);
     if (tool.location !== "server") throw new Error("Expected server tool");
     await expect(
-      tool.run(
-        { name: "weekly-status" },
-        { actor: { kind: "user", user: { id: subject.userId } }, turnId: "turn-1", signal: new AbortController().signal } as never,
-      ),
+      tool.run({ name: "weekly-status" }, {
+        actor: { kind: "user", user: { id: subject.userId } },
+        turnId: "turn-1",
+        signal: new AbortController().signal,
+      } as never),
     ).rejects.toThrow("unavailable or access was revoked");
+  });
+});
+
+describe("search_skills", () => {
+  test("rechecks access and returns only enabled matching Skills", async () => {
+    const subject = { type: "user" as const, userId: "11111111-1111-4111-8111-111111111111" };
+    spyOn(aiSkills, "list").mockResolvedValue([
+      { name: "cloud-mail", description: "Email and inbox workflows.", enabled: true },
+      { name: "private-mail", description: "Another email workflow.", enabled: false },
+      { name: "cloud-spaces", description: "Tasks and events.", enabled: true },
+    ] as never);
+    const tool = createCloudAiSearchSkillsTool(subject);
+    if (tool.location !== "server") throw new Error("Expected server tool");
+
+    expect(
+      await tool.run({ query: "email", limit: 10 }, {
+        actor: { kind: "user", user: { id: subject.userId } },
+        signal: new AbortController().signal,
+      } as never),
+    ).toEqual({ skills: [{ name: "cloud-mail", description: "Email and inbox workflows." }], more: false });
+    expect(aiSkills.list).toHaveBeenCalledWith(subject);
   });
 });

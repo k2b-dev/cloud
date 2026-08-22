@@ -30,9 +30,11 @@ import {
   toolBlockId,
 } from "./protocol";
 import { collectConversationResourceObservations } from "./resource-refs";
+import { recordAiMemoryWorkflowEvidence } from "./memory-workflow-evidence";
 import { isAiVisionModelConfigured, type resolveAiModel } from "./settings";
-import { createCloudAiLoadSkillTool } from "./skill-tool";
-import { type AiSkillSummary, aiSkills } from "./skills";
+import { selectAiSkillCatalog } from "./skill-catalog";
+import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool } from "./skill-tool";
+import { aiSkills } from "./skills";
 import { aiConversations } from "./store";
 import { publishAiWireEvent } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
@@ -61,7 +63,6 @@ const AI_COALESCE_MS = 25;
 const AI_COALESCE_MAX_CHARS = 512;
 const AI_SNAPSHOT_INTERVAL_MS = 1_000;
 const AI_ACTION_BUDGET_MS = 24 * 60 * 60_000;
-const AI_SKILL_CATALOG_MAX_CHARS = 8_000;
 const AI_FINAL_TOOL_ROUND_PROMPT = `# Final response
 The configured tool-round budget has been reached, so no more tools are available in this turn. Answer the user's request now with the best result supported by the evidence already gathered. State any material uncertainty or incomplete part clearly.`;
 
@@ -134,6 +135,19 @@ const indexConversationResources = async (input: Parameters<typeof aiConversatio
   }
 };
 
+const recordMemoryWorkflowEvidence = async (input: Parameters<typeof recordAiMemoryWorkflowEvidence>[0]): Promise<void> => {
+  try {
+    await recordAiMemoryWorkflowEvidence(input);
+  } catch (error) {
+    log.warn("Failed to record AI workflow evidence", {
+      conversationId: input.conversationId,
+      turnId: input.turnId,
+      capabilityId: input.capabilityId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+};
+
 const indexConversationToolSource = async (input: {
   conversationId: string;
   turnId: string;
@@ -198,26 +212,6 @@ const accessSubjectForActor = (actor: RequestActor | undefined): AccessSubject |
     return { type: "user", userId: actor.delegatedUser.id, delegatedByServiceAccountId: actor.serviceAccount.id };
   }
   return { type: "service_account", serviceAccountId: actor.serviceAccount.id };
-};
-
-const boundedSkillCatalog = (skills: readonly AiSkillSummary[], contextWindow: number): { name: string; description: string }[] => {
-  if (!skills.length) return [];
-  const minimumDescriptionChars = 64;
-  const budget = Math.max(
-    skills.reduce((total, skill) => total + skill.name.length + minimumDescriptionChars + 5, 0),
-    contextWindow > 0 ? Math.min(AI_SKILL_CATALOG_MAX_CHARS, Math.floor(contextWindow * 0.02 * 4)) : AI_SKILL_CATALOG_MAX_CHARS,
-  );
-  const baseChars = skills.reduce((total, skill) => total + skill.name.length + 5, 0);
-  const descriptionChars = Math.max(0, Math.floor((budget - baseChars) / skills.length));
-  return skills.map((skill) => ({
-    name: skill.name,
-    description:
-      skill.description.length <= descriptionChars
-        ? skill.description
-        : descriptionChars > 1
-          ? `${skill.description.slice(0, descriptionChars - 1).trimEnd()}…`
-          : "",
-  }));
 };
 
 export type ExecutorConfig = {
@@ -360,6 +354,10 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[]) => {
   const setApprovalReviews = (items: Map<string, CapabilityActionReview>) => {
     approvalReviews = items;
   };
+  let approvalPolicies: PreparedAiTools["approvalPolicies"] = new Map();
+  const setApprovalPolicies = (items: PreparedAiTools["approvalPolicies"]) => {
+    approvalPolicies = items;
+  };
   let rejectedCallIds = new Set<string>();
   const setRejectedCallIds = (items: Set<string>) => {
     rejectedCallIds = items;
@@ -428,6 +426,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[]) => {
         return [setTool(event.callId, { name: event.name, args: event.args, status: "running" })];
       case "tool_action_request":
         const displayCallId = event.kind === "custom_approval" ? (customApprovalParentCallId(event.callId) ?? event.callId) : event.callId;
+        const review = approvalReviewForCallId(approvalReviews, event.callId);
         return [
           setTool(
             event.callId,
@@ -438,7 +437,11 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[]) => {
               approval:
                 event.kind === "client_tool"
                   ? undefined
-                  : { message: event.message, review: approvalReviewForCallId(approvalReviews, event.callId), allowAlways: false },
+                  : {
+                      message: event.message,
+                      review,
+                      allowAlways: review?.approvalScope !== undefined || aiToolAllowsAlways(approvalPolicies.get(event.name)),
+                    },
               frontendMode: event.kind === "client_tool" ? (frontendModes.get(event.name) ?? "client") : undefined,
             },
             displayCallId,
@@ -474,7 +477,7 @@ const createEventMapper = (attempt: number, seedBlocks: AiTurnBlock[]) => {
     }
   };
 
-  return { translate, compaction, setFrontendModes, setPresentations, setApprovalReviews, setRejectedCallIds };
+  return { translate, compaction, setFrontendModes, setPresentations, setApprovalPolicies, setApprovalReviews, setRejectedCallIds };
 };
 
 // ---------------------------------------------------------------------------
@@ -611,8 +614,14 @@ export class AiTurnExecutor {
     let material: MaterializedChatConfig;
     let validated: ValidatedTurn;
     let resolvedProjectId: string | null = null;
+    let chatId = config.chatId ?? "";
     try {
-      material = await materializeChatConfig(config, abortController.signal, turnId);
+      const [nextMaterial, conversation] = await Promise.all([
+        materializeChatConfig(config, abortController.signal, turnId),
+        chatId ? Promise.resolve(null) : aiConversations.getConversation({ conversationId }),
+      ]);
+      material = nextMaterial;
+      chatId ||= conversation?.shortId ?? "";
       if (config.project) {
         const subject = accessSubjectForActor(material.actor);
         const project = subject ? await aiProjects.getByShortId(config.project.id, subject, "read") : null;
@@ -668,8 +677,9 @@ export class AiTurnExecutor {
     if (user && config.toolSource?.kind === "default") {
       prefs = await aiUserPrefs.get(user.id);
     }
+    const query = memoryQueryFromInput(config.input);
     const memoryActive = Boolean(prefs?.memoryEnabled);
-    const memory = memoryActive && user ? await aiMemories.selectHot(user.id, memoryQueryFromInput(config.input)) : null;
+    const memory = memoryActive && user ? await aiMemories.selectHot(user.id, query) : null;
     const timeZone = String((await coreSettings.get<string>("app.timezone")) || "").trim() || "UTC";
     const project = config.project;
     const projectSubject = project ? accessSubjectForActor(material.actor) : null;
@@ -678,6 +688,7 @@ export class AiTurnExecutor {
     const skillSubject =
       defaultToolSource && resolved.profile.capabilities.includes("tools") ? accessSubjectForActor(material.actor) : null;
     const availableSkills = skillSubject ? (await aiSkills.list(skillSubject)).filter((skill) => skill.enabled) : [];
+    const skillCatalog = selectAiSkillCatalog(availableSkills, resolved.provider.contextWindow ?? 0, query);
     const projectFiles =
       project && resolvedProjectId && projectSubject
         ? {
@@ -704,8 +715,9 @@ export class AiTurnExecutor {
       : undefined;
     const runtimeTools = [
       ...material.tools,
-      ...(memoryActive ? [createCloudAiMemoryTool(memoryQueryFromInput(config.input))] : []),
+      ...(memoryActive ? [createCloudAiMemoryTool(query)] : []),
       ...(skillSubject && availableSkills.length ? [createCloudAiLoadSkillTool(skillSubject)] : []),
+      ...(skillSubject && skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(skillSubject)] : []),
       ...(config.project && resolvedProjectId && projectSubject
         ? [
             createCloudAiSearchProjectTool(resolvedProjectId, projectSubject),
@@ -743,6 +755,7 @@ export class AiTurnExecutor {
     const rememberableCapabilityApprovals = new Map<string, string>();
     const capabilityActionReviews = new Map<string, CapabilityActionReview>();
     pipeline.setFrontendModes(prepared.frontendModes);
+    pipeline.setApprovalPolicies(prepared.approvalPolicies);
     const toolPresentations = new Map<string, AiToolPresentation>();
     const rejectedToolCallIds = new Set<string>();
     pipeline.setPresentations(toolPresentations);
@@ -849,7 +862,16 @@ export class AiTurnExecutor {
                     });
                     const resources = collectConversationResourceObservations(args, result);
                     if (resources.length) {
-                      await indexConversationResources({ conversationId, turnId, callId: context.callId, resources });
+                      await Promise.all([
+                        indexConversationResources({ conversationId, turnId, callId: context.callId, resources }),
+                        recordMemoryWorkflowEvidence({
+                          userId: capabilityAuthority.actor.user.id,
+                          conversationId,
+                          turnId,
+                          capabilityId: entry.name,
+                          resources,
+                        }),
+                      ]);
                     }
                     return result;
                   } catch (error) {
@@ -872,6 +894,7 @@ export class AiTurnExecutor {
             for (const [name, scope] of rememberableApprovals) rememberableCapabilityApprovals.set(name, scope);
             for (const [name, presentation] of presentations) toolPresentations.set(name, presentation);
             pipeline.setFrontendModes(prepared.frontendModes);
+            pipeline.setApprovalPolicies(prepared.approvalPolicies);
             pipeline.setPresentations(toolPresentations);
           },
         })
@@ -879,13 +902,13 @@ export class AiTurnExecutor {
 
     const systemPrompt = composeAiSystemPrompt({
       globalInstructions: settings.globalInstructions,
-      agentPrompt: material.systemPrompt,
+      turnInstructions: material.systemPrompt,
+      chatId,
       project: config.project,
       files: config.files,
       projectToolEnabled,
-      skills: activeTools.some((tool) => tool.def.name === "load_skill")
-        ? boundedSkillCatalog(availableSkills, resolved.provider.contextWindow ?? 0)
-        : undefined,
+      skills: activeTools.some((tool) => tool.def.name === "load_skill") ? skillCatalog.skills : undefined,
+      omittedSkillCount: activeTools.some((tool) => tool.def.name === "search_skills") ? skillCatalog.omitted : 0,
       user,
       memoryEnabled: memoryActive,
       memoryToolEnabled,
@@ -1391,6 +1414,10 @@ class StreamPipeline {
 
   setApprovalReviews(reviews: Map<string, CapabilityActionReview>): void {
     this.mapper.setApprovalReviews(reviews);
+  }
+
+  setApprovalPolicies(policies: PreparedAiTools["approvalPolicies"]): void {
+    this.mapper.setApprovalPolicies(policies);
   }
 
   setRejectedCallIds(callIds: Set<string>): void {

@@ -140,6 +140,32 @@ describe("createLiveWebSocket", () => {
     expect(statuses.at(-1)).toBe("closed");
   });
 
+  test("opens additional typed channels through the same socket", () => {
+    installBrowser();
+    const connection = createLiveWebSocket({
+      url: "/api/example/ws",
+      subscribe: () => ({ type: "live.subscribe" }),
+      parse: () => null,
+      onOpen: (controls) => {
+        expect(controls.send({ type: "turn.subscribe", payload: { id: "Chat01" } })).toBe(true);
+      },
+      onMessage: () => undefined,
+    });
+
+    connection.connect();
+    FakeWebSocket.instances[0]!.open();
+    expect(FakeWebSocket.instances[0]!.sent.map((item) => JSON.parse(item))).toEqual([
+      { type: "live.subscribe" },
+      { type: "turn.subscribe", payload: { id: "Chat01" } },
+    ]);
+    expect(connection.send({ type: "turn.unsubscribe", payload: { id: "Chat01" } })).toBe(true);
+    expect(FakeWebSocket.instances[0]!.sent.map((item) => JSON.parse(item)).at(-1)).toEqual({
+      type: "turn.unsubscribe",
+      payload: { id: "Chat01" },
+    });
+    connection.dispose();
+  });
+
   test("does not advance a cursor until the app marks it applied", () => {
     installBrowser();
     const connection = createLiveWebSocket<{ cursor: string }>({

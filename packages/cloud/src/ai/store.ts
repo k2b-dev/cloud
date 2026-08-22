@@ -2057,7 +2057,7 @@ export const aiConversations: AiConversationService = {
       FROM ai.messages
       WHERE conversation_id = ${input.conversationId}
         AND loop_id = ${input.loopId}
-        AND compacted_at IS NULL
+        AND (${input.includeCompacted ?? false} OR compacted_at IS NULL)
       ORDER BY seq ASC
     `;
     return rows.map(rowToMessage);

@@ -5,7 +5,7 @@ section: Reference
 order: 1205
 description: Choose a supported Cloud import and check its runtime and stability.
 tags: [api, imports, boundaries, compatibility]
-updated: 2026-08-18
+updated: 2026-08-22
 ---
 
 # API surface
@@ -142,7 +142,7 @@ documents all process variables; that larger list is not the shape of `env`.
 | Entry point | Status | Use | Guide |
 | --- | --- | --- | --- |
 | `@valentinkolb/cloud/ai/browser` | Supported, browser | Create a personal Assistant conversation with an initial structured draft | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
-| `@valentinkolb/cloud/ai/solid` | Supported, browser | AI chat controller | [Chat interface](/en/docs/ai/chat-interface) |
+| `@valentinkolb/cloud/ai/solid` | Supported, browser | AI chat controller and shared Core live connection | [Chat interface](/en/docs/ai/chat-interface) |
 | `@valentinkolb/cloud/ai/tools` | Advanced, server-only | Mount Cloud's standard agent-tool factories, including document-aware `read_file` and conversation-file `markdown_to_pdf` | [Files and Projects](/en/docs/ai/files-projects-and-personalization) |
 | `@valentinkolb/cloud/ai/ui` | Supported, SolidJS | Shared AI chat components | [Chat interface](/en/docs/ai/chat-interface) |
 | `@valentinkolb/cloud/ai/live` | Supported, server-only | AI Realtime UI route and SSR cursor | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
@@ -150,7 +150,7 @@ documents all process variables; that larger list is not the shape of `env`.
 | `@valentinkolb/cloud/ai/runtime` | Platform-owned, server-only | Core-owned conversation runtime and turn submission | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@valentinkolb/cloud/account/ui` | Supported, SolidJS | Cloud account selectors and avatars | [Building blocks](/en/docs/building-blocks) |
 | `@valentinkolb/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls | [Resource API keys](/en/docs/identity/resource-api-keys) |
-| `@valentinkolb/cloud/browser/live` | Supported, browser | Live WebSocket transport | [Realtime UI](/en/docs/frontend/realtime-ui) |
+| `@valentinkolb/cloud/browser/live` | Supported, browser | Live WebSocket transport with typed channel sends | [Realtime UI](/en/docs/frontend/realtime-ui) |
 | `@valentinkolb/cloud/browser/notifications` | Supported, browser | Browser notification state | [Notifications](/en/docs/platform/notifications) |
 | `@valentinkolb/cloud/browser/resource-clipboard` | Supported, browser | Copy and recognize stable Cloud resource references | [Resource copy and paste](/en/docs/platform/resource-references) |
 | `@valentinkolb/cloud/browser/resource-picker` | Supported, SolidJS | Choose a stable resource reference through Universal Search | [Universal search](/en/docs/platform/search) |

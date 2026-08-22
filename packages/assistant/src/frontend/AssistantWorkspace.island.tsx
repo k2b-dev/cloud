@@ -10,8 +10,7 @@ import type {
   AiSettingsError,
   AiStoredMessage,
 } from "@valentinkolb/cloud/ai";
-import { type AiLiveServerMessage, parseAiLiveServerMessage } from "@valentinkolb/cloud/ai/live-events";
-import { createAiChatController } from "@valentinkolb/cloud/ai/solid";
+import { type AiLiveConnection, createAiChatController, createAiLiveConnection } from "@valentinkolb/cloud/ai/solid";
 import {
   AI_COMPOSER_TEXT_MAX_CHARS,
   AI_TURN_ATTACHMENT_MAX_ITEMS,
@@ -30,7 +29,6 @@ import {
   readAiComposerFiles,
   shouldAttachAiPastedText,
 } from "@valentinkolb/cloud/ai/ui";
-import { createLiveWebSocket, type LiveWebSocket } from "@valentinkolb/cloud/browser/live";
 import { cloudResourceClipboard } from "@valentinkolb/cloud/browser/resource-clipboard";
 import { openCloudResourcePicker } from "@valentinkolb/cloud/browser/resource-picker";
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
@@ -108,6 +106,27 @@ export default function AssistantWorkspace(props: Props) {
   const isSelectable = (modelId: string | null | undefined): modelId is string =>
     Boolean(modelId && props.models.some((model) => model.id === modelId));
 
+  const [liveError, setLiveError] = createSignal<string | null>(null);
+  let liveConnection: AiLiveConnection | null = null;
+  const liveHub = createAssistantLiveInvalidationHub({
+    onApplied: (cursor) => {
+      setLiveError(null);
+      liveConnection?.markApplied(cursor);
+    },
+    onFailed: () => setLiveError("Live updates could not be refreshed. Retrying…"),
+  });
+  liveConnection = createAiLiveConnection({
+    initialCursor: props.initialLiveCursor,
+    onLiveMessage: (message) => {
+      if (message.type === "ai.live.event") liveHub.scheduleEvent(message.payload.cursor, message.payload.event);
+      else if (message.type === "ai.live.scope_changed") liveHub.scheduleScopeRefresh();
+      else if (message.type === "ai.live.ready" && message.payload.recovered) {
+        liveHub.scheduleScopeRefresh(message.payload.cursor);
+      }
+    },
+    onFatal: (error) => setLiveError(error.message),
+  });
+
   const chat = createAiChatController({
     baseUrl: "/api/ai",
     initialConversationId: props.initialConversationId,
@@ -115,6 +134,7 @@ export default function AssistantWorkspace(props: Props) {
     initialTimeline: props.initialDetail?.timeline,
     initialError: props.status.error?.message ?? null,
     trackViewedState: true,
+    streamTransport: liveConnection.streamTransport,
   });
 
   const sidebar = query.create<string, AssistantSidebarSnapshot, AssistantLiveInvalidation>({
@@ -141,15 +161,6 @@ export default function AssistantWorkspace(props: Props) {
     return projectId ? (projects().find((project) => project.id === projectId) ?? null) : null;
   };
 
-  let liveSocket: LiveWebSocket | null = null;
-  const [liveError, setLiveError] = createSignal<string | null>(null);
-  const liveHub = createAssistantLiveInvalidationHub({
-    onApplied: (cursor) => {
-      setLiveError(null);
-      liveSocket?.markApplied(cursor);
-    },
-    onFailed: () => setLiveError("Live updates could not be refreshed. Retrying…"),
-  });
   const unregisterSidebar = liveHub.register({
     matches: matchesAssistantInvalidation(["conversation-list", "project-list"]),
     invalidate: (invalidation) => sidebar.invalidate(invalidation),
@@ -162,30 +173,13 @@ export default function AssistantWorkspace(props: Props) {
     },
     invalidate: () => chat.refreshActiveConversation(),
   });
-  let subscribeCount = 0;
-  liveSocket = createLiveWebSocket<AiLiveServerMessage>({
-    url: "/api/ai/live",
-    initialCursor: props.initialLiveCursor,
-    subscribe: (cursor) => ({
-      type: "ai.live.subscribe",
-      payload: { fromCursor: cursor, recover: subscribeCount++ > 0 },
-    }),
-    parse: parseAiLiveServerMessage,
-    onMessage: (message) => {
-      if (message.type === "ai.live.event") liveHub.scheduleEvent(message.payload.cursor, message.payload.event);
-      else if (message.type === "ai.live.scope_changed") liveHub.scheduleScopeRefresh();
-      else if (message.type === "ai.live.ready" && message.payload.recovered) {
-        liveHub.scheduleScopeRefresh(message.payload.cursor);
-      }
-    },
-    onFatal: (error) => setLiveError(error.message),
-  });
-  onMount(() => liveSocket?.connect());
+  onMount(() => liveConnection?.connect());
   onCleanup(() => {
     unregisterSidebar();
     unregisterConversation();
     liveHub.dispose();
-    liveSocket?.dispose();
+    liveConnection?.dispose();
+    liveConnection = null;
   });
 
   // Model selection is per chat: an explicit pick only applies to the chat it

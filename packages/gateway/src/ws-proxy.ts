@@ -163,9 +163,11 @@ export const tryUpgradeWebSocket = (
       return;
     }
     try {
-      const bytes = frameBytes(event.data as string | ArrayBufferLike | ArrayBufferView);
-      const status = client.send(event.data as never);
-      if (status < 0 || (status === 0 && bytes > 0) || client.getBufferedAmount() > MAX_BUFFERED_BYTES) {
+      client.send(event.data as never);
+      // Bun 1.3 can report 0 after a larger frame already reached the peer.
+      // Treat the bounded queue as the authoritative overload signal; an
+      // actual connection failure is followed by the ordinary close event.
+      if (client.getBufferedAmount() > MAX_BUFFERED_BYTES) {
         closeProxy(state, 1013, "proxy backpressure");
       }
     } catch {

@@ -10,6 +10,7 @@ import type {
   AiFileStat,
   AiMemory,
   AiMemoryKind,
+  AiMemoryLearningRunPage,
   AiMemoryPriority,
   AiRoutes,
   AiSkill,
@@ -22,6 +23,8 @@ import type {
   AiUserPrefs,
   AiChatTaskView as AssistantChatTask,
 } from "@valentinkolb/cloud/ai";
+
+type AiEditableMemoryKind = Exclude<AiMemoryKind, "workflow">;
 import { api } from "@valentinkolb/cloud/browser";
 import type { AssistantChatContextSnapshot } from "../chat-context";
 import type { AssistantProjectContextSnapshot } from "../project-context";
@@ -329,7 +332,7 @@ export const assistantApi = {
     return response.json();
   },
 
-  createMemory: async (input: { kind: AiMemoryKind; content: string; priority?: AiMemoryPriority }): Promise<AiMemory> => {
+  createMemory: async (input: { kind: AiEditableMemoryKind; content: string; priority?: AiMemoryPriority }): Promise<AiMemory> => {
     const response = await client.memories.$post({ json: input });
     if (!response.ok) throw new Error(await readError(response, "Failed to create memory"));
     return response.json();
@@ -337,7 +340,7 @@ export const assistantApi = {
 
   updateMemory: async (
     memoryId: string,
-    input: { kind?: AiMemoryKind; content?: string; priority?: AiMemoryPriority },
+    input: { kind?: AiEditableMemoryKind; content?: string; priority?: AiMemoryPriority },
   ): Promise<AiMemory> => {
     const response = await client.memories[":memoryId"].$patch({ param: { memoryId }, json: input });
     if (!response.ok) throw new Error(await readError(response, "Failed to update memory"));
@@ -347,6 +350,15 @@ export const assistantApi = {
   deleteMemory: async (memoryId: string): Promise<void> => {
     const response = await client.memories[":memoryId"].$delete({ param: { memoryId } });
     if (!response.ok) throw new Error(await readError(response, "Failed to delete memory"));
+  },
+
+  listMemoryLearningRuns: async (input: { page?: number; perPage?: number; signal?: AbortSignal } = {}): Promise<AiMemoryLearningRunPage> => {
+    const response = await client["memory-learning-runs"].$get(
+      { query: { page: String(input.page ?? 1), perPage: String(input.perPage ?? 20) } },
+      { init: { signal: input.signal } },
+    );
+    if (!response.ok) throw new Error(await readError(response, "Failed to load personalization learning activity"));
+    return response.json();
   },
 
   setConversationPinned: async (conversationId: string, pinned: boolean): Promise<AiConversation> => {

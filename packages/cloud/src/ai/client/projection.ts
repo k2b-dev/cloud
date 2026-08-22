@@ -1,4 +1,4 @@
-import type { AiStreamSseEvent, AiTurnBlock, AiTurnSnapshot, AiWireEvent } from "../protocol";
+import type { AiStreamEvent, AiTurnBlock, AiTurnSnapshot, AiWireEvent } from "../protocol";
 import { applyWireEventToBlocks, isNewerWireEvent, reconcileResolvedTurnActions, toolBlockId } from "../protocol";
 import type { AiConversation, AiStoredMessage } from "../types";
 
@@ -118,7 +118,7 @@ export const activeTurnFromSnapshot = (snapshot: AiTurnSnapshot | null): AiActiv
  * - block events apply only when strictly newer than the active turn's cursor.
  * - `turn_finished` folds the turn's persisted messages in and clears the active turn.
  */
-export const reduceProjection = (state: AiChatProjection, event: AiStreamSseEvent): AiChatProjection => {
+export const reduceProjection = (state: AiChatProjection, event: AiStreamEvent): AiChatProjection => {
   if (event.type === "state") {
     // The snapshot only carries the newest window. History the client already
     // paged in (older than the window) must survive a reconnect — losing the

@@ -946,7 +946,10 @@ describe("spaces capabilities", () => {
       data: {
         data: { kind: "task", id: itemId },
         summary: `Created “${task.title}” in ${space.name}.`,
-        refs: [{ type: "spaces.item", id: itemId }],
+        refs: [
+          { type: "spaces.space", id: spaceId },
+          { type: "spaces.item", id: itemId },
+        ],
       },
     });
     expect(recordAllowed).toHaveBeenCalledWith(expect.objectContaining({ action: "spaces.capability.task.create" }));
@@ -992,7 +995,10 @@ describe("spaces capabilities", () => {
       data: {
         data: { id: itemId, tags: [{ id: tagId }] },
         summary: `Added #${tag.name} to “${task.title}”.`,
-        refs: [{ type: "spaces.item", id: itemId }],
+        refs: [
+          { type: "spaces.space", id: spaceId },
+          { type: "spaces.item", id: itemId },
+        ],
       },
     });
   });

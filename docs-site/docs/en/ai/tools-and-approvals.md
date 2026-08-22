@@ -237,6 +237,14 @@ review for the concrete arguments. A remembered choice matches the current
 actor, qualified Action, and exact scope. AI Core never infers a broader scope
 from an attachment, resource ID, or presentation metadata.
 
+For example, the single-file and atomic multi-file Assistant Skill reference
+Actions offer **Always approve** in the split-button menu after their
+full-content review. That choice applies to later writes through the same
+Action across all Skills the current user can edit. Every write still rechecks
+Skill access, validates the complete Markdown files, and enforces the expected
+revision. A multi-file write validates the whole batch first and advances the
+revision once; deleting a reference continues to require a fresh approval.
+
 This approval confirms the user's intent for one model-requested call. It is
 not application authorization. After approval, the owning app validates the
 same arguments and checks current resource access and domain invariants before

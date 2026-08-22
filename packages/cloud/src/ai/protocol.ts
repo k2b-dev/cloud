@@ -95,7 +95,11 @@ export type AiStreamState = {
   activeTurn: AiTurnSnapshot | null;
 };
 
-export type AiStreamSseEvent = AiStreamState | AiWireEvent;
+/** Transport-neutral conversation snapshot or ordered turn update. */
+export type AiStreamEvent = AiStreamState | AiWireEvent;
+
+/** @deprecated Use AiStreamEvent. SSE is only one transport for the protocol. */
+export type AiStreamSseEvent = AiStreamEvent;
 
 export const isNewerWireEvent = (event: { attempt: number; seq: number }, current: { attempt: number; seq: number }): boolean =>
   event.attempt > current.attempt || (event.attempt === current.attempt && event.seq > current.seq);

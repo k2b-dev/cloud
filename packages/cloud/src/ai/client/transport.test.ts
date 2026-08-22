@@ -15,10 +15,10 @@ describe("AI stream transport lifecycle", () => {
     const response = new Response(
       new ReadableStream<Uint8Array>({
         start(controller) {
-          controller.enqueue(encoder.encode(': heartbeat\n\nevent: state\ndata: {"type":"state","con'));
+          controller.enqueue(encoder.encode(': heartbeat\n\nevent: turn_started\ndata: {"v":1,"type":"turn_started","con'));
           controller.enqueue(
             encoder.encode(
-              'versation":{"id":"chat"},"messages":[],"activeTurn":null}\n\nevent: turn_finished\ndata: {"v":1,"type":"turn_finished","conversationId":"chat","turnId":"turn","attempt":1,"seq":2,"status":"completed","error":null}\n\n',
+              'versationId":"Chat01","turnId":"Turn01","attempt":1,"seq":1,"modelProfileId":"m","providerModel":"p"}\n\nevent: turn_finished\ndata: {"v":1,"type":"turn_finished","conversationId":"Chat01","turnId":"Turn01","attempt":1,"seq":2,"status":"completed","error":null}\n\n',
             ),
           );
           controller.close();
@@ -29,7 +29,7 @@ describe("AI stream transport lifecycle", () => {
 
     for await (const event of parseAiSse(response, new AbortController().signal)) events.push(event);
 
-    expect(events.map((event) => event.type)).toEqual(["state", "turn_finished"]);
+    expect(events.map((event) => event.type)).toEqual(["turn_started", "turn_finished"]);
   });
 
   test("emits nothing after close when an in-flight connection resolves late", async () => {

@@ -632,6 +632,7 @@ describe("capability tool presentation", () => {
     expect(html).toContain("Details");
     expect(html).toContain("ti-eye");
     expect(html).toContain("More options for List contacts");
+    expect(html).not.toContain("Always approve");
     expect(html).not.toContain("k2b-content-structured-data");
 
     const rememberable = block("awaiting_approval");

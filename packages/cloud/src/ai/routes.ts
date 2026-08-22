@@ -34,9 +34,10 @@ import {
   toAiErrorResponse,
 } from "./http";
 import { aiMaintenanceJobs } from "./maintenance";
+import { aiMemoryLearningRuns } from "./memory-learning-runs";
 import { AI_MEMORY_CONTENT_MAX_CHARS, aiMemories } from "./memories";
 import { createCloudAiMemoryTool } from "./memory-tool";
-import { personalAiModelPolicy, personalAiSystemPrompt } from "./personal-agent";
+import { personalAiModelPolicy } from "./personal-agent";
 import { aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 import { aiProjects } from "./projects";
 import { projectPublicAiStoredMessages, publicAiStoredMessages } from "./public-projection";
@@ -51,6 +52,9 @@ import {
   submitAiTurnAction,
 } from "./runtime";
 import { listAiModels, readAiSettingsState, selectAiModelProfile, toPublicAiSettingsState } from "./settings";
+import { selectAiSkillCatalog } from "./skill-catalog";
+import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool } from "./skill-tool";
+import { aiSkills } from "./skills";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { aiConversations } from "./store";
 import { createAiConversationStreamResponse, loadAiStreamState } from "./stream";
@@ -156,6 +160,10 @@ const MemoryListQuerySchema = z.object({
   q: z.string().trim().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(50).optional(),
 });
+const MemoryLearningRunsQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).optional(),
+  perPage: z.coerce.number().int().min(1).max(50).optional(),
+});
 const MemoryCreateSchema = z.object({
   kind: z.enum(["fact", "preference"]),
   content: z.string().trim().min(1).max(AI_MEMORY_CONTENT_MAX_CHARS),
@@ -180,7 +188,17 @@ const publicConversations = async (conversations: AiConversation[], subject: Acc
 };
 const publicConversationFor = async (conversation: AiConversation, subject: AccessSubject) =>
   (await publicConversations([conversation], subject))[0]!;
-const publicMemory = (memory: Awaited<ReturnType<typeof aiMemories.create>>) => ({ ...memory, id: memory.shortId });
+const publicMemories = async (userId: string, memories: Awaited<ReturnType<typeof aiMemories.list>>) => {
+  const sourceIds = memories.flatMap((memory) => (memory.sourceConversationId ? [memory.sourceConversationId] : []));
+  const sourceShortIds = await aiMemories.resolveSourceConversationShortIds(userId, sourceIds);
+  return memories.map((memory) => ({
+    ...memory,
+    id: memory.shortId,
+    sourceConversationId: memory.sourceConversationId ? (sourceShortIds.get(memory.sourceConversationId) ?? null) : null,
+  }));
+};
+const publicMemory = async (userId: string, memory: Awaited<ReturnType<typeof aiMemories.create>>) =>
+  (await publicMemories(userId, [memory]))[0]!;
 
 /** Fire-and-forget: remember the model this user actually ran a turn with (preselected for new chats). */
 const rememberLastUsedModel = (actor: RequestActor, modelProfileId: string | null | undefined): void => {
@@ -269,7 +287,14 @@ export const aiRoutes = (() => {
         const userId = aiPrefsUserId(ctx.actor);
         if (!userId) return respond(c, fail(err.forbidden("AI memories require a user context.")));
         const query = c.req.valid("query");
-        return respond(c, ok((await aiMemories.list({ userId, query: query.q, limit: query.limit })).map(publicMemory)));
+        return respond(c, ok(await publicMemories(userId, await aiMemories.list({ userId, query: query.q, limit: query.limit }))));
+      })
+      .get("/memory-learning-runs", v("query", MemoryLearningRunsQuerySchema), async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        const userId = aiPrefsUserId(ctx.actor);
+        if (!userId) return respond(c, fail(err.forbidden("AI personalization activity requires a user context.")));
+        return respond(c, ok(await aiMemoryLearningRuns.list({ userId, ...c.req.valid("query") })));
       })
       .post("/memories", v("json", MemoryCreateSchema), async (c) => {
         const ctx = await resolveContext(c);
@@ -279,7 +304,7 @@ export const aiRoutes = (() => {
         const body = c.req.valid("json");
         return respond(
           c,
-          ok(publicMemory(await aiMemories.create({ userId, ...body, priority: body.priority ?? "pinned", source: "user" }))),
+          ok(await publicMemory(userId, await aiMemories.create({ userId, ...body, priority: body.priority ?? "pinned", source: "user" }))),
         );
       })
       .patch("/memories/:memoryId", v("json", MemoryUpdateSchema), async (c) => {
@@ -290,7 +315,7 @@ export const aiRoutes = (() => {
         const memoryId = MemoryIdSchema.safeParse(c.req.param("memoryId"));
         if (!memoryId.success) return respond(c, fail(err.badInput("Invalid memory id.")));
         const memory = await aiMemories.updateByShortId(userId, memoryId.data, { ...c.req.valid("json"), source: "user" });
-        return memory ? respond(c, ok(publicMemory(memory))) : respond(c, fail(err.notFound("Memory")));
+        return memory ? respond(c, ok(await publicMemory(userId, memory))) : respond(c, fail(err.notFound("Memory")));
       })
       .delete("/memories/:memoryId", async (c) => {
         const ctx = await resolveContext(c);
@@ -323,22 +348,29 @@ export const aiRoutes = (() => {
           }
         }
         const toolsSupported = Boolean(previewProfile?.capabilities.includes("tools"));
+        const availableSkills = toolsSupported ? (await aiSkills.list(c.get("accessSubject"))).filter((skill) => skill.enabled) : [];
+        const skillCatalog = selectAiSkillCatalog(availableSkills, previewProfile?.contextWindow ?? 0, "");
         const tools = toolsSupported
-          ? [...(await createConfiguredDefaultCloudAiTools()), ...(memoryEnabled ? [createCloudAiMemoryTool()] : [])]
+          ? [
+              ...(await createConfiguredDefaultCloudAiTools()),
+              ...(memoryEnabled ? [createCloudAiMemoryTool()] : []),
+              ...(availableSkills.length ? [createCloudAiLoadSkillTool(c.get("accessSubject"))] : []),
+              ...(skillCatalog.omitted > 0 ? [createCloudAiSearchSkillsTool(c.get("accessSubject"))] : []),
+            ]
           : [];
         const memoryToolEnabled = tools.some((tool) => tool.def.name === "memory");
         const timeZone = String((await coreSettings.get<string>("app.timezone")) || "").trim() || "UTC";
         const prompt = composeAiSystemPrompt({
           globalInstructions: state.globalInstructions,
-          agentPrompt: personalAiSystemPrompt(),
           user,
-          appId: "ai",
           memoryEnabled,
           memoryToolEnabled,
           helpEnabled: toolsSupported,
           toolDiscoveryEnabled: toolsSupported,
           appToolsEnabled: toolsSupported,
           toolHints: aiToolPromptHints(tools),
+          skills: skillCatalog.skills,
+          omittedSkillCount: skillCatalog.omitted,
           memory: memory?.text,
           timeZone,
         });
@@ -673,16 +705,15 @@ export const aiRoutes = (() => {
         const { input, message } = aiInputToUserMessage(aiTurnInputToContent({ content: turnContent }));
         const project = conversation.projectId ? await aiProjects.snapshot(conversation.projectId, c.get("accessSubject")) : null;
         if (conversation.projectId && !project) return respond(c, fail(err.notFound("Project")));
-        const systemPrompt = personalAiSystemPrompt(conversation.shortId);
         try {
           const result = await submitAiChatTurn({
             conversationId: conversation.id,
+            chatId: conversation.shortId,
             input,
             userMessage: message,
             actor: ctx.actor,
             requestedModelId: body.modelProfileId ?? project?.defaultModelProfileId ?? undefined,
             modelPolicy: ctx.modelPolicy,
-            systemPrompt,
             project: project ?? undefined,
             clientToolIds: body.clientToolIds,
             toolSource: { kind: "default", appTools: true },
@@ -752,7 +783,7 @@ export const aiRoutes = (() => {
         const content = body.content?.length ? aiTurnInputToContent({ content: body.content }) : target.message.content;
         const { input, message } = aiInputToUserMessage(content as never);
         const instruction = retryInstruction(body.mode);
-        const systemPrompt = [personalAiSystemPrompt(conversation.shortId), instruction].filter(Boolean).join("\n\n");
+        const systemPrompt = instruction ?? undefined;
         const originalRunConfig = target.loopId
           ? await aiConversations.getTurnRunConfig({ conversationId: conversation.id, turnId: target.loopId })
           : null;
@@ -766,6 +797,7 @@ export const aiRoutes = (() => {
           }
           const result = await submitAiChatTurn({
             conversationId: conversation.id,
+            chatId: conversation.shortId,
             input,
             userMessage: message,
             actor: ctx.actor,

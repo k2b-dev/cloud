@@ -918,7 +918,10 @@ const queryDefinitions = {
       const data = result.data.items.map((item) => mapConversation(scope.data.shortId, item, { conversations, folders }));
       return ok({
         data,
-        refs: data.map((item) => conversationRef(item.id, item.subject, item.preview)),
+        refs: [
+          { type: "mail.mailbox" as const, id: scope.data.shortId },
+          ...data.map((item) => conversationRef(item.id, item.subject, item.preview)),
+        ],
         page: capabilityPage(result.data.nextCursor),
       });
     },
@@ -1035,7 +1038,10 @@ const queryDefinitions = {
       });
       return ok({
         data,
-        refs: data.map((item) => conversationRef(item.id, item.subject, item.preview)),
+        refs: [
+          { type: "mail.mailbox" as const, id: scope.data.shortId },
+          ...data.map((item) => conversationRef(item.id, item.subject, item.preview)),
+        ],
         page: capabilityPage(result.data.nextCursor),
       });
     },

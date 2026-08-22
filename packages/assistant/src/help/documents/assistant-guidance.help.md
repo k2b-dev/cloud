@@ -27,8 +27,8 @@ Assistant works best when the request states the outcome, the relevant context, 
 
 ## Personalization {icon="point"}
 
-- **Personalization** stores separate facts and preferences you can review, edit, pin, or forget. Manually added entries start pinned, and Assistant keeps a small relevant set in context instead of loading an unbounded history.
-- **Learn from chats** lets Assistant save explicitly stated durable facts and preferences after an idle chat. Learning reads only your own text, not attached resources, files, tool results, or Assistant replies, and it never silently deletes entries.
+- **Personalization** stores facts, preferences, and Cloud workflow defaults you can review, edit, pin, or forget. Manually added entries start pinned, and Assistant keeps a small relevant set in context instead of loading an unbounded history.
+- **Learn from chats** checks each newly completed private-chat turn once. Explicit user text can update durable facts and preferences; three successful uses of the same Cloud capability and resource can establish a workflow default. Attached content and raw tool output are excluded, while the final Assistant message is context only. Background learning may merge, replace, or retire only its own unpinned entries.
 - **System prompt** shows the complete prompt a new chat would receive, including active personalization and organization rules.
 - **Approvals** lists Actions you accepted with **Always approve**. Revoke an entry there whenever Assistant should ask again.
 - **Chat context** is still the best place for project-specific facts, source material, and one-off constraints.

@@ -97,6 +97,7 @@ describe("nessi block event mapping", () => {
       message: "Sure?",
       details: [{ label: "Body", value: "Hello", display: "block" as const }],
       links: [{ rel: "edit" as const, href: "/app/mail/drafts/one" }],
+      approvalScope: "skills",
     };
     mapper.setApprovalReviews(new Map([["call-9", review]]));
     const ops = mapper.translate({
@@ -110,7 +111,7 @@ describe("nessi block event mapping", () => {
     } as OutboundEvent);
     expect(ops[0]).toMatchObject({
       type: "block_set",
-      block: { id: toolBlockId("call-9"), status: "awaiting_approval", approval: { message: "Sure?", review } },
+      block: { id: toolBlockId("call-9"), status: "awaiting_approval", approval: { message: "Sure?", review, allowAlways: true } },
     });
   });
 
@@ -140,6 +141,26 @@ describe("nessi block event mapping", () => {
         status: "awaiting_approval",
         approval: { message: review.message, review },
       },
+    });
+  });
+
+  test("tool approval policy is reflected in the live approval block", () => {
+    const mapper = createEventMapper(1, []);
+    mapper.setApprovalPolicies(new Map([["danger", { kind: "user-configurable", default: "once", scope: "danger" }]]));
+
+    const ops = mapper.translate({
+      ...turn,
+      type: "tool_action_request",
+      kind: "approval",
+      callId: "call-10",
+      name: "danger",
+      args: {},
+      message: "Sure?",
+    } as OutboundEvent);
+
+    expect(ops[0]).toMatchObject({
+      type: "block_set",
+      block: { approval: { allowAlways: true } },
     });
   });
 

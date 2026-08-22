@@ -1,7 +1,7 @@
 import { topic } from "@k2b/sync";
 import { logger } from "../services/logging";
 import {
-  type AiStreamSseEvent,
+  type AiStreamEvent,
   type AiTurnSnapshot,
   type AiWireEvent,
   isNewerWireEvent,
@@ -62,7 +62,7 @@ export const sseHeaders = {
   "X-Accel-Buffering": "no",
 } as const;
 
-export const encodeSseEvent = (event: AiStreamSseEvent): Uint8Array =>
+export const encodeSseEvent = (event: AiStreamEvent): Uint8Array =>
   encoder.encode(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`);
 
 export const encodeSseHeartbeat = (): Uint8Array => encoder.encode(": heartbeat\n\n");
@@ -80,7 +80,7 @@ const turnSnapshotFromActive = (active: NonNullable<Awaited<ReturnType<typeof ai
 /** Initial history window; older messages load on demand while scrolling up. */
 export const AI_STREAM_INITIAL_MESSAGE_LIMIT = 100;
 
-export const loadAiStreamState = async (conversation: AiConversation): Promise<Extract<AiStreamSseEvent, { type: "state" }>> => {
+export const loadAiStreamState = async (conversation: AiConversation): Promise<Extract<AiStreamEvent, { type: "state" }>> => {
   const [page, active] = await Promise.all([
     aiConversations.listMessagesPage({ conversationId: conversation.id, limit: AI_STREAM_INITIAL_MESSAGE_LIMIT }),
     aiConversations.getActiveTurn({ conversationId: conversation.id }),
@@ -116,14 +116,91 @@ export const loadAiStreamState = async (conversation: AiConversation): Promise<E
   };
 };
 
+type SnapshotTailItem<TSnapshot, TEvent> = { kind: "snapshot"; value: TSnapshot } | { kind: "event"; value: TEvent };
+
+async function* streamSnapshotThenTail<TCursor, TSnapshot, TEvent>(input: {
+  captureCursor: () => Promise<TCursor>;
+  loadSnapshot: () => Promise<TSnapshot>;
+  tail: (cursor: TCursor) => AsyncIterable<TEvent>;
+}): AsyncGenerator<SnapshotTailItem<TSnapshot, TEvent>> {
+  const cursor = await input.captureCursor();
+  yield { kind: "snapshot", value: await input.loadSnapshot() };
+  for await (const event of input.tail(cursor)) yield { kind: "event", value: event };
+}
+
 /**
- * Conversation-scoped SSE stream: one `state` snapshot, then the live tail.
+ * Transport-neutral conversation stream: one `state` snapshot, then the live
+ * tail. SSE and WebSocket adapters must both consume this feed.
  *
  * The topic cursor is grabbed before the snapshot is loaded, so every event
  * that races the snapshot is replayed from the tail and deduplicated via
  * (attempt, seq). Events of unknown turns are dropped until their
  * `turn_started` arrives, which makes stale retention entries harmless.
  */
+export async function* streamAiConversationEvents(input: {
+  conversation: AiConversation;
+  signal: AbortSignal;
+}): AsyncGenerator<AiStreamEvent> {
+  let current: { turnId: string; publicTurnId: string; attempt: number; seq: number } | null = null;
+  for await (const item of streamSnapshotThenTail({
+    captureCursor: async () => (await aiStreamTopic.latestCursor({ tenantId: input.conversation.id }).catch(() => null)) ?? "0-0",
+    loadSnapshot: () => loadAiStreamState(input.conversation),
+    tail: (after) => aiStreamTopic.live({ tenantId: input.conversation.id, after, signal: input.signal }),
+  })) {
+    if (item.kind === "snapshot") {
+      const state = item.value;
+      yield state;
+      const activeTurn = state.activeTurn
+        ? await aiConversations.getTurnByShortId({
+            conversationId: input.conversation.id,
+            shortId: state.activeTurn.turnId,
+          })
+        : null;
+      current =
+        state.activeTurn && activeTurn
+          ? {
+              turnId: activeTurn.id,
+              publicTurnId: state.activeTurn.turnId,
+              attempt: state.activeTurn.attempt,
+              seq: state.activeTurn.seq,
+            }
+          : null;
+      continue;
+    }
+
+    const received = item.value;
+    const event = received.data;
+    if (current?.turnId === event.turnId) {
+      if (!isNewerWireEvent(event, current)) continue;
+    } else if (event.type !== "turn_started") {
+      continue;
+    }
+    const publicTurnId =
+      current?.turnId === event.turnId
+        ? current.publicTurnId
+        : (await aiConversations.getTurn({ conversationId: input.conversation.id, turnId: event.turnId }))?.shortId;
+    if (!publicTurnId) continue;
+    current = { turnId: event.turnId, publicTurnId, attempt: event.attempt, seq: event.seq };
+    if (event.type === "turn_finished") {
+      const messages = await aiConversations
+        .listTurnMessages({ conversationId: event.conversationId, loopId: event.turnId })
+        .catch(() => []);
+      yield {
+        ...event,
+        conversationId: input.conversation.shortId,
+        turnId: publicTurnId,
+        messages: projectPublicAiStoredMessages(messages, input.conversation.shortId, new Map([[event.turnId, publicTurnId]])),
+      };
+      continue;
+    }
+
+    yield { ...event, conversationId: input.conversation.shortId, turnId: publicTurnId };
+  }
+}
+
+export const __aiStreamTest = { streamSnapshotThenTail };
+
+/** Conversation-scoped SSE adapter for the shared event feed. */
 export const createAiConversationStreamResponse = (input: {
   conversation: AiConversation;
   signal?: AbortSignal;
@@ -193,64 +270,8 @@ export const createAiConversationStreamResponse = (input: {
       }
 
       try {
-        const liveAfter = (await aiStreamTopic.latestCursor({ tenantId: input.conversation.id }).catch(() => null)) ?? "0-0";
-        const state = await loadAiStreamState(input.conversation);
-        if (!enqueue(encodeSseEvent(state))) return;
-
-        // Forwarding gate: events of the snapshot turn continue from the snapshot
-        // position; other turns only start at their turn_started event.
-        const activeTurn = state.activeTurn
-          ? await aiConversations.getTurnByShortId({
-              conversationId: input.conversation.id,
-              shortId: state.activeTurn.turnId,
-            })
-          : null;
-        let current: { turnId: string; publicTurnId: string; attempt: number; seq: number } | null =
-          state.activeTurn && activeTurn
-            ? {
-                turnId: activeTurn.id,
-                publicTurnId: state.activeTurn.turnId,
-                attempt: state.activeTurn.attempt,
-                seq: state.activeTurn.seq,
-              }
-            : null;
-
-        for await (const received of aiStreamTopic.live({
-          tenantId: input.conversation.id,
-          after: liveAfter,
-          signal: liveAbort.signal,
-        })) {
-          const event = received.data;
-          if (current?.turnId === event.turnId) {
-            if (!isNewerWireEvent(event, current)) continue;
-          } else if (event.type !== "turn_started") {
-            continue;
-          }
-          const publicTurnId =
-            current?.turnId === event.turnId
-              ? current.publicTurnId
-              : (await aiConversations.getTurn({ conversationId: input.conversation.id, turnId: event.turnId }))?.shortId;
-          if (!publicTurnId) continue;
-          current = { turnId: event.turnId, publicTurnId, attempt: event.attempt, seq: event.seq };
-          if (event.type === "turn_finished") {
-            const messages = await aiConversations
-              .listTurnMessages({ conversationId: event.conversationId, loopId: event.turnId })
-              .catch(() => []);
-            if (
-              !enqueue(
-                encodeSseEvent({
-                  ...event,
-                  conversationId: input.conversation.shortId,
-                  turnId: publicTurnId,
-                  messages: projectPublicAiStoredMessages(messages, input.conversation.shortId, new Map([[event.turnId, publicTurnId]])),
-                }),
-              )
-            )
-              return;
-            continue;
-          }
-
-          if (!enqueue(encodeSseEvent({ ...event, conversationId: input.conversation.shortId, turnId: publicTurnId }))) return;
+        for await (const event of streamAiConversationEvents({ conversation: input.conversation, signal: liveAbort.signal })) {
+          if (!enqueue(encodeSseEvent(event))) return;
         }
       } catch (error) {
         if (!liveAbort.signal.aborted) {

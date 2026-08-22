@@ -1,7 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { aiAttachmentMarker } from "./attachments";
 import type { AiStoredMessage } from "./types";
-import { AiLearnedMemoriesSchema, buildMemoryLearningTranscript, learnAiMemoriesFromPrivateChats } from "./memory-learning";
+import {
+  AiLearnedMemoriesSchema,
+  buildFinalAssistantMarkdown,
+  buildMemoryLearningTranscript,
+  learnAiMemoriesFromPrivateChats,
+} from "./memory-learning";
 
 const stored = (seq: number, message: AiStoredMessage["message"], meta: AiStoredMessage["meta"] = null): AiStoredMessage => ({
   id: crypto.randomUUID(),
@@ -26,15 +31,28 @@ describe("AI memory learning", () => {
   test("accepts bounded create and replacement candidates", () => {
     expect(
       AiLearnedMemoriesSchema.parse({
-        memories: [
-          { kind: "preference", content: "Prefers concise German answers.", replacesId: "" },
-          { kind: "fact", content: "Studies software engineering.", replacesId: crypto.randomUUID() },
+        changes: [
+          { action: "add", kind: "preference", content: "Prefers concise German answers.", memoryIds: [], resourceRef: null },
+          { action: "replace", kind: "fact", content: "Studies software engineering.", memoryIds: ["mEm123"], resourceRef: null },
+          {
+            action: "add",
+            kind: "workflow",
+            content: "Uses Accounting for invoice mail.",
+            memoryIds: [],
+            resourceRef: { type: "mail.mailbox", id: "box123" },
+          },
         ],
-      }).memories,
-    ).toHaveLength(2);
+      }).changes,
+    ).toHaveLength(3);
     expect(() =>
       AiLearnedMemoriesSchema.parse({
-        memories: Array.from({ length: 6 }, (_, index) => ({ kind: "fact", content: `Fact ${index}`, replacesId: "" })),
+        changes: Array.from({ length: 6 }, (_, index) => ({
+          action: "add",
+          kind: "fact",
+          content: `Fact ${index}`,
+          memoryIds: [],
+          resourceRef: null,
+        })),
       }),
     ).toThrow();
   });
@@ -42,7 +60,7 @@ describe("AI memory learning", () => {
   test("quietly skips when no background model is configured", async () => {
     await expect(
       learnAiMemoriesFromPrivateChats({ deps: { resolveModel: async () => Promise.reject(new Error("AI disabled")) } }),
-    ).resolves.toEqual({ scanned: 0, learned: 0, updated: 0, skipped: 0, failed: 0 });
+    ).resolves.toEqual({ scanned: 0, learned: 0, updated: 0, retired: 0, skipped: 0, failed: 0 });
   });
 
   test("learns only user-authored prose and excludes attached or retrieved content", () => {
@@ -62,5 +80,20 @@ describe("AI memory learning", () => {
     ]);
 
     expect(transcript).toBe("I prefer German.");
+  });
+
+  test("uses only the last Assistant Markdown message as optional context", () => {
+    expect(
+      buildFinalAssistantMarkdown([
+        stored(1, { role: "assistant", content: [{ type: "text", text: "Intermediate answer" }] }),
+        stored(2, {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "Private reasoning" },
+            { type: "text", text: "Final answer" },
+          ],
+        }),
+      ]),
+    ).toBe("Final answer");
   });
 });

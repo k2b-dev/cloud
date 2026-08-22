@@ -510,9 +510,12 @@ export type AiConversationFileSnapshot = {
 export type AiChatTurnRunConfig = {
   kind?: "chat";
   input: Input;
+  /** Stable public ID exposed as runtime context, not instructions. */
+  chatId?: string;
   actor?: RequestActor;
   modelPolicy?: AiModelPolicy;
   requestedModelId?: string;
+  /** Optional instructions that apply only to this turn. */
   systemPrompt?: string;
   project?: AiProjectPromptSnapshot;
   files?: AiConversationFileSnapshot;
@@ -754,7 +757,7 @@ export type AiConversationService = {
     summary: Message;
     modelProfileId?: string | null;
   }): Promise<void>;
-  listTurnMessages(input: { conversationId: string; loopId: string }): Promise<AiStoredMessage[]>;
+  listTurnMessages(input: { conversationId: string; loopId: string; includeCompacted?: boolean }): Promise<AiStoredMessage[]>;
   /** Create a queued compaction turn. Chat turns must use submitChatTurn. */
   createCompactionTurn(input: { conversationId: string; modelProfileId: string; runConfig: AiCompactionTurnRunConfig }): Promise<AiTurn>;
   /** Persist the user message and create its turn in one transaction. */

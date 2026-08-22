@@ -1,14 +1,24 @@
-import type { AiStreamSseEvent } from "../protocol";
+import type { AiStreamEvent } from "../protocol";
 
 export type AiStreamHandle = { close: () => void };
 export type AiStreamFetch = (url: string, init: RequestInit) => Promise<Response>;
+export type AiStreamConnectionStatus = "connecting" | "open" | "reconnecting";
+export type AiConversationStreamTransport = {
+  subscribe: (input: {
+    conversationId: string;
+    url: string;
+    onEvent: (event: AiStreamEvent) => void;
+    onStatus?: (status: AiStreamConnectionStatus) => void;
+    onError?: (error: Error) => void;
+  }) => AiStreamHandle;
+};
 
 const RECONNECT_BASE_MS = 500;
 const RECONNECT_MAX_MS = 5_000;
 const CONNECT_TIMEOUT_MS = 10_000;
 
 /** Parse an SSE byte stream into decoded data payloads. */
-export async function* parseAiSse(response: Response, signal: AbortSignal): AsyncGenerator<AiStreamSseEvent> {
+export async function* parseAiSse(response: Response, signal: AbortSignal): AsyncGenerator<AiStreamEvent> {
   const reader = response.body?.getReader();
   if (!reader) return;
   const decoder = new TextDecoder();
@@ -26,7 +36,7 @@ export async function* parseAiSse(response: Response, signal: AbortSignal): Asyn
           .filter((line) => line.startsWith("data:"))
           .map((line) => line.slice(5).trimStart())
           .join("\n");
-        if (data) yield JSON.parse(data) as AiStreamSseEvent;
+        if (data) yield JSON.parse(data) as AiStreamEvent;
       }
     }
   } finally {
@@ -41,8 +51,8 @@ export async function* parseAiSse(response: Response, signal: AbortSignal): Asyn
  */
 export const subscribeAiStream = (input: {
   url: string;
-  onEvent: (event: AiStreamSseEvent) => void;
-  onStatus?: (status: "connecting" | "open" | "reconnecting") => void;
+  onEvent: (event: AiStreamEvent) => void;
+  onStatus?: (status: AiStreamConnectionStatus) => void;
   fetch?: AiStreamFetch;
 }): AiStreamHandle => {
   const fetchStream: AiStreamFetch = input.fetch ?? fetch;
@@ -94,4 +104,8 @@ export const subscribeAiStream = (input: {
       activeAttempt = null;
     },
   };
+};
+
+export const aiSseConversationStreamTransport: AiConversationStreamTransport = {
+  subscribe: ({ url, onEvent, onStatus }) => subscribeAiStream({ url, onEvent, onStatus }),
 };

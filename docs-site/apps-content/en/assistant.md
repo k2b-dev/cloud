@@ -5,7 +5,7 @@ section: Work
 order: 100
 description: A personal AI workspace for conversations, files, Projects, and reusable preferences.
 tags: [assistant, ai, chats]
-updated: 2026-08-19
+updated: 2026-08-22
 ---
 
 # Assistant
@@ -27,6 +27,10 @@ available when the work continues later.
 - Ask Assistant to read supported PDF, Office, OpenDocument, RTF, EPUB, or CSV
   attachments. Assistant converts them to bounded untrusted text behind the same
   `read_file` tool; images remain a separate visual inspection.
+- Give Assistant an exact public HTTPS file link to import that image, document,
+  or raw repository file into the chat before inspecting it. Assistant cannot
+  authenticate to private downloads or clone and browse a repository through
+  that link.
 - Ask for a PDF when the result should be downloadable. Assistant first writes
   or edits a Markdown file in the chat, converts it with an optional A4 print
   preset and custom CSS, then presents the generated PDF.
@@ -46,7 +50,7 @@ proposed actions before relying on them.
 | Chat | One user-owned conversation with a name and optional description |
 | Message and turn | A request and the assistant run that answers it |
 | Chat files | Source files and editable artifacts kept with one conversation |
-| Preferences and memory | Reusable personal context applied across conversations when enabled |
+| Personalization | User-scoped facts, preferences, and Cloud workflow defaults applied across conversations when enabled |
 | Skills | Shared reusable workflows that each user can enable or disable for themselves |
 | Remembered approvals | User-managed choices for bounded Actions that may run without asking each time |
 | Project | Shared instructions, knowledge, files, references, and defaults used by private chats |
@@ -82,6 +86,12 @@ Assistant owns its chat workspace and user experience. It uses Cloud's shared
 AI runtime for conversations, model selection, streaming turns, files, Projects,
 personalization, tool approvals, maintenance, and completion notifications. Cloud
 identity keeps each personal workspace bound to a user.
+
+Switching between chats, opening a Project chat, forking, and using browser
+back or forward keep the workspace's live connection in place. Assistant
+changes only which visible chat it follows. If the connection is interrupted,
+it reloads authorized state and continues the current turn without relying on
+missed live updates.
 
 ## Find detailed product help
 

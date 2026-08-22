@@ -1,5 +1,5 @@
 import { job, mutex, scheduler } from "@k2b/sync";
-import { aiChatTasks, aiConversations, aiProjects, personalAiModelPolicy, personalAiSystemPrompt } from "@valentinkolb/cloud/ai";
+import { aiChatTasks, aiConversations, aiProjects, personalAiModelPolicy } from "@valentinkolb/cloud/ai";
 import { enqueueExistingAiTurn, validateAiTurnRequest } from "@valentinkolb/cloud/ai/runtime";
 import { accounts, coreSettings, logger } from "@valentinkolb/cloud/services";
 import { isAccountExpired } from "@valentinkolb/cloud/services/account-model";
@@ -47,10 +47,10 @@ const taskJob = job<{ occurrenceId: string }, { status: "gone" | "failed" | "not
         runConfig: {
           kind: "chat",
           input: text,
+          chatId: conversation.shortId,
           actor: { kind: "user", user },
           modelPolicy: personalAiModelPolicy,
           requestedModelId: project?.defaultModelProfileId ?? undefined,
-          systemPrompt: personalAiSystemPrompt(conversation.shortId),
           project: project ?? undefined,
           toolSource: { kind: "default", appTools: true },
           toolApprovalContext: { actorUserId: user.id },

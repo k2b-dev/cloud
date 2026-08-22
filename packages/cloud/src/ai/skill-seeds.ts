@@ -70,6 +70,7 @@ Use the current user's permissions and these exact Cloud capabilities:
 - \`core.ai.skill.create\` creates a Skill owned by the current user.
 - \`core.ai.skill.update\` updates its name, description, or instructions using the revision returned by the reader.
 - \`core.ai.skill.reference.set\` adds or replaces one Markdown reference using the current revision.
+- \`core.ai.skill.references.set\` adds or replaces multiple Markdown references atomically using one current revision. Prefer it whenever two or more references belong to one requested change.
 - \`core.ai.skill.reference.remove\` removes one reference using the current revision.
 - \`core.ai.skill.enabled.set\` changes only the current user's personal enabled state.
 - \`core.ai.skill.delete\` permanently deletes a Skill when the current user is an administrator.
@@ -120,7 +121,163 @@ Load only the capabilities needed for the current flow. Treat returned resource 
 - If information should become durable reference material, consider Notebooks.
 - Use another app only when it helps the user's request; do not perform an unrelated cross-app mutation.`;
 
+const CLOUD_NOTEBOOKS_INSTRUCTIONS = `# Work with Cloud Notebooks
+
+Use these defaults unless the user asks otherwise or a more specific loaded Skill overrides them.
+
+## Capabilities
+
+- Find and browse: \`notebooks.notebook.search\`, \`notebooks.note.search\`, \`notebooks.notebook.list\`, \`notebooks.notebook.read\`, and \`notebooks.note.tree\`.
+- Read and connect: \`notebooks.note.read\`, \`notebooks.note.links\`, \`notebooks.tag.list\`, and \`notebooks.tag.notes\`.
+- Write and organize: \`notebooks.note.create\`, \`notebooks.note.edit\`, and \`notebooks.note.move\`.
+
+Load only the needed capabilities and reuse returned typed IDs unchanged.
+
+## Normal flows
+
+- Use \`notebooks.note.search\` directly for title or content across notebooks. Use \`notebooks.notebook.list\` and \`notebooks.note.tree\` to browse one known notebook without loading every note.
+- Read the exact note before editing. Prefer the smallest structural \`notebooks.note.edit\` operation and pass the returned timestamp or content hash; replace the complete Markdown only when the whole note should change.
+- On an edit conflict, read the current note again and reconcile the requested change instead of overwriting newer content.
+- Create a note only after selecting a writable notebook. Set a parent only from a returned note in the same notebook; use \`notebooks.note.move\` for later hierarchy changes.
+- Use \`notebooks.note.links\` for links and backlinks, and \`notebooks.tag.list\` then \`notebooks.tag.notes\` for tag navigation. Never invent a \`note://\` target.
+
+## Content defaults
+
+- Write readable Markdown with a clear first heading or first line, short sections, and lists only where they improve scanning.
+- Preserve existing structure, terminology, links, tags, and unrelated content. Do not turn a focused edit into a rewrite.
+- Keep durable reference material in notes; use comments or conversational prose elsewhere when the content does not belong in the notebook.
+
+## Cross-app judgment
+
+- If a note contains actionable work or a real date, consider Spaces while preserving a link to the source note.
+- If an exact person or organization matters, consider Contacts rather than guessing identity details.
+- If the user wants to send or share note content externally, consider Mail and link the note when useful.
+- Use another app only when it helps the user's request; do not perform an unrelated cross-app mutation.`;
+
+const CLOUD_CONTACTS_INSTRUCTIONS = `# Work with Cloud Contacts
+
+Use these defaults unless the user asks otherwise or a more specific loaded Skill overrides them.
+
+## Capabilities
+
+- Find: \`contacts.contact.search\`, \`contacts.contact.suggest\`, \`contacts.contact.resolve\`, and \`contacts.contact.list\`.
+- Read: \`contacts.contact.read\`, \`contacts.book.list\`, \`contacts.book.read\`, \`contacts.tag.list\`, \`contacts.tag.read\`, \`contacts.note.list\`, and \`contacts.note.read\`.
+- Maintain: \`contacts.contact.create\`, \`contacts.contact.update\`, \`contacts.contact.move\`, \`contacts.contact.delete\`, \`contacts.favorite.set\`, \`contacts.tag.change\`, and \`contacts.note.create\`.
+
+Load only the needed capabilities and reuse returned typed IDs unchanged.
+
+## Normal flows
+
+- Use \`contacts.contact.search\` when no address book is known. Use \`contacts.book.list\` then \`contacts.contact.list\` for work inside one known book.
+- Use \`contacts.contact.suggest\` for Mail recipient suggestions. Use \`contacts.contact.resolve\` only for exact email addresses or contact IDs; never guess which person an ambiguous result represents.
+- Read the contact before updating, moving, or deleting it and pass its current \`updatedAt\` value to conflict-aware mutations.
+- Create a contact only after selecting a writable address book. Preserve useful labels and put the primary email, phone, website, or address first.
+- Collection fields in \`contacts.contact.update\` replace the complete collection. Carry forward entries that should remain; use \`contacts.tag.change\` for a focused tag addition or removal.
+- Use contact notes for concise, durable context about that contact. Do not store an email draft or unrelated project notes there.
+
+## Data defaults
+
+- Distinguish people from organizations and preserve names, spelling, labels, preferred language, pronouns, and existing contact points exactly.
+- Do not invent an email address, phone number, postal detail, relationship, or company role. Surface ambiguity before a consequential action.
+- Avoid duplicate creation when an existing contact may match; search first when the request does not establish that the contact is new.
+
+## Cross-app judgment
+
+- Use Mail when the user wants to communicate with a contact, passing only an exact selected address.
+- If the contact is tied to a task, event, or shared work item, consider Spaces.
+- If context grows beyond a contact-specific note, consider Notebooks and link the contact when useful.
+- Use another app only when it helps the user's request; do not perform an unrelated cross-app mutation.`;
+
+const CLOUD_SPACES_INSTRUCTIONS = `# Work with Cloud Spaces
+
+Use these defaults unless the user asks otherwise or a more specific loaded Skill overrides them.
+
+## Capabilities
+
+- Find and browse: \`spaces.space.search\`, \`spaces.item.search\`, \`spaces.item.link-candidate.search\`, \`spaces.space.list\`, \`spaces.space.read\`, \`spaces.task.list\`, \`spaces.event.list\`, and \`spaces.item.read\`.
+- People and context: \`spaces.space.assignee.list\`, \`spaces.item.reference.find\`, \`spaces.item.reference.list\`, \`spaces.comment.list\`, and \`spaces.comment.read\`.
+- Tasks: \`spaces.task.create\`, \`spaces.task.update\`, \`spaces.task.set-completed\`, \`spaces.task.blocker.list\`, \`spaces.task.blocks.list\`, \`spaces.task.blocker.add\`, and \`spaces.task.blocker.remove\`.
+- Events: \`spaces.event.create\`, \`spaces.event.create-once\`, \`spaces.event.update\`, \`spaces.event.invitation.prepare\`, and \`spaces.event.invitation.commit\`.
+- Organize and collaborate: \`spaces.item.tags.set\`, \`spaces.item.reference.add\`, \`spaces.item.reference.remove\`, \`spaces.item.delete\`, \`spaces.comment.create\`, \`spaces.comment.update\`, and \`spaces.comment.delete\`.
+- Calendar mail: \`spaces.calendar-invitation.preview\`, \`spaces.calendar-destination.list\`, \`spaces.calendar-invitation.import\`, \`spaces.calendar-invitation.response.prepare\`, and \`spaces.calendar-invitation.response.commit\`.
+
+Load only the needed capabilities and reuse returned typed IDs unchanged.
+
+## Normal flows
+
+- Use \`spaces.item.search\` directly for tasks or events across Spaces. For one known Space, read it first to obtain valid column and tag IDs, then list or create items.
+- Select assignees only from \`spaces.space.assignee.list\`. Create a task with a short actionable title and durable context in its description; create an event only with an explicit valid start and end.
+- Before completing a task, respect its active blockers and use \`spaces.task.blocker.list\` when details matter. Dependencies connect tasks in the same Space and must represent real prerequisites, not merely related work.
+- Use comments for discussion and item descriptions for current durable context. Read an item before changing or deleting it.
+- For Cloud links, use \`spaces.item.reference.find\` for reverse lookup and \`spaces.item.link-candidate.search\` before linking to an existing writable item. Preserve returned resource refs unchanged.
+- For incoming calendar mail, preview first and import only when no linked event exists. For a response, prepare the payload, create the returned Mail draft, then commit the response. For an outgoing invitation, prepare against the existing draft, add the returned calendar attachment to that draft, then commit the invitation; commit only after the attachment Action succeeds.
+- Use \`spaces.event.create-once\` only for retryable durable workflows; use \`spaces.event.create\` for a normal interactive creation.
+
+## Content defaults
+
+- Keep item titles readable in lists. Put decisions, instructions, and relevant source links in the description without copying unrelated source content.
+- Do not infer assignees, deadlines, event times, recurrence, priority, or completion from weak hints. Ask one focused question when a missing value changes the result materially.
+- Preserve the distinction between tasks, events, blockers, related resources, and comments.
+
+## Cross-app judgment
+
+- If a task or event originates from an email, consider Mail and preserve the conversation link.
+- If a person is ambiguous, consider Contacts rather than guessing an assignee or attendee.
+- If background material is substantial or long-lived, consider Notebooks and link it from the item.
+- Use another app only when it helps the user's request; do not perform an unrelated cross-app mutation.`;
+
+const CLOUD_WEATHER_INSTRUCTIONS = `# Work with Cloud Weather
+
+Use these defaults unless the user asks otherwise or a more specific loaded Skill overrides them.
+
+## Capabilities
+
+- Saved locations: \`weather.location.search\`, \`weather.location.list\`, \`weather.location.read\`, \`weather.location.create\`, and \`weather.location.delete\`.
+- Forecasts: \`weather.forecast.current\` and \`weather.forecast.get\`.
+- Unsaved places: \`weather.city.search\` finds German city candidates and explicit coordinates.
+
+## Normal flows
+
+- For a saved place, use location search or list and pass the returned location ID to \`weather.forecast.current\` for current conditions or \`weather.forecast.get\` for hourly and daily outlooks.
+- For an unsaved German city, use \`weather.city.search\`, choose an unambiguous candidate, and pass its coordinates directly to a forecast. Save it with \`weather.location.create\` only when the user asks.
+- If multiple city candidates remain plausible, ask which one instead of choosing silently. Delete a saved location only when explicitly requested.
+
+## Reporting defaults
+
+- Answer the user's decision first: current conditions, a useful hourly window, or the daily trend. Do not dump every returned value.
+- Keep the returned units: °C, km/h, mm, hPa, metres, and sunshine minutes where applicable.
+- Treat forecasts as time-sensitive estimates. State the relevant place and time horizon and avoid certainty beyond the returned data.
+- If weather affects a Space event or task, mention the implication but change the item only when requested.`;
+
+const CLOUD_ASSISTANT_INSTRUCTIONS = `# Work with Cloud Assistant
+
+Use these defaults unless the user asks otherwise or a more specific loaded Skill overrides them.
+
+## Capabilities
+
+- Conversations: \`core.ai.chats.search\`, \`core.ai.chat.read\`, \`core.ai.chat.search\`, \`core.ai.chat.resources\`, and \`core.ai.chats.resources\`.
+- Messaging: \`core.ai.chat.message\`.
+- Scheduled work: \`core.ai.tasks.list\`, \`core.ai.task.read\`, \`core.ai.task.create\`, \`core.ai.task.update\`, \`core.ai.task.pause\`, \`core.ai.task.resume\`, \`core.ai.task.run\`, and \`core.ai.task.delete\`.
+
+Load only the needed capabilities and reuse returned typed IDs unchanged.
+
+## Normal flows
+
+- The runtime Chat ID identifies the current conversation. Use \`core.ai.chat.search\` for earlier content in it. For another conversation, use \`core.ai.chats.search\`, then \`core.ai.chat.read\` or \`core.ai.chat.search\` with the returned ID.
+- Use \`core.ai.chat.resources\` for resources from one known conversation and \`core.ai.chats.resources\` to search across conversations. Read a returned resource through its owning app rather than guessing its contents.
+- Before \`core.ai.chat.message\`, identify the exact target and message. Report queued or delivered status accurately and do not claim the target completed the requested work.
+- For reminders and recurring work, use \`core.ai.task.create\` with the exact runtime timezone. Ask one focused question when the schedule or intended conversation is materially ambiguous.
+- Use \`core.ai.tasks.list\` and \`core.ai.task.read\` before changing a task. Preserve its ID and use the focused update, pause, resume, run, or delete Action.
+- A scheduled run continues its conversation with the Project and permissions available at execution time; do not promise access that may later be unavailable.`;
+
 export const seedCloudAiSkills = async (): Promise<void> => {
+  await aiSkills.seedOnce({
+    key: "assistant:cloud-assistant",
+    name: "cloud-assistant",
+    description:
+      "Use for work involving Cloud Assistant itself: finding or reading earlier conversations, recovering resources used in chats, messaging another conversation, or creating and managing reminders and recurring scheduled chat work.",
+    instructions: CLOUD_ASSISTANT_INSTRUCTIONS,
+  });
   await aiSkills.seedOnce({
     key: "core:skill-creator",
     name: "skill-creator",
@@ -134,5 +291,33 @@ export const seedCloudAiSkills = async (): Promise<void> => {
     description:
       "Use for work involving the user's Cloud mailboxes: finding, reading, summarizing, organizing, drafting, replying to, forwarding, sending, scheduling, or unsubscribing from email. Load it whenever a request involves Cloud Mail, an inbox, a mailbox, a message, or an email conversation.",
     instructions: CLOUD_MAIL_INSTRUCTIONS,
+  });
+  await aiSkills.seedOnce({
+    key: "notebooks:cloud-notebooks",
+    name: "cloud-notebooks",
+    description:
+      "Use for work involving the user's Cloud notebooks or Markdown notes: finding, reading, creating, editing, moving, linking, or organizing notes and tags. Load it whenever a request involves Cloud Notebooks, a notebook, a note, stored Markdown, note links, or backlinks.",
+    instructions: CLOUD_NOTEBOOKS_INSTRUCTIONS,
+  });
+  await aiSkills.seedOnce({
+    key: "contacts:cloud-contacts",
+    name: "cloud-contacts",
+    description:
+      "Use for work involving the user's Cloud address books or contacts: finding or resolving people and organizations, choosing exact contact points, creating or updating records, favorites, tags, moves, and contact notes. Load it whenever a request involves Cloud Contacts, an address book, a contact, or recipient identity.",
+    instructions: CLOUD_CONTACTS_INSTRUCTIONS,
+  });
+  await aiSkills.seedOnce({
+    key: "spaces:cloud-spaces",
+    name: "cloud-spaces",
+    description:
+      "Use for work involving Cloud Spaces: finding, reading, creating, or updating tasks and events, assignees, blockers, comments, tags, linked Cloud resources, and calendar invitations. Load it whenever a request involves a Space, task, work item, deadline, event, calendar entry, or shared work queue.",
+    instructions: CLOUD_SPACES_INSTRUCTIONS,
+  });
+  await aiSkills.seedOnce({
+    key: "weather:cloud-weather",
+    name: "cloud-weather",
+    description:
+      "Use for current weather and forecasts through Cloud Weather, including saved locations, unsaved German city lookup, hourly or daily outlooks, and saving or deleting locations. Load it whenever the user asks about weather, temperature, rain, or a forecast for a place.",
+    instructions: CLOUD_WEATHER_INSTRUCTIONS,
   });
 };

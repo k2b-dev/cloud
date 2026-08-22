@@ -724,19 +724,47 @@ export const migrateCloudAi = async (): Promise<void> => {
       source TEXT NOT NULL DEFAULT 'user',
       source_conversation_id UUID REFERENCES ai.conversations(id) ON DELETE SET NULL,
       source_message_id UUID REFERENCES ai.messages(id) ON DELETE SET NULL,
+      resource_type TEXT,
+      resource_id TEXT,
       superseded_by_id UUID REFERENCES ai.memories(id) ON DELETE SET NULL,
       deleted_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       search_document TSVECTOR GENERATED ALWAYS AS (to_tsvector('simple', COALESCE(content, ''))) STORED,
-      CONSTRAINT ai_memories_kind_check CHECK (kind IN ('fact', 'preference')),
+      CONSTRAINT ai_memories_kind_check CHECK (kind IN ('fact', 'preference', 'workflow')),
       CONSTRAINT ai_memories_priority_check CHECK (priority IN ('normal', 'pinned')),
       CONSTRAINT ai_memories_source_check CHECK (source IN ('user', 'agent', 'background')),
-      CONSTRAINT ai_memories_content_check CHECK (char_length(content) BETWEEN 1 AND 500)
+      CONSTRAINT ai_memories_content_check CHECK (char_length(content) BETWEEN 1 AND 500),
+      CONSTRAINT ai_memories_resource_value_check CHECK (
+        (resource_type IS NULL AND resource_id IS NULL)
+        OR (char_length(resource_type) BETWEEN 3 AND 180 AND char_length(resource_id) BETWEEN 1 AND 512)
+      ),
+      CONSTRAINT ai_memories_workflow_resource_check CHECK (
+        (kind = 'workflow' AND resource_type IS NOT NULL AND resource_id IS NOT NULL)
+        OR (kind <> 'workflow' AND resource_type IS NULL AND resource_id IS NULL)
+      )
     )
   `.simple();
 
   await sql`ALTER TABLE ai.memories ADD COLUMN IF NOT EXISTS short_id TEXT`.simple();
+  await sql`ALTER TABLE ai.memories ADD COLUMN IF NOT EXISTS resource_type TEXT`.simple();
+  await sql`ALTER TABLE ai.memories ADD COLUMN IF NOT EXISTS resource_id TEXT`.simple();
+  await sql`ALTER TABLE ai.memories DROP CONSTRAINT IF EXISTS ai_memories_resource_value_check`.simple();
+  await sql`
+    ALTER TABLE ai.memories ADD CONSTRAINT ai_memories_resource_value_check CHECK (
+      (resource_type IS NULL AND resource_id IS NULL)
+      OR (char_length(resource_type) BETWEEN 3 AND 180 AND char_length(resource_id) BETWEEN 1 AND 512)
+    )
+  `.simple();
+  await sql`ALTER TABLE ai.memories DROP CONSTRAINT IF EXISTS ai_memories_kind_check`.simple();
+  await sql`ALTER TABLE ai.memories ADD CONSTRAINT ai_memories_kind_check CHECK (kind IN ('fact', 'preference', 'workflow'))`.simple();
+  await sql`ALTER TABLE ai.memories DROP CONSTRAINT IF EXISTS ai_memories_workflow_resource_check`.simple();
+  await sql`
+    ALTER TABLE ai.memories ADD CONSTRAINT ai_memories_workflow_resource_check CHECK (
+      (kind = 'workflow' AND resource_type IS NOT NULL AND resource_id IS NOT NULL)
+      OR (kind <> 'workflow' AND resource_type IS NULL AND resource_id IS NULL)
+    )
+  `.simple();
   await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_memories_short_id ON ai.memories(short_id)`.simple();
   await backfillAiShortIds(
     "idx_ai_memories_short_id",
@@ -787,9 +815,139 @@ export const migrateCloudAi = async (): Promise<void> => {
     console.warn("  ! ai.memories optional BM25 search index unavailable; native PostgreSQL FTS remains active", error);
   }
 
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS memory_learned_at TIMESTAMPTZ`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS memory_learn_failed_at TIMESTAMPTZ`.simple();
-  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS memory_learn_fail_count INTEGER NOT NULL DEFAULT 0`.simple();
+  // Turn-level learning avoids replaying an entire conversation whenever an
+  // Assistant or tool message updates the chat. Existing turns are marked as
+  // already considered exactly once when the column is introduced.
+  await sql`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = 'ai' AND table_name = 'turns' AND column_name = 'memory_learned_at'
+      ) THEN
+        ALTER TABLE ai.turns ADD COLUMN memory_learned_at TIMESTAMPTZ;
+        UPDATE ai.turns SET memory_learned_at = COALESCE(completed_at, created_at)
+        WHERE status IN ('completed', 'failed', 'aborted');
+      END IF;
+    END $$
+  `.simple();
+  await sql`ALTER TABLE ai.turns ADD COLUMN IF NOT EXISTS memory_learn_failed_at TIMESTAMPTZ`.simple();
+  await sql`ALTER TABLE ai.turns ADD COLUMN IF NOT EXISTS memory_learn_fail_count INTEGER NOT NULL DEFAULT 0`.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_turns_memory_learning_candidates
+    ON ai.turns(completed_at, id)
+    WHERE status = 'completed' AND memory_learned_at IS NULL
+  `.simple();
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS ai.memory_workflow_evidence (
+      user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      turn_id UUID NOT NULL REFERENCES ai.turns(id) ON DELETE CASCADE,
+      conversation_id UUID NOT NULL REFERENCES ai.conversations(id) ON DELETE CASCADE,
+      capability_id TEXT NOT NULL,
+      resource_type TEXT NOT NULL,
+      resource_id TEXT NOT NULL,
+      resource_title TEXT,
+      observed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      reviewed_at TIMESTAMPTZ,
+      PRIMARY KEY (turn_id, capability_id, resource_type, resource_id),
+      CONSTRAINT ai_memory_workflow_evidence_capability_check CHECK (char_length(capability_id) BETWEEN 3 AND 180),
+      CONSTRAINT ai_memory_workflow_evidence_resource_check CHECK (
+        char_length(resource_type) BETWEEN 3 AND 180 AND char_length(resource_id) BETWEEN 1 AND 512
+      )
+    )
+  `.simple();
+  await sql`ALTER TABLE ai.memory_workflow_evidence DROP CONSTRAINT IF EXISTS ai_memory_workflow_evidence_capability_check`.simple();
+  await sql`
+    ALTER TABLE ai.memory_workflow_evidence ADD CONSTRAINT ai_memory_workflow_evidence_capability_check
+    CHECK (char_length(capability_id) BETWEEN 3 AND 180)
+  `.simple();
+  await sql`ALTER TABLE ai.memory_workflow_evidence DROP CONSTRAINT IF EXISTS ai_memory_workflow_evidence_resource_check`.simple();
+  await sql`
+    ALTER TABLE ai.memory_workflow_evidence ADD CONSTRAINT ai_memory_workflow_evidence_resource_check
+    CHECK (char_length(resource_type) BETWEEN 3 AND 180 AND char_length(resource_id) BETWEEN 1 AND 512)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_memory_workflow_evidence_pending
+    ON ai.memory_workflow_evidence(user_id, capability_id, resource_type, resource_id, observed_at)
+    WHERE reviewed_at IS NULL
+  `.simple();
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS ai.memory_learning_runs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      short_id TEXT NOT NULL,
+      user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+      conversation_id UUID REFERENCES ai.conversations(id) ON DELETE SET NULL,
+      turn_id UUID REFERENCES ai.turns(id) ON DELETE SET NULL,
+      conversation_title TEXT NOT NULL,
+      run_kind TEXT NOT NULL DEFAULT 'turn',
+      evidence_key TEXT,
+      status TEXT NOT NULL DEFAULT 'running',
+      model_profile_id TEXT,
+      duration_ms INTEGER,
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      accounted_tokens INTEGER NOT NULL DEFAULT 0,
+      added_count INTEGER NOT NULL DEFAULT 0,
+      updated_count INTEGER NOT NULL DEFAULT 0,
+      merged_count INTEGER NOT NULL DEFAULT 0,
+      retired_count INTEGER NOT NULL DEFAULT 0,
+      changes JSONB NOT NULL DEFAULT '[]'::jsonb,
+      error TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      completed_at TIMESTAMPTZ,
+      CONSTRAINT ai_memory_learning_runs_status_check CHECK (status IN ('running', 'ok', 'skipped', 'failed')),
+      CONSTRAINT ai_memory_learning_runs_kind_check CHECK (run_kind IN ('turn', 'workflow')),
+      CONSTRAINT ai_memory_learning_runs_evidence_check CHECK (
+        (run_kind = 'turn' AND evidence_key IS NULL)
+        OR (run_kind = 'workflow' AND turn_id IS NOT NULL AND evidence_key IS NOT NULL)
+      ),
+      CONSTRAINT ai_memory_learning_runs_changes_check CHECK (jsonb_typeof(changes) = 'array')
+    )
+  `.simple();
+  await sql`ALTER TABLE ai.memory_learning_runs ADD COLUMN IF NOT EXISTS turn_id UUID REFERENCES ai.turns(id) ON DELETE SET NULL`.simple();
+  await sql`ALTER TABLE ai.memory_learning_runs ADD COLUMN IF NOT EXISTS run_kind TEXT NOT NULL DEFAULT 'turn'`.simple();
+  await sql`ALTER TABLE ai.memory_learning_runs ADD COLUMN IF NOT EXISTS evidence_key TEXT`.simple();
+  await sql`
+    UPDATE ai.memory_learning_runs
+    SET evidence_key = 'legacy:' || id::text
+    WHERE run_kind = 'workflow' AND evidence_key IS NULL
+  `.simple();
+  await sql`ALTER TABLE ai.memory_learning_runs ADD COLUMN IF NOT EXISTS input_tokens INTEGER`.simple();
+  await sql`ALTER TABLE ai.memory_learning_runs ADD COLUMN IF NOT EXISTS output_tokens INTEGER`.simple();
+  await sql`ALTER TABLE ai.memory_learning_runs ADD COLUMN IF NOT EXISTS accounted_tokens INTEGER NOT NULL DEFAULT 0`.simple();
+  await sql`ALTER TABLE ai.memory_learning_runs ADD COLUMN IF NOT EXISTS retired_count INTEGER NOT NULL DEFAULT 0`.simple();
+  await sql`ALTER TABLE ai.memory_learning_runs DROP CONSTRAINT IF EXISTS ai_memory_learning_runs_kind_check`.simple();
+  await sql`
+    ALTER TABLE ai.memory_learning_runs ADD CONSTRAINT ai_memory_learning_runs_kind_check
+    CHECK (run_kind IN ('turn', 'workflow'))
+  `.simple();
+  await sql`ALTER TABLE ai.memory_learning_runs DROP CONSTRAINT IF EXISTS ai_memory_learning_runs_evidence_check`.simple();
+  await sql`
+    ALTER TABLE ai.memory_learning_runs ADD CONSTRAINT ai_memory_learning_runs_evidence_check CHECK (
+      (run_kind = 'turn' AND evidence_key IS NULL)
+      OR (run_kind = 'workflow' AND turn_id IS NOT NULL AND evidence_key IS NOT NULL)
+    )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_memory_learning_runs_short_id
+    ON ai.memory_learning_runs(short_id)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_memory_learning_runs_user_created
+    ON ai.memory_learning_runs(user_id, created_at DESC, id DESC)
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_memory_learning_runs_turn
+    ON ai.memory_learning_runs(turn_id)
+    WHERE turn_id IS NOT NULL AND run_kind = 'turn'
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_ai_memory_learning_runs_workflow_evidence
+    ON ai.memory_learning_runs(evidence_key)
+    WHERE evidence_key IS NOT NULL AND run_kind = 'workflow'
+  `.simple();
 
   // ── Conversation file workspace ───────────────────────────────────
   await sql`

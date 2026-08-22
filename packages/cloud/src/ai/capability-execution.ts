@@ -44,12 +44,32 @@ export class AiCapabilityExecutionError extends Error {
 const idempotencyKey = (conversationId: string, callId: string): string =>
   `ai-${createHash("sha256").update(`${conversationId}\0${callId}`).digest("hex")}`;
 
+const MAX_VALIDATION_ISSUES = 8;
+const MAX_VALIDATION_ISSUE_CHARS = 300;
+
+const validationIssueText = (details: unknown): string => {
+  if (!details || typeof details !== "object" || !("issues" in details) || !Array.isArray(details.issues)) return "";
+  const issues = details.issues.slice(0, MAX_VALIDATION_ISSUES).flatMap((issue) => {
+    if (!issue || typeof issue !== "object") return [];
+    const rawPath = "path" in issue ? issue.path : undefined;
+    const path = Array.isArray(rawPath)
+      ? rawPath.filter((part): part is string | number => typeof part === "string" || typeof part === "number").join(".")
+      : typeof rawPath === "string"
+        ? rawPath
+        : "input";
+    const message = "message" in issue && typeof issue.message === "string" ? issue.message : "Invalid value";
+    return [`${path || "input"}: ${message}`.slice(0, MAX_VALIDATION_ISSUE_CHARS)];
+  });
+  return issues.length > 0 ? ` Input issues: ${issues.join("; ")}` : "";
+};
+
 const parseCapabilityResponse = async (response: Response): Promise<unknown> => {
-  const body = (await response.json().catch(() => null)) as { code?: unknown; message?: unknown } | null;
+  const body = (await response.json().catch(() => null)) as { code?: unknown; message?: unknown; details?: unknown } | null;
   if (response.ok) return body;
   const code = typeof body?.code === "string" ? body.code : "CAPABILITY_FAILED";
   const message = typeof body?.message === "string" ? body.message : "Capability execution failed";
-  throw new AiCapabilityExecutionError(code, response.status, message);
+  const issueText = code === "VALIDATION_FAILED" ? validationIssueText(body?.details) : "";
+  throw new AiCapabilityExecutionError(code, response.status, `${message}${issueText}`);
 };
 
 type AiCapabilityCall = {

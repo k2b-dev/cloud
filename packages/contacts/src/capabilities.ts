@@ -863,7 +863,7 @@ const runContactCreate = async (input: z.infer<typeof ContactCreateInputSchema>,
         ? ok({
             data: { contact: mapContactDetail(publicContact) },
             summary: boundedCapabilitySummary(`Created ${resolveContactName(publicContact)} in ${access.data.book.name}.`),
-            refs: [contactRef(publicContact)],
+            refs: [bookRef(access.data.book), contactRef(publicContact)],
             links: [{ rel: "edit", href: contactHref(publicContact) }],
           })
         : fail(err.conflict("The contact created by this idempotency key no longer exists"));

@@ -668,7 +668,7 @@ const runItemList = async (input: ItemListInput, context: CapabilityExecutionCon
   return pageResult(
     { items: page.items, page: page.page, perPage: page.pageSize, total: page.total, hasNext: page.page < page.totalPages },
     items,
-    items.map((item) => itemRef(item, item.kind)),
+    [{ type: "spaces.space" as const, id: input.spaceId }, ...items.map((item) => itemRef(item, item.kind))],
   );
 };
 
@@ -858,7 +858,7 @@ const itemMutationResult = async (result: MutationResult<SpaceItem>, summary: (i
   return ok({
     data: mapItem(item),
     summary: boundedCapabilitySummary(summary(item)),
-    refs: [itemRef(item, isEvent(item) ? "event" : "task")],
+    refs: [{ type: "spaces.space" as const, id: item.spaceId }, itemRef(item, isEvent(item) ? "event" : "task")],
     links: [{ rel: "open" as const, href: buildSpaceItemHref(item.spaceId, item.id) }],
   });
 };

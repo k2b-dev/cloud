@@ -23,10 +23,12 @@ Assistant is the standard workspace for your personal Cloud agent. The same agen
 - **Start a chat:** Use New Chat or type a message in an empty Assistant view.
 - **Continue work from another app:** An application can open a new Assistant chat with its current Cloud resources already attached. The application remains responsible for access to its data and operations.
 - **Return to existing work:** Use the recent chat groups, Search Chats, or All Chats without opening a conversation first.
+- **Move between chats:** Switching chats, opening a Project chat, forking, or using browser back and forward keeps live updates connected. After an interruption, Assistant reloads the current authorized chat and continues from its saved state.
 - **Choose a model when needed:** Pick a model in the composer when more than one selectable streaming model is available.
 - **Send the request:** Write the task clearly, then use the plus menu to attach supported files or Cloud resources before sending.
 - **Cloud resources:** A resource chip identifies the current Mail draft, Contact, Grid record, or another supported item. When it has a destination, select the chip to open that resource in a new tab. Attaching it does not grant access; Assistant must use the owning application's authorized capabilities to read or change it.
 - **Documents:** Assistant reads supported PDF, Office, OpenDocument, RTF, EPUB, and CSV files through `read_file`, which converts their content to bounded Markdown. Document content remains untrusted. Image-only PDFs require OCR elsewhere.
+- **Files from links:** Give Assistant an exact public HTTPS file link to import the image, document, or raw repository file into this chat before inspecting it. Private downloads, signed-in websites, and repository browsing are not supported by that import.
 - **Create a PDF:** Ask Assistant for a PDF when the result should be downloadable. It first writes or edits a conversation Markdown file, converts it with an optional A4 preset and custom CSS, and then presents the PDF. Project files are read-only, so they must be copied into a conversation file before conversion.
 - **Images:** A Vision model inspects newly attached images directly. A tool-capable model can instead use the configured image-inspection model. Attachments remain conversation files, so the file context updates without storing image bytes inside the message.
 - **Keep the useful thread:** Rename the chat or add a description when the conversation should be easy to find later.

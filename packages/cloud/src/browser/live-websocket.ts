@@ -13,6 +13,7 @@ export type LiveWebSocketClose = {
 
 export type LiveWebSocketControls = {
   markApplied: (cursor: string | null | undefined) => void;
+  send: (message: unknown) => boolean;
   terminate: (error: LiveWebSocketError, close?: LiveWebSocketClose) => void;
 };
 
@@ -22,6 +23,7 @@ export type LiveWebSocketOptions<TMessage> = {
   activity?: LiveWebSocketActivity;
   subscribe: (cursor: string | null) => unknown;
   parse: (raw: string) => TMessage | null;
+  onOpen?: (controls: LiveWebSocketControls) => void;
   onMessage: (message: TMessage, controls: LiveWebSocketControls) => void;
   onStatus?: (status: LiveWebSocketStatus) => void;
   onFatal?: (error: LiveWebSocketError) => void;
@@ -36,6 +38,7 @@ export type LiveWebSocketOptions<TMessage> = {
 export type LiveWebSocket = {
   connect: () => void;
   markApplied: (cursor: string | null | undefined) => void;
+  send: (message: unknown) => boolean;
   dispose: () => void;
 };
 
@@ -97,6 +100,18 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
     if (cursor) lastAppliedCursor = cursor;
   };
 
+  const send = (message: unknown): boolean => {
+    if (!socket || socket.readyState !== WebSocket.OPEN || disposed || terminated) return false;
+    try {
+      const payload = JSON.stringify(message);
+      if (payload === undefined) return false;
+      socket.send(payload);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const closeSocket = (code = 1000, reason = "") => {
     const current = socket;
     socket = null;
@@ -122,6 +137,7 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
 
   const controls: LiveWebSocketControls = {
     markApplied,
+    send,
     terminate: fatal,
   };
 
@@ -160,11 +176,10 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
 
     next.onopen = () => {
       if (socket !== next || disposed || terminated) return;
-      setStatus("open");
       try {
-        const payload = JSON.stringify(options.subscribe(lastAppliedCursor));
-        if (payload === undefined) throw new Error("Live WebSocket subscribe payload is not serializable");
-        next.send(payload);
+        if (!send(options.subscribe(lastAppliedCursor))) throw new Error("Live WebSocket subscription could not be sent");
+        setStatus("open");
+        options.onOpen?.(controls);
       } catch (error) {
         fatal({ code: "subscribe_failed", message: error instanceof Error ? error.message : "Live subscription failed" });
       }
@@ -228,6 +243,7 @@ export const createLiveWebSocket = <TMessage>(options: LiveWebSocketOptions<TMes
       openSocket();
     },
     markApplied,
+    send,
     dispose: () => {
       if (disposed) return;
       disposed = true;

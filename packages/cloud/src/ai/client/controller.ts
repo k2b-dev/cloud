@@ -1,7 +1,7 @@
 import { type Accessor, createMemo, createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { type AiAttachmentRef, aiAttachmentMarker } from "../attachments";
-import { type AiStreamSseEvent, type AiTurnBlock, type AiTurnSnapshot, steerMessageBlockId } from "../protocol";
+import { type AiStreamEvent, type AiTurnBlock, type AiTurnSnapshot, steerMessageBlockId } from "../protocol";
 import { type AiResourceMarker, aiResourceMarker } from "../resource-markers";
 import type {
   AiConversation,
@@ -21,7 +21,7 @@ import {
   reduceProjection,
   visibleMessages,
 } from "./projection";
-import { type AiStreamHandle, subscribeAiStream } from "./transport";
+import { type AiConversationStreamTransport, type AiStreamHandle, aiSseConversationStreamTransport } from "./transport";
 
 type ComposerDraftInput = {
   message?: string;
@@ -81,7 +81,7 @@ const DEFAULT_RUN_ERROR = "Assistant response failed.";
 const conversationRunError = (conversation: AiConversation | null | undefined): string | null =>
   conversation?.runStatus === "failed" ? conversation.runError?.trim() || DEFAULT_RUN_ERROR : null;
 
-const runErrorFromEvent = (event: AiStreamSseEvent, activeTurnId: string | null | undefined): string | null | undefined => {
+const runErrorFromEvent = (event: AiStreamEvent, activeTurnId: string | null | undefined): string | null | undefined => {
   if (event.type === "state") return conversationRunError(event.conversation);
   if (event.type !== "turn_finished" || event.turnId !== activeTurnId) return undefined;
   return event.status === "failed" ? event.error?.trim() || DEFAULT_RUN_ERROR : null;
@@ -98,6 +98,8 @@ export type CreateAiChatControllerOptions = {
   /** Persist owner read state for conversation-list unread indicators. */
   trackViewedState?: boolean;
   frontendTools?: Record<string, AiFrontendToolHandler>;
+  /** Overrides the default SSE transport, for example with a shared WebSocket channel. */
+  streamTransport?: AiConversationStreamTransport;
 };
 
 const isAccessor = <T>(value: T | Accessor<T>): value is Accessor<T> => typeof value === "function";
@@ -219,7 +221,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
 
   // ---- streaming --------------------------------------------------------
 
-  const reduceEvent = (conversationId: string, event: AiStreamSseEvent) => {
+  const reduceEvent = (conversationId: string, event: AiStreamEvent) => {
     const next = reduceProjection({ conversation: state.conversation, messages: state.messages, activeTurn: state.activeTurn }, event);
     setState(reconcile(next, { key: "id", merge: true }));
     cache.set(conversationId, next);
@@ -231,7 +233,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
    * detail refetch. The finished compaction block stays visible until the fresh
    * state replaces it in a single step.
    */
-  const foldCompaction = async (session: AiStreamSession, event: AiStreamSseEvent) => {
+  const foldCompaction = async (session: AiStreamSession, event: AiStreamEvent) => {
     const detail = await loadDetail(session.conversationId, () => isCurrentStreamSession(streamSession, session));
     if (!isCurrentStreamSession(streamSession, session)) return;
     if (detail) {
@@ -243,7 +245,7 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     void markConversationViewed(session.conversationId);
   };
 
-  const applyEvent = (session: AiStreamSession, event: AiStreamSseEvent) => {
+  const applyEvent = (session: AiStreamSession, event: AiStreamEvent) => {
     if (!isCurrentStreamSession(streamSession, session)) return;
     const conversationId = session.conversationId;
 
@@ -284,12 +286,18 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     closeStream();
     const session = { conversationId, generation: ++streamGeneration };
     streamSession = session;
-    stream = subscribeAiStream({
+    stream = (options.streamTransport ?? aiSseConversationStreamTransport).subscribe({
+      conversationId,
       url: url(`/conversations/${conversationId}/stream`),
       onStatus: (status) => {
         if (isCurrentStreamSession(streamSession, session)) setStreamStatus(status);
       },
       onEvent: (event) => applyEvent(session, event),
+      onError: (error) => {
+        if (!isCurrentStreamSession(streamSession, session)) return;
+        setStreamStatus("idle");
+        setConversationError(conversationId, error.message);
+      },
     });
   };
 

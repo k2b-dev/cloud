@@ -160,6 +160,7 @@ describe("Core AI capabilities", () => {
       "ai.skill.enabled.set",
       "ai.skill.reference.remove",
       "ai.skill.reference.set",
+      "ai.skill.references.set",
       "ai.skill.update",
       "ai.task.create",
       "ai.task.delete",
@@ -178,7 +179,7 @@ describe("Core AI capabilities", () => {
       (Object.entries(aiCapabilities.actions) as Array<[string, CapabilityActionDefinition]>)
         .filter(([, action]) => action.approval === "rememberable")
         .map(([localId]) => localId),
-    ).toEqual(["ai.task.pause"]);
+    ).toEqual(["ai.skill.reference.set", "ai.skill.references.set", "ai.task.pause"]);
     expect(
       Object.fromEntries(
         manifest.actions.map((action) => [action.localId, { destructive: action.destructive, idempotency: action.idempotency }]),
@@ -190,6 +191,7 @@ describe("Core AI capabilities", () => {
       "ai.skill.enabled.set": { destructive: true, idempotency: "none" },
       "ai.skill.reference.remove": { destructive: true, idempotency: "none" },
       "ai.skill.reference.set": { destructive: true, idempotency: "none" },
+      "ai.skill.references.set": { destructive: true, idempotency: "none" },
       "ai.skill.update": { destructive: true, idempotency: "none" },
       "ai.task.create": { destructive: false, idempotency: "required" },
       "ai.task.delete": { destructive: true, idempotency: "none" },
@@ -216,6 +218,26 @@ describe("Core AI capabilities", () => {
         content: "x",
       }).success,
     ).toBe(false);
+    expect(
+      aiCapabilities.actions["ai.skill.references.set"].input.safeParse({
+        skillId: skill.shortId,
+        expectedRevision: 1,
+        references: Array.from({ length: 16 }, (_, index) => ({
+          path: `references/topic-${index + 1}.md`,
+          content: `Topic ${index + 1}`,
+        })),
+      }).success,
+    ).toBe(true);
+    expect(
+      aiCapabilities.actions["ai.skill.references.set"].input.safeParse({
+        skillId: skill.shortId,
+        expectedRevision: 1,
+        references: Array.from({ length: 21 }, (_, index) => ({
+          path: `references/topic-${index + 1}.md`,
+          content: `Topic ${index + 1}`,
+        })),
+      }).success,
+    ).toBe(false);
     expect(aiCapabilities.queries["ai.skills.list"].input.safeParse({ cursor: "1234" }).success).toBe(false);
     const localCursor = encodeURIComponent(JSON.stringify({ at: "2026-08-11T12:00:00.000Z", type: "notebooks.note", id: "nT1234" }));
     const userCursor = encodeURIComponent(
@@ -231,16 +253,48 @@ describe("Core AI capabilities", () => {
     expect(aiCapabilities.queries["ai.chats.resources"].description).toContain("Direct cross-chat entry");
   });
 
-  test("scopes remembered pause approval to one public task", async () => {
+  test("scopes remembered Skill approvals globally and task approvals to one task", async () => {
+    spyOn(aiSkills, "getByShortId").mockResolvedValue(skill);
     spyOn(aiChatTasks, "get").mockResolvedValue(scheduledTask);
 
-    const review = await aiCapabilities.actions["ai.task.pause"].review!({ taskId: scheduledTask.shortId }, context);
-    const results = [review];
+    const skillReview = await aiCapabilities.actions["ai.skill.reference.set"].review!(
+      {
+        skillId: skill.shortId,
+        expectedRevision: skill.revision,
+        path: "references/style.md",
+        content: "Keep the report concise.",
+      },
+      context,
+    );
+    const skillBatchReview = await aiCapabilities.actions["ai.skill.references.set"].review!(
+      {
+        skillId: skill.shortId,
+        expectedRevision: skill.revision,
+        references: [
+          { path: "references/style.md", content: "Keep the report concise." },
+          { path: "references/tone.md", content: "Use a direct tone." },
+        ],
+      },
+      context,
+    );
+    const taskReview = await aiCapabilities.actions["ai.task.pause"].review!({ taskId: scheduledTask.shortId }, context);
+    const results = [skillReview, skillBatchReview, taskReview];
 
     expect(results).toHaveLength(
       (Object.values(aiCapabilities.actions) as CapabilityActionDefinition[]).filter((action) => action.approval === "rememberable").length,
     );
-    expect(review).toMatchObject({ ok: true, data: { approvalScope: `task:${scheduledTask.shortId}` } });
+    expect(skillReview).toMatchObject({ ok: true, data: { approvalScope: "skills" } });
+    expect(skillBatchReview).toMatchObject({
+      ok: true,
+      data: {
+        approvalScope: "skills",
+        details: [
+          { label: "references/style.md", value: "Keep the report concise.", display: "block" },
+          { label: "references/tone.md", value: "Use a direct tone.", display: "block" },
+        ],
+      },
+    });
+    expect(taskReview).toMatchObject({ ok: true, data: { approvalScope: `task:${scheduledTask.shortId}` } });
     for (const result of results) {
       expect(result.ok).toBeTrue();
       if (result.ok) expect(CapabilityActionReviewSchema.safeParse(result.data).success).toBeTrue();
@@ -311,6 +365,7 @@ describe("Core AI capabilities", () => {
     spyOn(aiSkills, "create").mockResolvedValue(skill);
     spyOn(aiSkills, "update").mockResolvedValue({ ...skill, description: "Updated description.", revision: 2 });
     spyOn(aiSkills, "setReference").mockResolvedValue({ ...skill, revision: 2 });
+    const setReferences = spyOn(aiSkills, "setReferences").mockResolvedValue({ ...skill, revision: 2 });
     spyOn(aiSkills, "removeReference").mockResolvedValue({ ...skill, references: [], referenceCount: 0, revision: 2 });
     spyOn(aiSkills, "setEnabled").mockResolvedValue(false);
     spyOn(aiSkills, "delete").mockResolvedValue(true);
@@ -337,6 +392,17 @@ describe("Core AI capabilities", () => {
         { skillId: skill.shortId, expectedRevision: 1, path: "references/style.md", content: "Keep it concise." },
         context,
       ),
+      "ai.skill.references.set": await aiCapabilities.actions["ai.skill.references.set"].run(
+        {
+          skillId: skill.shortId,
+          expectedRevision: 1,
+          references: [
+            { path: "references/style.md", content: "Keep it concise." },
+            { path: "references/tone.md", content: "Use a direct tone." },
+          ],
+        },
+        context,
+      ),
       "ai.skill.reference.remove": await aiCapabilities.actions["ai.skill.reference.remove"].run(
         { skillId: skill.shortId, expectedRevision: 1, path: "references/style.md" },
         context,
@@ -352,6 +418,14 @@ describe("Core AI capabilities", () => {
       if (!action) throw new Error(`Missing Core action ${localId}`);
       expect(capabilityResultSchema(action.data).safeParse(result.data).success).toBeTrue();
     }
+    expect(setReferences).toHaveBeenCalledWith(skill.id, context.accessSubject, {
+      skillId: skill.shortId,
+      expectedRevision: 1,
+      references: [
+        { path: "references/style.md", content: "Keep it concise." },
+        { path: "references/tone.md", content: "Use a direct tone." },
+      ],
+    });
     expect(get).toHaveBeenCalledWith(skill.shortId, context.accessSubject, "admin");
   });
 

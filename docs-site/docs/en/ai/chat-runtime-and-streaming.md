@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-08-20
+updated: 2026-08-22
 ---
 
 # Chat runtime and streaming
@@ -55,11 +55,14 @@ conversation and then stores their returned versions in the same draft. The
 JSON create endpoint itself accepts text and resource refs, not unuploaded file
 paths.
 
-The default tool source keeps discovery, Help, `read_file`, and `view_image`
-available. Configured `web_search` and `web_extract` are also always available
-together. Cards, surveys, the long-form text editor, file writes and
-presentation, Markdown-to-PDF, and calculation load on demand. Built-in usage
-hints remain in the system prompt even while their schemas are deferred. These
+The default tool source keeps discovery, Help, `fetch_file`, `read_file`, and
+`view_image` available. Configured `web_search` and `web_extract` are also
+always available together. `fetch_file` imports one exact public HTTPS source
+into the conversation; it does not browse repositories, authenticate to a
+website, or reach private network targets. Cards, surveys, the long-form text
+editor, file writes and presentation, Markdown-to-PDF, and calculation load on
+demand. Built-in usage hints remain in the system prompt even while their
+schemas are deferred. These
 tools provide no arbitrary code execution, host access, or network access
 beyond the explicit web tools. See
 [Tools and approvals](/en/docs/ai/tools-and-approvals).
@@ -101,7 +104,7 @@ language-dependent automatic retries.
 | --- | --- |
 | `/status`, `/models` | Read sanitized runtime and model state |
 | `/prefs` | Read or update personalization enablement and learning settings |
-| `/memories`, `/memories/:id` | Search and manage structured personal facts and preferences |
+| `/memories`, `/memories/:id` | Search and manage structured personal facts, preferences, and workflow defaults |
 | `/conversations` | List and create conversations |
 | `/conversations/:id` | Read or manage one conversation |
 | `/conversations/:id/draft` | Optimistically save text, files, and Cloud resources |
@@ -110,8 +113,9 @@ language-dependent automatic retries.
 | `/conversations/:id/resources` | List or filter structured Cloud refs observed in one conversation |
 | `/resources` | List or filter structured Cloud refs across the user's active conversations |
 | `/conversations/:id/turns` | Start, steer, or stop work |
-| `/conversations/:id/stream` | Receive Server-Sent Events |
+| `/conversations/:id/stream` | Receive the conversation event feed over SSE |
 | `/conversations/:id/files` | Manage conversation files |
+| `/live` | Multiplex browser invalidations and the visible conversation over one WebSocket |
 
 The router also supports message retry, forks, compaction, pending tool
 actions, conversation enrichment, and paged history.
@@ -148,33 +152,47 @@ deployment, not per request.
 
 ## Stream state
 
-The stream uses versioned Server-Sent Events. Clients receive a full state
-event and then ordered updates for messages, text, tools, approvals, and turn
-completion. Each execution attempt starts with one atomic, server-ordered block
-baseline. Resuming after an approval or frontend-tool response therefore keeps
-every existing item in its persisted timeline position while new output is
-appended.
+The conversation protocol is transport-neutral. Every subscription receives a
+full authorized state snapshot and then ordered updates for messages, text,
+tools, approvals, and turn completion. The runtime captures the retained-topic
+cursor before loading the snapshot, so work that arrives while the snapshot is
+loading remains in the ordered tail. Attempt and sequence numbers make replay
+idempotent.
 
-Use `parseAiSse()` for a low-level client. Solid applications should use
-`createAiChatController()` from `@valentinkolb/cloud/ai/solid`.
+Each execution attempt starts with one atomic, server-ordered block baseline.
+Resuming after an approval or frontend-tool response therefore keeps every
+existing item in its persisted timeline position while new output is appended.
+The same event feed backs both browser WebSockets and SSE. Use `parseAiSse()`
+for a low-level or CLI client. Solid applications should use
+`createAiChatController()` from `@valentinkolb/cloud/ai/solid`; it uses SSE by
+default and accepts a supported conversation-stream transport when its host
+already owns a shared connection.
 
-The controller reconnects the stream and folds events into one projection. It
-also exposes the active conversation's history, send, steer, abort, retry,
-fork, compaction, approval, and frontend-tool actions.
+Assistant uses one `/api/ai/live` WebSocket for two independent logical
+channels: `ai.live` invalidates durable user projections, while `ai.turn`
+carries only the currently visible conversation. Enhanced navigation replaces
+the turn subscription without reconnecting the socket. Reconnect performs the
+normal full refresh for invalidations and starts the visible conversation from
+a fresh authorized state snapshot. The CLI and low-level consumers continue to
+use `/conversations/:id/stream` over SSE.
 
-Keep this SSE protocol scoped to the active turn. Conversation and Project
-lists, metadata, Sources, files, scheduled tasks, Project context, and access
-changes are durable server projections, not turn deltas. Server-render those
-projections and refresh them through [Realtime UI](/en/docs/frontend/realtime-ui).
+The controller folds both transports into the same projection and exposes the
+active conversation's history, send, steer, abort, retry, fork, compaction,
+approval, and frontend-tool actions. Do not put conversation and Project lists,
+metadata, Sources, files, scheduled tasks, Project context, or access changes
+into turn events. Those are durable server projections and refresh through
+[Realtime UI](/en/docs/frontend/realtime-ui).
 
-Core mounts the server-only live route at `/api/ai/live`.
+Core mounts the server-only multiplexed route at `/api/ai/live`.
 `migrateCloudAi()` installs the transactional
 invalidation outbox and persistence triggers; `startAiRuntime()` dispatches the
 outbox. A committed AI write and its invalidation therefore cannot diverge.
 The browser still reloads each affected projection through its authorized HTTP
 query before it advances the event cursor.
 
-The live stream is isolated by user. Project context can be shared through
+The connection is isolated by user, and its active conversation is
+re-authorized periodically. Losing access ends that conversation channel;
+invalid or expired authentication revokes the whole connection. Project context can be shared through
 normal Cloud access grants, but each conversation remains owned by its creator
 and only appears in that user's stream and queries. On reconnect, the route establishes a new head
 cursor and the client refreshes every registered AI projection. This is the

@@ -141,11 +141,22 @@ export {
   resetAiMemorySearchBackend,
 } from "./memories";
 export {
+  AI_MEMORY_LEARNING_DEFAULT_MONTHLY_TOKEN_BUDGET,
+  AI_MEMORY_LEARNING_MONTHLY_TOKEN_BUDGET_SETTING_KEY,
   type AiLearnedMemories,
   AiLearnedMemoriesSchema,
   type AiMemoryLearningRunSummary,
   learnAiMemoriesFromPrivateChats,
 } from "./memory-learning";
+export {
+  type AiMemoryLearningChange,
+  type AiMemoryLearningChangeAction,
+  type AiMemoryLearningRun,
+  type AiMemoryLearningRunPage,
+  type AiMemoryLearningRunKind,
+  type AiMemoryLearningRunStatus,
+  aiMemoryLearningRuns,
+} from "./memory-learning-runs";
 export {
   type CloudAiMemoryInput,
   CloudAiMemoryInputSchema,
@@ -154,7 +165,7 @@ export {
   createCloudAiMemoryTool,
 } from "./memory-tool";
 export { migrateCloudAi } from "./migrate";
-export { personalAiModelPolicy, personalAiSystemPrompt } from "./personal-agent";
+export { personalAiModelPolicy } from "./personal-agent";
 export { type AiUserPrefs, aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
 export {
   AI_PROJECT_DESCRIPTION_MAX_CHARS,
@@ -178,6 +189,7 @@ export {
 } from "./projects-routes";
 export {
   AI_WIRE_VERSION,
+  type AiStreamEvent,
   type AiStreamSseEvent,
   type AiStreamState,
   type AiToolBlockStatus,
@@ -248,6 +260,7 @@ export {
   loadAiStreamState,
   publishAiWireEvent,
   sseHeaders,
+  streamAiConversationEvents,
 } from "./stream";
 export {
   AI_BACKGROUND_MODEL_SETTING_KEY,

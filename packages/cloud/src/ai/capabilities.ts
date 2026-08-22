@@ -244,14 +244,14 @@ export const searchAiTools = (
       const app = normalizeSearchText(`${entry.appId ?? ""} ${entry.searchText}`);
       const description = normalizeSearchText(entry.description);
       const identityWords = searchWordForms(identity);
-      const appWords = searchWordForms(app);
+      const appWords = input.appId ? new Set<string>() : searchWordForms(app);
       const descriptionWords = searchWordForms(description);
       let matchedTerms = 0;
       let score = 0;
       if (name === phrase || title === phrase) score += 100;
       else if (includesSearchPhrase(identity, phrase)) score += 50;
-      if (app === phrase) score += 40;
-      else if (includesSearchPhrase(app, phrase)) score += 20;
+      if (!input.appId && app === phrase) score += 40;
+      else if (!input.appId && includesSearchPhrase(app, phrase)) score += 20;
       if (includesSearchPhrase(description, phrase)) score += 15;
       for (const term of terms) {
         const identityMatch = includesSearchTerm(identityWords, term);
@@ -585,7 +585,7 @@ export const createAiResourceReaderTool = (input: {
   defineAiTool({
     name: "read_cloud_resource",
     description:
-      "Read a Cloud resource from its structured reference using the resource type's current canonical reader. Use this for refs returned by search, Projects, or other capabilities.",
+      "Read a Cloud resource from its structured reference using the resource type's current canonical reader. Pass refs returned by search, Projects, or other capabilities unchanged; never substitute an id from another resource type.",
     inputSchema: CloudResourceRefSchema,
     outputSchema: z.unknown(),
     approval: "never",

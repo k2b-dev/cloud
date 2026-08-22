@@ -1,4 +1,3 @@
-import { Link } from "@k2b/ssr/nav";
 import {
   Button,
   confirmDiscardIfDirty,
@@ -11,6 +10,7 @@ import {
   SettingsGroup,
   SettingsModal,
   SettingsPanelFooter,
+  StatusBadge,
   Switch,
   TextInput,
   toast,
@@ -20,6 +20,7 @@ import { coreClient } from "@valentinkolb/cloud/clients/core";
 import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { assistantApi } from "../api/client";
 import { assistantConversationHref } from "./assistant-navigation";
+import { openAssistantMemoryLearningActivity } from "./AssistantMemoryLearningActivity";
 import { AssistantSkillEditor, type AssistantSkillEditorRequest, AssistantSkillsSettings } from "./AssistantSkillsSettings";
 
 // Kept in sync with the server limits; browser code does not import server-only constants.
@@ -111,7 +112,7 @@ function SystemPromptPanel() {
   return (
     <SettingsGroup
       title="Effective instructions"
-      description="The complete prompt a new chat starts with, including active personalization and organization rules."
+      description="The complete prompt for a new chat with the current model, enabled Skills, personalization, and organization rules."
     >
       <Show when={prompt.loading}>
         <Placeholder state="loading" title="Loading system prompt" />
@@ -135,10 +136,24 @@ function SystemPromptPanel() {
   );
 }
 
-const openAddPersonalizationDialog = (): Promise<{ kind: AiMemoryKind; content: string } | undefined> =>
-  prompts.dialog<{ kind: AiMemoryKind; content: string } | undefined>(
+type EditableMemoryKind = Exclude<AiMemoryKind, "workflow">;
+
+const memoryKindLabel = (kind: AiMemoryKind): string => {
+  if (kind === "preference") return "Preference";
+  if (kind === "workflow") return "Workflow";
+  return "Fact";
+};
+
+const memoryKindIcon = (kind: AiMemoryKind): string => {
+  if (kind === "preference") return "ti ti-adjustments";
+  if (kind === "workflow") return "ti ti-route";
+  return "ti ti-info-circle";
+};
+
+const openAddPersonalizationDialog = (): Promise<{ kind: EditableMemoryKind; content: string } | undefined> =>
+  prompts.dialog<{ kind: EditableMemoryKind; content: string } | undefined>(
     (close) => {
-      const [kind, setKind] = createSignal<AiMemoryKind>("fact");
+      const [kind, setKind] = createSignal<EditableMemoryKind>("fact");
       const [content, setContent] = createSignal("");
       return (
         <form
@@ -153,7 +168,7 @@ const openAddPersonalizationDialog = (): Promise<{ kind: AiMemoryKind; content: 
           <Select
             label="Type"
             value={kind}
-            onValueChange={(value) => setKind(value as AiMemoryKind)}
+            onValueChange={(value) => setKind(value as EditableMemoryKind)}
             options={[
               { value: "fact", label: "Fact" },
               { value: "preference", label: "Preference" },
@@ -300,21 +315,32 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
         <SettingsGroup title="Use personalization" description="Choose how Assistant uses and learns durable context about you.">
           <Switch
             label="Use personalization in Assistant chats"
-            description="Relevant personal facts and preferences are added to the context of new turns."
+            description="Relevant personal facts, preferences, and workflow defaults are added to new turns."
             value={memoryEnabled}
             onValueChange={setMemoryEnabled}
             disabled={Boolean(busyId())}
           />
           <Switch
             label="Learn personalization from private chats"
-            description="After a chat becomes idle, Assistant may save durable facts and preferences with a link to that chat."
+            description="After a private-chat turn completes, Assistant may save durable facts, preferences, and repeated Cloud workflow defaults."
             value={learningEnabled}
             onValueChange={setLearningEnabled}
             disabled={Boolean(busyId())}
           />
+          <Show when={savedPreferences().learningEnabled}>
+            <div class="flex items-center justify-between gap-3 rounded-md bg-[var(--ui-surface-subtle)] px-3 py-2">
+              <div class="min-w-0">
+                <p class="text-sm font-medium text-primary">Learning activity</p>
+                <p class="text-xs text-dimmed">Review background runs and the personalization they changed.</p>
+              </div>
+              <Button size="sm" variant="secondary" class="shrink-0" onClick={() => void openAssistantMemoryLearningActivity()}>
+                <i class="ti ti-history" aria-hidden="true" /> View activity
+              </Button>
+            </div>
+          </Show>
         </SettingsGroup>
 
-        <SettingsGroup title="Saved personalization" description="Facts and preferences Assistant may carry into future conversations.">
+        <SettingsGroup title="Saved personalization" description="Facts, preferences, and workflow defaults Assistant may carry into future conversations.">
           <Show when={memories.loading}>
             <Placeholder state="loading" title="Loading personalization" />
           </Show>
@@ -380,17 +406,27 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
                     {(memory) => (
                       <SettingsCollection.Item
                         title={memory.content}
-                        description={`${memory.kind === "preference" ? "Preference" : "Fact"}${
-                          memory.priority === "pinned" ? " · Pinned" : ""
-                        } · Updated ${new Date(memory.updatedAt).toLocaleDateString()}`}
-                        icon={<i class={memory.kind === "preference" ? "ti ti-adjustments" : "ti ti-info-circle"} aria-hidden="true" />}
+                        description={
+                          <>
+                            {memoryKindLabel(memory.kind)}
+                            <Show when={memory.priority === "pinned"}>
+                              {" · "}
+                              <span class="font-medium text-blue-600 dark:text-blue-400">Pinned</span>
+                            </Show>
+                            {` · Updated ${new Date(memory.updatedAt).toLocaleDateString()}`}
+                          </>
+                        }
+                        icon={<i class={memoryKindIcon(memory.kind)} aria-hidden="true" />}
                       >
                         <Show when={memory.sourceConversationId}>
                           {(conversationId) => (
                             <SettingsCollection.Item.Status>
-                              <Link href={assistantConversationHref(globalThis.location?.href ?? "/app/assistant", conversationId())}>
-                                Source chat
-                              </Link>
+                              <a
+                                class="inline-flex rounded-full focus-ui"
+                                href={assistantConversationHref(globalThis.location?.href ?? "/app/assistant", conversationId())}
+                              >
+                                <StatusBadge tone="neutral" icon="ti ti-arrow-up-right" label="Go to source" />
+                              </a>
                             </SettingsCollection.Item.Status>
                           )}
                         </Show>
@@ -404,7 +440,7 @@ function MemorySettings(props: { prefs: AiUserPrefs; onDirtyChange: (dirty: bool
                               { label: "Edit", icon: "ti ti-pencil", action: () => void editMemory(memory) },
                               {
                                 label: memory.priority === "pinned" ? "Unpin" : "Pin",
-                                icon: memory.priority === "pinned" ? "ti ti-pin-off" : "ti ti-pin",
+                                icon: memory.priority === "pinned" ? "ti ti-xbox-x" : "ti ti-pin",
                                 action: () => void togglePinned(memory),
                               },
                               { label: "Delete", icon: "ti ti-trash", variant: "danger", action: () => void removeMemory(memory) },
@@ -460,7 +496,7 @@ function PrefsDialog(props: { prefs: AiUserPrefs; initialTab: AssistantPrefsTab;
               id="personalization"
               title="Personalization"
               icon="ti ti-user-cog"
-              description="Facts and preferences Assistant may carry into future conversations."
+              description="Facts, preferences, and workflow defaults Assistant may carry into future conversations."
             >
               <MemorySettings prefs={props.prefs} onDirtyChange={setPersonalizationDirty} />
             </SettingsModal.Tab>

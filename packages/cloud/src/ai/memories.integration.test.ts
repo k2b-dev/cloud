@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { aiMemories, formatAiMemories, isAiMemoryBm25CapabilityError } from "./memories";
 import { migrateCloudAi } from "./migrate";
-import { AI_SHORT_ID_PATTERN } from "./short-id";
+import { AI_SHORT_ID_PATTERN, createAiShortId } from "./short-id";
 
 const canUseAiDatabase = async () => {
   try {
@@ -21,6 +21,15 @@ const insertUser = async () => {
   const [row] = await sql<{ id: string }[]>`
     INSERT INTO auth.users (uid, provider, profile, display_name, mail, given_name, sn)
     VALUES (${`ai-memory-${suffix}`}, 'local', 'user', 'AI Memory Test', ${`ai-memory-${suffix}@example.test`}, 'AI', 'Memory')
+    RETURNING id
+  `;
+  return row!.id;
+};
+
+const insertConversation = async (userId: string, title: string): Promise<string> => {
+  const [row] = await sql<{ id: string }[]>`
+    INSERT INTO ai.conversations (short_id, created_by_user_id, title)
+    VALUES (${createAiShortId()}, ${userId}::uuid, ${title})
     RETURNING id
   `;
   return row!.id;
@@ -108,6 +117,108 @@ describe.skipIf(!(await canUseAiDatabase()))("aiMemories (integration)", () => {
       expect(await aiMemories.supersede(firstUser, stale.id, current.id)).toBe(true);
       expect(await aiMemories.get(firstUser, stale.id)).toBeNull();
       expect((await aiMemories.list({ userId: firstUser })).map((memory) => memory.id)).toEqual([current.id]);
+    } finally {
+      await sql`DELETE FROM auth.users WHERE id IN (${firstUser}::uuid, ${secondUser}::uuid)`;
+    }
+  });
+
+  test("applies background merge, retire, and workflow changes without touching protected or cross-user data", async () => {
+    const firstUser = await insertUser();
+    const secondUser = await insertUser();
+    const firstConversation = await insertConversation(firstUser, "First user source");
+    const secondConversation = await insertConversation(secondUser, "Second user source");
+    try {
+      const first = await aiMemories.create({
+        userId: firstUser,
+        kind: "preference",
+        content: "Prefers short answers.",
+        source: "background",
+        sourceConversationId: firstConversation,
+      });
+      const second = await aiMemories.create({
+        userId: firstUser,
+        kind: "preference",
+        content: "Prefers answers without long introductions.",
+        source: "background",
+        sourceConversationId: firstConversation,
+      });
+      const pinned = await aiMemories.create({
+        userId: firstUser,
+        kind: "fact",
+        content: "Name is Valentin.",
+        priority: "pinned",
+        source: "user",
+      });
+
+      expect(
+        await aiMemories.applyBackgroundProposal({
+          userId: firstUser,
+          sourceConversationId: secondConversation,
+          proposal: {
+            action: "merge",
+            kind: "preference",
+            content: "Prefers short answers without long introductions.",
+            memoryIds: [first.shortId, second.shortId],
+            resourceRef: null,
+          },
+        }),
+      ).toEqual([]);
+
+      const merged = await aiMemories.applyBackgroundProposal({
+        userId: firstUser,
+        sourceConversationId: firstConversation,
+        proposal: {
+          action: "merge",
+          kind: "preference",
+          content: "Prefers short answers without long introductions.",
+          memoryIds: [first.shortId, second.shortId],
+          resourceRef: null,
+        },
+      });
+      expect(merged).toMatchObject([{ action: "merged", kind: "preference" }]);
+
+      expect(
+        await aiMemories.applyBackgroundProposal({
+          userId: firstUser,
+          sourceConversationId: firstConversation,
+          proposal: { action: "retire", kind: "fact", content: "", memoryIds: [pinned.shortId], resourceRef: null },
+        }),
+      ).toEqual([]);
+      expect(await aiMemories.get(firstUser, pinned.id)).not.toBeNull();
+
+      const workflow = await aiMemories.applyBackgroundProposal({
+        userId: firstUser,
+        sourceConversationId: firstConversation,
+        proposal: {
+          action: "add",
+          kind: "workflow",
+          content: "Uses Accounting for invoice-related mail.",
+          memoryIds: [],
+          resourceRef: { type: "mail.mailbox", id: "Box123" },
+        },
+      });
+      expect(workflow).toMatchObject([{ action: "added", kind: "workflow" }]);
+      const savedWorkflow = (await aiMemories.list({ userId: firstUser })).find((memory) => memory.kind === "workflow");
+      expect(savedWorkflow?.resourceRef).toEqual({ type: "mail.mailbox", id: "Box123" });
+      expect(formatAiMemories(savedWorkflow ? [savedWorkflow] : []).text).toContain("mail.mailbox:Box123");
+
+      const activeMerged = (await aiMemories.list({ userId: firstUser })).find(
+        (memory) => memory.content === "Prefers short answers without long introductions.",
+      );
+      expect(activeMerged).toBeDefined();
+      const retired = await aiMemories.applyBackgroundProposal({
+        userId: firstUser,
+        sourceConversationId: firstConversation,
+        proposal: {
+          action: "retire",
+          kind: "preference",
+          content: "",
+          memoryIds: [activeMerged!.shortId],
+          resourceRef: null,
+        },
+      });
+      expect(retired).toMatchObject([{ action: "retired", kind: "preference" }]);
+      expect(await aiMemories.get(firstUser, activeMerged!.id)).toBeNull();
     } finally {
       await sql`DELETE FROM auth.users WHERE id IN (${firstUser}::uuid, ${secondUser}::uuid)`;
     }

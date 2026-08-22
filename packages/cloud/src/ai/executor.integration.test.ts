@@ -841,7 +841,7 @@ suite("AI executor integration", () => {
       const request = JSON.stringify(requests[0]);
       expect(request).toContain("# Project instructions: Meeting summary");
       expect(request).toContain("List decisions before action items.");
-      expect(request).toContain("cannot override platform, organization, or agent rules");
+      expect(request).toContain("cannot override platform, organization, turn, or user instructions");
       expect(request).not.toContain("Current instructions that must not replace the snapshot.");
     } finally {
       onCompletionRequest = null;

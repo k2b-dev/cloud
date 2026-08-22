@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { migrateCloudAi } from "./migrate";
-import { aiSkills } from "./skills";
+import { AiSkillRevisionConflictError, aiSkills } from "./skills";
 import { aiConversations } from "./store";
 
 const canUseAiDatabase = async (): Promise<boolean> => {
@@ -136,6 +136,60 @@ describe.skipIf(!(await canUseAiDatabase()))("aiSkills (integration)", () => {
       if (skillId) await aiSkills.delete(skillId, owner);
       await sql`DELETE FROM ai.conversations WHERE id = ${conversation.id}::uuid`;
       await sql`DELETE FROM auth.users WHERE id IN (${ownerId}::uuid, ${memberId}::uuid)`;
+    }
+  });
+
+  test("sets a reference batch atomically in one Skill revision", async () => {
+    const ownerId = await insertUser("reference-batch");
+    const owner = { type: "user" as const, userId: ownerId };
+    let skillId: string | undefined;
+
+    try {
+      const skill = await aiSkills.create({
+        subject: owner,
+        name: `batch-${crypto.randomUUID().slice(0, 8)}`,
+        description: "Exercise atomic reference batches.",
+        instructions: "Use the supporting references.",
+        references: [{ path: "references/topic-1.md", content: "Old topic 1" }],
+      });
+      skillId = skill.id;
+      const references = Array.from({ length: 16 }, (_, index) => ({
+        path: `references/topic-${index + 1}.md`,
+        content: `Topic ${index + 1}`,
+      }));
+
+      const updated = await aiSkills.setReferences(skill.id, owner, {
+        expectedRevision: skill.revision,
+        references,
+      });
+
+      expect(updated).toMatchObject({ revision: 2, referenceCount: 16 });
+      const sortedReferences = references.toSorted((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+      expect(updated?.references).toEqual(sortedReferences);
+
+      await expect(
+        aiSkills.setReferences(skill.id, owner, {
+          expectedRevision: skill.revision,
+          references: [{ path: "references/stale.md", content: "Must not be written." }],
+        }),
+      ).rejects.toBeInstanceOf(AiSkillRevisionConflictError);
+
+      await expect(
+        aiSkills.setReferences(skill.id, owner, {
+          expectedRevision: updated!.revision,
+          references: [
+            { path: "references/duplicate.md", content: "First" },
+            { path: "references/duplicate.md", content: "Second" },
+          ],
+        }),
+      ).rejects.toThrow('Reference path "references/duplicate.md" is duplicated.');
+
+      const unchanged = await aiSkills.get(skill.id, owner);
+      expect(unchanged).toMatchObject({ revision: 2, referenceCount: 16 });
+      expect(unchanged?.references).toEqual(sortedReferences);
+    } finally {
+      if (skillId) await aiSkills.delete(skillId, owner);
+      await sql`DELETE FROM auth.users WHERE id = ${ownerId}::uuid`;
     }
   });
 

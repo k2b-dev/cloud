@@ -68,11 +68,14 @@ export const enqueueExistingAiTurn = (input: AiTurnJob): Promise<unknown> => enq
 
 export type SubmitAiChatTurnInput = {
   conversationId: string;
+  /** Stable public ID exposed as runtime context, not instructions. */
+  chatId?: string;
   input: Input;
   userMessage: Message;
   actor?: RequestActor;
   modelPolicy?: AiModelPolicy;
   requestedModelId?: string;
+  /** Optional instructions that apply only to this turn. */
   systemPrompt?: string;
   project?: AiChatTurnRunConfig["project"];
   clientToolIds?: AiClientToolId[];
@@ -114,6 +117,7 @@ export const submitAiChatTurn = async (input: SubmitAiChatTurnInput): Promise<{ 
   const runConfig: AiChatTurnRunConfig = {
     kind: "chat",
     input: canonicalInput,
+    chatId: input.chatId,
     actor: input.actor,
     modelPolicy: input.modelPolicy,
     requestedModelId: input.requestedModelId,
@@ -144,6 +148,7 @@ export const submitAiChatTurn = async (input: SubmitAiChatTurnInput): Promise<{ 
 
 export const deliverAiInterChatMessage = async (input: {
   message: AiInterChatMessage;
+  chatId?: string;
   actor: RequestActor;
   modelPolicy?: AiModelPolicy;
   systemPrompt?: string;
@@ -161,6 +166,7 @@ export const deliverAiInterChatMessage = async (input: {
   const runConfig: AiChatTurnRunConfig = {
     kind: "chat",
     input: text,
+    chatId: input.chatId,
     actor: input.actor,
     modelPolicy: input.modelPolicy,
     systemPrompt: input.systemPrompt,

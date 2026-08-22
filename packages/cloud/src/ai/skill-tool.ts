@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { AccessSubject } from "../server";
 import { AI_SKILL_FILE_MOUNT } from "./file-mount";
 import { AI_SKILL_NAME_MAX_CHARS, AI_SKILL_NAME_PATTERN } from "./skill-format";
+import { searchAiSkillCatalog } from "./skill-catalog";
 import { aiSkills } from "./skills";
 import { defineAiTool } from "./tools";
 
@@ -32,7 +33,6 @@ export const createCloudAiLoadSkillTool = (subject: AccessSubject) =>
     inputSchema: CloudAiLoadSkillInputSchema,
     outputSchema: CloudAiLoadSkillOutputSchema,
     approval: "never",
-    promptHint: "activate a relevant available skill before following its instructions or reading its reference files.",
   }).server(async (input, ctx) => {
     if (!ctx.turnId) throw new Error("load_skill requires a turn context.");
     const snapshot = await aiSkills.loadForTurn(ctx.turnId, input.name, subject);
@@ -45,4 +45,27 @@ export const createCloudAiLoadSkillTool = (subject: AccessSubject) =>
       mount: `${AI_SKILL_FILE_MOUNT}/${snapshot.name}`,
       files: snapshot.files.map((file) => file.path),
     };
+  });
+
+export const CloudAiSearchSkillsInputSchema = z.object({
+  query: z.string().trim().min(1).max(200).describe("Short English terms describing the workflow or domain to find."),
+  limit: z.number().int().min(1).max(20).default(10),
+});
+
+export const CloudAiSearchSkillsOutputSchema = z.object({
+  skills: z.array(z.object({ name: z.string(), description: z.string() })),
+  more: z.boolean(),
+});
+
+export const createCloudAiSearchSkillsTool = (subject: AccessSubject) =>
+  defineAiTool({
+    name: "search_skills",
+    description:
+      "Search enabled Assistant Skills omitted from the bounded system-prompt catalog. Use short English domain or workflow terms, then load_skill with an exact returned name.",
+    inputSchema: CloudAiSearchSkillsInputSchema,
+    outputSchema: CloudAiSearchSkillsOutputSchema,
+    approval: "never",
+  }).server(async (input) => {
+    const skills = (await aiSkills.list(subject)).filter((skill) => skill.enabled);
+    return searchAiSkillCatalog(skills, input.query, input.limit);
   });

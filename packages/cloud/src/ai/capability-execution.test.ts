@@ -258,4 +258,36 @@ describe("AI capability authority", () => {
       ).rejects.toEqual(new AiCapabilityExecutionError(failure.code, failure.status, failure.message));
     }
   });
+
+  test("surfaces bounded validation issue paths without rejected values", async () => {
+    const current = user("11111111-1111-4111-8111-111111111111");
+    await expect(
+      executeAiCapability({
+        conversationId: "conversation-1",
+        authority: { actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } },
+        entry: buildAiCapabilityCatalog([app()])[0]!,
+        args: { title: "invalid-secret-value" },
+        context: {
+          signal: AbortSignal.timeout(1_000),
+          requestApproval: async () => true,
+          requestClientTool: async <T>() => undefined as T,
+        },
+        dependencies: {
+          createDelegation: async () => "short-lived-token",
+          revokeDelegation: async () => undefined,
+          dispatch: async () =>
+            Response.json(
+              {
+                code: "VALIDATION_FAILED",
+                message: "Capability input did not match the registered schema",
+                details: { issues: [{ path: "mailboxId", message: "Must be a stable 6-character resource ID" }] },
+              },
+              { status: 400 },
+            ),
+        },
+      }),
+    ).rejects.toThrow(
+      "VALIDATION_FAILED: Capability input did not match the registered schema Input issues: mailboxId: Must be a stable 6-character resource ID",
+    );
+  });
 });

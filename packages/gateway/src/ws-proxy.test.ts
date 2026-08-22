@@ -56,12 +56,12 @@ const setup = (upgrade = true) => {
   return { response, data: () => data };
 };
 
-const clientFor = (data: GatewaySocket["data"], sendStatus = 1) => {
+const clientFor = (data: GatewaySocket["data"], sendStatus = 1, bufferedAmount = 0) => {
   const closes: Array<{ code: number; reason: string }> = [];
   const client = {
     data,
     send: () => sendStatus,
-    getBufferedAmount: () => 0,
+    getBufferedAmount: () => bufferedAmount,
     close: (code = 1000, reason = "") => closes.push({ code, reason }),
   } as unknown as GatewaySocket;
   websocketHandlers.open(client);
@@ -113,11 +113,23 @@ describe("gateway WebSocket proxy", () => {
     expect(closes).toEqual([]);
   });
 
-  test("propagates browser send backpressure to both sides", () => {
+  test("keeps an open proxy when Bun reports zero for a delivered frame", () => {
     const connection = setup();
     const data = connection.data();
     if (!data) throw new Error("Gateway upgrade data missing");
-    const { closes } = clientFor(data, -1);
+    const { closes } = clientFor(data, 0);
+    FakeUpstream.instances[0]!.open();
+    FakeUpstream.instances[0]!.message("mail event");
+
+    expect(closes).toEqual([]);
+    expect(FakeUpstream.instances[0]!.closes).toEqual([]);
+  });
+
+  test("closes both sides when the browser buffer exceeds its bound", () => {
+    const connection = setup();
+    const data = connection.data();
+    if (!data) throw new Error("Gateway upgrade data missing");
+    const { closes } = clientFor(data, -1, 4 * 1024 * 1024 + 1);
     FakeUpstream.instances[0]!.open();
     FakeUpstream.instances[0]!.message("mail event");
 

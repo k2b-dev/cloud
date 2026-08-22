@@ -162,7 +162,15 @@ export const CORE_SETTINGS = {
     kind: "cron",
     label: "Personalization Learning Schedule",
     default: "*/10 * * * *",
-    description: "How often eligible private chats are checked for durable personal facts and preferences.",
+    description: "How often completed private-chat turns and repeated Cloud workflows are checked for durable personalization.",
+  },
+  "ai.memory_learning_monthly_token_budget": {
+    kind: "number",
+    label: "Personalization Monthly Token Budget",
+    default: 100000,
+    min: 10000,
+    max: 10000000,
+    description: "Maximum accounted background-personalization tokens per user and calendar month.",
   },
   "ai.chat_enrichment_instructions": {
     kind: "text",

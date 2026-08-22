@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CloudResourceRefSchema } from "../contracts/capabilities";
 import { type AiMemory, aiMemories } from "./memories";
 import { aiPrefsUserId } from "./prefs";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
@@ -6,9 +7,10 @@ import { defineAiTool } from "./tools";
 
 const MemoryViewSchema = z.object({
   id: z.string(),
-  kind: z.enum(["fact", "preference"]),
+  kind: z.enum(["fact", "preference", "workflow"]),
   content: z.string(),
   priority: z.enum(["normal", "pinned"]),
+  resourceRef: CloudResourceRefSchema.nullable(),
   updatedAt: z.string(),
 });
 
@@ -35,6 +37,7 @@ const view = (memory: AiMemory) => ({
   kind: memory.kind,
   content: memory.content,
   priority: memory.priority,
+  resourceRef: memory.resourceRef,
   updatedAt: memory.updatedAt,
 });
 
