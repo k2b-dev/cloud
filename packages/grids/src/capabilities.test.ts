@@ -28,7 +28,7 @@ test("only exposes remembered approval for record updates and external upserts",
   const rememberable = (Object.entries(gridsCapabilities.actions) as Array<[string, CapabilityActionDefinition]>)
     .filter(([, action]) => action.approval === "rememberable")
     .map(([localId]) => localId);
-  expect(rememberable).toEqual(["record.upsertExternal", "record.update"]);
+  expect(rememberable).toEqual(["record.upsert-external", "record.update"]);
 });
 
 const testUser = (id: string): User => ({
@@ -115,12 +115,12 @@ describe("Grids capabilities", () => {
       "table.read",
       "view.read",
     ]);
-    expect(Object.keys(gridsCapabilities.actions ?? {}).sort()).toEqual(["record.create", "record.update", "record.upsertExternal"]);
+    expect(Object.keys(gridsCapabilities.actions ?? {}).sort()).toEqual(["record.create", "record.update", "record.upsert-external"]);
     expect(
       Object.entries(gridsCapabilities.actions ?? {})
         .filter(([, action]) => "review" in action && action.review)
         .map(([id]) => id),
-    ).toEqual(["record.upsertExternal", "record.update"]);
+    ).toEqual(["record.upsert-external", "record.update"]);
     expect(gridsCapabilities.queries?.["base.list"]?.description).toContain("Normal entry for Base-scoped Grids work");
     expect(gridsCapabilities.queries?.["gql.context"]?.description).toContain("request tables first");
     expect(gridsCapabilities.queries?.["gql.execute"]?.description).toContain("normally gql.preview");
@@ -432,26 +432,26 @@ describe("Grids capabilities", () => {
         values: { [fieldPublicId]: "External capability" },
       };
       const externalContext = { ...context, idempotencyKey: "external-capability-create" };
-      const externalCreated = await invoke("action", "record.upsertExternal", externalInput, externalContext);
+      const externalCreated = await invoke("action", "record.upsert-external", externalInput, externalContext);
       expect(externalCreated).toMatchObject({
         ok: true,
         data: { data: { created: true, changed: true, replayed: false, tableId: tablePublicId, version: 1 } },
       });
-      const externalRetry = await invoke("action", "record.upsertExternal", externalInput, externalContext);
+      const externalRetry = await invoke("action", "record.upsert-external", externalInput, externalContext);
       expect(externalRetry).toMatchObject({
         ok: true,
         data: { data: { created: true, changed: true, replayed: true, tableId: tablePublicId, version: 1 } },
       });
       const externalMismatch = await invoke(
         "action",
-        "record.upsertExternal",
+        "record.upsert-external",
         { ...externalInput, values: { [fieldPublicId]: "Different request" } },
         externalContext,
       );
       expect(externalMismatch).toMatchObject({ ok: false, error: { code: "IDEMPOTENCY_CONFLICT", status: 409 } });
       const externalScopeMismatch = await invoke(
         "action",
-        "record.upsertExternal",
+        "record.upsert-external",
         { ...externalInput, externalRef: { ...externalInput.externalRef, providerAccount: "secondary" } },
         externalContext,
       );
@@ -459,7 +459,7 @@ describe("Grids capabilities", () => {
       if (!externalCreated.ok) throw new Error("Expected external Record capability create");
       const externalUpdated = await invoke(
         "action",
-        "record.upsertExternal",
+        "record.upsert-external",
         { ...externalInput, values: { [fieldPublicId]: "External capability updated" }, ifVersion: 1 },
         { ...context, idempotencyKey: "external-capability-update" },
       );
@@ -467,7 +467,7 @@ describe("Grids capabilities", () => {
         ok: true,
         data: { data: { created: false, changed: true, replayed: false, version: 2 } },
       });
-      const externalOldReplay = await invoke("action", "record.upsertExternal", externalInput, externalContext);
+      const externalOldReplay = await invoke("action", "record.upsert-external", externalInput, externalContext);
       expect(externalOldReplay).toMatchObject({
         ok: true,
         data: { data: { created: true, changed: true, replayed: true, version: 1 } },
@@ -740,7 +740,7 @@ describe("Grids capabilities", () => {
         { tableId: tablePublicId, recordId: record.id, values: reviewInput, ifVersion: 3 },
         context,
       );
-      const externalReview = await review("record.upsertExternal", externalInput, context);
+      const externalReview = await review("record.upsert-external", externalInput, context);
       expect(externalReview).toMatchObject({ ok: true, data: { approvalScope: `table:${tablePublicId}` } });
       expect(updateReview.ok).toBe(true);
       if (updateReview.ok) {
@@ -842,7 +842,7 @@ describe("Grids capabilities", () => {
       expect(write).toMatchObject({ ok: false, error: { code: "FORBIDDEN", status: 403 } });
       const externalWrite = await invoke(
         "action",
-        "record.upsertExternal",
+        "record.upsert-external",
         {
           tableId: tablePublicId,
           externalRef: { provider: "crm", providerAccount: "main", resourceKind: "contact", externalId: "denied" },

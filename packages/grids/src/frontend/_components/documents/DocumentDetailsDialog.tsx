@@ -2,30 +2,29 @@ import { type DateContext, text } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
   Button,
+  ButtonLink,
   dialogCore,
   IconButton,
+  NoticeCard,
   PanelDialog,
   Placeholder,
   panelDialogOptions,
   prompts,
   StatusBadge,
-  TagsInput,
-  TextInput,
 } from "@k2b/ui";
-import { createResource, createSignal, For, Show } from "solid-js";
+import { createResource, For, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import { errorMessage } from "../utils/api-helpers";
 import { openDocumentLinkDialog } from "./DocumentLinkDialog";
 import { formatDocumentDateTime, formatDocumentRelativeTime } from "./document-workspace-utils";
-import type { PublicDocumentLink, PublicDocumentLinkListResponse, PublicDocumentRunSummary } from "./public-document-types";
+import type { PublicDocument, PublicDocumentLink, PublicDocumentLinkListResponse } from "./public-document-types";
 
-type DocumentRunDetailsDialogArgs = {
-  run: PublicDocumentRunSummary;
+type DocumentDetailsDialogArgs = {
+  document: PublicDocument;
   canWrite: boolean;
   dateConfig?: DateContext;
-  onSaved: (run: PublicDocumentRunSummary) => void | Promise<void>;
-  onDownload: (run: PublicDocumentRunSummary) => void | Promise<void>;
-  onGenerateAgain?: (run: PublicDocumentRunSummary) => void | Promise<void>;
+  onDownload: (run: PublicDocument) => void | Promise<void>;
+  onGenerateAgain?: (run: PublicDocument) => void | Promise<void>;
 };
 
 const linkStatus = (link: PublicDocumentLink): { label: string; tone: "ok" | "neutral"; active: boolean } => {
@@ -34,37 +33,19 @@ const linkStatus = (link: PublicDocumentLink): { label: string; tone: "ok" | "ne
   return { label: "Active", tone: "ok", active: true };
 };
 
-export const openDocumentRunDetailsDialog = (args: DocumentRunDetailsDialogArgs) =>
-  dialogCore.open<void>((close) => <DocumentRunDetailsDialog args={args} close={close} />, panelDialogOptions);
+export const openDocumentDetailsDialog = (args: DocumentDetailsDialogArgs) =>
+  dialogCore.open<void>((close) => <DocumentDetailsDialog args={args} close={close} />, panelDialogOptions);
 
-function DocumentRunDetailsDialog(props: { args: DocumentRunDetailsDialogArgs; close: () => void }) {
-  const [filename, setFilename] = createSignal(props.args.run.filename);
-  const [tags, setTags] = createSignal<string[]>(props.args.run.tags);
+function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; close: () => void }) {
   const [links, { refetch: refetchLinks }] = createResource(
-    () => (props.args.canWrite ? props.args.run.id : null),
-    async (runId): Promise<PublicDocumentLink[]> => {
-      if (!runId) return [];
-      const res = await apiClient.documents.runs[":runId"].links.$get({ param: { runId } });
+    () => (props.args.canWrite ? props.args.document.id : null),
+    async (documentId): Promise<PublicDocumentLink[]> => {
+      if (!documentId) return [];
+      const res = await apiClient.documents[":documentId"].links.$get({ param: { documentId } });
       if (!res.ok) throw new Error(await errorMessage(res, "Could not load document links"));
       return ((await res.json()) as PublicDocumentLinkListResponse).items;
     },
   );
-
-  const saveMut = mutations.create<PublicDocumentRunSummary, void>({
-    mutation: async () => {
-      const res = await apiClient.documents.runs[":runId"].$patch({
-        param: { runId: props.args.run.id },
-        json: { filename: filename().trim(), tags: tags() },
-      });
-      if (!res.ok) throw new Error(await errorMessage(res, "Could not update document"));
-      return res.json();
-    },
-    onSuccess: async (run) => {
-      await props.args.onSaved(run);
-      props.close();
-    },
-    onError: (error) => prompts.error(error.message),
-  });
 
   const revokeMut = mutations.create<PublicDocumentLink, PublicDocumentLink>({
     mutation: async (link) => {
@@ -80,7 +61,7 @@ function DocumentRunDetailsDialog(props: { args: DocumentRunDetailsDialogArgs; c
 
   const createLink = () =>
     void openDocumentLinkDialog({
-      run: props.args.run,
+      document: props.args.document,
       onCreated: async () => {
         await refetchLinks();
       },
@@ -88,50 +69,63 @@ function DocumentRunDetailsDialog(props: { args: DocumentRunDetailsDialogArgs; c
 
   return (
     <PanelDialog>
-      <PanelDialog.Header title="Document details" subtitle={props.args.run.filename} icon="ti ti-file-type-pdf" close={props.close} />
+      <PanelDialog.Header title="Document details" subtitle={props.args.document.filename} icon="ti ti-file-text" close={props.close} />
       <PanelDialog.Body>
         <section class="flex flex-col gap-2">
-          <TextInput label="Filename" value={filename} onValueChange={setFilename} icon="ti ti-file-text" disabled={!props.args.canWrite} />
-          <TagsInput
-            label="Tags"
-            placeholder="customer, signed, 2026"
-            value={tags}
-            onValueChange={setTags}
-            disabled={!props.args.canWrite}
+          <NoticeCard
+            tone="info"
+            title="Completed document"
+            detail="The number, source snapshot, and stored artifacts are immutable. Generate again to create a new Document."
           />
           <dl class="grid gap-2 text-sm sm:grid-cols-[8rem_minmax(0,1fr)]">
             <dt class="text-dimmed">Number</dt>
-            <dd class="min-w-0 truncate font-mono text-xs text-secondary">{props.args.run.documentNumber}</dd>
+            <dd class="min-w-0 truncate font-mono text-xs text-secondary">{props.args.document.number}</dd>
             <dt class="text-dimmed">Created</dt>
-            <dd class="text-secondary">{formatDocumentRelativeTime(props.args.run.generatedAt, props.args.dateConfig)}</dd>
-            <dt class="text-dimmed">Generated by</dt>
-            <dd class="min-w-0 truncate font-mono text-xs text-secondary">{props.args.run.generatedBy ?? "System"}</dd>
-            <dt class="text-dimmed">Snapshot</dt>
-            <dd class="min-w-0 truncate font-mono text-xs text-secondary">{props.args.run.snapshotId}</dd>
+            <dd class="text-secondary">{formatDocumentRelativeTime(props.args.document.createdAt, props.args.dateConfig)}</dd>
+            <dt class="text-dimmed">Created by</dt>
+            <dd class="min-w-0 truncate font-mono text-xs text-secondary">{props.args.document.createdBy ?? "System"}</dd>
+            <dt class="text-dimmed">Renderer</dt>
+            <dd class="min-w-0 truncate text-xs text-secondary">
+              {props.args.document.renderer.kind === "html"
+                ? "HTML"
+                : `${props.args.document.renderer.id}@${props.args.document.renderer.version}`}
+            </dd>
             <dt class="text-dimmed">Template</dt>
-            <dd class="min-w-0 truncate font-mono text-xs text-secondary">{props.args.run.templateId ?? "Removed template"}</dd>
+            <dd class="min-w-0 truncate font-mono text-xs text-secondary">{props.args.document.templateId}</dd>
             <dt class="text-dimmed">Source record</dt>
-            <dd class="min-w-0 truncate font-mono text-xs text-secondary">{props.args.run.recordId}</dd>
+            <dd class="min-w-0 truncate font-mono text-xs text-secondary">{props.args.document.recordId}</dd>
+            <Show when={props.args.document.validationStatus}>
+              {(status) => (
+                <>
+                  <dt class="text-dimmed">Validation</dt>
+                  <dd><StatusBadge tone={status() === "valid" ? "ok" : "warning"} label={status()} /></dd>
+                </>
+              )}
+            </Show>
           </dl>
-          <details class="rounded-[var(--ui-radius-control)] border border-subtle px-3 py-2 text-sm">
-            <summary class="cursor-pointer font-medium text-secondary">Technical details</summary>
-            <dl class="mt-3 grid gap-2 sm:grid-cols-[8rem_minmax(0,1fr)]">
-              <dt class="text-dimmed">Artifact</dt>
-              <dd class="text-secondary">Stored exact bytes</dd>
-              <dt class="text-dimmed">MIME type</dt>
-              <dd class="font-mono text-xs text-secondary">{props.args.run.artifact.mimeType}</dd>
-              <dt class="text-dimmed">Size</dt>
-              <dd class="text-secondary">{text.pprintBytes(props.args.run.artifact.sizeBytes)}</dd>
-              <dt class="text-dimmed">SHA-256</dt>
-              <dd class="break-all font-mono text-xs text-secondary">{props.args.run.artifact.sha256}</dd>
-              <dt class="text-dimmed">Renderer</dt>
-              <dd class="font-mono text-xs text-secondary">{props.args.run.artifact.rendererVersion}</dd>
-              <dt class="text-dimmed">Template revision</dt>
-              <dd class="break-all font-mono text-xs text-secondary">{props.args.run.artifact.templateRevision}</dd>
-              <dt class="text-dimmed">Record revision</dt>
-              <dd class="font-mono text-xs text-secondary">{props.args.run.snapshotId}</dd>
-            </dl>
-          </details>
+          <section class="flex flex-col gap-2">
+            <h3 class="text-sm font-semibold text-primary">Artifacts</h3>
+            <For each={props.args.document.artifacts}>
+              {(artifact) => (
+                <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-[var(--ui-radius-control)] border border-subtle px-3 py-2">
+                  <div class="min-w-0">
+                    <p class="truncate text-sm font-medium text-primary">{artifact.filename}</p>
+                    <p class="text-xs text-dimmed">{artifact.mimeType} · {text.pprintBytes(artifact.sizeBytes)}</p>
+                    <p class="mt-1 break-all font-mono text-[10px] text-dimmed">SHA-256 {artifact.sha256}</p>
+                  </div>
+                  <ButtonLink
+                    variant="secondary"
+                    size="sm"
+                    navigation="document"
+                    href={`/api/grids/documents/${encodeURIComponent(props.args.document.id)}/artifacts/${encodeURIComponent(artifact.key)}`}
+                  >
+                    <i class="ti ti-download" />
+                    Download
+                  </ButtonLink>
+                </div>
+              )}
+            </For>
+          </section>
         </section>
         <Show when={props.args.canWrite}>
           <section class="flex flex-col gap-2">
@@ -205,8 +199,7 @@ function DocumentRunDetailsDialog(props: { args: DocumentRunDetailsDialogArgs; c
           variant="secondary"
           size="sm"
           type="button"
-          onClick={() => void props.args.onDownload(props.args.run)}
-          disabled={saveMut.loading()}
+          onClick={() => void props.args.onDownload(props.args.document)}
         >
           <i class="ti ti-download" />
           Download
@@ -219,23 +212,16 @@ function DocumentRunDetailsDialog(props: { args: DocumentRunDetailsDialogArgs; c
               type="button"
               onClick={() => {
                 props.close();
-                void props.args.onGenerateAgain?.(props.args.run);
+                void props.args.onGenerateAgain?.(props.args.document);
               }}
-              disabled={saveMut.loading()}
             >
               <i class="ti ti-file-plus" />
               Generate again
             </Button>
           </Show>
-          <Button variant="secondary" size="sm" type="button" onClick={props.close} disabled={saveMut.loading()}>
+          <Button variant="secondary" size="sm" type="button" onClick={props.close}>
             Close
           </Button>
-          <Show when={props.args.canWrite}>
-            <Button variant="primary" size="sm" type="button" onClick={() => saveMut.mutate(undefined)} disabled={saveMut.loading()}>
-              {saveMut.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-device-floppy" />}
-              Save
-            </Button>
-          </Show>
         </div>
       </PanelDialog.Footer>
     </PanelDialog>

@@ -3,14 +3,17 @@ import { type AuthContext, getDateConfig, jsonResponse, respond, v } from "@vale
 import { Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { gridsService } from "../service";
+import { ALL_RECORD_ACCESS } from "../service/record-access";
 import {
   addDraftDocumentMetadata,
+  documentActor,
   draftTemplateFromBody,
   errorResponse,
   gateEnabledTemplateWrite,
   gateTemplate,
   liveRenderData,
   loadTemplateAndTable,
+  PublicDocumentGenerateBodySchema,
   PublicDocumentPreviewResponseSchema,
   PublicDocumentRecordBodySchema,
   PublicDocumentTemplateDraftPreviewSchema,
@@ -21,7 +24,7 @@ import {
   snapshotRecordAccessResolver,
 } from "./documents-api-shared";
 import { encodeHeaderValue, pdfResponse } from "./download-response";
-import { currentActorUserId, currentActorViewer, gateAt } from "./permissions";
+import { currentActorViewer, gateAt } from "./permissions";
 import { resolvePublicIdParam } from "./route-params";
 
 export const createDocumentRenderRoutes = () =>
@@ -153,18 +156,23 @@ export const createDocumentRenderRoutes = () =>
 
         const recordId = await resolveDocumentRecordId(c.req.valid("json").recordId);
         if (!recordId) return c.json({ message: "Record not found" }, 404);
-        const generatedAt = new Date();
+        const createdAt = new Date();
         const dateConfig = await getDateConfig(c);
         const rendered = await liveRenderData(c, {
           template: loaded.template,
           tableId: loaded.table.id,
           recordId,
-          generatedAt,
+          createdAt,
           dateConfig,
         });
         if (!rendered.ok) return errorResponse(c, rendered.message, rendered.status);
-        const data = await addDraftDocumentMetadata(c, { template: loaded.template, data: rendered.data, generatedAt, dateConfig });
+        const data = await addDraftDocumentMetadata(c, { template: loaded.template, data: rendered.data, createdAt, dateConfig });
         if (!data.ok) return data.response;
+        if (loaded.template.renderer.kind === "profile") {
+          const input = await gridsService.document.renderProfileInput(loaded.template, data.data);
+          if (!input.ok) return c.json({ message: input.error.message, phase: "profile" }, input.error.status);
+          return c.json({ html: "", source: rendered.source, data: await projectDocumentPreviewData(data.data) });
+        }
         const html = await gridsService.document.renderHtml(loaded.template, data.data);
         if (!html.ok) return c.json({ message: html.error.message }, html.error.status);
         return c.json({ html: html.data, source: rendered.source, data: await projectDocumentPreviewData(data.data) });
@@ -189,18 +197,32 @@ export const createDocumentRenderRoutes = () =>
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const recordId = await resolveDocumentRecordId(c.req.valid("json").recordId);
         if (!recordId) return c.json({ message: "Record not found" }, 404);
-        const generatedAt = new Date();
+        const createdAt = new Date();
         const dateConfig = await getDateConfig(c);
         const rendered = await liveRenderData(c, {
           template: loaded.template,
           tableId: loaded.table.id,
           recordId,
-          generatedAt,
+          createdAt,
           dateConfig,
         });
         if (!rendered.ok) return errorResponse(c, rendered.message, rendered.status);
-        const data = await addDraftDocumentMetadata(c, { template: loaded.template, data: rendered.data, generatedAt, dateConfig });
+        const data = await addDraftDocumentMetadata(c, { template: loaded.template, data: rendered.data, createdAt, dateConfig });
         if (!data.ok) return data.response;
+        if (loaded.template.renderer.kind === "profile") {
+          const input = await gridsService.document.renderProfileInput(loaded.template, data.data);
+          if (!input.ok) return c.json({ message: input.error.message, phase: "profile" }, input.error.status);
+          const preview = await gridsService.document.preview({
+            profileId: loaded.template.renderer.id,
+            profileVersion: loaded.template.renderer.version,
+            snapshot: input.data,
+            issuedAt: createdAt,
+          });
+          if (!preview.ok) return c.json({ message: preview.error.message, phase: "profile" }, preview.error.status);
+          const artifact = preview.data.find((candidate) => candidate.key === "pdf");
+          if (!artifact) return c.json({ message: "Document profile produced no PDF." }, 500);
+          return pdfResponse(artifact.bytes, artifact.filename, {}, "inline");
+        }
         const pdf = await gridsService.document.renderPdfPreview(loaded.template, data.data, `${loaded.template.shortId}-preview.html`);
         if (!pdf.ok) {
           return c.json(
@@ -216,13 +238,13 @@ export const createDocumentRenderRoutes = () =>
       "/templates/:templateId/generate",
       describeRoute({
         tags: ["Grids:Document"],
-        summary: "Generate a PDF for one record and store a document run",
+        summary: "Generate and store an immutable PDF Document for one record",
         responses: {
           200: { description: "Generated PDF" },
           403: jsonResponse(ErrorResponseSchema, "Forbidden"),
         },
       }),
-      v("json", PublicDocumentRecordBodySchema),
+      v("json", PublicDocumentGenerateBodySchema),
       async (c) => {
         const loaded = await loadTemplateAndTable(c.req.param("templateId")!);
         if (!loaded) return c.json({ message: "Document template not found" }, 404);
@@ -233,42 +255,27 @@ export const createDocumentRenderRoutes = () =>
         const body = c.req.valid("json");
         const recordId = await resolveDocumentRecordId(body.recordId);
         if (!recordId) return c.json({ message: "Record not found" }, 404);
-        const generatedAt = new Date();
         const dateConfig = await getDateConfig(c);
-        const rendered = await liveRenderData(c, {
+        const issued = await gridsService.document.createDocumentForRecord({
           template: loaded.template,
-          tableId: loaded.table.id,
+          table: loaded.table,
           recordId,
-          generatedAt,
-          dateConfig,
-        });
-        if (!rendered.ok) return errorResponse(c, rendered.message, rendered.status);
-        const snapshot = await gridsService.document.createRecordSnapshotDraft({
-          baseId: loaded.table.baseId,
-          tableId: loaded.table.id,
-          recordId,
-          actorId: currentActorUserId(c),
+          actor: documentActor(c.get("actor")),
+          idempotencyKey: body.idempotencyKey,
+          recordAccess: ALL_RECORD_ACCESS,
           resolveRecordAccess: snapshotRecordAccessResolver(c),
           viewer: currentActorViewer(c),
           dateConfig,
-        });
-        if (!snapshot.ok) return c.json({ message: snapshot.error.message }, snapshot.error.status);
-        const created = await gridsService.document.createRenderedRun({
-          template: loaded.template,
-          snapshot: snapshot.data,
-          renderData: { ...rendered.data, snapshot: snapshot.data },
-          actorId: currentActorUserId(c),
-          generatedAt,
-          dateConfig,
           filename: body.filename,
           tags: body.tags,
-          persistSnapshot: true,
         });
-        if (!created.ok) return c.json({ message: created.error.message }, created.error.status);
-        return pdfResponse(created.data.pdf.pdf, created.data.run.filename, {
-          "X-Grids-Document-Run-Id": created.data.run.shortId,
-          "X-Grids-Document-Number": created.data.run.documentNumber,
-          "X-Grids-Document-Filename": encodeHeaderValue(created.data.run.filename),
+        if (!issued.ok) return c.json({ message: issued.error.message }, issued.error.status);
+        const artifact = await gridsService.document.getDocumentArtifact(issued.data.id, "pdf");
+        if (!artifact.ok) return c.json({ message: artifact.error.message }, artifact.error.status);
+        return pdfResponse(artifact.data.bytes, artifact.data.filename, {
+          "X-Grids-Document-Id": issued.data.shortId,
+          "X-Grids-Document-Number": issued.data.documentNumber,
+          "X-Grids-Document-Filename": encodeHeaderValue(artifact.data.filename),
         });
       },
     );

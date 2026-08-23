@@ -27,11 +27,12 @@
   },
   "dependencies": {
     "@bwip-js/generic": "4.11.1",
-    "@valentinkolb/cloud": "workspace:*",
     "@k2b/ssr": "catalog:",
     "@k2b/stdlib": "catalog:",
     "@k2b/sync": "catalog:",
     "@k2b/ui": "workspace:*",
+    "@stackforge-eu/factur-x": "1.2.0",
+    "@valentinkolb/cloud": "workspace:*",
     "decimal.js": "10.6.0",
     "hono": "catalog:",
     "hono-openapi": "catalog:",

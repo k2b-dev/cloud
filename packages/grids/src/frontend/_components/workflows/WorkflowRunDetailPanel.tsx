@@ -5,8 +5,8 @@ import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-j
 import { apiClient } from "../../../api/client";
 import type { PublicTable } from "../../../api/public-dto";
 import { downloadPdfResponse } from "../documents/document-download";
-import { requestDocumentRunDownload, requestWorkflowDocumentsDownload } from "../documents/document-transfer-client";
-import type { PublicDocumentRunSummary } from "../documents/public-document-types";
+import { requestDocumentDownload, requestWorkflowDocumentsDownload } from "../documents/document-transfer-client";
+import type { PublicDocument } from "../documents/public-document-types";
 import { errorMessage } from "../utils/api-helpers";
 import type {
   PublicWorkflow,
@@ -338,10 +338,10 @@ export function WorkflowRunDetailPanel(props: {
     });
   });
 
-  const downloadDocument = async (document: PublicDocumentRunSummary) => {
+  const downloadDocument = async (document: PublicDocument) => {
     setDownloadingDocumentId(document.id);
     try {
-      const res = await requestDocumentRunDownload(document.id);
+      const res = await requestDocumentDownload(document.id);
       await downloadPdfResponse(res, document.filename);
     } catch (error) {
       prompts.error(error instanceof Error ? error.message : "Could not download document.");

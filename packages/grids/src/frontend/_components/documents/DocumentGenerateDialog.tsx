@@ -1,6 +1,6 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
 import { Button, dialogCore, NoticeCard, PanelDialog, PdfPreview, panelDialogFixedOptions, prompts, TagsInput, TextInput } from "@k2b/ui";
-import { createSignal } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import type { PublicTable as Table } from "../../../api/public-dto";
 import RecordPicker from "../records/RecordPicker";
 import { downloadPdfResponse } from "./document-download";
@@ -8,7 +8,7 @@ import { isPdfResponse, requestDocumentTemplateGeneration, requestDocumentTempla
 import type { PublicDocumentTemplateSummary } from "./public-document-types";
 
 type DocumentGenerateDialogArgs = {
-  table: Table;
+  table: Pick<Table, "id" | "name">;
   template: PublicDocumentTemplateSummary;
   initialRecordId: string | null;
   mode?: "generate" | "generate-again";
@@ -22,6 +22,7 @@ export const openDocumentGenerateDialog = (args: DocumentGenerateDialogArgs) =>
   });
 
 function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close: () => void }) {
+  const idempotencyKey = crypto.randomUUID();
   const [recordId, setRecordId] = createSignal(props.args.initialRecordId ?? "");
   const [filename, setFilename] = createSignal("");
   const [tags, setTags] = createSignal<string[]>([]);
@@ -54,6 +55,7 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
         recordId: selected,
         filename: filename().trim() || undefined,
         tags: tags(),
+        idempotencyKey,
         signal: abortSignal,
       });
       await downloadPdfResponse(res, filename().trim() || `${props.args.template.name}.pdf`);
@@ -81,17 +83,19 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
             value={recordId}
             onChange={setSelectedRecord}
             label="Record"
-            description="Choose the record whose current data should be used for this PDF."
+            description="Choose the record whose current data should be used for this Document."
             placeholder="Search records..."
           />
-          <TextInput
-            label="Filename"
-            description="Optional. Leave empty to use the filename defined by the template."
-            value={filename}
-            onValueChange={setFilename}
-            icon="ti ti-file-text"
-            placeholder="Use template default"
-          />
+          <Show when={props.args.template.renderer.kind === "html"}>
+            <TextInput
+              label="Filename"
+              description="Optional. Leave empty to use the filename defined by the template."
+              value={filename}
+              onValueChange={setFilename}
+              icon="ti ti-file-text"
+              placeholder="Use template default"
+            />
+          </Show>
           <TagsInput
             label="Tags"
             description="Optional labels for finding and organizing the generated document."
@@ -101,8 +105,8 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
           />
           <NoticeCard
             tone="info"
-            title="The generated PDF stays unchanged"
-            detail="Later changes to the record or template do not update it. Generate again to create a new PDF."
+            title="The generated Document stays unchanged"
+            detail="Later changes to the record or template do not update its artifacts. Generate again to create a new Document."
           />
         </section>
         <PdfPreview
@@ -128,7 +132,7 @@ function DocumentGenerateDialog(props: { args: DocumentGenerateDialogArgs; close
             disabled={generateMut.loading() || !hasCurrentPreview()}
           >
             {generateMut.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-download" />}
-            {props.args.mode === "generate-again" ? "Generate again" : "Generate PDF"}
+            {props.args.mode === "generate-again" ? "Generate again" : "Generate Document"}
           </Button>
         </div>
       </PanelDialog.Footer>

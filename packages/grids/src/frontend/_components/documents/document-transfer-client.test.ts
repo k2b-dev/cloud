@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
   isPdfResponse,
-  requestDocumentRunDownload,
+  requestDocumentDownload,
   requestDocumentTemplateDraftPreview,
   requestDocumentTemplateGeneration,
   requestDocumentTemplatePreview,
@@ -47,18 +47,18 @@ describe("document transfer client", () => {
     expect(JSON.parse(body)).toEqual({ recordId: "record", filename: "invoice.pdf", tags: ["invoice"] });
   });
 
-  test("run downloads encode ids and only add options when a signal exists", async () => {
+  test("Document downloads encode ids and only add options when a signal exists", async () => {
     const calls: Array<[RequestInfo | URL, RequestInit | undefined]> = [];
     globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
       calls.push([input, init]);
       return Promise.resolve(new Response("pdf", { status: 200 }));
     }) as typeof fetch;
 
-    await requestDocumentRunDownload("run/id");
+    await requestDocumentDownload("document/id");
     const controller = new AbortController();
-    await requestDocumentRunDownload("other", controller.signal);
+    await requestDocumentDownload("other", controller.signal);
 
-    expect(calls[0]).toEqual(["/api/grids/documents/runs/run%2Fid/download", undefined]);
+    expect(calls[0]).toEqual(["/api/grids/documents/document%2Fid/download", undefined]);
     expect(calls[1]?.[1]?.signal).toBe(controller.signal);
   });
 

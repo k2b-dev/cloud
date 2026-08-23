@@ -375,7 +375,7 @@ export const listSnapshotsForRecord = async (tableId: string, recordId: string, 
       AND snapshot.record_id = ${recordId}::uuid
       AND NOT EXISTS (
         SELECT 1
-        FROM grids.document_runs run
+        FROM grids.documents run
         WHERE run.snapshot_id = snapshot.id
       )
     ORDER BY snapshot.created_at DESC

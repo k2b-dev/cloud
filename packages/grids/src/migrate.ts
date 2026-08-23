@@ -23,9 +23,8 @@ const PUBLIC_ID_RESOURCES = [
   { table: "number_series", key: "id", parent: null, index: "idx_grids_number_series_short_id" },
   { table: "email_templates", key: "id", parent: "base_id", index: "idx_grids_email_templates_short_id" },
   { table: "record_snapshots", key: "id", parent: "table_id", index: "idx_grids_record_snapshots_short_id" },
-  { table: "document_runs", key: "id", parent: "table_id", index: "idx_grids_document_runs_short_id" },
-  { table: "business_documents", key: "id", parent: "base_id", index: "idx_grids_business_documents_short_id" },
-  { table: "document_links", key: "id", parent: "document_run_id", index: "idx_grids_document_links_short_id" },
+  { table: "documents", key: "id", parent: "table_id", index: "idx_grids_documents_short_id" },
+  { table: "document_links", key: "id", parent: "document_id", index: "idx_grids_document_links_short_id" },
   { table: "evidence_exports", key: "id", parent: "base_id", index: "idx_grids_evidence_exports_short_id" },
   { table: "preservation_holds", key: "id", parent: "base_id", index: "idx_grids_preservation_holds_short_id" },
   { table: "controlled_destruction_runs", key: "id", parent: "base_id", index: "idx_grids_controlled_destruction_runs_short_id" },
@@ -42,7 +41,7 @@ const DECLARATIVE_REFERENCE_RESOURCES = new Set([
   "views",
   "forms",
   "document_templates",
-  "document_runs",
+  "documents",
   "email_templates",
   "custom_apps",
   "workflow_profile",
@@ -413,7 +412,7 @@ const migrateCoreRecords = async (sql: SQL): Promise<void> => {
       short_id TEXT NOT NULL,
       name TEXT NOT NULL,
       description TEXT,
-      document_profile JSONB NOT NULL DEFAULT '{}'::jsonb,
+      document_defaults JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
       deleted_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -421,7 +420,6 @@ const migrateCoreRecords = async (sql: SQL): Promise<void> => {
       CONSTRAINT bases_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$')
     )
   `.simple();
-  await sql`ALTER TABLE grids.bases ADD COLUMN IF NOT EXISTS document_profile JSONB NOT NULL DEFAULT '{}'::jsonb`.simple();
   console.log("  ✓ grids.bases");
 
   await sql`
@@ -501,6 +499,7 @@ const migrateCoreRecords = async (sql: SQL): Promise<void> => {
     ON grids.tables(base_id, lower(btrim(name)))
     WHERE deleted_at IS NULL
   `.simple();
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS uq_grids_tables_id_base ON grids.tables(id, base_id)`.simple();
   console.log("  ✓ grids.tables");
 
   // ──────────────────────────────────────────────────────────────────
@@ -982,6 +981,27 @@ const migrateCoreRecords = async (sql: SQL): Promise<void> => {
     CREATE INDEX IF NOT EXISTS idx_grids_file_protected_references_owner
     ON grids.file_protected_references(owner_kind, owner_id, file_id)
   `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.guard_file_protected_reference_mutation()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF OLD.owner_kind = 'document_artifact'
+        OR (TG_OP = 'UPDATE' AND NEW.owner_kind = 'document_artifact') THEN
+        RAISE EXCEPTION 'Document artifact protection is immutable' USING ERRCODE = '55000';
+      END IF;
+      IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+      END IF;
+      RETURN NEW;
+    END
+    $$
+  `.simple();
+  await sql`DROP TRIGGER IF EXISTS file_protected_references_guard ON grids.file_protected_references`.simple();
+  await sql`
+    CREATE TRIGGER file_protected_references_guard
+    BEFORE UPDATE OR DELETE ON grids.file_protected_references
+    FOR EACH ROW EXECUTE FUNCTION grids.guard_file_protected_reference_mutation()
+  `.simple();
   // Hard-cut legacy rows into the single attachment source of truth. Dynamic
   // SQL keeps this migration valid for both legacy and fresh installations.
   await sql`
@@ -1323,9 +1343,8 @@ const migrateDocumentTemplates = async (sql: SQL): Promise<void> => {
   // ──────────────────────────────────────────────────────────────────
   // document templates / snapshots / runs
   // ──────────────────────────────────────────────────────────────────
-  // Templates are table-level render definitions. They store a Liquid-rendered
-  // GQL source plus a Liquid-rendered HTML template. Official document runs
-  // snapshot the template and render data; PDFs are regenerated on download.
+  // Templates are table-level render definitions. Every completed Document
+  // freezes the template and render data and stores its exact artifact Files.
   await sql`
     CREATE TABLE IF NOT EXISTS grids.document_templates (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1334,12 +1353,16 @@ const migrateDocumentTemplates = async (sql: SQL): Promise<void> => {
       name TEXT NOT NULL,
       description TEXT,
       source TEXT NOT NULL,
-      html TEXT NOT NULL,
+      renderer_kind TEXT NOT NULL,
+      html TEXT,
       header_html TEXT,
       footer_html TEXT,
       page_css TEXT,
-      number_template TEXT NOT NULL DEFAULT '{{ template.id }}-{{ date.yyyyMMdd }}-{{ run.id }}',
-      filename_template TEXT NOT NULL DEFAULT '{{ document.number }}.pdf',
+      number_template TEXT,
+      filename_template TEXT,
+      profile_id TEXT,
+      profile_version INT,
+      profile_input_template TEXT,
       enabled BOOLEAN NOT NULL DEFAULT TRUE,
       position INT NOT NULL DEFAULT 0,
       created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
@@ -1349,87 +1372,46 @@ const migrateDocumentTemplates = async (sql: SQL): Promise<void> => {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       CONSTRAINT document_templates_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
       CONSTRAINT document_templates_source_length_chk CHECK (length(source) BETWEEN 1 AND 20000),
-      CONSTRAINT document_templates_html_length_chk CHECK (length(html) BETWEEN 1 AND 200000),
-      CONSTRAINT document_templates_header_html_length_chk CHECK (header_html IS NULL OR length(header_html) <= 50000),
-      CONSTRAINT document_templates_footer_html_length_chk CHECK (footer_html IS NULL OR length(footer_html) <= 50000),
-      CONSTRAINT document_templates_page_css_length_chk CHECK (page_css IS NULL OR length(page_css) <= 50000),
-      CONSTRAINT document_templates_number_template_length_chk CHECK (length(number_template) BETWEEN 1 AND 5000),
-      CONSTRAINT document_templates_filename_template_length_chk CHECK (length(filename_template) BETWEEN 1 AND 5000)
+      CONSTRAINT document_templates_renderer_kind_chk CHECK (renderer_kind IN ('html', 'profile')),
+      CONSTRAINT document_templates_html_length_chk CHECK (html IS NULL OR length(html) BETWEEN 1 AND 200000),
+      CONSTRAINT document_templates_renderer_chk CHECK (
+        (
+          renderer_kind = 'html'
+          AND html IS NOT NULL
+          AND number_template IS NOT NULL
+          AND filename_template IS NOT NULL
+          AND profile_id IS NULL
+          AND profile_version IS NULL
+          AND profile_input_template IS NULL
+        )
+        OR
+        (
+          renderer_kind = 'profile'
+          AND html IS NULL
+          AND header_html IS NULL
+          AND footer_html IS NULL
+          AND page_css IS NULL
+          AND number_template IS NULL
+          AND filename_template IS NULL
+          AND profile_id IS NOT NULL
+          AND profile_version > 0
+          AND profile_input_template IS NOT NULL
+        )
+      ),
+      CONSTRAINT document_templates_header_html_length_chk
+        CHECK (header_html IS NULL OR length(header_html) BETWEEN 1 AND 50000),
+      CONSTRAINT document_templates_footer_html_length_chk
+        CHECK (footer_html IS NULL OR length(footer_html) BETWEEN 1 AND 50000),
+      CONSTRAINT document_templates_page_css_length_chk
+        CHECK (page_css IS NULL OR length(page_css) BETWEEN 1 AND 50000),
+      CONSTRAINT document_templates_number_template_length_chk CHECK (number_template IS NULL OR length(number_template) BETWEEN 1 AND 5000),
+      CONSTRAINT document_templates_filename_template_length_chk CHECK (filename_template IS NULL OR length(filename_template) BETWEEN 1 AND 5000),
+      UNIQUE (id, table_id)
     )
   `.simple();
-  await sql`ALTER TABLE grids.document_templates ADD COLUMN IF NOT EXISTS header_html TEXT`.simple();
-  await sql`ALTER TABLE grids.document_templates ADD COLUMN IF NOT EXISTS footer_html TEXT`.simple();
-  await sql`ALTER TABLE grids.document_templates ADD COLUMN IF NOT EXISTS page_css TEXT`.simple();
-  await sql`ALTER TABLE grids.document_templates ADD COLUMN IF NOT EXISTS number_template TEXT`.simple();
-  await sql`ALTER TABLE grids.document_templates ADD COLUMN IF NOT EXISTS filename_template TEXT`.simple();
   await sql`
-    UPDATE grids.document_templates
-    SET number_template = '{{ template.id }}-{{ date.yyyyMMdd }}-{{ run.id }}'
-    WHERE number_template IS NULL OR btrim(number_template) = ''
-  `.simple();
-  await sql`
-    UPDATE grids.document_templates
-    SET filename_template = '{{ document.number }}.pdf'
-    WHERE filename_template IS NULL OR btrim(filename_template) = ''
-  `.simple();
-  await sql`
-    UPDATE grids.document_templates
-    SET source = replace(replace(source, 'template.shortId', 'template.id'), 'run.shortId', 'run.id'),
-        html = replace(replace(html, 'template.shortId', 'template.id'), 'run.shortId', 'run.id'),
-        header_html = replace(replace(header_html, 'template.shortId', 'template.id'), 'run.shortId', 'run.id'),
-        footer_html = replace(replace(footer_html, 'template.shortId', 'template.id'), 'run.shortId', 'run.id'),
-        number_template = replace(replace(number_template, 'template.shortId', 'template.id'), 'run.shortId', 'run.id'),
-        filename_template = replace(replace(filename_template, 'template.shortId', 'template.id'), 'run.shortId', 'run.id')
-    WHERE source LIKE '%template.shortId%' OR source LIKE '%run.shortId%'
-       OR html LIKE '%template.shortId%' OR html LIKE '%run.shortId%'
-       OR header_html LIKE '%template.shortId%' OR header_html LIKE '%run.shortId%'
-       OR footer_html LIKE '%template.shortId%' OR footer_html LIKE '%run.shortId%'
-       OR number_template LIKE '%template.shortId%' OR number_template LIKE '%run.shortId%'
-       OR filename_template LIKE '%template.shortId%' OR filename_template LIKE '%run.shortId%'
-  `.simple();
-  await sql`ALTER TABLE grids.document_templates ALTER COLUMN number_template SET DEFAULT '{{ template.id }}-{{ date.yyyyMMdd }}-{{ run.id }}'`.simple();
-  await sql`ALTER TABLE grids.document_templates ALTER COLUMN number_template SET NOT NULL`.simple();
-  await sql`ALTER TABLE grids.document_templates ALTER COLUMN filename_template SET DEFAULT '{{ document.number }}.pdf'`.simple();
-  await sql`ALTER TABLE grids.document_templates ALTER COLUMN filename_template SET NOT NULL`.simple();
-  await sql`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'document_templates_header_html_length_chk' AND connamespace = 'grids'::regnamespace
-      ) THEN
-        ALTER TABLE grids.document_templates
-        ADD CONSTRAINT document_templates_header_html_length_chk CHECK (header_html IS NULL OR length(header_html) <= 50000);
-      END IF;
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'document_templates_footer_html_length_chk' AND connamespace = 'grids'::regnamespace
-      ) THEN
-        ALTER TABLE grids.document_templates
-        ADD CONSTRAINT document_templates_footer_html_length_chk CHECK (footer_html IS NULL OR length(footer_html) <= 50000);
-      END IF;
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'document_templates_page_css_length_chk' AND connamespace = 'grids'::regnamespace
-      ) THEN
-        ALTER TABLE grids.document_templates
-        ADD CONSTRAINT document_templates_page_css_length_chk CHECK (page_css IS NULL OR length(page_css) <= 50000);
-      END IF;
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'document_templates_number_template_length_chk' AND connamespace = 'grids'::regnamespace
-      ) THEN
-        ALTER TABLE grids.document_templates
-        ADD CONSTRAINT document_templates_number_template_length_chk CHECK (length(number_template) BETWEEN 1 AND 5000);
-      END IF;
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'document_templates_filename_template_length_chk' AND connamespace = 'grids'::regnamespace
-      ) THEN
-        ALTER TABLE grids.document_templates
-        ADD CONSTRAINT document_templates_filename_template_length_chk CHECK (length(filename_template) BETWEEN 1 AND 5000);
-      END IF;
-    END $$;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_document_templates_short_id
+    ON grids.document_templates(short_id)
   `.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_document_templates_table_live
@@ -1507,122 +1489,83 @@ const migrateDocumentTemplates = async (sql: SQL): Promise<void> => {
   console.log("  ✓ grids.email_templates");
 };
 
-const migrateBusinessDocuments = async (sql: SQL): Promise<void> => {
+const migrateDocumentIssuance = async (sql: SQL): Promise<void> => {
   await sql`
-    CREATE TABLE IF NOT EXISTS grids.business_document_counters (
+    CREATE TABLE IF NOT EXISTS grids.document_profile_counters (
       base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE RESTRICT,
       profile_id TEXT NOT NULL,
       profile_version INTEGER NOT NULL CHECK (profile_version > 0),
       next_value BIGINT NOT NULL DEFAULT 1 CHECK (next_value > 0),
       PRIMARY KEY (base_id, profile_id, profile_version),
-      CONSTRAINT business_document_counters_profile_id_chk
+      CONSTRAINT document_profile_counters_profile_id_chk
         CHECK (profile_id ~ '^[a-z][a-z0-9.-]{2,99}$')
     )
   `.simple();
   await sql`
-    CREATE TABLE IF NOT EXISTS grids.business_documents (
+    CREATE TABLE IF NOT EXISTS grids.document_issuances (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      short_id TEXT NOT NULL,
       base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE RESTRICT,
-      profile_id TEXT NOT NULL,
-      profile_version INTEGER NOT NULL CHECK (profile_version > 0),
+      document_short_id TEXT NOT NULL UNIQUE,
       operation_key_hash TEXT NOT NULL CHECK (operation_key_hash ~ '^[a-f0-9]{64}$'),
       request_hash TEXT NOT NULL CHECK (request_hash ~ '^[a-f0-9]{64}$'),
-      source JSONB NOT NULL,
-      source_revision JSONB NOT NULL,
-      snapshot JSONB NOT NULL,
-      snapshot_sha256 TEXT NOT NULL CHECK (snapshot_sha256 ~ '^[a-f0-9]{64}$'),
-      document_number TEXT NOT NULL,
-      relationship_kind TEXT NOT NULL DEFAULT 'original'
-        CHECK (relationship_kind IN ('original', 'correction', 'replacement')),
-      predecessor_id UUID REFERENCES grids.business_documents(id) ON DELETE RESTRICT,
-      renderer_version TEXT NOT NULL,
-      validator_version TEXT NOT NULL,
-      validation_status TEXT NOT NULL CHECK (validation_status IN ('valid', 'warning')),
-      validation_report JSONB NOT NULL,
-      issued_actor JSONB NOT NULL,
-      issued_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      issued_at TIMESTAMPTZ NOT NULL,
+      frozen_request JSONB,
+      document_id UUID UNIQUE,
+      completed_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT business_documents_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
-      CONSTRAINT business_documents_profile_id_chk CHECK (profile_id ~ '^[a-z][a-z0-9.-]{2,99}$'),
-      CONSTRAINT business_documents_source_object_chk CHECK (jsonb_typeof(source) = 'object'),
-      CONSTRAINT business_documents_source_revision_object_chk CHECK (jsonb_typeof(source_revision) = 'object'),
-      CONSTRAINT business_documents_snapshot_object_chk CHECK (jsonb_typeof(snapshot) = 'object'),
-      CONSTRAINT business_documents_validation_report_object_chk CHECK (jsonb_typeof(validation_report) = 'object'),
-      CONSTRAINT business_documents_issued_actor_object_chk CHECK (jsonb_typeof(issued_actor) = 'object'),
-      CONSTRAINT business_documents_relationship_chk CHECK (
-        (relationship_kind = 'original' AND predecessor_id IS NULL)
-        OR (relationship_kind IN ('correction', 'replacement') AND predecessor_id IS NOT NULL)
+      CONSTRAINT document_issuances_short_id_format_chk CHECK (document_short_id ~ '^[A-Za-z0-9]{6}$'),
+      CONSTRAINT document_issuances_state_chk CHECK (
+        (
+          document_id IS NULL
+          AND completed_at IS NULL
+          AND jsonb_typeof(frozen_request) = 'object'
+        )
+        OR
+        (
+          document_id IS NOT NULL
+          AND completed_at IS NOT NULL
+          AND completed_at >= created_at
+          AND frozen_request IS NULL
+        )
       ),
       UNIQUE (base_id, operation_key_hash),
-      UNIQUE (base_id, profile_id, profile_version, document_number)
+      CONSTRAINT document_issuances_document_base_fkey
+        FOREIGN KEY (document_id, base_id, document_short_id)
+        REFERENCES grids.documents(id, base_id, short_id) ON DELETE RESTRICT
     )
   `.simple();
   await sql`
-    ALTER TABLE grids.business_documents
-    ADD COLUMN IF NOT EXISTS issued_actor JSONB NOT NULL DEFAULT '{"kind":"system"}'::jsonb
+    CREATE INDEX IF NOT EXISTS idx_grids_document_issuances_pending
+    ON grids.document_issuances(created_at, id) WHERE document_id IS NULL
   `.simple();
   await sql`
-    ALTER TABLE grids.business_documents
-    DROP CONSTRAINT IF EXISTS business_documents_issued_actor_object_chk
-  `.simple();
-  await sql`
-    ALTER TABLE grids.business_documents
-    ADD CONSTRAINT business_documents_issued_actor_object_chk CHECK (jsonb_typeof(issued_actor) = 'object')
-  `.simple();
-  await sql`
-    ALTER TABLE grids.business_documents
-    ALTER COLUMN issued_actor DROP DEFAULT
-  `.simple();
-  await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_business_documents_short_id
-    ON grids.business_documents(short_id)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_business_documents_base_issued
-    ON grids.business_documents(base_id, issued_at DESC, id DESC)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_business_documents_predecessor
-    ON grids.business_documents(predecessor_id) WHERE predecessor_id IS NOT NULL
-  `.simple();
-  await sql`
-    CREATE TABLE IF NOT EXISTS grids.business_document_artifacts (
-      document_id UUID NOT NULL REFERENCES grids.business_documents(id) ON DELETE CASCADE,
-      artifact_key TEXT NOT NULL,
-      filename TEXT NOT NULL,
-      media_type TEXT NOT NULL,
-      bytes BYTEA NOT NULL,
-      size_bytes BIGINT NOT NULL CHECK (size_bytes > 0),
-      sha256 TEXT NOT NULL CHECK (sha256 ~ '^[a-f0-9]{64}$'),
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      PRIMARY KEY (document_id, artifact_key),
-      CONSTRAINT business_document_artifacts_key_chk CHECK (artifact_key ~ '^[a-z][a-z0-9._-]{0,63}$'),
-      CONSTRAINT business_document_artifacts_size_chk CHECK (octet_length(bytes) = size_bytes)
-    )
-  `.simple();
-  await sql`
-    CREATE OR REPLACE FUNCTION grids.reject_business_document_mutation()
+    CREATE OR REPLACE FUNCTION grids.guard_document_issuance()
     RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN
-      RAISE EXCEPTION 'issued Business Documents are immutable' USING ERRCODE = '55000';
+      IF TG_OP = 'DELETE' THEN
+        IF OLD.document_id IS NOT NULL THEN
+          RAISE EXCEPTION 'Completed Document issuance receipts are immutable' USING ERRCODE = '55000';
+        END IF;
+        RETURN OLD;
+      END IF;
+      IF OLD.document_id IS NOT NULL
+        OR NEW.document_id IS NULL
+        OR NEW.completed_at IS NULL
+        OR NEW.frozen_request IS NOT NULL
+        OR (to_jsonb(NEW) - 'document_id' - 'completed_at' - 'frozen_request')
+          <> (to_jsonb(OLD) - 'document_id' - 'completed_at' - 'frozen_request') THEN
+        RAISE EXCEPTION 'Document issuance receipt is immutable' USING ERRCODE = '55000';
+      END IF;
+      RETURN NEW;
     END
     $$
   `.simple();
-  await sql`DROP TRIGGER IF EXISTS business_documents_immutable ON grids.business_documents`.simple();
+  await sql`DROP TRIGGER IF EXISTS document_issuances_guard ON grids.document_issuances`.simple();
   await sql`
-    CREATE TRIGGER business_documents_immutable
-    BEFORE UPDATE ON grids.business_documents
-    FOR EACH ROW EXECUTE FUNCTION grids.reject_business_document_mutation()
+    CREATE TRIGGER document_issuances_guard
+    BEFORE UPDATE OR DELETE ON grids.document_issuances
+    FOR EACH ROW EXECUTE FUNCTION grids.guard_document_issuance()
   `.simple();
-  await sql`DROP TRIGGER IF EXISTS business_document_artifacts_immutable ON grids.business_document_artifacts`.simple();
-  await sql`
-    CREATE TRIGGER business_document_artifacts_immutable
-    BEFORE UPDATE ON grids.business_document_artifacts
-    FOR EACH ROW EXECUTE FUNCTION grids.reject_business_document_mutation()
-  `.simple();
-  console.log("  ✓ grids.business_documents");
+  console.log("  ✓ grids.document_issuances");
 };
 
 const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
@@ -1630,15 +1573,24 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
     CREATE TABLE IF NOT EXISTS grids.record_snapshots (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       short_id TEXT NOT NULL,
-      base_id UUID NOT NULL,
-      table_id UUID NOT NULL,
+      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE RESTRICT,
+      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE RESTRICT,
       record_id UUID NOT NULL,
       root JSONB NOT NULL,
       graph JSONB NOT NULL,
       created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT record_snapshots_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$')
+      CONSTRAINT record_snapshots_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
+      CONSTRAINT record_snapshots_table_base_fkey
+        FOREIGN KEY (table_id, base_id) REFERENCES grids.tables(id, base_id) ON DELETE RESTRICT,
+      CONSTRAINT record_snapshots_record_table_fkey
+        FOREIGN KEY (record_id, table_id) REFERENCES grids.records(id, table_id) ON DELETE RESTRICT,
+      UNIQUE (id, base_id, table_id, record_id)
     )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_record_snapshots_short_id
+    ON grids.record_snapshots(short_id)
   `.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_record_snapshots_record
@@ -1647,105 +1599,154 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
   console.log("  ✓ grids.record_snapshots");
 
   await sql`
-    CREATE TABLE IF NOT EXISTS grids.document_runs (
+    CREATE TABLE IF NOT EXISTS grids.documents (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       short_id TEXT NOT NULL,
-      template_id UUID,
+      template_id UUID NOT NULL,
       workflow_run_id UUID,
+      workflow_step_key TEXT,
       snapshot_id UUID NOT NULL REFERENCES grids.record_snapshots(id) ON DELETE RESTRICT,
-      base_id UUID NOT NULL,
-      table_id UUID NOT NULL,
+      base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE RESTRICT,
+      table_id UUID NOT NULL REFERENCES grids.tables(id) ON DELETE RESTRICT,
       record_id UUID NOT NULL,
       document_number TEXT NOT NULL,
       filename TEXT NOT NULL,
       tags TEXT[] NOT NULL DEFAULT '{}',
       template_snapshot JSONB NOT NULL,
       render_data JSONB NOT NULL,
-      artifact_file_id UUID NOT NULL REFERENCES grids.files(id) ON DELETE RESTRICT,
-      artifact_mime_type TEXT NOT NULL,
-      artifact_size_bytes INT NOT NULL,
-      artifact_sha256 TEXT NOT NULL,
+      renderer_kind TEXT NOT NULL,
       renderer_version TEXT NOT NULL,
       template_revision TEXT NOT NULL,
-      generated_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-      generated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-      CONSTRAINT document_runs_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
-      CONSTRAINT document_runs_filename_length_chk CHECK (length(filename) BETWEEN 1 AND 255),
-      CONSTRAINT document_runs_tags_count_chk CHECK (cardinality(tags) <= 20)
+      profile_id TEXT,
+      profile_version INTEGER,
+      source JSONB,
+      source_revision JSONB,
+      profile_snapshot JSONB,
+      snapshot_sha256 TEXT,
+      relationship_kind TEXT,
+      predecessor_id UUID REFERENCES grids.documents(id) ON DELETE RESTRICT,
+      validator_version TEXT,
+      validation_status TEXT,
+      validation_report JSONB,
+      issued_actor JSONB NOT NULL,
+      created_by UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT documents_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
+      CONSTRAINT documents_filename_length_chk CHECK (length(filename) BETWEEN 1 AND 255),
+      CONSTRAINT documents_tags_count_chk CHECK (cardinality(tags) <= 20),
+      CONSTRAINT documents_number_length_chk CHECK (length(document_number) BETWEEN 1 AND 200),
+      CONSTRAINT documents_renderer_kind_chk CHECK (renderer_kind IN ('html', 'profile')),
+      CONSTRAINT documents_template_snapshot_object_chk CHECK (jsonb_typeof(template_snapshot) = 'object'),
+      CONSTRAINT documents_render_data_object_chk CHECK (jsonb_typeof(render_data) = 'object'),
+      CONSTRAINT documents_issued_actor_object_chk CHECK (jsonb_typeof(issued_actor) = 'object'),
+      CONSTRAINT documents_workflow_pair_chk CHECK ((workflow_run_id IS NULL) = (workflow_step_key IS NULL)),
+      CONSTRAINT documents_relationship_chk CHECK (
+        (relationship_kind = 'original' AND predecessor_id IS NULL)
+        OR (relationship_kind IN ('correction', 'replacement') AND predecessor_id IS NOT NULL)
+        OR (relationship_kind IS NULL AND predecessor_id IS NULL)
+      ),
+      CONSTRAINT documents_renderer_chk CHECK (
+        (
+          renderer_kind = 'html'
+          AND profile_id IS NULL
+          AND profile_version IS NULL
+          AND source IS NULL
+          AND source_revision IS NULL
+          AND profile_snapshot IS NULL
+          AND snapshot_sha256 IS NULL
+          AND relationship_kind IS NULL
+          AND predecessor_id IS NULL
+          AND validator_version IS NULL
+          AND validation_status IS NULL
+          AND validation_report IS NULL
+        )
+        OR
+        (
+          renderer_kind = 'profile'
+          AND profile_id IS NOT NULL
+          AND profile_version > 0
+          AND jsonb_typeof(source) = 'object'
+          AND jsonb_typeof(source_revision) = 'object'
+          AND jsonb_typeof(profile_snapshot) = 'object'
+          AND snapshot_sha256 ~ '^[a-f0-9]{64}$'
+          AND relationship_kind IS NOT NULL
+          AND validator_version IS NOT NULL
+          AND validation_status IN ('valid', 'warning')
+          AND jsonb_typeof(validation_report) = 'object'
+        )
+      ),
+      CONSTRAINT documents_template_table_fkey
+        FOREIGN KEY (template_id, table_id)
+        REFERENCES grids.document_templates(id, table_id) ON DELETE RESTRICT,
+      CONSTRAINT documents_snapshot_binding_fkey
+        FOREIGN KEY (snapshot_id, base_id, table_id, record_id)
+        REFERENCES grids.record_snapshots(id, base_id, table_id, record_id) ON DELETE RESTRICT,
+      CONSTRAINT documents_predecessor_base_fkey
+        FOREIGN KEY (predecessor_id, base_id) REFERENCES grids.documents(id, base_id) ON DELETE RESTRICT,
+      UNIQUE (id, base_id),
+      UNIQUE (id, base_id, short_id),
+      UNIQUE (id, base_id, table_id, record_id),
+      UNIQUE (base_id, document_number)
     )
   `.simple();
-  await sql`ALTER TABLE grids.document_runs ADD COLUMN IF NOT EXISTS workflow_run_id UUID`.simple();
-  await sql`ALTER TABLE grids.document_runs ADD COLUMN IF NOT EXISTS filename TEXT`.simple();
   await sql`
-    UPDATE grids.document_runs
-    SET filename = document_number || '.pdf'
-    WHERE filename IS NULL OR btrim(filename) = ''
-  `.simple();
-  await sql`ALTER TABLE grids.document_runs ALTER COLUMN filename SET DEFAULT 'document.pdf'`.simple();
-  await sql`ALTER TABLE grids.document_runs ALTER COLUMN filename SET NOT NULL`.simple();
-  await sql`ALTER TABLE grids.document_runs ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT '{}'`.simple();
-  await sql`UPDATE grids.document_runs SET tags = '{}' WHERE tags IS NULL`.simple();
-  await sql`ALTER TABLE grids.document_runs ALTER COLUMN tags SET NOT NULL`.simple();
-  await sql`
-    ALTER TABLE grids.document_runs
-    ADD COLUMN IF NOT EXISTS artifact_file_id UUID REFERENCES grids.files(id) ON DELETE RESTRICT
-  `.simple();
-  await sql`ALTER TABLE grids.document_runs ADD COLUMN IF NOT EXISTS artifact_mime_type TEXT`.simple();
-  await sql`ALTER TABLE grids.document_runs ADD COLUMN IF NOT EXISTS artifact_size_bytes INT`.simple();
-  await sql`ALTER TABLE grids.document_runs ADD COLUMN IF NOT EXISTS artifact_sha256 TEXT`.simple();
-  await sql`ALTER TABLE grids.document_runs ADD COLUMN IF NOT EXISTS renderer_version TEXT`.simple();
-  await sql`ALTER TABLE grids.document_runs ADD COLUMN IF NOT EXISTS template_revision TEXT`.simple();
-  await sql`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'document_runs_filename_length_chk' AND connamespace = 'grids'::regnamespace
-      ) THEN
-        ALTER TABLE grids.document_runs
-        ADD CONSTRAINT document_runs_filename_length_chk CHECK (length(filename) BETWEEN 1 AND 255);
-      END IF;
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'document_runs_tags_count_chk' AND connamespace = 'grids'::regnamespace
-      ) THEN
-        ALTER TABLE grids.document_runs
-        ADD CONSTRAINT document_runs_tags_count_chk CHECK (cardinality(tags) <= 20);
-      END IF;
-    END $$;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_documents_short_id
+    ON grids.documents(short_id)
   `.simple();
   await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_document_runs_number
-    ON grids.document_runs(document_number)
+    CREATE INDEX IF NOT EXISTS idx_grids_documents_template
+    ON grids.documents(template_id, created_at DESC)
   `.simple();
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_document_runs_template
-    ON grids.document_runs(template_id, generated_at DESC)
+    CREATE INDEX IF NOT EXISTS idx_grids_documents_template_cursor
+    ON grids.documents(template_id, created_at DESC, id DESC)
   `.simple();
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_document_runs_template_cursor
-    ON grids.document_runs(template_id, generated_at DESC, id DESC)
+    CREATE INDEX IF NOT EXISTS idx_grids_documents_record
+    ON grids.documents(table_id, record_id, created_at DESC)
   `.simple();
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_document_runs_record
-    ON grids.document_runs(table_id, record_id, generated_at DESC)
-  `.simple();
-  await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_document_runs_workflow_run
-    ON grids.document_runs(workflow_run_id, generated_at DESC, id DESC)
+    CREATE INDEX IF NOT EXISTS idx_grids_documents_workflow_run
+    ON grids.documents(workflow_run_id, created_at DESC, id DESC)
     WHERE workflow_run_id IS NOT NULL
   `.simple();
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_document_runs_tags
-    ON grids.document_runs USING GIN(tags)
+    CREATE INDEX IF NOT EXISTS idx_grids_documents_tags
+    ON grids.documents USING GIN(tags)
   `.simple();
-  console.log("  ✓ grids.document_runs");
+  console.log("  ✓ grids.documents");
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS grids.document_artifacts (
+      document_id UUID NOT NULL REFERENCES grids.documents(id) ON DELETE RESTRICT,
+      artifact_key TEXT NOT NULL,
+      file_id UUID NOT NULL UNIQUE REFERENCES grids.files(id) ON DELETE RESTRICT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (document_id, artifact_key),
+      CONSTRAINT document_artifacts_key_chk CHECK (artifact_key ~ '^[a-z][a-z0-9._-]{0,63}$')
+    )
+  `.simple();
+  await sql`
+    CREATE OR REPLACE FUNCTION grids.reject_document_artifact_mutation()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      RAISE EXCEPTION 'Document artifacts are immutable' USING ERRCODE = '55000';
+    END
+    $$
+  `.simple();
+  await sql`DROP TRIGGER IF EXISTS document_artifacts_immutable ON grids.document_artifacts`.simple();
+  await sql`
+    CREATE TRIGGER document_artifacts_immutable
+    BEFORE UPDATE OR DELETE ON grids.document_artifacts
+    FOR EACH ROW EXECUTE FUNCTION grids.reject_document_artifact_mutation()
+  `.simple();
+  console.log("  ✓ grids.document_artifacts");
 
   await sql`
     CREATE TABLE IF NOT EXISTS grids.document_links (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       short_id TEXT NOT NULL,
-      document_run_id UUID NOT NULL REFERENCES grids.document_runs(id) ON DELETE CASCADE,
+      document_id UUID NOT NULL REFERENCES grids.documents(id) ON DELETE RESTRICT,
       base_id UUID NOT NULL,
       table_id UUID NOT NULL,
       record_id UUID NOT NULL,
@@ -1760,16 +1761,23 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
       access_count INTEGER NOT NULL DEFAULT 0,
       CONSTRAINT document_links_short_id_format_chk CHECK (short_id ~ '^[A-Za-z0-9]{6}$'),
       CONSTRAINT document_links_comment_length_chk CHECK (comment IS NULL OR length(comment) <= 500),
-      CONSTRAINT document_links_access_count_chk CHECK (access_count >= 0)
+      CONSTRAINT document_links_access_count_chk CHECK (access_count >= 0),
+      CONSTRAINT document_links_document_binding_fkey
+        FOREIGN KEY (document_id, base_id, table_id, record_id)
+        REFERENCES grids.documents(id, base_id, table_id, record_id) ON DELETE RESTRICT
     )
+  `.simple();
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_document_links_short_id
+    ON grids.document_links(short_id)
   `.simple();
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_document_links_token_hash
     ON grids.document_links(token_hash)
   `.simple();
   await sql`
-    CREATE INDEX IF NOT EXISTS idx_grids_document_links_run
-    ON grids.document_links(document_run_id, created_at DESC)
+    CREATE INDEX IF NOT EXISTS idx_grids_document_links_document
+    ON grids.document_links(document_id, created_at DESC)
   `.simple();
   await sql`
     CREATE INDEX IF NOT EXISTS idx_grids_document_links_active
@@ -1779,51 +1787,37 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
   console.log("  ✓ grids.document_links");
 };
 
-const finalizeDocumentArtifacts = async (sql: SQL): Promise<void> => {
+const finalizeDocumentImmutability = async (sql: SQL): Promise<void> => {
   await sql`
-    DELETE FROM grids.document_runs
-    WHERE artifact_file_id IS NULL
-       OR artifact_mime_type IS NULL
-       OR artifact_size_bytes IS NULL
-       OR artifact_sha256 IS NULL
-       OR renderer_version IS NULL
-       OR template_revision IS NULL
-  `.simple();
-  await sql`ALTER TABLE grids.document_runs ALTER COLUMN artifact_file_id SET NOT NULL`.simple();
-  await sql`ALTER TABLE grids.document_runs ALTER COLUMN artifact_mime_type SET NOT NULL`.simple();
-  await sql`ALTER TABLE grids.document_runs ALTER COLUMN artifact_size_bytes SET NOT NULL`.simple();
-  await sql`ALTER TABLE grids.document_runs ALTER COLUMN artifact_sha256 SET NOT NULL`.simple();
-  await sql`ALTER TABLE grids.document_runs ALTER COLUMN renderer_version SET NOT NULL`.simple();
-  await sql`ALTER TABLE grids.document_runs ALTER COLUMN template_revision SET NOT NULL`.simple();
-  await sql`
-    DO $$
+    CREATE OR REPLACE FUNCTION grids.reject_document_mutation()
+    RETURNS trigger LANGUAGE plpgsql AS $$
     BEGIN
-      IF EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'document_runs_artifact_complete_chk'
-          AND connamespace = 'grids'::regnamespace
-          AND pg_get_constraintdef(oid) LIKE '%artifact_file_id IS NULL%'
-      ) THEN
-        ALTER TABLE grids.document_runs DROP CONSTRAINT document_runs_artifact_complete_chk;
-      END IF;
-      IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'document_runs_artifact_complete_chk' AND connamespace = 'grids'::regnamespace
-      ) THEN
-        ALTER TABLE grids.document_runs
-        ADD CONSTRAINT document_runs_artifact_complete_chk CHECK (
-          artifact_mime_type = 'application/pdf'
-          AND artifact_size_bytes > 0
-          AND artifact_sha256 ~ '^[a-f0-9]{64}$'
-          AND length(renderer_version) > 0
-          AND template_revision ~ '^[a-f0-9]{64}$'
-        );
-      END IF;
-    END $$;
+      RAISE EXCEPTION 'completed Documents are immutable' USING ERRCODE = '55000';
+    END
+    $$
+  `.simple();
+  await sql`DROP TRIGGER IF EXISTS documents_immutable ON grids.documents`.simple();
+  await sql`
+    CREATE TRIGGER documents_immutable
+    BEFORE UPDATE OR DELETE ON grids.documents
+    FOR EACH ROW EXECUTE FUNCTION grids.reject_document_mutation()
   `.simple();
   await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_document_runs_artifact_file
-    ON grids.document_runs(artifact_file_id)
+    CREATE OR REPLACE FUNCTION grids.reject_file_content_mutation()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM grids.document_artifacts WHERE file_id = OLD.id) THEN
+        RAISE EXCEPTION 'Document artifact File content is immutable' USING ERRCODE = '55000';
+      END IF;
+      RETURN NEW;
+    END
+    $$
+  `.simple();
+  await sql`DROP TRIGGER IF EXISTS files_content_immutable ON grids.files`.simple();
+  await sql`
+    CREATE TRIGGER files_content_immutable
+    BEFORE UPDATE OF filename, mime_type, size_bytes, sha256, bytes ON grids.files
+    FOR EACH ROW EXECUTE FUNCTION grids.reject_file_content_mutation()
   `.simple();
 };
 
@@ -1895,7 +1889,7 @@ const migrateNumberSeries = async (sql: SQL): Promise<void> => {
       scope TEXT NOT NULL,
       value BIGINT NOT NULL CHECK (value >= 1),
       rendered_value TEXT NOT NULL,
-      consumer_kind TEXT CHECK (consumer_kind IN ('record', 'document_run')),
+      consumer_kind TEXT CHECK (consumer_kind IN ('record', 'document')),
       consumer_id UUID,
       allocated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       FOREIGN KEY (series_id, version) REFERENCES grids.number_series_versions(series_id, version) ON DELETE CASCADE,
@@ -2017,56 +2011,6 @@ const migrateNumberSeries = async (sql: SQL): Promise<void> => {
       SET migration_status = ${diagnostic}, migration_note = ${note}, baseline_floor = ${conservativeFloor}, updated_at = now()
       WHERE id = ${series.id}::uuid
     `;
-  }
-
-  const templates = await sql<Array<{ id: string; numberTemplate: string; deletedAt: Date | null; runCount: number }>>`
-    SELECT dt.id::text, dt.number_template AS "numberTemplate", dt.deleted_at AS "deletedAt", count(dr.id)::int AS "runCount"
-    FROM grids.document_templates dt
-    LEFT JOIN grids.document_runs dr ON dr.template_id = dt.id
-    GROUP BY dt.id, dt.number_template, dt.deleted_at
-    ORDER BY dt.id
-  `;
-  for (const template of templates) {
-    let [series] = await sql<Array<{ id: string }>>`
-      SELECT id::text FROM grids.number_series WHERE document_template_id = ${template.id}::uuid
-    `;
-    if (!series) {
-      const seriesId = Bun.randomUUIDv7();
-      const seriesShortId = await allocateSeriesShortId();
-      [series] = await sql<Array<{ id: string }>>`
-        INSERT INTO grids.number_series (
-          id, short_id, owner_kind, document_template_id, archived_at, migration_status, migration_note
-        )
-        VALUES (
-          ${seriesId}::uuid,
-          ${seriesShortId},
-          'document_template',
-          ${template.id}::uuid,
-          ${template.deletedAt},
-          'inferred_from_document_runs',
-          'Artifact-less alpha document runs did not store allocations; the run count is the conservative baseline.'
-        )
-        RETURNING id::text
-      `;
-      await sql`UPDATE grids.number_series SET baseline_floor = ${template.runCount} WHERE id = ${seriesId}::uuid`;
-      await sql`
-        INSERT INTO grids.number_series_versions (series_id, version, strategy, number_template)
-        VALUES (${seriesId}::uuid, 1, 'document', ${template.numberTemplate})
-      `;
-    }
-    if (!series) throw new Error(`number series migration could not create document series ${template.id}`);
-    const [scope] = await sql<Array<{ exists: boolean }>>`
-      SELECT true AS exists FROM grids.number_series_scopes WHERE series_id = ${series.id}::uuid AND scope = 'global'
-    `;
-    if (!scope) {
-      const sequenceName = numberSeriesSequenceName(series.id, "global");
-      await sql.unsafe(`CREATE SEQUENCE IF NOT EXISTS grids.${sequenceName} AS BIGINT INCREMENT 1 MINVALUE 1`);
-      if (template.runCount > 0) await sql.unsafe(`SELECT setval('grids.${sequenceName}', $1, true)`, [template.runCount]);
-      await sql`
-        INSERT INTO grids.number_series_scopes (series_id, scope, sequence_name, baseline)
-        VALUES (${series.id}::uuid, 'global', ${sequenceName}, ${template.runCount})
-      `;
-    }
   }
 
   await sql`ALTER TABLE grids.number_series ALTER COLUMN short_id SET NOT NULL`.simple();
@@ -2913,10 +2857,9 @@ export const migrate = async (sql: SQL = defaultSql): Promise<void> => {
     await migrateViews(connection);
     await migrateDocumentTemplates(connection);
     await migrateDocumentArtifacts(connection);
-    await migrateBusinessDocuments(connection);
+    await migrateDocumentIssuance(connection);
     await migrateNumberSeries(connection);
     await migrateRecordFinalization(connection);
-    await finalizeDocumentArtifacts(connection);
     await migrateEvidenceExports(connection);
     await migrateRetentionPolicies(connection);
     await cleanupAlphaSchema(connection);
@@ -2925,6 +2868,7 @@ export const migrate = async (sql: SQL = defaultSql): Promise<void> => {
     await removeLegacyDashboards(connection);
     await migrateGridsWorkflowTables(connection);
     await migratePublicIds(connection);
+    await finalizeDocumentImmutability(connection);
     await migrateCanonicalScalarStorage(connection);
     await removeObsoleteAccess(connection);
     await migrateRecordScanCodes(connection);

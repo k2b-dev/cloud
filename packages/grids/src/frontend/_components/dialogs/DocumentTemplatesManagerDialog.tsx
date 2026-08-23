@@ -66,12 +66,7 @@ function DocumentTemplatesManager(props: { baseId: string; tableId: string; tabl
         name: `${template.name} copy`,
         description: template.description,
         source: template.source,
-        numberTemplate: template.numberTemplate,
-        filenameTemplate: template.filenameTemplate,
-        html: template.html,
-        headerHtml: template.headerHtml,
-        footerHtml: template.footerHtml,
-        pageCss: template.pageCss,
+        renderer: template.renderer,
         enabled: false,
       },
     });

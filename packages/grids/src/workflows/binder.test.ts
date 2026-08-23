@@ -699,6 +699,8 @@ steps:
       record: inputs.item
       saveAs: sheet
   - setVariable: { name: tag, value: "\${{ sheet.tags.0 }}" }
+  - setVariable: { name: author, value: "\${{ sheet.createdBy }}" }
+  - setVariable: { name: created, value: "\${{ sheet.createdAt }}" }
   - createDocumentLink:
       document: sheet
       saveAs: link
@@ -732,6 +734,7 @@ steps:
       saveAs: sheet
   - setVariable: { name: badTag, value: "\${{ sheet.tags.name }}" }
   - setVariable: { name: badFilename, value: "\${{ sheet.filename.extra }}" }
+  - setVariable: { name: removedGeneratedAt, value: "\${{ sheet.generatedAt }}" }
   - sendEmail:
       template: Ready notice
       to: [{ email: user@example.test }]
@@ -750,8 +753,9 @@ steps:
       expect(result.diagnostics.map(({ code, path }) => ({ code, path }))).toEqual([
         { code: "reference.path", path: ["steps", 1, "setVariable", "value"] },
         { code: "reference.path", path: ["steps", 2, "setVariable", "value"] },
-        { code: "reference.path", path: ["steps", 4, "setVariable", "value"] },
-        { code: "reference.path", path: ["steps", 6, "setVariable", "value"] },
+        { code: "reference.path", path: ["steps", 3, "setVariable", "value"] },
+        { code: "reference.path", path: ["steps", 5, "setVariable", "value"] },
+        { code: "reference.path", path: ["steps", 7, "setVariable", "value"] },
       ]);
     }
   });

@@ -36,6 +36,13 @@ export type RenderHtmlToPdfInput = {
   filename?: string;
 };
 
+export type RenderFacturXHtmlToPdfInput = RenderHtmlToPdfInput & {
+  xml: string;
+  conformanceLevel?: "MINIMUM" | "BASIC WL" | "BASIC" | "EN 16931" | "EXTENDED";
+  documentType?: "INVOICE" | "ORDER" | "ORDER RESPONSE";
+  facturXVersion?: "1.0";
+};
+
 export type RenderHtmlToPdfResult = {
   pdf: Uint8Array;
   contentType: string;
@@ -151,6 +158,60 @@ export const renderHtmlToPdfWithConfig = async (
   };
 };
 
+export const renderFacturXHtmlToPdfWithConfig = async (
+  input: RenderFacturXHtmlToPdfInput,
+  config: GotenbergConfig,
+  options: RenderHtmlToPdfOptions = {},
+): Promise<RenderHtmlToPdfResult> => {
+  const htmlBytes = byteLength(input.html);
+  const xmlBytes = byteLength(input.xml);
+  if (htmlBytes > config.maxHtmlBytes) {
+    throw new GotenbergRenderError("html_too_large", `HTML input is too large (${htmlBytes} bytes, limit ${config.maxHtmlBytes} bytes).`);
+  }
+  if (xmlBytes === 0 || xmlBytes > config.maxHtmlBytes) {
+    throw new GotenbergRenderError(
+      xmlBytes === 0 ? "bad_input" : "html_too_large",
+      xmlBytes === 0
+        ? "Factur-X XML must not be empty."
+        : `Factur-X XML input is too large (${xmlBytes} bytes, limit ${config.maxHtmlBytes} bytes).`,
+    );
+  }
+
+  const baseUrl = normalizeBaseUrl(config.url);
+  const form = new FormData();
+  form.append("files", new Blob([input.html], { type: "text/html" }), "index.html");
+  if (input.headerHtml?.trim()) form.append("files", new Blob([input.headerHtml], { type: "text/html" }), "header.html");
+  if (input.footerHtml?.trim()) form.append("files", new Blob([input.footerHtml], { type: "text/html" }), "footer.html");
+  form.append("facturxXml", new Blob([input.xml], { type: "application/xml" }), "factur-x.xml");
+  form.append("facturxConformanceLevel", input.conformanceLevel ?? "EN 16931");
+  form.append("facturxDocumentType", input.documentType ?? "INVOICE");
+  form.append("facturxVersion", input.facturXVersion ?? "1.0");
+  form.append("pdfa", "PDF/A-3b");
+  form.append("preferCssPageSize", "true");
+  form.append("printBackground", "true");
+
+  const headers = new Headers();
+  const authHeader = basicAuthHeader(config);
+  if (authHeader) headers.set("Authorization", authHeader);
+  let response: Response;
+  try {
+    response = await (options.fetch ?? fetch)(`${baseUrl}/forms/chromium/convert/html`, {
+      method: "POST",
+      headers,
+      body: form,
+      signal: abortSignal(config.timeoutMs),
+    });
+  } catch (error) {
+    throw sanitizeFetchError(error);
+  }
+  if (!response.ok) throw new GotenbergRenderError("bad_response", `Gotenberg returned HTTP ${response.status}.`, response.status);
+  const buffer = await response.arrayBuffer();
+  if (buffer.byteLength > config.maxPdfBytes) {
+    throw new GotenbergRenderError("pdf_too_large", `PDF output is too large (${buffer.byteLength} bytes, limit ${config.maxPdfBytes} bytes).`);
+  }
+  return { pdf: new Uint8Array(buffer), contentType: response.headers.get("content-type") || DEFAULT_PDF_CONTENT_TYPE };
+};
+
 export const mergePdfsWithConfig = async (
   input: MergePdfsInput,
   config: GotenbergConfig,
@@ -214,6 +275,11 @@ export const getGotenbergConfig = async (): Promise<GotenbergConfig> => ({
 
 export const renderHtmlToPdf = async (input: RenderHtmlToPdfInput, options: RenderHtmlToPdfOptions = {}): Promise<RenderHtmlToPdfResult> =>
   renderHtmlToPdfWithConfig(input, await getGotenbergConfig(), options);
+
+export const renderFacturXHtmlToPdf = async (
+  input: RenderFacturXHtmlToPdfInput,
+  options: RenderHtmlToPdfOptions = {},
+): Promise<RenderHtmlToPdfResult> => renderFacturXHtmlToPdfWithConfig(input, await getGotenbergConfig(), options);
 
 export const mergePdfs = async (input: MergePdfsInput, options: RenderHtmlToPdfOptions = {}): Promise<RenderHtmlToPdfResult> =>
   mergePdfsWithConfig(input, await getGotenbergConfig(), options);

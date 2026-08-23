@@ -104,7 +104,6 @@ export function CustomAppPageLayout(props: {
           active={page.id === props.page.id}
           icon={`ti ti-${page.navigation.icon ?? "file"}`}
           href={props.editor ? undefined : customAppPageHref(props.appId, page.id)}
-          navigation="enhanced"
           onClick={props.editor ? () => props.editor?.onSelectPage(page.id) : undefined}
         >
           <AppWorkspace.SidebarItemLabel>{page.title}</AppWorkspace.SidebarItemLabel>

@@ -1,38 +1,106 @@
+import { toPgUuidArray } from "@valentinkolb/cloud/services";
+import { type SQL, sql } from "bun";
 import type {
+  Document,
+  DocumentArtifact,
   DocumentLink,
-  DocumentRun,
-  DocumentRunSummary,
+  DocumentSummary,
   DocumentTemplate,
   DocumentTemplateSummary,
   RecordSnapshot,
   RecordSnapshotSummary,
 } from "../contracts";
-import { DEFAULT_DOCUMENT_NUMBER_TEMPLATE } from "./document-liquid";
-import { parseJsonbRow } from "./jsonb";
 
 export type DocumentDbRow = Record<string, unknown>;
 
-export const mapDocumentTemplate = (row: DocumentDbRow): DocumentTemplate => ({
-  id: row.id as string,
-  shortId: row.short_id as string,
-  tableId: row.table_id as string,
-  name: row.name as string,
-  description: (row.description as string | null) ?? null,
-  source: row.source as string,
-  html: row.html as string,
-  headerHtml: (row.header_html as string | null) ?? null,
-  footerHtml: (row.footer_html as string | null) ?? null,
-  pageCss: (row.page_css as string | null) ?? null,
-  numberTemplate: (row.number_template as string | null) ?? DEFAULT_DOCUMENT_NUMBER_TEMPLATE,
-  filenameTemplate: (row.filename_template as string | null) ?? "{{ document.number }}.pdf",
-  enabled: row.enabled as boolean,
-  position: row.position as number,
-  createdBy: (row.created_by as string | null) ?? null,
-  updatedBy: (row.updated_by as string | null) ?? null,
-  deletedAt: row.deleted_at ? (row.deleted_at as Date).toISOString() : null,
-  createdAt: (row.created_at as Date).toISOString(),
-  updatedAt: (row.updated_at as Date).toISOString(),
+type DocumentArtifactDbRow = {
+  document_id: string;
+  artifact_key: string;
+  file_id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number | string;
+  sha256: string;
+};
+
+const strictJsonObject = (value: unknown, field: string): Record<string, unknown> => {
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      throw new Error(`${field} contains invalid JSON`);
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(`${field} must be a JSON object`);
+  return parsed as Record<string, unknown>;
+};
+
+const mapDocumentArtifact = (row: DocumentArtifactDbRow): DocumentArtifact => ({
+  key: row.artifact_key,
+  fileId: row.file_id,
+  filename: row.filename,
+  mimeType: row.mime_type,
+  sizeBytes: Number(row.size_bytes),
+  sha256: row.sha256,
 });
+
+export const loadDocumentArtifacts = async (documentIds: readonly string[], db: SQL = sql): Promise<Map<string, DocumentArtifact[]>> => {
+  if (documentIds.length === 0) return new Map();
+  const rows = await db<DocumentArtifactDbRow[]>`
+    SELECT artifact.document_id::text, artifact.artifact_key, artifact.file_id::text,
+      file.filename, file.mime_type, file.size_bytes, file.sha256
+    FROM grids.document_artifacts artifact
+    JOIN grids.files file ON file.id = artifact.file_id
+    JOIN grids.file_protected_references protected
+      ON protected.file_id = file.id AND protected.owner_kind = 'document_artifact' AND protected.owner_id = artifact.document_id
+    WHERE artifact.document_id = ANY(${toPgUuidArray([...documentIds])}::uuid[])
+    ORDER BY artifact.document_id, artifact.artifact_key
+  `;
+  const result = new Map<string, DocumentArtifact[]>();
+  for (const row of rows) result.set(row.document_id, [...(result.get(row.document_id) ?? []), mapDocumentArtifact(row)]);
+  return result;
+};
+
+export const mapDocumentTemplate = (row: DocumentDbRow): DocumentTemplate => {
+  const renderer =
+    row.renderer_kind === "html" &&
+    typeof row.html === "string" &&
+    typeof row.number_template === "string" &&
+    typeof row.filename_template === "string"
+      ? {
+          kind: "html" as const,
+          body: row.html,
+          ...(typeof row.header_html === "string" ? { header: row.header_html } : {}),
+          ...(typeof row.footer_html === "string" ? { footer: row.footer_html } : {}),
+          ...(typeof row.page_css === "string" ? { css: row.page_css } : {}),
+          numberTemplate: row.number_template,
+          filenameTemplate: row.filename_template,
+        }
+      : row.renderer_kind === "profile" &&
+          typeof row.profile_id === "string" &&
+          typeof row.profile_version === "number" &&
+          typeof row.profile_input_template === "string"
+        ? { kind: "profile" as const, id: row.profile_id, version: row.profile_version, inputTemplate: row.profile_input_template }
+        : null;
+  if (!renderer) throw new Error("document template renderer invariant violated");
+  return {
+    id: row.id as string,
+    shortId: row.short_id as string,
+    tableId: row.table_id as string,
+    name: row.name as string,
+    description: (row.description as string | null) ?? null,
+    source: row.source as string,
+    renderer,
+    enabled: row.enabled as boolean,
+    position: row.position as number,
+    createdBy: (row.created_by as string | null) ?? null,
+    updatedBy: (row.updated_by as string | null) ?? null,
+    deletedAt: row.deleted_at ? (row.deleted_at as Date).toISOString() : null,
+    createdAt: (row.created_at as Date).toISOString(),
+    updatedAt: (row.updated_at as Date).toISOString(),
+  };
+};
 
 export const mapRecordSnapshot = (row: DocumentDbRow): RecordSnapshot => ({
   id: row.id as string,
@@ -40,8 +108,8 @@ export const mapRecordSnapshot = (row: DocumentDbRow): RecordSnapshot => ({
   baseId: row.base_id as string,
   tableId: row.table_id as string,
   recordId: row.record_id as string,
-  root: parseJsonbRow<Record<string, unknown>>(row.root, {}),
-  graph: parseJsonbRow<Record<string, unknown>>(row.graph, {}),
+  root: strictJsonObject(row.root, "record snapshot root"),
+  graph: strictJsonObject(row.graph, "record snapshot graph"),
   createdBy: (row.created_by as string | null) ?? null,
   createdAt: (row.created_at as Date).toISOString(),
 });
@@ -56,21 +124,13 @@ export const mapRecordSnapshotSummary = (row: DocumentDbRow): RecordSnapshotSumm
   createdAt: (row.created_at as Date).toISOString(),
 });
 
-export const mapDocumentRun = (row: DocumentDbRow): DocumentRun => {
-  if (
-    !row.artifact_file_id ||
-    row.artifact_mime_type !== "application/pdf" ||
-    !row.artifact_size_bytes ||
-    !row.artifact_sha256 ||
-    !row.renderer_version ||
-    !row.template_revision
-  ) {
-    throw new Error("document run artifact invariant violated");
-  }
+export const mapDocument = (row: DocumentDbRow, artifacts: DocumentArtifact[]): Document => {
+  const pdf = artifacts.find((artifact) => artifact.key === "pdf");
+  if (!pdf || pdf.mimeType !== "application/pdf" || pdf.filename !== row.filename) throw new Error("document artifact invariant violated");
   return {
     id: row.id as string,
     shortId: row.short_id as string,
-    templateId: (row.template_id as string | null) ?? null,
+    templateId: row.template_id as string,
     workflowRunId: (row.workflow_run_id as string | null) ?? null,
     snapshotId: row.snapshot_id as string,
     baseId: row.base_id as string,
@@ -79,25 +139,31 @@ export const mapDocumentRun = (row: DocumentDbRow): DocumentRun => {
     documentNumber: row.document_number as string,
     filename: (row.filename as string | null) ?? `${row.document_number as string}.pdf`,
     tags: Array.isArray(row.tags) ? (row.tags as string[]) : [],
-    templateSnapshot: parseJsonbRow<Record<string, unknown>>(row.template_snapshot, {}),
-    renderData: parseJsonbRow<Record<string, unknown>>(row.render_data, {}),
-    artifactFileId: row.artifact_file_id as string,
-    artifact: {
-      mimeType: "application/pdf",
-      sizeBytes: Number(row.artifact_size_bytes),
-      sha256: String(row.artifact_sha256),
-      rendererVersion: String(row.renderer_version),
-      templateRevision: String(row.template_revision),
-    },
-    generatedBy: (row.generated_by as string | null) ?? null,
-    generatedAt: (row.generated_at as Date).toISOString(),
+    templateSnapshot: strictJsonObject(row.template_snapshot, "Document template snapshot"),
+    renderData: strictJsonObject(row.render_data, "Document render data"),
+    artifacts,
+    profile:
+      typeof row.profile_id === "string" && typeof row.profile_version === "number"
+        ? { id: row.profile_id, version: row.profile_version }
+        : null,
+    validationStatus: row.validation_status === "valid" || row.validation_status === "warning" ? row.validation_status : null,
+    createdBy: (row.created_by as string | null) ?? null,
+    createdAt: (row.created_at as Date).toISOString(),
   };
+};
+
+export const hydrateDocuments = async (rows: DocumentDbRow[], db: SQL = sql): Promise<Document[]> => {
+  const artifacts = await loadDocumentArtifacts(
+    rows.map((row) => String(row.id)),
+    db,
+  );
+  return rows.map((row) => mapDocument(row, artifacts.get(String(row.id)) ?? []));
 };
 
 export const mapDocumentLink = (row: DocumentDbRow): DocumentLink => ({
   id: row.id as string,
   shortId: row.short_id as string,
-  documentRunId: row.document_run_id as string,
+  documentId: row.document_id as string,
   baseId: row.base_id as string,
   tableId: row.table_id as string,
   recordId: row.record_id as string,
@@ -117,25 +183,31 @@ export const summarizeDocumentTemplate = (template: DocumentTemplate): DocumentT
   tableId: template.tableId,
   name: template.name,
   description: template.description,
+  renderer:
+    template.renderer.kind === "html"
+      ? { kind: "html" }
+      : { kind: "profile", id: template.renderer.id, version: template.renderer.version },
   enabled: template.enabled,
   position: template.position,
   createdAt: template.createdAt,
   updatedAt: template.updatedAt,
 });
 
-export const summarizeDocumentRun = (run: DocumentRun): DocumentRunSummary => ({
-  id: run.id,
-  shortId: run.shortId,
-  templateId: run.templateId,
-  workflowRunId: run.workflowRunId,
-  snapshotId: run.snapshotId,
-  baseId: run.baseId,
-  tableId: run.tableId,
-  recordId: run.recordId,
-  documentNumber: run.documentNumber,
-  filename: run.filename,
-  tags: run.tags,
-  artifact: run.artifact,
-  generatedBy: run.generatedBy,
-  generatedAt: run.generatedAt,
+export const summarizeDocument = (document: Document): DocumentSummary => ({
+  id: document.id,
+  shortId: document.shortId,
+  templateId: document.templateId,
+  workflowRunId: document.workflowRunId,
+  snapshotId: document.snapshotId,
+  baseId: document.baseId,
+  tableId: document.tableId,
+  recordId: document.recordId,
+  documentNumber: document.documentNumber,
+  filename: document.filename,
+  tags: document.tags,
+  artifacts: document.artifacts,
+  profile: document.profile,
+  validationStatus: document.validationStatus,
+  createdBy: document.createdBy,
+  createdAt: document.createdAt,
 });

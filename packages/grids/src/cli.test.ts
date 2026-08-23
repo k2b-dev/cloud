@@ -55,7 +55,7 @@ const workflowId = "wf001A";
 const runId = "wrun01";
 const formId = "frm01A";
 const snapshotId = "snap01";
-const documentRunId = "run01A";
+const documentId = "run01A";
 const documentLinkId = "link01";
 const fileId = "file01";
 const accessId = "23232323-2323-4232-8232-232323232323";
@@ -114,7 +114,7 @@ const base = {
   id: baseId,
   name: "Bookshop",
   description: "Books and authors",
-  documentProfile: {},
+  documentDefaults: {},
   createdBy: null,
   deletedAt: null,
   createdAt: "2026-07-07T00:00:00.000Z",
@@ -238,12 +238,12 @@ const documentTemplate = {
   name: "Invoice",
   description: null,
   source: "from table Authors\nselect Name\nlimit 1",
-  html: "<p>{{ record.id }}</p>",
-  headerHtml: null,
-  footerHtml: null,
-  pageCss: null,
-  numberTemplate: "{{ template.id }}-{{ run.id }}",
-  filenameTemplate: "{{ document.number }}.pdf",
+  renderer: {
+    kind: "html" as const,
+    body: "<p>{{ record.id }}</p>",
+    numberTemplate: "{{ template.id }}-{{ document.id }}",
+    filenameTemplate: "{{ document.number }}.pdf",
+  },
   enabled: true,
   position: 0,
   createdBy: null,
@@ -298,24 +298,33 @@ const workflow = {
   updatedAt: "2026-07-07T00:00:00.000Z",
 };
 
-const documentRun = {
-  id: documentRunId,
+const document = {
+  id: documentId,
   templateId: documentTemplateId,
-  workflowRunId: null,
-  snapshotId,
   baseId,
   tableId,
   recordId,
-  documentNumber: "INV-20260707-0001",
+  number: "INV-20260707-0001",
   filename: "invoice.pdf",
   tags: ["invoice"],
-  generatedBy: null,
-  generatedAt: "2026-07-07T00:00:00.000Z",
+  createdBy: null,
+  createdAt: "2026-07-07T00:00:00.000Z",
+  renderer: { kind: "html" as const },
+  validationStatus: null,
+  artifacts: [
+    {
+      key: "pdf",
+      filename: "invoice.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 3,
+      sha256: "a".repeat(64),
+    },
+  ],
 };
 
 const documentLink = {
   id: documentLinkId,
-  documentRunId,
+  documentId,
   baseId,
   tableId,
   recordId,
@@ -401,7 +410,7 @@ describe("grids CLI", () => {
     const commands = commandGroups.flat();
     const paths = commands.map((item) => item.path.join(" "));
 
-    expect(commands).toHaveLength(177);
+    expect(commands).toHaveLength(180);
     expect(new Set(paths).size).toBe(paths.length);
 
     for (const path of paths) {
@@ -2283,7 +2292,13 @@ describe("grids CLI", () => {
   test("creates document templates for resolved tables", async () => {
     const { ctx, calls, lines } = createContext(
       ["document-templates", "create", baseId, "Authors"],
-      { name: "Invoice", source: documentTemplate.source, html: documentTemplate.html },
+      {
+        name: "Invoice",
+        source: documentTemplate.source,
+        html: documentTemplate.renderer.body,
+        "number-template": documentTemplate.renderer.numberTemplate,
+        "filename-template": documentTemplate.renderer.filenameTemplate,
+      },
       [jsonResponse(basePage), jsonResponse([table]), jsonResponse(documentTemplate, 201)],
     );
 
@@ -2298,7 +2313,7 @@ describe("grids CLI", () => {
     expect(JSON.parse(String(calls[2]?.init?.body))).toMatchObject({
       name: "Invoice",
       source: documentTemplate.source,
-      html: documentTemplate.html,
+      renderer: documentTemplate.renderer,
     });
     expect(lines).toEqual(["Created document template Invoice (doc01A)."]);
   });
@@ -2327,7 +2342,7 @@ describe("grids CLI", () => {
     try {
       const { ctx, calls, lines } = createContext(
         ["documents", "generate", baseId, "Authors", "Invoice"],
-        { record: recordId, tag: ["invoice"], out },
+        { record: recordId, tag: ["invoice"], "idempotency-key": "invoice-001", out },
         [jsonResponse(basePage), jsonResponse([table]), jsonResponse([documentTemplate]), new Response("PDF")],
       );
 
@@ -2340,17 +2355,82 @@ describe("grids CLI", () => {
         `/api/grids/documents/templates/${documentTemplateId}/generate`,
       ]);
       expect(calls[3]?.init?.method).toBe("POST");
-      expect(JSON.parse(String(calls[3]?.init?.body))).toEqual({ recordId, tags: ["invoice"] });
+      expect(JSON.parse(String(calls[3]?.init?.body))).toEqual({
+        recordId,
+        tags: ["invoice"],
+        idempotencyKey: "invoice-001",
+      });
       expect(lines).toEqual([`Wrote ${out}.`]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
+  test("lists installed renderers and Base Documents through the canonical endpoints", async () => {
+    const renderer = { id: "de.zugferd.en16931", version: 1, title: "German E-Invoice", description: "" };
+    const renderers = createContext(["documents", "renderers"], {}, [jsonResponse([renderer])]);
+    await gridsCli.run(renderers.ctx);
+    expect(renderers.calls.map((call) => call.path)).toEqual(["/api/grids/documents/renderers"]);
+    expect(renderers.tables[0]?.[0]).toMatchObject({ id: renderer.id, version: 1 });
+
+    const documents = createContext(
+      ["documents", "list", baseId],
+      { limit: "25" },
+      [jsonResponse(basePage), jsonResponse({ items: [document], cursor: "next", hasMore: true })],
+    );
+    await gridsCli.run(documents.ctx);
+    expect(documents.calls.map((call) => call.path)).toEqual([
+      `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
+      `/api/grids/documents/by-base/${baseId}?limit=25`,
+    ]);
+    expect(documents.tables[0]?.[0]).toMatchObject({ id: documentId, number: document.number });
+    expect(documents.lines).toContain("next cursor: next");
+  });
+
+  test("gets Documents and downloads a named artifact", async () => {
+    const get = createContext(["documents", "get", documentId], {}, [jsonResponse(document)], { output: "json" });
+    await gridsCli.run(get.ctx);
+    expect(get.calls.map((call) => call.path)).toEqual([`/api/grids/documents/${documentId}`]);
+    expect(get.jsonValues).toEqual([document]);
+
+    const dir = await mkdtemp(join(tmpdir(), "grids-cli-document-artifact-"));
+    const out = join(dir, "factur-x.xml");
+    try {
+      const download = createContext(
+        ["documents", "download-artifact", documentId, "structured"],
+        { out },
+        [new Response("<xml />")],
+      );
+      await gridsCli.run(download.ctx);
+      expect(download.calls.map((call) => call.path)).toEqual([
+        `/api/grids/documents/${documentId}/artifacts/structured`,
+      ]);
+      expect(await readFile(out, "utf8")).toBe("<xml />");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("requires an explicit stable retry key before generating a Document", async () => {
+    const { ctx, calls } = createContext(
+      ["documents", "generate", baseId, "Authors", "Invoice"],
+      { record: recordId },
+      [jsonResponse(basePage), jsonResponse([table]), jsonResponse([documentTemplate])],
+    );
+    await expect(gridsCli.run(ctx)).rejects.toThrow("Missing stable retry key");
+    expect(calls).toHaveLength(3);
+  });
+
   test("previews unsaved document template drafts as data", async () => {
     const { ctx, calls, jsonValues } = createContext(
       ["document-templates", "preview-draft-data", baseId, "Authors"],
-      { record: recordId, source: documentTemplate.source, html: documentTemplate.html },
+      {
+        record: recordId,
+        source: documentTemplate.source,
+        html: documentTemplate.renderer.body,
+        "number-template": documentTemplate.renderer.numberTemplate,
+        "filename-template": documentTemplate.renderer.filenameTemplate,
+      },
       [
         jsonResponse(basePage),
         jsonResponse([table]),
@@ -2370,7 +2450,7 @@ describe("grids CLI", () => {
     expect(JSON.parse(String(calls[2]?.init?.body))).toMatchObject({
       recordId,
       source: documentTemplate.source,
-      html: documentTemplate.html,
+      renderer: documentTemplate.renderer,
     });
     expect(jsonValues[0]).toMatchObject({ html: "<p>Rendered</p>" });
   });
@@ -2397,9 +2477,10 @@ describe("grids CLI", () => {
       expect(JSON.parse(String(calls[3]?.init?.body))).toMatchObject({
         recordId,
         source: documentTemplate.source,
-        html: "<p>{{ record.id }}</p>",
-        numberTemplate: documentTemplate.numberTemplate,
-        filenameTemplate: documentTemplate.filenameTemplate,
+        renderer: {
+          ...documentTemplate.renderer,
+          body: "<p>{{ record.id }}</p>",
+        },
       });
       expect(await readFile(out, "utf8")).toBe("PDF");
       expect(lines).toEqual([`Wrote ${out}.`]);
@@ -2408,16 +2489,16 @@ describe("grids CLI", () => {
     }
   });
 
-  test("lists and updates generated document runs", async () => {
+  test("lists generated Documents by template and exposes no mutable update command", async () => {
     const {
       ctx: listCtx,
       calls: listCalls,
       tables,
-    } = createContext(["documents", "list", baseId, "Authors", "Invoice"], { tag: ["invoice"], limit: "25" }, [
+    } = createContext(["documents", "list-by-template", baseId, "Authors", "Invoice"], { tag: ["invoice"], limit: "25" }, [
       jsonResponse(basePage),
       jsonResponse([table]),
       jsonResponse([documentTemplate]),
-      jsonResponse({ items: [documentRun], limit: 25 }),
+      jsonResponse({ items: [document], limit: 25 }),
     ]);
 
     await gridsCli.run(listCtx);
@@ -2426,36 +2507,25 @@ describe("grids CLI", () => {
       `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
       `/api/grids/tables/by-base/${baseId}`,
       `/api/grids/documents/templates/by-table/${tableId}/full`,
-      `/api/grids/documents/runs/by-template/${documentTemplateId}?tags=invoice&limit=25`,
+      `/api/grids/documents/by-template/${documentTemplateId}?tags=invoice&limit=25`,
     ]);
     expect(tables[0]?.[0]).toMatchObject({ id: "run01A", filename: "invoice.pdf" });
 
-    const {
-      ctx: updateCtx,
-      calls: updateCalls,
-      lines,
-    } = createContext(["documents", "update", documentRunId], { filename: "invoice-final.pdf", tag: ["final"] }, [
-      jsonResponse({ ...documentRun, filename: "invoice-final.pdf", tags: ["final"] }),
-    ]);
-
-    await gridsCli.run(updateCtx);
-
-    expect(updateCalls.map((call) => call.path)).toEqual([`/api/grids/documents/runs/${documentRunId}`]);
-    expect(updateCalls[0]?.init?.method).toBe("PATCH");
-    expect(JSON.parse(String(updateCalls[0]?.init?.body))).toEqual({ filename: "invoice-final.pdf", tags: ["final"] });
-    expect(lines).toEqual(["Updated document invoice-final.pdf."]);
+    const update = createContext(["documents", "update", documentId], {}, []);
+    await expect(gridsCli.run(update.ctx)).rejects.toThrow("Unknown grids command");
+    expect(update.calls).toHaveLength(0);
   });
 
   test("creates public links for generated documents", async () => {
     const { ctx, calls, lines } = createContext(
-      ["documents", "links", "create", documentRunId],
+      ["documents", "links", "create", documentId],
       { "expires-in": "7d", comment: "Customer download" },
       [jsonResponse({ link: documentLink, url: "https://cloud.test/d/doc-token" }, 201)],
     );
 
     await gridsCli.run(ctx);
 
-    expect(calls.map((call) => call.path)).toEqual([`/api/grids/documents/runs/${documentRunId}/links`]);
+    expect(calls.map((call) => call.path)).toEqual([`/api/grids/documents/${documentId}/links`]);
     expect(calls[0]?.init?.method).toBe("POST");
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ expiresIn: "7d", comment: "Customer download" });
     expect(lines).toEqual(["https://cloud.test/d/doc-token"]);

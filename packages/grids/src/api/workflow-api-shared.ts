@@ -8,7 +8,7 @@ import {
 import { compileWorkflow } from "@valentinkolb/cloud/workflows/language";
 import type { Context } from "hono";
 import { z } from "zod";
-import type { DocumentRunSummary, DocumentRunSummaryList } from "../contracts";
+import type { DocumentSummaryList } from "../contracts";
 import { get as getBase } from "../service/bases";
 import { listTemplatesForTable } from "../service/document-templates";
 import { listForBase as listEmailTemplatesForBase } from "../service/email-templates";
@@ -30,9 +30,9 @@ import type {
   WorkflowTriggerRuntimeState,
 } from "../workflows/contracts";
 import { gridsWorkflows } from "../workflows/module";
+import { projectDocuments } from "./documents-api-shared";
 import { currentWorkflowPrincipal, gateAt } from "./permissions";
 import {
-  PublicDocumentRunSummaryListSchema,
   PublicGridsWorkflowEmailDeliveryListSchema,
   PublicGridsWorkflowLauncherSchema,
   PublicGridsWorkflowRevisionListSchema,
@@ -42,6 +42,7 @@ import {
   PublicGridsWorkflowRunStatsSchema,
   PublicGridsWorkflowSchema,
   PublicGridsWorkflowStepRunListSchema,
+  PublicWorkflowDocumentListSchema,
   PublicWorkflowInvocationReceiptSchema,
   PublicWorkflowTriggerRuntimeStateSchema,
 } from "./workflow-public-contracts";
@@ -78,7 +79,7 @@ const gridsPlanResourceTypes: readonly PublicResourceType[] = [
   "view",
   "form",
   "documentTemplate",
-  "documentRun",
+  "document",
   "documentSnapshot",
   "documentLink",
   "emailTemplate",
@@ -398,41 +399,12 @@ export const toPublicWorkflowDeliveries = async (
   });
 };
 
-export const toPublicDocumentRunSummaries = async (page: DocumentRunSummaryList, load: PublicIdLoader = projectPublicIds) => {
-  const items = page.items as DocumentRunSummary[];
-  const maps = await loadPublicIdMaps(
-    {
-      documentTemplate: items.flatMap((item) => (item.templateId ? [item.templateId] : [])),
-      workflowRun: items.flatMap((item) => (item.workflowRunId ? [item.workflowRunId] : [])),
-      documentSnapshot: items.map((item) => item.snapshotId),
-      base: items.map((item) => item.baseId),
-      table: items.map((item) => item.tableId),
-      record: items.map((item) => item.recordId),
-    },
-    load,
-  );
-  return PublicDocumentRunSummaryListSchema.parse({
-    items: items.map((item) => ({
-      id: item.shortId,
-      templateId: optionalPublicId(maps, "documentTemplate", item.templateId),
-      workflowRunId: optionalPublicId(maps, "workflowRun", item.workflowRunId),
-      snapshotId: requiredPublicId(maps, "documentSnapshot", item.snapshotId),
-      baseId: requiredPublicId(maps, "base", item.baseId),
-      tableId: requiredPublicId(maps, "table", item.tableId),
-      recordId: requiredPublicId(maps, "record", item.recordId),
-      documentNumber: item.documentNumber,
-      filename: item.filename,
-      tags: item.tags,
-      artifact: item.artifact,
-      generatedBy: item.generatedBy,
-      generatedAt: item.generatedAt,
-    })),
-    ...(page.total === undefined ? {} : { total: page.total }),
-    ...(page.limit === undefined ? {} : { limit: page.limit }),
-    ...(page.offset === undefined ? {} : { offset: page.offset }),
-    ...(page.hasMore === undefined ? {} : { hasMore: page.hasMore }),
-    ...(page.nextOffset === undefined ? {} : { nextOffset: page.nextOffset }),
-    ...(page.nextCursor === undefined ? {} : { nextCursor: page.nextCursor }),
+export const toPublicDocuments = async (page: DocumentSummaryList) => {
+  return PublicWorkflowDocumentListSchema.parse({
+    items: await projectDocuments(page.items),
+    total: page.total ?? page.items.length,
+    hasMore: page.hasMore ?? false,
+    nextOffset: page.nextOffset ?? null,
   });
 };
 

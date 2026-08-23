@@ -17,71 +17,71 @@ import type { AccessEntry } from "@valentinkolb/cloud/contracts";
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { PublicBase } from "../../../api/public-dto";
-import type { DocumentProfile } from "../../../contracts";
+import type { DocumentDefaults } from "../../../contracts";
 import { createDraft } from "../editor-draft";
 import { ScopedPermissionEditor } from "../permissions/ScopedPermissionEditor";
 import { errorMessage } from "../utils/api-helpers";
 
-type DocumentProfileDraft = Required<Record<keyof DocumentProfile, string>>;
+type DocumentDefaultsDraft = Required<Record<keyof DocumentDefaults, string>>;
 
-const normalizeDocumentProfile = (profile: DocumentProfile = {}): DocumentProfileDraft => ({
-  legalName: profile.legalName ?? "",
-  senderLine: profile.senderLine ?? "",
-  address: profile.address ?? "",
-  department: profile.department ?? "",
-  contactEmail: profile.contactEmail ?? "",
-  phone: profile.phone ?? "",
-  url: profile.url ?? "",
-  taxId: profile.taxId ?? "",
-  registration: profile.registration ?? "",
-  bankName: profile.bankName ?? "",
-  iban: profile.iban ?? "",
-  bic: profile.bic ?? "",
-  paymentTerms: profile.paymentTerms ?? "",
-  footerText: profile.footerText ?? "",
+const normalizeDocumentDefaults = (defaults: DocumentDefaults = {}): DocumentDefaultsDraft => ({
+  legalName: defaults.legalName ?? "",
+  senderLine: defaults.senderLine ?? "",
+  address: defaults.address ?? "",
+  department: defaults.department ?? "",
+  contactEmail: defaults.contactEmail ?? "",
+  phone: defaults.phone ?? "",
+  url: defaults.url ?? "",
+  taxId: defaults.taxId ?? "",
+  registration: defaults.registration ?? "",
+  bankName: defaults.bankName ?? "",
+  iban: defaults.iban ?? "",
+  bic: defaults.bic ?? "",
+  paymentTerms: defaults.paymentTerms ?? "",
+  footerText: defaults.footerText ?? "",
 });
 
-const cleanDocumentProfile = (draft: DocumentProfileDraft): DocumentProfile => {
+const cleanDocumentDefaults = (draft: DocumentDefaultsDraft): DocumentDefaults => {
   const entries = Object.entries(draft)
     .map(([key, value]) => [key, value.trim()] as const)
     .filter(([, value]) => value.length > 0);
-  return Object.fromEntries(entries) as DocumentProfile;
+  return Object.fromEntries(entries) as DocumentDefaults;
 };
 
-export function DocumentProfileForm(props: {
-  base: { id: string; documentProfile: DocumentProfile };
+export function DocumentDefaultsForm(props: {
+  base: { id: string; documentDefaults: DocumentDefaults };
   onDirtyChange: (dirty: boolean) => void;
   onSavingChange: (saving: boolean) => void;
 }) {
-  const initial = normalizeDocumentProfile(props.base.documentProfile);
+  const initial = normalizeDocumentDefaults(props.base.documentDefaults);
   const [saved, setSaved] = createSignal(initial);
   const draft = createDraft(initial);
-  const patch = (partial: Partial<DocumentProfileDraft>) => draft.patch(partial);
+  const patch = (partial: Partial<DocumentDefaultsDraft>) => draft.patch(partial);
   const value =
-    <K extends keyof DocumentProfileDraft>(key: K) =>
+    <K extends keyof DocumentDefaultsDraft>(key: K) =>
     () =>
       draft.draft()[key];
 
   const changeCount = createMemo(
-    () => (Object.keys(saved()) as Array<keyof DocumentProfileDraft>).filter((key) => draft.draft()[key] !== saved()[key]).length,
+    () => (Object.keys(saved()) as Array<keyof DocumentDefaultsDraft>).filter((key) => draft.draft()[key] !== saved()[key]).length,
   );
   createEffect(() => props.onDirtyChange(changeCount() > 0));
   onCleanup(() => props.onDirtyChange(false));
 
-  const mutation = mutations.create<PublicBase, DocumentProfile>({
-    mutation: async (documentProfile, { abortSignal }) => {
+  const mutation = mutations.create<PublicBase, DocumentDefaults>({
+    mutation: async (documentDefaults, { abortSignal }) => {
       const res = await apiClient.bases[":baseId"].$patch(
         {
           param: { baseId: props.base.id },
-          json: { documentProfile },
+          json: { documentDefaults },
         },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await errorMessage(res, "Failed to save document profile"));
+      if (!res.ok) throw new Error(await errorMessage(res, "Failed to save document defaults"));
       return res.json();
     },
     onSuccess: (next) => {
-      const snapshot = normalizeDocumentProfile(next.documentProfile);
+      const snapshot = normalizeDocumentDefaults(next.documentDefaults);
       setSaved(snapshot);
       draft.markSaved(snapshot);
       toast.success("Document details saved");
@@ -232,7 +232,7 @@ export function DocumentProfileForm(props: {
           changeCount={changeCount}
           loading={mutation.loading}
           onDiscard={draft.reset}
-          onSave={() => mutation.mutate(cleanDocumentProfile(draft.draft()))}
+          onSave={() => mutation.mutate(cleanDocumentDefaults(draft.draft()))}
         />
       </SettingsModal.Footer>
     </>

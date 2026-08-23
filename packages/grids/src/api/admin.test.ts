@@ -39,7 +39,7 @@ const base = {
   shortId: basePublicId,
   name: "Admin Base",
   description: null,
-  documentProfile: {},
+  documentDefaults: {},
   createdBy: user.id,
   deletedAt: null,
   createdAt: "2026-01-01T00:00:00.000Z",

@@ -59,7 +59,7 @@ services:
       - valkey
 
   gotenberg:
-    image: docker.io/gotenberg/gotenberg:8
+    image: docker.io/gotenberg/gotenberg:8.36.0
     container_name: gotenberg
     restart: unless-stopped
     ports:

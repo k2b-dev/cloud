@@ -1,11 +1,11 @@
 import { escapeLikePattern, toPgUuidArray } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
-import type { DocumentRun, DocumentRunFolder, DocumentRunSummary, DocumentRunSummaryList } from "../contracts";
-import { type DocumentDbRow, mapDocumentRun, summarizeDocumentRun } from "./document-mappers";
-import { decodeDocumentRunCursor, encodeDocumentRunCursor, normalizeDocumentTags } from "./document-run-values";
+import type { Document, DocumentFolder, DocumentSummary, DocumentSummaryList } from "../contracts";
+import { type DocumentDbRow, hydrateDocuments, summarizeDocument } from "./document-mappers";
+import { decodeDocumentCursor, encodeDocumentCursor, normalizeDocumentTags } from "./document-values";
 
-type DocumentRunPage = {
-  items: DocumentRun[];
+type DocumentPage = {
+  items: Document[];
   total: number;
   limit: number;
   offset: number;
@@ -14,30 +14,30 @@ type DocumentRunPage = {
   nextCursor: string | null;
 };
 
-type DocumentRunBrowsePage = {
+type DocumentBrowsePage = {
   path: string[];
-  folders: DocumentRunFolder[];
-  items: DocumentRun[];
+  folders: DocumentFolder[];
+  items: Document[];
   total?: number;
   limit?: number;
   hasMore?: boolean;
   nextCursor?: string | null;
 };
 
-export type DocumentRunReadAuthorizer = (run: Pick<DocumentRun, "baseId" | "tableId" | "templateId">) => Promise<boolean>;
+export type DocumentReadAuthorizer = (document: Pick<Document, "baseId" | "tableId" | "templateId">) => Promise<boolean>;
 
 type WorkflowRunDocumentScope = {
   tableId: string;
-  templateId: string | null;
+  templateId: string;
 };
 
 export const loadReadableWorkflowRunDocumentScopes = async (
   workflowRunId: string,
-  canRead: DocumentRunReadAuthorizer,
+  canRead: DocumentReadAuthorizer,
 ): Promise<WorkflowRunDocumentScope[]> => {
-  const scopes = await sql<Array<{ base_id: string; table_id: string; template_id: string | null }>>`
+  const scopes = await sql<Array<{ base_id: string; table_id: string; template_id: string }>>`
     SELECT DISTINCT base_id, table_id, template_id
-    FROM grids.document_runs
+    FROM grids.documents
     WHERE workflow_run_id = ${workflowRunId}::uuid
   `;
   return (
@@ -60,71 +60,96 @@ export const loadReadableWorkflowRunDocumentScopes = async (
 export const workflowRunDocumentAccessWhere = (allowed: WorkflowRunDocumentScope[]) => {
   if (allowed.length === 0) return sql`FALSE`;
   return allowed
-    .map((scope) =>
-      scope.templateId
-        ? sql`(table_id = ${scope.tableId}::uuid AND template_id = ${scope.templateId}::uuid)`
-        : sql`(table_id = ${scope.tableId}::uuid AND template_id IS NULL)`,
-    )
+    .map((scope) => sql`(table_id = ${scope.tableId}::uuid AND template_id = ${scope.templateId}::uuid)`)
     .reduce((where, scope) => sql`${where} OR ${scope}`);
 };
 
-export const listRunsForRecord = async (tableId: string, recordId: string, limit = 100): Promise<DocumentRun[]> => {
-  const cap = Math.min(Math.max(limit, 1), 500);
+export const listDocuments = async (params: {
+  baseId: string;
+  tableId?: string;
+  recordId?: string;
+  templateId?: string;
+  limit?: number;
+  cursor?: string | null;
+}): Promise<{ items: Document[]; nextCursor: string | null; hasMore: boolean }> => {
+  const limit = Math.min(Math.max(params.limit ?? 100, 1), 500);
+  const cursor = decodeDocumentCursor(params.cursor);
   const rows = await sql<DocumentDbRow[]>`
-    SELECT * FROM grids.document_runs
-    WHERE table_id = ${tableId}::uuid AND record_id = ${recordId}::uuid
-    ORDER BY generated_at DESC, id DESC
-    LIMIT ${cap}
+    SELECT * FROM grids.documents
+    WHERE base_id = ${params.baseId}::uuid
+      AND (${params.tableId ?? null}::uuid IS NULL OR table_id = ${params.tableId ?? null}::uuid)
+      AND (${params.recordId ?? null}::uuid IS NULL OR record_id = ${params.recordId ?? null}::uuid)
+      AND (${params.templateId ?? null}::uuid IS NULL OR template_id = ${params.templateId ?? null}::uuid)
+      AND (
+        ${cursor?.createdAt ?? null}::timestamptz IS NULL
+        OR (created_at, id) < (${cursor?.createdAt ?? null}::timestamptz, ${cursor?.id ?? null}::uuid)
+      )
+    ORDER BY created_at DESC, id DESC
+    LIMIT ${limit + 1}
   `;
-  return rows.map(mapDocumentRun);
+  const hasMore = rows.length > limit;
+  const items = await hydrateDocuments(rows.slice(0, limit));
+  const last = items.at(-1);
+  return { items, nextCursor: hasMore && last ? encodeDocumentCursor(last) : null, hasMore };
 };
 
-export const listRunSummariesForRecordByTemplates = async (
+export const listDocumentsForBase = (params: { baseId: string; limit?: number; cursor?: string | null }) => listDocuments(params);
+
+export const listDocumentsForRecord = (params: {
+  baseId: string;
+  tableId: string;
+  recordId: string;
+  templateId?: string;
+  limit?: number;
+  cursor?: string | null;
+}) => listDocuments(params);
+
+export const listDocumentSummariesForRecordByTemplates = async (
   tableId: string,
   recordId: string,
   templateIds: string[],
   limit = 100,
-): Promise<DocumentRunSummary[]> => {
+): Promise<DocumentSummary[]> => {
   if (templateIds.length === 0) return [];
   const cap = Math.min(Math.max(limit, 1), 100);
   const rows = await sql<DocumentDbRow[]>`
     SELECT *
-    FROM grids.document_runs
+    FROM grids.documents
     WHERE table_id = ${tableId}::uuid
       AND record_id = ${recordId}::uuid
       AND template_id = ANY(${toPgUuidArray(templateIds)}::uuid[])
-    ORDER BY generated_at DESC, id DESC
+    ORDER BY created_at DESC, id DESC
     LIMIT ${cap}
   `;
-  return rows.map(mapDocumentRun).map(summarizeDocumentRun);
+  return (await hydrateDocuments(rows)).map(summarizeDocument);
 };
 
-export const listRunsForWorkflowRun = async (
+export const listDocumentsForWorkflow = async (
   workflowRunId: string,
   params: { limit?: number; offset?: number },
-  canRead: DocumentRunReadAuthorizer,
-): Promise<DocumentRunSummaryList> => {
+  canRead: DocumentReadAuthorizer,
+): Promise<DocumentSummaryList> => {
   const limit = Math.min(Math.max(params.limit ?? 100, 1), 500);
   const offset = Math.max(params.offset ?? 0, 0);
   const accessWhere = workflowRunDocumentAccessWhere(await loadReadableWorkflowRunDocumentScopes(workflowRunId, canRead));
   const [{ count } = { count: 0 }] = await sql<{ count: number }[]>`
     SELECT count(*)::int AS count
-    FROM grids.document_runs
+    FROM grids.documents
     WHERE workflow_run_id = ${workflowRunId}::uuid
       AND (${accessWhere})
   `;
   const rows = await sql<DocumentDbRow[]>`
-    SELECT * FROM grids.document_runs
+    SELECT * FROM grids.documents
     WHERE workflow_run_id = ${workflowRunId}::uuid
       AND (${accessWhere})
-    ORDER BY generated_at DESC, id DESC
+    ORDER BY created_at DESC, id DESC
     LIMIT ${limit}
     OFFSET ${offset}
   `;
   const nextOffset = offset + rows.length;
   const total = count ?? 0;
   return {
-    items: rows.map((row) => summarizeDocumentRun(mapDocumentRun(row))),
+    items: (await hydrateDocuments(rows)).map(summarizeDocument),
     total,
     limit,
     offset,
@@ -133,7 +158,7 @@ export const listRunsForWorkflowRun = async (
   };
 };
 
-const documentRunWhere = (params: {
+const documentWhere = (params: {
   templateId: string;
   q?: string | null;
   tags?: string[];
@@ -155,12 +180,12 @@ const documentRunWhere = (params: {
   }
   const tags = normalizeDocumentTags(params.tags);
   if (tags.length > 0) conditions.push(sql`tags @> ${sql.array(tags, "TEXT")}`);
-  if (params.year) conditions.push(sql`EXTRACT(YEAR FROM generated_at AT TIME ZONE ${timeZone})::int = ${params.year}`);
-  if (params.month) conditions.push(sql`EXTRACT(MONTH FROM generated_at AT TIME ZONE ${timeZone})::int = ${params.month}`);
+  if (params.year) conditions.push(sql`EXTRACT(YEAR FROM created_at AT TIME ZONE ${timeZone})::int = ${params.year}`);
+  if (params.month) conditions.push(sql`EXTRACT(MONTH FROM created_at AT TIME ZONE ${timeZone})::int = ${params.month}`);
   return conditions.reduce((acc, cur) => sql`${acc} AND ${cur}`);
 };
 
-export const listRunsForTemplate = async (params: {
+export const listDocumentsForTemplate = async (params: {
   templateId: string;
   q?: string | null;
   tags?: string[];
@@ -170,27 +195,27 @@ export const listRunsForTemplate = async (params: {
   year?: number | null;
   month?: number | null;
   timeZone?: string | null;
-}): Promise<DocumentRunPage> => {
+}): Promise<DocumentPage> => {
   const limit = Math.min(Math.max(params.limit ?? 200, 1), 500);
   const offset = Math.max(params.offset ?? 0, 0);
-  const cursor = decodeDocumentRunCursor(params.cursor);
-  const baseWhere = documentRunWhere(params);
-  const where = cursor ? sql`${baseWhere} AND (generated_at, id) < (${cursor.generatedAt}::timestamptz, ${cursor.id}::uuid)` : baseWhere;
+  const cursor = decodeDocumentCursor(params.cursor);
+  const baseWhere = documentWhere(params);
+  const where = cursor ? sql`${baseWhere} AND (created_at, id) < (${cursor.createdAt}::timestamptz, ${cursor.id}::uuid)` : baseWhere;
   const [countRow] = await sql<Array<{ total: number | string }>>`
     SELECT COUNT(*)::int AS total
-    FROM grids.document_runs
+    FROM grids.documents
     WHERE ${baseWhere}
   `;
   const rows = await sql<DocumentDbRow[]>`
     SELECT *
-    FROM grids.document_runs
+    FROM grids.documents
     WHERE ${where}
-    ORDER BY generated_at DESC, id DESC
+    ORDER BY created_at DESC, id DESC
     LIMIT ${limit + 1}
     OFFSET ${cursor ? 0 : offset}
   `;
   const hasMore = rows.length > limit;
-  const items = rows.slice(0, limit).map(mapDocumentRun);
+  const items = await hydrateDocuments(rows.slice(0, limit));
   const total = Number(countRow?.total ?? items.length);
   const nextOffset = offset + items.length;
   const last = items.at(-1);
@@ -201,7 +226,7 @@ export const listRunsForTemplate = async (params: {
     offset: cursor ? 0 : offset,
     hasMore,
     nextOffset: hasMore && !cursor ? nextOffset : null,
-    nextCursor: hasMore && last ? encodeDocumentRunCursor(last) : null,
+    nextCursor: hasMore && last ? encodeDocumentCursor(last) : null,
   };
 };
 
@@ -213,7 +238,7 @@ const runFolderPath = (path: readonly string[] | null | undefined): string[] =>
 
 const monthKey = (month: number): string => String(month).padStart(2, "0");
 
-export const browseRunsForTemplate = async (params: {
+export const browseDocumentsForTemplate = async (params: {
   templateId: string;
   q?: string | null;
   tags?: string[];
@@ -222,13 +247,13 @@ export const browseRunsForTemplate = async (params: {
   cursor?: string | null;
   timeZone?: string | null;
   mode?: "list" | "folders";
-}): Promise<DocumentRunBrowsePage> => {
+}): Promise<DocumentBrowsePage> => {
   const path = runFolderPath(params.path);
   const q = params.q?.trim() ?? "";
   if (params.mode === "list" || q || path.length >= 2) {
     const year = path[0] ? Number(path[0]) : null;
     const month = path[1] ? Number(path[1]) : null;
-    const page = await listRunsForTemplate({
+    const page = await listDocumentsForTemplate({
       templateId: params.templateId,
       q,
       tags: params.tags,
@@ -250,11 +275,11 @@ export const browseRunsForTemplate = async (params: {
   }
 
   const timeZone = params.timeZone || "UTC";
-  const where = documentRunWhere({ templateId: params.templateId, tags: params.tags, timeZone });
+  const where = documentWhere({ templateId: params.templateId, tags: params.tags, timeZone });
   if (path.length === 0) {
     const rows = await sql<Array<{ year: number | string; count: number | string }>>`
-      SELECT EXTRACT(YEAR FROM generated_at AT TIME ZONE ${timeZone})::int AS year, COUNT(*)::int AS count
-      FROM grids.document_runs
+      SELECT EXTRACT(YEAR FROM created_at AT TIME ZONE ${timeZone})::int AS year, COUNT(*)::int AS count
+      FROM grids.documents
       WHERE ${where}
       GROUP BY year
       ORDER BY year DESC
@@ -271,10 +296,10 @@ export const browseRunsForTemplate = async (params: {
 
   const year = Number(path[0]);
   if (!Number.isInteger(year)) return { path: [], folders: [], items: [] };
-  const yearWhere = documentRunWhere({ templateId: params.templateId, tags: params.tags, year, timeZone });
+  const yearWhere = documentWhere({ templateId: params.templateId, tags: params.tags, year, timeZone });
   const rows = await sql<Array<{ month: number | string; count: number | string }>>`
-    SELECT EXTRACT(MONTH FROM generated_at AT TIME ZONE ${timeZone})::int AS month, COUNT(*)::int AS count
-    FROM grids.document_runs
+    SELECT EXTRACT(MONTH FROM created_at AT TIME ZONE ${timeZone})::int AS month, COUNT(*)::int AS count
+    FROM grids.documents
     WHERE ${yearWhere}
     GROUP BY month
     ORDER BY month DESC

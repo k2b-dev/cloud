@@ -1,9 +1,9 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, IconButton, Placeholder, Tag } from "@k2b/ui";
 import { For, Show } from "solid-js";
-import { documentRunActionState } from "./document-browser-model";
+import { documentActionState } from "./document-browser-model";
 import { formatDocumentRelativeTime } from "./document-workspace-utils";
-import type { PublicDocumentRunFolder, PublicDocumentRunSummary } from "./public-document-types";
+import type { PublicDocument, PublicDocumentFolder } from "./public-document-types";
 
 export type DocumentBreadcrumb = { label: string; path: string[] };
 
@@ -12,22 +12,22 @@ type Props = {
   error: Error | undefined;
   mode: "list" | "folders";
   searching: boolean;
-  folders: PublicDocumentRunFolder[];
-  runs: PublicDocumentRunSummary[];
+  folders: PublicDocumentFolder[];
+  documents: PublicDocument[];
   breadcrumbs: DocumentBreadcrumb[];
   emptyText: string;
   hasMore: boolean;
   loadingMore: boolean;
-  busyRunId: string | null;
+  busyDocumentId: string | null;
   canWrite: boolean;
   dateConfig?: DateContext;
-  folderTitle: (folder: PublicDocumentRunFolder) => string;
+  folderTitle: (folder: PublicDocumentFolder) => string;
   onBreadcrumb: (path: string[]) => void;
-  onFolder: (folder: PublicDocumentRunFolder) => void;
-  onRun: (run: PublicDocumentRunSummary) => void;
-  onEdit: (run: PublicDocumentRunSummary) => void;
-  onLink: (run: PublicDocumentRunSummary) => void;
-  onDownload: (run: PublicDocumentRunSummary) => void;
+  onFolder: (folder: PublicDocumentFolder) => void;
+  onDocument: (document: PublicDocument) => void;
+  onEdit: (document: PublicDocument) => void;
+  onLink: (document: PublicDocument) => void;
+  onDownload: (document: PublicDocument) => void;
   onLoadMore: () => void;
 };
 
@@ -48,8 +48,8 @@ function DocumentTags(props: { tags: string[] }) {
 }
 
 export default function DocumentBrowser(props: Props) {
-  const renderRunActions = (run: PublicDocumentRunSummary) => {
-    const state = () => documentRunActionState(props.canWrite, props.busyRunId, run.id);
+  const renderDocumentActions = (document: PublicDocument) => {
+    const state = () => documentActionState(props.canWrite, props.busyDocumentId, document.id);
     return (
       <div class="flex shrink-0 items-center gap-1">
         <Show when={state().showEdit}>
@@ -57,13 +57,13 @@ export default function DocumentBrowser(props: Props) {
             variant="ghost"
             size="sm"
             class="shrink-0 text-dimmed hover:text-secondary"
-            label="Edit document metadata"
+            label="Document details"
             onClick={(event) => {
               event.stopPropagation();
-              props.onEdit(run);
+              props.onEdit(document);
             }}
           >
-            <i class="ti ti-pencil" />
+            <i class="ti ti-info-circle" />
           </IconButton>
           <IconButton
             variant="ghost"
@@ -72,7 +72,7 @@ export default function DocumentBrowser(props: Props) {
             label="Create public link"
             onClick={(event) => {
               event.stopPropagation();
-              props.onLink(run);
+              props.onLink(document);
             }}
           >
             <i class="ti ti-link" />
@@ -85,7 +85,7 @@ export default function DocumentBrowser(props: Props) {
           label="Download document"
           onClick={(event) => {
             event.stopPropagation();
-            props.onDownload(run);
+            props.onDownload(document);
           }}
           disabled={state().downloadBusy}
         >
@@ -137,7 +137,7 @@ export default function DocumentBrowser(props: Props) {
             </Show>
             <div class="min-h-0 flex-1 overflow-auto p-1">
               <Show
-                when={props.folders.length > 0 || props.runs.length > 0}
+                when={props.folders.length > 0 || props.documents.length > 0}
                 fallback={<Placeholder class="h-full" title={props.emptyText} />}
               >
                 <Show when={props.mode === "folders" && !props.searching && props.folders.length > 0}>
@@ -162,24 +162,24 @@ export default function DocumentBrowser(props: Props) {
                     )}
                   </For>
                 </Show>
-                <Show when={props.mode !== "folders" || props.runs.length > 0 || props.searching}>
-                  <For each={props.runs}>
-                    {(run) => (
+                <Show when={props.mode !== "folders" || props.documents.length > 0 || props.searching}>
+                  <For each={props.documents}>
+                    {(document) => (
                       <div class="grid w-full grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 rounded-[var(--ui-radius-control)] px-3 py-2 text-sm transition-colors hover:bg-[var(--ui-paper-highlighted)]">
-                        <button type="button" class="min-w-0 text-left" onClick={() => props.onRun(run)}>
+                        <button type="button" class="min-w-0 text-left" onClick={() => props.onDocument(document)}>
                           <div class="flex min-w-0 items-center gap-2">
                             <i class="ti ti-file-type-pdf shrink-0 text-dimmed" />
-                            <span class="truncate font-medium text-primary">{run.filename}</span>
+                            <span class="truncate font-medium text-primary">{document.filename}</span>
                           </div>
                           <div class="mt-1 flex min-w-0 items-center gap-2 text-xs text-dimmed">
-                            <span class="font-mono">{run.documentNumber}</span>
-                            <DocumentTags tags={run.tags} />
+                            <span class="font-mono">{document.number}</span>
+                            <DocumentTags tags={document.tags} />
                           </div>
                         </button>
                         <span class="hidden text-xs text-dimmed sm:block">
-                          {formatDocumentRelativeTime(run.generatedAt, props.dateConfig)}
+                          {formatDocumentRelativeTime(document.createdAt, props.dateConfig)}
                         </span>
-                        {renderRunActions(run)}
+                        {renderDocumentActions(document)}
                       </div>
                     )}
                   </For>

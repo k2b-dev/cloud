@@ -8,7 +8,7 @@ import { createDocumentsApi } from "./documents";
 
 const baseId = "11111111-1111-4111-8111-111111111111";
 const tableId = "22222222-2222-4222-8222-222222222222";
-const runId = "33333333-3333-4333-8333-333333333333";
+const documentId = "33333333-3333-4333-8333-333333333333";
 const linkId = "44444444-4444-4444-8444-444444444444";
 const userId = "55555555-5555-4555-8555-555555555555";
 const otherUserId = "66666666-6666-4666-8666-666666666666";
@@ -16,7 +16,7 @@ const recordId = "77777777-7777-4777-8777-777777777777";
 const templateId = "88888888-8888-4888-8888-888888888888";
 const basePublicId = "BASE01";
 const tablePublicId = "TABL01";
-const runPublicId = "DRUN01";
+const documentPublicId = "DOC001";
 const linkPublicId = "LINK01";
 const recordPublicId = "RECD01";
 const templatePublicId = "TMPL01";
@@ -24,7 +24,7 @@ const templatePublicId = "TMPL01";
 const publicToInternal = new Map([
   [basePublicId, baseId],
   [tablePublicId, tableId],
-  [runPublicId, runId],
+  [documentPublicId, documentId],
   [linkPublicId, linkId],
   [recordPublicId, recordId],
   [templatePublicId, templateId],
@@ -60,12 +60,12 @@ const user: User = {
   ipa: null,
 };
 
-type RunFixture = { id: string; templateId: string | null; baseId: string; tableId: string };
-const run: RunFixture = { id: runId, templateId: null, baseId, tableId };
+type DocumentFixture = { id: string; templateId: string; baseId: string; tableId: string };
+const document: DocumentFixture = { id: documentId, templateId: "99999999-9999-4999-8999-999999999999", baseId, tableId };
 const link: DocumentLink = {
   id: linkId,
   shortId: linkPublicId,
-  documentRunId: runId,
+  documentId,
   baseId,
   tableId,
   recordId,
@@ -79,10 +79,10 @@ const link: DocumentLink = {
   accessCount: 0,
 };
 const revokedLink = { ...link, revokedAt: "2026-07-11T09:00:00.000Z", revokedBy: userId };
-const publicLink = ({ shortId: _shortId, ...value }: DocumentLink) => ({
+const publicLink = ({ shortId: _shortId, documentId: _documentId, ...value }: DocumentLink) => ({
   ...value,
   id: linkPublicId,
-  documentRunId: runPublicId,
+  documentId: documentPublicId,
   baseId: basePublicId,
   tableId: tablePublicId,
   recordId: recordPublicId,
@@ -93,7 +93,7 @@ const forbiddenResponse = {
 };
 
 let permissionLevel: PermissionLevel = "write";
-let currentRun: typeof run | null = run;
+let currentDocument: typeof document | null = document;
 let currentLink: typeof link | null = link;
 let createInput: unknown;
 let revokeInput: unknown;
@@ -119,15 +119,15 @@ const postJson = (body?: unknown): RequestInit => ({
 describe("document link routes", () => {
   beforeEach(() => {
     permissionLevel = "write";
-    currentRun = run;
+    currentDocument = document;
     currentLink = link;
     createInput = undefined;
     revokeInput = undefined;
     publicUrlToken = null;
     permissionLoadInput = undefined;
     permissionTarget = undefined;
-    spyOn(gridsService.document, "getRun").mockImplementation(async (id) => (id === runId ? currentRun : null) as never);
-    spyOn(gridsService.document, "listDocumentLinksForRun").mockImplementation(async () => [link] as never);
+    spyOn(gridsService.document, "getDocument").mockImplementation(async (id) => (id === documentId ? currentDocument : null) as never);
+    spyOn(gridsService.document, "listDocumentLinks").mockImplementation(async () => [link] as never);
     spyOn(gridsService.document, "createDocumentLink").mockImplementation(async (input) => {
       createInput = input;
       return { ok: true, data: { link, token: "gdl_configured-token" } } as never;
@@ -154,33 +154,33 @@ describe("document link routes", () => {
   afterEach(() => mock.restore());
 
   for (const method of ["GET", "POST"] as const) {
-    test(`${method} run links returns the exact 404 body for an invalid run id`, async () => {
+    test(`${method} document links returns the exact 404 body for an invalid document id`, async () => {
       const response = await app().request(
-        documentsPath("/runs/not-a-run-id/links"),
+        documentsPath("/not-a-document-id/links"),
         method === "POST" ? postJson({ expiresIn: "30d" }) : undefined,
       );
 
       expect(response.status).toBe(404);
-      expect(await response.json()).toEqual({ message: "Document run not found" });
+      expect(await response.json()).toEqual({ message: "Document not found" });
     });
 
-    test(`${method} run links returns the exact 404 body for an unknown run`, async () => {
-      currentRun = null;
+    test(`${method} document links returns the exact 404 body for an unknown document`, async () => {
+      currentDocument = null;
       const response = await app().request(
-        documentsPath(`/runs/${runPublicId}/links`),
+        documentsPath(`/${documentPublicId}/links`),
         method === "POST" ? postJson({ expiresIn: "30d" }) : undefined,
       );
 
       expect(response.status).toBe(404);
-      expect(await response.json()).toEqual({ message: "Document run not found" });
+      expect(await response.json()).toEqual({ message: "Document not found" });
     });
   }
 
-  test("uses the owning base permission for a run whose template no longer loads", async () => {
-    currentRun = { ...run, templateId };
+  test("uses the owning base permission for a document whose template no longer loads", async () => {
+    currentDocument = { ...document, templateId };
     permissionLevel = "read";
 
-    const response = await app().request(documentsPath(`/runs/${runPublicId}/links`));
+    const response = await app().request(documentsPath(`/${documentPublicId}/links`));
 
     expect(response.status).toBe(403);
     expect(permissionLoadInput).toMatchObject({ baseId });
@@ -188,10 +188,10 @@ describe("document link routes", () => {
   });
 
   for (const method of ["GET", "POST"] as const) {
-    test(`${method} run links requires effective write permission`, async () => {
+    test(`${method} document links requires effective write permission`, async () => {
       permissionLevel = "read";
       const response = await app().request(
-        documentsPath(`/runs/${runPublicId}/links`),
+        documentsPath(`/${documentPublicId}/links`),
         method === "POST" ? postJson({ expiresIn: "30d" }) : undefined,
       );
 
@@ -201,7 +201,7 @@ describe("document link routes", () => {
   }
 
   test("lists links with write permission", async () => {
-    const response = await app().request(documentsPath(`/runs/${runPublicId}/links`));
+    const response = await app().request(documentsPath(`/${documentPublicId}/links`));
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ items: [publicLink(link)] });
@@ -209,7 +209,7 @@ describe("document link routes", () => {
 
   test("creates links with write permission and returns the configured public URL", async () => {
     const response = await app().request(
-      documentsPath(`/runs/${runPublicId}/links`),
+      documentsPath(`/${documentPublicId}/links`),
       postJson({ expiresIn: "30d", comment: " External review " }),
     );
 
@@ -220,7 +220,7 @@ describe("document link routes", () => {
     });
     expect(publicUrlToken).toBe("gdl_configured-token");
     expect(createInput).toEqual({
-      run,
+      document,
       input: { expiresIn: "30d", comment: "External review" },
       actorId: userId,
       ip: "203.0.113.7",
@@ -228,7 +228,7 @@ describe("document link routes", () => {
     });
   });
 
-  test("revoke returns exact 404 bodies for missing links and runs", async () => {
+  test("revoke returns exact 404 bodies for missing links and documents", async () => {
     const invalidLink = await app().request(documentsPath("/links/not-a-link-id/revoke"), { method: "POST" });
     expect(invalidLink.status).toBe(404);
     expect(await invalidLink.json()).toEqual({ message: "Document link not found" });
@@ -239,10 +239,10 @@ describe("document link routes", () => {
     expect(await missingLink.json()).toEqual({ message: "Document link not found" });
 
     currentLink = link;
-    currentRun = null;
-    const missingRun = await app().request(documentsPath(`/links/${linkPublicId}/revoke`), { method: "POST" });
-    expect(missingRun.status).toBe(404);
-    expect(await missingRun.json()).toEqual({ message: "Document run not found" });
+    currentDocument = null;
+    const missingDocument = await app().request(documentsPath(`/links/${linkPublicId}/revoke`), { method: "POST" });
+    expect(missingDocument.status).toBe(404);
+    expect(await missingDocument.json()).toEqual({ message: "Document not found" });
   });
 
   test("allows the link creator to revoke with read permission", async () => {

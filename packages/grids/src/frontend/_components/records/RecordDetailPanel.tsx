@@ -793,10 +793,11 @@ export default function RecordDetailPanel(props: Props) {
           <RecordDocumentsSection
             cloudUrl={props.cloudUrl}
             tableId={props.tableId}
+            tableName={props.tableName}
             recordId={rec.id}
             live={mode() === "live"}
             templates={props.documentTemplates}
-            initialRuns={props.detail()?.documentRuns ?? []}
+            initialDocuments={props.detail()?.documents ?? { items: [], cursor: null, hasMore: false }}
             initialSnapshots={props.detail()?.snapshots ?? []}
           />
           <Show when={mode() === "live"}>

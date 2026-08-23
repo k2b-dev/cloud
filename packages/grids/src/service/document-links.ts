@@ -2,9 +2,9 @@ import { createHash, randomBytes } from "node:crypto";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { coreSettings } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
-import type { CreateDocumentLinkInput, DocumentLink, DocumentLinkTtl, DocumentRun } from "../contracts";
+import type { CreateDocumentLinkInput, DocumentLink, DocumentLinkTtl, Document } from "../contracts";
 import { logAudit, type SqlClient } from "./audit";
-import { type DocumentDbRow, mapDocumentLink, mapDocumentRun } from "./document-mappers";
+import { type DocumentDbRow, hydrateDocuments, mapDocumentLink } from "./document-mappers";
 import { insertWithShortIdForDb } from "./short-id";
 
 const DOCUMENT_LINK_TOKEN_PREFIX = "gdl_";
@@ -59,11 +59,11 @@ export const publicDocumentLinkBaseUrl = async (): Promise<string> =>
 export const publicDocumentLinkUrl = async (token: string): Promise<string> =>
   `${await publicDocumentLinkBaseUrl()}${encodeURIComponent(token)}`;
 
-export const listDocumentLinksForRun = async (documentRunId: string): Promise<DocumentLink[]> => {
+export const listDocumentLinksForDocument = async (documentId: string): Promise<DocumentLink[]> => {
   const rows = await sql<DocumentDbRow[]>`
     SELECT *
     FROM grids.document_links
-    WHERE document_run_id = ${documentRunId}::uuid
+    WHERE document_id = ${documentId}::uuid
     ORDER BY created_at DESC, id DESC
   `;
   return rows.map(mapDocumentLink);
@@ -84,7 +84,7 @@ export const getDocumentLinkByShortId = async (shortId: string): Promise<Documen
 };
 
 export const createDocumentLink = async (params: {
-  run: DocumentRun;
+  document: Document;
   input: CreateDocumentLinkInput;
   actorId: string | null;
   ip?: string | null;
@@ -98,14 +98,14 @@ export const createDocumentLink = async (params: {
     const row = await insertWithShortIdForDb(tx, "idx_grids_document_links_short_id", async (attempt, shortId) => {
       const [created] = await attempt<DocumentDbRow[]>`
         INSERT INTO grids.document_links (
-          short_id, document_run_id, base_id, table_id, record_id, token_hash, comment, created_by, expires_at
+          short_id, document_id, base_id, table_id, record_id, token_hash, comment, created_by, expires_at
         )
         VALUES (
           ${shortId},
-          ${params.run.id}::uuid,
-          ${params.run.baseId}::uuid,
-          ${params.run.tableId}::uuid,
-          ${params.run.recordId}::uuid,
+          ${params.document.id}::uuid,
+          ${params.document.baseId}::uuid,
+          ${params.document.tableId}::uuid,
+          ${params.document.recordId}::uuid,
           ${hashDocumentLinkToken(token)},
           ${comment},
           ${params.actorId}::uuid,
@@ -120,15 +120,15 @@ export const createDocumentLink = async (params: {
     const link = mapDocumentLink(row);
     await logAudit(
       {
-        baseId: params.run.baseId,
-        tableId: params.run.tableId,
-        recordId: params.run.recordId,
+        baseId: params.document.baseId,
+        tableId: params.document.tableId,
+        recordId: params.document.recordId,
         userId: params.actorId,
         action: "document_link.created",
         ip: params.ip,
         userAgent: params.userAgent,
         diff: {
-          documentRunId: { old: null, new: params.run.id },
+          documentId: { old: null, new: params.document.shortId },
           documentLinkId: { old: null, new: link.id },
           expiresAt: { old: null, new: link.expiresAt },
           comment: { old: null, new: link.comment },
@@ -171,7 +171,7 @@ export const revokeDocumentLink = async (params: {
         ip: params.ip,
         userAgent: params.userAgent,
         diff: {
-          documentRunId: { old: link.documentRunId, new: link.documentRunId },
+          documentId: { old: link.documentId, new: link.documentId },
           documentLinkId: { old: link.id, new: link.id },
           revokedAt: { old: null, new: link.revokedAt },
         },
@@ -182,7 +182,7 @@ export const revokeDocumentLink = async (params: {
   });
 };
 
-export const resolveDocumentLinkDownload = async (token: string): Promise<Result<{ link: DocumentLink; run: DocumentRun }>> => {
+export const resolveDocumentLinkDownload = async (token: string): Promise<Result<{ link: DocumentLink; document: Document }>> => {
   const normalizedToken = normalizeDocumentLinkToken(token);
   if (!normalizedToken) return fail(err.notFound("Document link"));
 
@@ -195,11 +195,12 @@ export const resolveDocumentLinkDownload = async (token: string): Promise<Result
   `;
   if (!row) return fail(err.notFound("Document link"));
   const link = mapDocumentLink(row);
-  const [runRow] = await sql<DocumentDbRow[]>`
-    SELECT * FROM grids.document_runs WHERE id = ${link.documentRunId}::uuid
+  const [documentRow] = await sql<DocumentDbRow[]>`
+    SELECT * FROM grids.documents WHERE id = ${link.documentId}::uuid
   `;
-  if (!runRow) return fail(err.notFound("Document run"));
-  return ok({ link, run: mapDocumentRun(runRow) });
+  if (!documentRow) return fail(err.notFound("Document"));
+  const [document] = await hydrateDocuments([documentRow]);
+  return document ? ok({ link, document }) : fail(err.internal("Document artifacts are missing"));
 };
 
 export const recordDocumentLinkAccess = async (
@@ -228,7 +229,7 @@ export const recordDocumentLinkAccess = async (
         ip: audit.ip,
         userAgent: audit.userAgent,
         diff: {
-          documentRunId: { old: link.documentRunId, new: link.documentRunId },
+          documentId: { old: link.documentId, new: link.documentId },
           documentLinkId: { old: link.id, new: link.id },
           accessCount: { old: link.accessCount - 1, new: link.accessCount },
         },

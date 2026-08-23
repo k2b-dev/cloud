@@ -1,7 +1,7 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { type AccessSubject, buildAccessPrincipalTierConditions } from "@valentinkolb/cloud/server";
 import { sql } from "bun";
-import { DocumentProfileSchema } from "../contracts";
+import { DocumentDefaultsSchema } from "../contracts";
 import { grantAccess } from "./access";
 import { logAudit } from "./audit";
 import { degradeForSourceBaseChange, refreshForSourceBase } from "./federated-tables";
@@ -12,11 +12,10 @@ import type { Base, CreateBaseInput, UpdateBaseInput } from "./types";
 
 type DbRow = Record<string, unknown>;
 
-const COLS = sql`id, short_id, name, description, document_profile, created_by, deleted_at, created_at, updated_at`;
+const COLS = sql`id, short_id, name, description, document_defaults, created_by, deleted_at, created_at, updated_at`;
 
-const mapDocumentProfile = (value: unknown): Base["documentProfile"] => {
-  const parsed = DocumentProfileSchema.safeParse(parseJsonbRow(value, {}));
-  return parsed.success ? parsed.data : {};
+const mapDocumentDefaults = (value: unknown): Base["documentDefaults"] => {
+  return DocumentDefaultsSchema.parse(parseJsonbRow(value, {}));
 };
 
 const mapRow = (row: DbRow): Base => ({
@@ -24,7 +23,7 @@ const mapRow = (row: DbRow): Base => ({
   shortId: row.short_id as string,
   name: row.name as string,
   description: (row.description as string | null) ?? null,
-  documentProfile: mapDocumentProfile(row.document_profile),
+  documentDefaults: mapDocumentDefaults(row.document_defaults),
   createdBy: (row.created_by as string | null) ?? null,
   deletedAt: row.deleted_at ? (row.deleted_at as Date).toISOString() : null,
   createdAt: (row.created_at as Date).toISOString(),
@@ -164,8 +163,8 @@ export const create = async (input: CreateBaseInput, actorId: string | null): Pr
 
   const row = await insertWithShortId<DbRow>(async (shortId) => {
     const [r] = await sql<DbRow[]>`
-      INSERT INTO grids.bases (short_id, name, description, created_by)
-      VALUES (${shortId}, ${name}, ${input.description ?? null}, ${actorId}::uuid)
+      INSERT INTO grids.bases (short_id, name, description, document_defaults, created_by)
+      VALUES (${shortId}, ${name}, ${input.description ?? null}, ${input.documentDefaults ?? {}}::jsonb, ${actorId}::uuid)
       RETURNING ${COLS}
     `;
     if (!r) throw new Error("insert returned no row");
@@ -218,14 +217,14 @@ export const update = async (id: string, input: UpdateBaseInput, actorId: string
   const next = {
     name: name ?? existing.name,
     description: input.description !== undefined ? input.description : existing.description,
-    documentProfile: input.documentProfile !== undefined ? input.documentProfile : existing.documentProfile,
+    documentDefaults: input.documentDefaults !== undefined ? input.documentDefaults : existing.documentDefaults,
   };
 
   const [row] = await sql<DbRow[]>`
     UPDATE grids.bases
     SET name = ${next.name},
         description = ${next.description},
-        document_profile = ${next.documentProfile}::jsonb,
+        document_defaults = ${next.documentDefaults}::jsonb,
         updated_at = now()
     WHERE id = ${id}::uuid AND deleted_at IS NULL
     RETURNING ${COLS}
@@ -238,8 +237,8 @@ export const update = async (id: string, input: UpdateBaseInput, actorId: string
   if (next.description !== existing.description) {
     diff.description = { old: existing.description, new: next.description };
   }
-  if (JSON.stringify(next.documentProfile) !== JSON.stringify(existing.documentProfile)) {
-    diff.documentProfile = { old: existing.documentProfile, new: next.documentProfile };
+  if (JSON.stringify(next.documentDefaults) !== JSON.stringify(existing.documentDefaults)) {
+    diff.documentDefaults = { old: existing.documentDefaults, new: next.documentDefaults };
   }
   if (Object.keys(diff).length > 0) {
     await logAudit({ baseId: id, userId: actorId, action: "updated", diff });
@@ -348,7 +347,7 @@ export const adminList = async (params: {
 
   const rows = await sql<DbRow[]>`
     SELECT
-      b.id, b.short_id, b.name, b.description, b.document_profile, b.created_by, b.deleted_at, b.created_at, b.updated_at,
+      b.id, b.short_id, b.name, b.description, b.document_defaults, b.created_by, b.deleted_at, b.created_at, b.updated_at,
       (SELECT COUNT(*)::int FROM grids.tables WHERE base_id = b.id AND deleted_at IS NULL) AS table_count,
       (SELECT COUNT(*)::int FROM grids.records r JOIN grids.tables t ON t.id = r.table_id WHERE t.base_id = b.id AND t.deleted_at IS NULL AND r.deleted_at IS NULL) AS record_count,
       (SELECT COUNT(*)::int FROM grids.base_access WHERE base_id = b.id) AS access_count

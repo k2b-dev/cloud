@@ -41,7 +41,7 @@ const workflowState = (): PublicOkWorkspaceState => ({
     id: "BASE01",
     name: "Inventory",
     description: null,
-    documentProfile: {},
+    documentDefaults: {},
     createdBy: null,
     deletedAt: null,
     createdAt: "2026-08-15T00:00:00.000Z",
@@ -76,6 +76,17 @@ const workflowState = (): PublicOkWorkspaceState => ({
 });
 
 describe("GridsSidebar workflows", () => {
+  test("always exposes the canonical Documents workspace without requiring a template", () => {
+    const state = workflowState();
+    state.catalog.sidebarDocumentTemplates = [];
+
+    const html = renderToString(() => createComponent(GridsSidebar, { state }));
+
+    expect(html).toContain("Documents");
+    expect(html).toContain("All documents");
+    expect(html).toContain('/app/grids/BASE01/documents');
+  });
+
   test("uses workflow rows as the selector without a duplicate overview item", () => {
     const html = renderToString(() => createComponent(GridsSidebar, { state: workflowState() }));
 

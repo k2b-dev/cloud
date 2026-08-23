@@ -3,8 +3,8 @@ import type {
   PublicCreateDocumentLinkResponseSchema,
   PublicDocumentLinkListResponseSchema,
   PublicDocumentLinkSchema,
-  PublicDocumentRunBrowseResponseSchema,
-  PublicDocumentRunSummarySchema,
+  PublicDocumentBrowseResponseSchema,
+  PublicDocumentSchema,
   PublicDocumentTemplateSchema,
   PublicDocumentTemplateSummarySchema,
   PublicRecordSnapshotSchema,
@@ -13,9 +13,9 @@ import type {
 
 export type PublicDocumentTemplate = z.infer<typeof PublicDocumentTemplateSchema>;
 export type PublicDocumentTemplateSummary = z.infer<typeof PublicDocumentTemplateSummarySchema>;
-export type PublicDocumentRunSummary = z.infer<typeof PublicDocumentRunSummarySchema>;
-export type PublicDocumentRunBrowseResponse = z.infer<typeof PublicDocumentRunBrowseResponseSchema>;
-export type PublicDocumentRunFolder = z.infer<typeof PublicDocumentRunBrowseResponseSchema>["folders"][number];
+export type PublicDocument = z.infer<typeof PublicDocumentSchema>;
+export type PublicDocumentBrowseResponse = z.infer<typeof PublicDocumentBrowseResponseSchema>;
+export type PublicDocumentFolder = z.infer<typeof PublicDocumentBrowseResponseSchema>["folders"][number];
 export type PublicDocumentLink = z.infer<typeof PublicDocumentLinkSchema>;
 export type PublicDocumentLinkListResponse = z.infer<typeof PublicDocumentLinkListResponseSchema>;
 export type PublicCreateDocumentLinkResponse = z.infer<typeof PublicCreateDocumentLinkResponseSchema>;

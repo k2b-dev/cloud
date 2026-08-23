@@ -23,13 +23,6 @@ type StoredSourceRow = { id: string; tableId: string; baseId: string; source: st
 type StoredFormulaRow = { id: string; tableId: string; config: unknown };
 type CatalogTableRow = { id: string; baseId: string; shortId: string; name: string };
 type CatalogViewRow = { id: string; baseId: string; tableId: string; shortId: string; name: string };
-type StoredDocumentRunRow = {
-  id: string;
-  tableId: string;
-  templateId: string | null;
-  templateSnapshot: unknown;
-  renderData: unknown;
-};
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const PUBLIC_ID_RE = /^[A-Za-z0-9]{6}$/;
@@ -113,57 +106,6 @@ const rewriteFormulaRefs = (expression: Expr, rewrite: (ref: string) => string):
     rewriteFormulaRefs(expression.left, rewrite);
     rewriteFormulaRefs(expression.right, rewrite);
   }
-};
-
-const DOCUMENT_TEMPLATE_TEXT_KEYS = [
-  "source",
-  "html",
-  "headerHtml",
-  "footerHtml",
-  "pageCss",
-  "numberTemplate",
-  "filenameTemplate",
-] as const;
-
-const rewriteKnownLiquidIdTokens = (source: string): string =>
-  source.replace(
-    /({[{%]-?)([\s\S]*?)(-?[}%]})/g,
-    (_match, open: string, body: string, close: string) => `${open}${body.replace(/\b(template|run)\.shortId\b/g, "$1.id")}${close}`,
-  );
-
-const publicIdentityObject = (value: unknown, id: string): Record<string, unknown> => {
-  const object = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-  const { shortId: _shortId, ...rest } = object;
-  return { ...rest, id };
-};
-
-const withoutResourceIdentity = (value: unknown): Record<string, unknown> => {
-  const object = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
-  const { id: _id, shortId: _shortId, ...rest } = object;
-  return rest;
-};
-
-export const migrateDocumentRunPublicIdArtifacts = (params: {
-  templateSnapshot: unknown;
-  renderData: unknown;
-  templateId?: string;
-  runId: string;
-}): { templateSnapshot: Record<string, unknown>; renderData: Record<string, unknown> } => {
-  const templateSnapshot = params.templateId
-    ? publicIdentityObject(params.templateSnapshot, params.templateId)
-    : withoutResourceIdentity(params.templateSnapshot);
-  for (const key of DOCUMENT_TEMPLATE_TEXT_KEYS) {
-    const value = templateSnapshot[key];
-    if (typeof value === "string") templateSnapshot[key] = rewriteKnownLiquidIdTokens(value);
-  }
-  const renderData =
-    params.renderData && typeof params.renderData === "object" && !Array.isArray(params.renderData)
-      ? { ...(params.renderData as Record<string, unknown>) }
-      : {};
-  if (params.templateId) renderData.template = publicIdentityObject(renderData.template, params.templateId);
-  else if (renderData.template) renderData.template = withoutResourceIdentity(renderData.template);
-  renderData.run = publicIdentityObject(renderData.run, params.runId);
-  return { templateSnapshot, renderData };
 };
 
 const rewriteGqlAstRefs = (ast: DslQueryAst, sourceRef: (ref: string) => string, fieldRef: (ref: string) => string): DslQueryAst => {
@@ -363,47 +305,6 @@ export const migratePersistedPublicIdReferences = async (db: SQL): Promise<void>
       });
     }
     if (source !== template.source) await db`UPDATE grids.document_templates SET source = ${source} WHERE id = ${template.id}::uuid`;
-  }
-
-  const documentRuns = await db<StoredDocumentRunRow[]>`
-    SELECT id::text AS id, table_id::text AS "tableId", template_id::text AS "templateId",
-           template_snapshot AS "templateSnapshot", render_data AS "renderData"
-    FROM grids.document_runs
-  `;
-  for (const run of documentRuns) {
-    const snapshot =
-      run.templateSnapshot && typeof run.templateSnapshot === "object" && !Array.isArray(run.templateSnapshot)
-        ? (run.templateSnapshot as Record<string, unknown>)
-        : {};
-    const templateScope = scopeKey("document_templates", run.tableId);
-    const templateIdFromSnapshot = [snapshot.id, snapshot.shortId].find((value): value is string => typeof value === "string");
-    const templateId = run.templateId
-      ? lookup.byUuid.get(run.templateId.toLowerCase())
-      : templateIdFromSnapshot
-        ? (migratedRef(templateIdFromSnapshot, lookup, [templateScope]) ??
-          rows.find(
-            (row) => row.resource === "document_templates" && row.parentId === run.tableId && row.newShortId === templateIdFromSnapshot,
-          )?.newShortId)
-        : undefined;
-    if (!templateId && run.templateId && templates.some((template) => template.id === run.templateId)) {
-      throw new Error(
-        `cannot migrate document run ${run.id}: template ${run.templateId ?? templateIdFromSnapshot ?? "reference"} has no public id`,
-      );
-    }
-    const runId = lookup.byUuid.get(run.id.toLowerCase());
-    if (!runId) throw new Error(`cannot migrate document run ${run.id}: run has no public id`);
-    const migrated = migrateDocumentRunPublicIdArtifacts({
-      templateSnapshot: run.templateSnapshot,
-      renderData: run.renderData,
-      templateId,
-      runId,
-    });
-    await db`
-      UPDATE grids.document_runs
-      SET template_id = ${templateId && run.templateId ? run.templateId : null}::uuid,
-          template_snapshot = ${migrated.templateSnapshot}, render_data = ${migrated.renderData}
-      WHERE id = ${run.id}::uuid
-    `;
   }
 
   const formulas = await db<StoredFormulaRow[]>`

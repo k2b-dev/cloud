@@ -18,7 +18,7 @@ describe("App record details", () => {
     expect(source).toContain('fallback={<Placeholder align="left"');
     expect(source).toContain('description="No generated documents yet."');
     expect(source).not.toContain('<ul class="flex flex-col gap-1">');
-    expect(source).toContain("fetch(run.downloadUrl");
-    expect(source).not.toContain("requestDocumentRunDownload");
+    expect(source).toContain("fetch(document.downloadUrl");
+    expect(source).toContain("CustomAppDocument");
   });
 });

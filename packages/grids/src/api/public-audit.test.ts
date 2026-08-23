@@ -129,12 +129,7 @@ describe("public record audit boundary", () => {
   });
 
   test("projects every supported record event through the bounded public action contract", async () => {
-    const actions: RecordHistoryAction[] = [
-      "record_snapshot.created",
-      "document.generated",
-      "workflow.record.updated",
-      "file.added",
-    ];
+    const actions: RecordHistoryAction[] = ["record_snapshot.created", "document.created", "workflow.record.updated", "file.added"];
     const projected = await toPublicAuditEntries(
       actions.map((action, index) => ({
         ...storedEntry,

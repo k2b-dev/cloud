@@ -7,7 +7,6 @@ import {
 import { type BarcodeFormat, BarcodeRenderError, barcodeDataUrl } from "../barcode-rendering";
 import type { DocumentTemplate } from "../contracts";
 
-export const DEFAULT_DOCUMENT_NUMBER_TEMPLATE = "{{ template.id }}-{{ date.yyyyMMdd }}-{{ run.id }}";
 const TEMPLATE_MAX_BYTES = 200_000;
 
 const DOCUMENT_TEMPLATE_ROOTS = new Set([
@@ -23,11 +22,10 @@ const DOCUMENT_TEMPLATE_ROOTS = new Set([
   "images",
   "primaryImage",
   "template",
-  "run",
   "date",
 ]);
 export const DOCUMENT_SOURCE_ROOTS = new Set(["record", "table", "app", "business", "template", "date"]);
-export const DOCUMENT_NUMBER_ROOTS = new Set(["record", "table", "template", "run", "series", "date", "app", "business"]);
+export const DOCUMENT_NUMBER_ROOTS = new Set(["record", "table", "template", "document", "series", "date", "app", "business"]);
 
 const LIQUID_KEYWORDS = new Set([
   "and",
@@ -159,8 +157,6 @@ export const templatePatternContext = (template: Partial<Pick<DocumentTemplate, 
   name: template?.name ?? "Draft template",
 });
 
-export const runPatternContext = (publicId: string | null | undefined) => ({ id: publicId ?? "draft" });
-
 const safeDocumentNumber = (value: string): string =>
   value
     .replace(/[\u0000-\u001f\u007f]/g, " ")
@@ -186,6 +182,7 @@ const barcodeDataUrlFilter: LiquidTemplateFilter = (value, bcid = "code128", sho
 
 export const documentLiquidFilters: Record<string, LiquidTemplateFilter> = {
   barcode_data_url: barcodeDataUrlFilter,
+  json: (value) => JSON.stringify(value ?? null),
 };
 
 export const validateLiquidTemplate = (source: string): Result<void> => {
@@ -233,14 +230,14 @@ export const renderLiquidPlainText = async (
 ): Promise<Result<string>> => renderLiquid(template, data, { maxBytes, escapeOutput: false });
 
 export const documentNumberFor = (params: {
-  template: Partial<Pick<DocumentTemplate, "id" | "shortId" | "name" | "numberTemplate">>;
-  runShortId: string;
-  generatedAt?: Date;
+  template: Partial<Pick<DocumentTemplate, "id" | "shortId" | "name">> & { numberTemplate: string };
+  documentShortId: string;
+  createdAt?: Date;
   dateConfig?: DateContext;
   data?: Record<string, unknown>;
   series?: { id: string; value: number };
 }): Result<string> => {
-  const template = params.template.numberTemplate?.trim() || DEFAULT_DOCUMENT_NUMBER_TEMPLATE;
+  const template = params.template.numberTemplate.trim();
   const valid = validateDocumentLiquidTemplate(template, "document number pattern", DOCUMENT_NUMBER_ROOTS);
   if (!valid.ok) return valid;
   try {
@@ -249,9 +246,14 @@ export const documentNumberFor = (params: {
       {
         ...(params.data ?? {}),
         template: templatePatternContext(params.template),
-        run: runPatternContext(params.runShortId),
+        document: {
+          ...((params.data?.document && typeof params.data.document === "object" && !Array.isArray(params.data.document)
+            ? params.data.document
+            : {}) as Record<string, unknown>),
+          id: params.documentShortId,
+        },
         series: params.series ?? { id: "draft", value: 0 },
-        date: datePatternContext(params.generatedAt ?? new Date(), params.dateConfig),
+        date: datePatternContext(params.createdAt ?? new Date(), params.dateConfig),
       },
       { filters: documentLiquidFilters },
     );

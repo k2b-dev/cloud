@@ -22,12 +22,20 @@ export const loadRecordDetailData = async (params: {
 }): Promise<WorkspaceRecordDetail> => {
   const fileFieldIds = params.fields.filter((field) => field.type === "file" && !field.deletedAt).map((field) => field.id);
   const table = await gridsService.table.get(params.tableId);
-  const [relationLabels, filesByField, documentRuns, snapshots, auditEntries, combinedOrigin] = await Promise.all([
+  if (!table) throw new Error("Table not found");
+  const [relationLabels, filesByField, documents, snapshots, auditEntries, combinedOrigin] = await Promise.all([
     params.scope === "history" ? {} : gridsService.relations.buildLabelCache([params.record], params.fields, params.viewer),
     params.scope === "history"
       ? {}
       : gridsService.file.listForRecord({ tableId: params.tableId, recordId: params.recordId, fieldIds: fileFieldIds }),
-    params.scope === "history" ? [] : gridsService.document.listRunsForRecord(params.tableId, params.recordId, DETAIL_PAGE_SIZE),
+    params.scope === "history"
+      ? { items: [], nextCursor: null, hasMore: false }
+      : gridsService.document.listForRecord({
+          baseId: table.baseId,
+          tableId: params.tableId,
+          recordId: params.recordId,
+          limit: DETAIL_PAGE_SIZE,
+        }),
     params.scope === "history" ? [] : gridsService.document.listSnapshotsForRecord(params.tableId, params.recordId, DETAIL_PAGE_SIZE),
     gridsService.audit.listByRecord(
       params.tableId,
@@ -46,7 +54,7 @@ export const loadRecordDetailData = async (params: {
     recordId: params.recordId,
     relationLabels,
     filesByField,
-    documentRuns: documentRuns.map(gridsService.document.summarizeRun),
+    documents: { ...documents, items: documents.items.map(gridsService.document.summarizeDocument) },
     snapshots,
     auditEntries,
     combinedOrigin,
@@ -57,7 +65,7 @@ export const emptyRecordDetail = (recordId: string): WorkspaceRecordDetail => ({
   recordId,
   relationLabels: {},
   filesByField: {},
-  documentRuns: [],
+  documents: { items: [], nextCursor: null, hasMore: false },
   snapshots: [],
   auditEntries: [],
   combinedOrigin: null,

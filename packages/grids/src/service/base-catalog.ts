@@ -9,6 +9,7 @@ import {
   type View,
   ViewUiSettingsSchema,
 } from "../contracts";
+import { mapDocumentTemplate } from "./document-mappers";
 import { type Form, normalizeFormConfig, toRenderableForm } from "./forms";
 import { parseJsonbRow } from "./jsonb";
 import { withLookupTargetMetadata } from "./lookup-display";
@@ -116,28 +117,6 @@ const mapForm = (row: DbRow): Form => ({
   ownerUserId: (row.owner_user_id as string | null) ?? null,
   position: row.position as number,
   isDefault: false,
-  deletedAt: row.deleted_at ? (row.deleted_at as Date).toISOString() : null,
-  createdAt: (row.created_at as Date).toISOString(),
-  updatedAt: (row.updated_at as Date).toISOString(),
-});
-
-const mapDocumentTemplate = (row: DbRow): DocumentTemplate => ({
-  id: row.id as string,
-  shortId: row.short_id as string,
-  tableId: row.table_id as string,
-  name: row.name as string,
-  description: (row.description as string | null) ?? null,
-  source: row.source as string,
-  html: row.html as string,
-  headerHtml: (row.header_html as string | null) ?? null,
-  footerHtml: (row.footer_html as string | null) ?? null,
-  pageCss: (row.page_css as string | null) ?? null,
-  numberTemplate: (row.number_template as string | null) ?? "{{ template.id }}-{{ date.yyyyMMdd }}-{{ run.id }}",
-  filenameTemplate: (row.filename_template as string | null) ?? "{{ document.number }}.pdf",
-  enabled: row.enabled as boolean,
-  position: row.position as number,
-  createdBy: (row.created_by as string | null) ?? null,
-  updatedBy: (row.updated_by as string | null) ?? null,
   deletedAt: row.deleted_at ? (row.deleted_at as Date).toISOString() : null,
   createdAt: (row.created_at as Date).toISOString(),
   updatedAt: (row.updated_at as Date).toISOString(),

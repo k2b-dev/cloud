@@ -1,3 +1,5 @@
+import type { HtmlDocumentTemplateRenderer } from "./contracts";
+
 export type DocumentTemplateStarter = {
   id: string;
   name: string;
@@ -9,13 +11,11 @@ export type DocumentTemplateStarter = {
   page: string;
   uses?: string[];
   source: (tableId: string) => string;
-  numberTemplate?: string;
-  filenameTemplate?: string;
-  html: string;
-  headerHtml?: string;
-  footerHtml?: string;
-  pageCss?: string;
+  renderer: HtmlDocumentTemplateRenderer;
 };
+
+const defaultNumberTemplate = "DOC-{{ series.value }}";
+const defaultFilenameTemplate = "{{ document.number }}.pdf";
 
 const recordSource = (tableId: string) => `from table {${tableId}}\nwhere record.id = '{{ record.id }}'\nlimit 1`;
 const overviewSource = (tableId: string) => `from table {${tableId}}\nlimit 100`;
@@ -151,14 +151,18 @@ export const DOCUMENT_TEMPLATE_STARTERS: DocumentTemplateStarter[] = [
       "One row per invoice item. Alias invoice_number, invoice_date, recipient_name, recipient_email, invoice_item, invoice_quantity, invoice_unit_price, and invoice_line_total.",
     page: "A4 portrait",
     source: recordSource,
-    headerHtml: businessHeader,
-    footerHtml: businessFooter,
-    pageCss: `${standardPageCss}
+    renderer: {
+      kind: "html",
+      numberTemplate: defaultNumberTemplate,
+      filenameTemplate: defaultFilenameTemplate,
+      header: businessHeader,
+      footer: businessFooter,
+      css: `${standardPageCss}
 .invoice-table { margin-top: 7mm; }
 .invoice-table tbody tr:nth-child(even) { background: #f8fafc; }
 .payment-note { margin-top: 8mm; }
 .total-due { font-size: 14pt; font-weight: 900; color: #0f172a; }`,
-    html: `<main>
+      body: `<main>
   {% assign hasInvoice = false %}
   {% if rows.size > 0 %}{% assign invoice = rows[0] %}{% assign hasInvoice = true %}{% endif %}
   {% assign invoiceTotal = 0 %}
@@ -202,10 +206,10 @@ export const DOCUMENT_TEMPLATE_STARTERS: DocumentTemplateStarter[] = [
     <div class="document-number">
       {% if hasInvoice %}
         <strong>{% if invoiceNumberColumns.size > 0 %}{{ invoice[invoiceNumberColumns[0].key] | default: document.number | default: "Invoice" }}{% else %}{{ document.number | default: "Invoice" }}{% endif %}</strong><br>
-        {% if invoiceDateColumns.size > 0 %}{{ invoice[invoiceDateColumns[0].key] | default: document.generatedAt | default: "Issue date not provided" }}{% else %}{{ document.generatedAt | default: "Issue date not provided" }}{% endif %}
+        {% if invoiceDateColumns.size > 0 %}{{ invoice[invoiceDateColumns[0].key] | default: document.createdAt | default: "Issue date not provided" }}{% else %}{{ document.createdAt | default: "Issue date not provided" }}{% endif %}
       {% else %}
         <strong>{{ document.number | default: "Invoice" }}</strong><br>
-        {{ document.generatedAt | default: "Issue date not provided" }}
+        {{ document.createdAt | default: "Issue date not provided" }}
       {% endif %}
     </div>
   </section>
@@ -278,6 +282,7 @@ export const DOCUMENT_TEMPLATE_STARTERS: DocumentTemplateStarter[] = [
     </div>
   </section>
 </main>`,
+    },
   },
   {
     id: "loan-agreement",
@@ -290,15 +295,19 @@ export const DOCUMENT_TEMPLATE_STARTERS: DocumentTemplateStarter[] = [
       "One selected loan record. Alias borrower_name, borrower_organization, borrower_email, loan_start, and return_due for populated party and date blocks.",
     page: "A4 portrait",
     source: recordSource,
-    headerHtml: businessHeader,
-    footerHtml: businessFooter,
-    pageCss: `${standardPageCss}
+    renderer: {
+      kind: "html",
+      numberTemplate: defaultNumberTemplate,
+      filenameTemplate: defaultFilenameTemplate,
+      header: businessHeader,
+      footer: businessFooter,
+      css: `${standardPageCss}
 .agreement-intro { margin-bottom: 8mm; }
 .agreement-table { margin-top: 4mm; }
 .condition-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 3mm 8mm; margin-top: 3mm; }
 .condition-item { display: flex; align-items: center; gap: 2.5mm; }
 .initial-box { border: 1px solid #94a3b8; min-height: 12mm; padding: 2.5mm; }`,
-    html: `<main>
+      body: `<main>
   {% assign hasLoan = false %}
   {% if rows.size > 0 %}{% assign loan = rows[0] %}{% assign hasLoan = true %}{% endif %}
   {% assign borrowerNameColumns = columns | where: "key", "borrower_name" %}
@@ -383,6 +392,7 @@ export const DOCUMENT_TEMPLATE_STARTERS: DocumentTemplateStarter[] = [
     </div>
   </section>
 </main>`,
+    },
   },
   {
     id: "label",
@@ -395,7 +405,11 @@ export const DOCUMENT_TEMPLATE_STARTERS: DocumentTemplateStarter[] = [
     page: "90mm x 54mm",
     uses: ["Code 128 barcode"],
     source: recordSource,
-    pageCss: `@page { size: 90mm 54mm; margin: 0; }
+    renderer: {
+      kind: "html",
+      numberTemplate: defaultNumberTemplate,
+      filenameTemplate: defaultFilenameTemplate,
+      css: `@page { size: 90mm 54mm; margin: 0; }
 * { box-sizing: border-box; }
 html, body { width: 90mm; height: 54mm; margin: 0; }
 body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
@@ -403,7 +417,7 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
 .kicker { font-size: 7.5pt; letter-spacing: .12em; text-transform: uppercase; color: #64748b; font-weight: 800; }
 .name { margin-top: 2.4mm; font-size: 17pt; line-height: 1.05; font-weight: 850; }
 .code { margin-top: auto; width: 100%; height: 13mm; object-fit: contain; object-position: left bottom; }`,
-    html: `<section class="label">
+      body: `<section class="label">
   {% if rows.size > 0 and columns.size > 0 %}
     {% assign first = rows[0] %}
     {% assign codeColumn = columns[0] %}
@@ -415,6 +429,7 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
   <div class="name">${primaryValue}</div>
   <img class="code" src="{{ codeValue | barcode_data_url: "code128", true }}" alt="">
 </section>`,
+    },
   },
   {
     id: "qr-label",
@@ -427,7 +442,11 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     page: "90mm x 54mm",
     uses: ["QR code"],
     source: recordSource,
-    pageCss: `@page { size: 90mm 54mm; margin: 0; }
+    renderer: {
+      kind: "html",
+      numberTemplate: defaultNumberTemplate,
+      filenameTemplate: defaultFilenameTemplate,
+      css: `@page { size: 90mm 54mm; margin: 0; }
 * { box-sizing: border-box; }
 html, body { width: 90mm; height: 54mm; margin: 0; }
 body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
@@ -436,7 +455,7 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
 .kicker { font-size: 7.5pt; letter-spacing: .12em; text-transform: uppercase; color: #64748b; font-weight: 800; }
 .name { margin-top: 2.4mm; font-size: 15pt; line-height: 1.08; font-weight: 850; }
 .hint { margin-top: 2.2mm; color: #475569; font-size: 7.5pt; line-height: 1.25; }`,
-    html: `<section class="label">
+      body: `<section class="label">
   {% if rows.size > 0 and columns.size > 0 %}
     {% assign first = rows[0] %}
     {% assign codeColumn = columns[0] %}
@@ -451,6 +470,7 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     <div class="hint">Scan for the selected record value.</div>
   </div>
 </section>`,
+    },
   },
   {
     id: "overview",
@@ -462,10 +482,14 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     expectedData: "Up to 100 rows from the source table by default.",
     page: "A4 portrait",
     source: overviewSource,
-    headerHtml: businessHeader,
-    footerHtml: businessFooter,
-    pageCss: standardPageCss,
-    html: `<main>
+    renderer: {
+      kind: "html",
+      numberTemplate: defaultNumberTemplate,
+      filenameTemplate: defaultFilenameTemplate,
+      header: businessHeader,
+      footer: businessFooter,
+      css: standardPageCss,
+      body: `<main>
   <section class="document-title avoid-break">
     <div>
       <div class="document-kicker">Report</div>
@@ -478,6 +502,7 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
   </section>
   ${rowsTable}
 </main>`,
+    },
   },
   {
     id: "record-detail",
@@ -490,14 +515,18 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     page: "A4 portrait",
     uses: ["record images"],
     source: recordSource,
-    headerHtml: businessHeader,
-    footerHtml: businessFooter,
-    pageCss: `${standardPageCss}
+    renderer: {
+      kind: "html",
+      numberTemplate: defaultNumberTemplate,
+      filenameTemplate: defaultFilenameTemplate,
+      header: businessHeader,
+      footer: businessFooter,
+      css: `${standardPageCss}
 .record-title { padding: 0; margin: 2mm 0 9mm; }
 .record-image { width: 36mm; height: 36mm; object-fit: cover; border-radius: 4px; border: 1px solid #d1d5db; }
 .record-details { width: 100%; }
 .record-details table { width: 100%; }`,
-    html: `<main>
+      body: `<main>
   <section class="document-title record-title avoid-break">
     <div>
       <div class="document-kicker">Record detail</div>
@@ -512,6 +541,7 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     ${detailTable}
   </section>
 </main>`,
+    },
   },
   {
     id: "delivery-note",
@@ -523,10 +553,14 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     expectedData: "One delivery record plus selected delivery/item fields.",
     page: "A4 portrait",
     source: recordSource,
-    headerHtml: businessHeader,
-    footerHtml: businessFooter,
-    pageCss: standardPageCss,
-    html: `<main>
+    renderer: {
+      kind: "html",
+      numberTemplate: defaultNumberTemplate,
+      filenameTemplate: defaultFilenameTemplate,
+      header: businessHeader,
+      footer: businessFooter,
+      css: standardPageCss,
+      body: `<main>
   <section class="document-title avoid-break">
     <div>
       <div class="document-kicker">Logistics</div>
@@ -548,6 +582,7 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     <div class="signature">Received by</div>
   </section>
 </main>`,
+    },
   },
   {
     id: "quote",
@@ -559,10 +594,14 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     expectedData: "One quote record plus selected position fields.",
     page: "A4 portrait",
     source: recordSource,
-    headerHtml: businessHeader,
-    footerHtml: businessFooter,
-    pageCss: standardPageCss,
-    html: `<main>
+    renderer: {
+      kind: "html",
+      numberTemplate: defaultNumberTemplate,
+      filenameTemplate: defaultFilenameTemplate,
+      header: businessHeader,
+      footer: businessFooter,
+      css: standardPageCss,
+      body: `<main>
   <section class="document-title avoid-break">
     <div>
       <div class="document-kicker">Commercial offer</div>
@@ -584,6 +623,7 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     <p class="muted">Prices are net prices unless stated otherwise. Delivery, payment, and availability are subject to written confirmation.</p>
   </section>
 </main>`,
+    },
   },
   {
     id: "packing-list",
@@ -596,12 +636,16 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     page: "A4 portrait",
     uses: ["printed checkboxes"],
     source: overviewSource,
-    headerHtml: businessHeader,
-    footerHtml: businessFooter,
-    pageCss: `${standardPageCss}
+    renderer: {
+      kind: "html",
+      numberTemplate: defaultNumberTemplate,
+      filenameTemplate: defaultFilenameTemplate,
+      header: businessHeader,
+      footer: businessFooter,
+      css: `${standardPageCss}
 .check-col { width: 12mm; text-align: center; }
 .packed-table td.check-col { padding-top: 8px; }`,
-    html: `<main>
+      body: `<main>
   <section class="document-title avoid-break">
     <div>
       <div class="document-kicker">Warehouse</div>
@@ -621,6 +665,7 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     </tbody>
   </table>
 </main>`,
+    },
   },
   {
     id: "certificate",
@@ -632,13 +677,17 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     expectedData: "One selected record.",
     page: "A4 portrait",
     source: recordSource,
-    headerHtml: businessHeader,
-    footerHtml: businessFooter,
-    pageCss: `${standardPageCss}
+    renderer: {
+      kind: "html",
+      numberTemplate: defaultNumberTemplate,
+      filenameTemplate: defaultFilenameTemplate,
+      header: businessHeader,
+      footer: businessFooter,
+      css: `${standardPageCss}
 .certificate { min-height: 185mm; border: 2px solid #0f172a; padding: 18mm; text-align: center; }
 .certificate h1 { font-size: 24pt; margin-top: 18mm; }
 .certificate-detail { margin: 16mm auto 0; max-width: 130mm; text-align: left; }`,
-    html: `<main class="certificate">
+      body: `<main class="certificate">
   <div class="document-kicker">{{ table.name }}</div>
   <h1>Certificate</h1>
   <p>This document confirms the following record information.</p>
@@ -649,6 +698,7 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     <div class="signature">Authorized signature</div>
   </section>
 </main>`,
+    },
   },
   {
     id: "checklist",
@@ -661,12 +711,16 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     page: "A4 portrait",
     uses: ["printed checkboxes"],
     source: overviewSource,
-    headerHtml: businessHeader,
-    footerHtml: businessFooter,
-    pageCss: `${standardPageCss}
+    renderer: {
+      kind: "html",
+      numberTemplate: defaultNumberTemplate,
+      filenameTemplate: defaultFilenameTemplate,
+      header: businessHeader,
+      footer: businessFooter,
+      css: `${standardPageCss}
 .task-col { width: 13mm; text-align: center; }
 .details { color: #334155; }`,
-    html: `<main>
+      body: `<main>
   <section class="document-title avoid-break">
     <div>
       <div class="document-kicker">Checklist</div>
@@ -691,6 +745,7 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     </tbody>
   </table>
 </main>`,
+    },
   },
   {
     id: "badge",
@@ -702,16 +757,21 @@ body { font-family: Inter, Arial, sans-serif; color: #0f172a; padding: 6mm; }
     expectedData: "One selected record.",
     page: "85mm x 55mm",
     source: recordSource,
-    pageCss: `@page { size: 85mm 55mm; margin: 0; }
+    renderer: {
+      kind: "html",
+      numberTemplate: defaultNumberTemplate,
+      filenameTemplate: defaultFilenameTemplate,
+      css: `@page { size: 85mm 55mm; margin: 0; }
 * { box-sizing: border-box; }
 body { width: 85mm; height: 55mm; margin: 0; padding: 6mm; font-family: Inter, Arial, sans-serif; color: #0f172a; }
 .badge { height: 43mm; border-radius: 6px; border: 1px solid #cbd5e1; padding: 6mm; text-align: center; overflow: hidden; display: flex; flex-direction: column; justify-content: center; }
 .name { font-size: 21pt; font-weight: 850; line-height: 1.05; }
 .meta { margin-top: 3mm; color: #64748b; font-size: 9pt; text-transform: uppercase; letter-spacing: .08em; font-weight: 800; }`,
-    html: `<section class="badge">
+      body: `<section class="badge">
   <div class="name">${primaryValue}</div>
   <div class="meta">{{ table.name }}</div>
 </section>`,
+    },
   },
 ];
 

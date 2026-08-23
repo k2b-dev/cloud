@@ -8,12 +8,13 @@ import {
   PanelDialog,
   panelDialogWorkspaceOptions,
   prompts,
+  Select,
   type TemplateVariable,
   TextInput,
 } from "@k2b/ui";
-import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
-import type { DocumentPreviewResponse } from "../../../contracts";
+import type { DocumentPreviewResponse, DocumentTemplateRenderer } from "../../../contracts";
 import type { DocumentTemplateStarter } from "../../../document-template-starters";
 import { requestDocumentTemplateDraftPreview } from "../documents/document-transfer-client";
 import type { PublicDocumentTemplate } from "../documents/public-document-types";
@@ -45,6 +46,30 @@ const diagnosticText = (diagnostic: { message: string; line?: number; column?: n
   diagnostic.line && diagnostic.column ? `Line ${diagnostic.line}, col ${diagnostic.column}: ${diagnostic.message}` : diagnostic.message;
 
 const hasLiquidTags = (value: string) => /{{|{%/.test(value);
+
+const DEFAULT_PROFILE_INPUT = `{
+  "invoiceDate": {{ record.data.INVOICE_DATE | json }},
+  "dueDate": {{ record.data.DUE_DATE | json }},
+  "currency": "EUR",
+  "seller": {
+    "name": {{ business.legalName | json }},
+    "vatId": {{ business.taxId | json }},
+    "address": { "line1": "", "city": "", "postalCode": "", "countryCode": "DE" }
+  },
+  "buyer": {
+    "name": {{ record.data.CUSTOMER | json }},
+    "vatId": "DE000000000",
+    "address": { "line1": "", "city": "", "postalCode": "", "countryCode": "DE" }
+  },
+  "buyerReference": {{ record.id | json }},
+  "payment": { "iban": {{ business.iban | json }}, "accountName": {{ business.legalName | json }} },
+  "lines": [{
+    "name": {{ record.data.DESCRIPTION | json }},
+    "quantity": {{ record.data.QUANTITY | json }},
+    "unitPrice": {{ record.data.UNIT_PRICE | json }},
+    "taxRate": {{ record.data.TAX_RATE | json }}
+  }]
+}`;
 
 const readDocumentPreviewError = async (response: Response, fallback: string): Promise<{ message: string; phase: string | null }> => {
   try {
@@ -93,15 +118,43 @@ function DocumentTemplateEditorDialog(props: {
 }) {
   const template = props.args.template;
   const initialStarter = starterPayload(props.args.starter ?? defaultDocumentStarter(), props.args.tableId);
+  const initialRenderer = template?.renderer ?? initialStarter.renderer;
+  const blankRenderer = defaultDocumentStarter().renderer;
+  if (blankRenderer.kind !== "html") throw new Error("Blank Document starter must use the HTML renderer");
+  const starterRenderer = initialStarter.renderer.kind === "html" ? initialStarter.renderer : blankRenderer;
   const [name, setName] = createSignal(template?.name ?? initialStarter.name);
   const [description, setDescription] = createSignal(template?.description ?? initialStarter.description);
-  const [numberTemplate, setNumberTemplate] = createSignal(template?.numberTemplate ?? initialStarter.numberTemplate);
-  const [filenameTemplate, setFilenameTemplate] = createSignal(template?.filenameTemplate ?? initialStarter.filenameTemplate);
+  const [numberTemplate, setNumberTemplate] = createSignal(
+    initialRenderer.kind === "html" ? initialRenderer.numberTemplate : defaultDocumentNumberTemplate,
+  );
+  const [filenameTemplate, setFilenameTemplate] = createSignal(
+    initialRenderer.kind === "html" ? initialRenderer.filenameTemplate : "{{ document.number }}.pdf",
+  );
   const [source, setSource] = createSignal(template?.source ?? initialStarter.source);
-  const [html, setHtml] = createSignal(template?.html ?? initialStarter.html);
-  const [headerHtml, setHeaderHtml] = createSignal(template?.headerHtml ?? initialStarter.headerHtml);
-  const [footerHtml, setFooterHtml] = createSignal(template?.footerHtml ?? initialStarter.footerHtml);
-  const [pageCss, setPageCss] = createSignal(template?.pageCss ?? initialStarter.pageCss);
+  const [html, setHtml] = createSignal(initialRenderer.kind === "html" ? initialRenderer.body : starterRenderer.body);
+  const [profileKey, setProfileKey] = createSignal<string | null>(
+    initialRenderer.kind === "profile" ? `${initialRenderer.id}@${initialRenderer.version}` : null,
+  );
+  const [profileInput, setProfileInput] = createSignal<string | null>(
+    initialRenderer.kind === "profile" ? initialRenderer.inputTemplate : null,
+  );
+  const [profiles] = createResource(async () => {
+    const response = await fetch("/api/grids/documents/renderers");
+    if (!response.ok) throw new Error(await errorMessage(response, "Failed to load Document renderers"));
+    return response.json() as Promise<Array<{ id: string; version: number; title: string; description: string }>>;
+  });
+  const selectProfile = (value: string | null) => {
+    setProfileKey(value);
+    setProfileInput(value ? (profileInput() ?? DEFAULT_PROFILE_INPUT) : null);
+  };
+  const selectedProfile = () =>
+    profiles()?.find((profile) => `${profile.id}@${profile.version}` === profileKey()) ??
+    (initialRenderer.kind === "profile" && `${initialRenderer.id}@${initialRenderer.version}` === profileKey()
+      ? { ...initialRenderer, title: initialRenderer.id, description: "" }
+      : undefined);
+  const [headerHtml, setHeaderHtml] = createSignal(initialRenderer.kind === "html" ? (initialRenderer.header ?? "") : "");
+  const [footerHtml, setFooterHtml] = createSignal(initialRenderer.kind === "html" ? (initialRenderer.footer ?? "") : "");
+  const [pageCss, setPageCss] = createSignal(initialRenderer.kind === "html" ? (initialRenderer.css ?? "") : "");
   const [enabled, setEnabled] = createSignal(template?.enabled ?? false);
   const [previewRecordId, setPreviewRecordId] = createSignal("");
   const [previewData, setPreviewData] = createSignal<DocumentPreviewResponse | null>(null);
@@ -117,27 +170,33 @@ function DocumentTemplateEditorDialog(props: {
       byName.set(variable.name, variable);
     return [...byName.values()];
   });
+  const currentRenderer = (): DocumentTemplateRenderer | null => {
+    const profile = selectedProfile();
+    if (profileKey()) {
+      if (!profile) return null;
+      return { kind: "profile", id: profile.id, version: profile.version, inputTemplate: profileInput()?.trim() ?? "" };
+    }
+    return {
+      kind: "html",
+      body: html().trim(),
+      header: headerHtml().trim() || undefined,
+      footer: footerHtml().trim() || undefined,
+      css: pageCss().trim() || undefined,
+      numberTemplate: numberTemplate().trim(),
+      filenameTemplate: filenameTemplate().trim(),
+    };
+  };
   const dirty = () =>
     name() !== (template?.name ?? initialStarter.name) ||
     description() !== (template?.description ?? initialStarter.description) ||
-    numberTemplate() !== (template?.numberTemplate ?? initialStarter.numberTemplate) ||
-    filenameTemplate() !== (template?.filenameTemplate ?? initialStarter.filenameTemplate) ||
     source() !== (template?.source ?? initialStarter.source) ||
-    html() !== (template?.html ?? initialStarter.html) ||
-    headerHtml() !== (template?.headerHtml ?? initialStarter.headerHtml) ||
-    footerHtml() !== (template?.footerHtml ?? initialStarter.footerHtml) ||
-    pageCss() !== (template?.pageCss ?? initialStarter.pageCss) ||
+    JSON.stringify(currentRenderer()) !== JSON.stringify(initialRenderer) ||
     enabled() !== (template?.enabled ?? false);
 
   const currentPreviewSignature = () =>
     JSON.stringify({
       source: source().trim(),
-      html: html().trim(),
-      headerHtml: headerHtml().trim() || null,
-      footerHtml: footerHtml().trim() || null,
-      pageCss: pageCss().trim() || null,
-      numberTemplate: numberTemplate().trim(),
-      filenameTemplate: filenameTemplate().trim(),
+      renderer: currentRenderer(),
       recordId: previewRecordId().trim(),
     });
   const hasCurrentSuccessfulPreview = () => lastSuccessfulPreviewSignature() === currentPreviewSignature();
@@ -148,23 +207,21 @@ function DocumentTemplateEditorDialog(props: {
 
   const saveMut = mutations.create<PublicDocumentTemplate, void>({
     mutation: async () => {
+      const renderer = currentRenderer();
+      if (!renderer) throw new Error("Select an available Document renderer");
       const payload = {
         name: name().trim(),
         description: description().trim() || null,
-        numberTemplate: numberTemplate().trim(),
-        filenameTemplate: filenameTemplate().trim(),
         source: source().trim(),
-        html: html().trim(),
-        headerHtml: headerHtml().trim() || null,
-        footerHtml: footerHtml().trim() || null,
-        pageCss: pageCss().trim() || null,
+        renderer,
         enabled: enabled(),
       };
       if (!payload.name) throw new Error("Name is required");
-      if (!payload.numberTemplate) throw new Error("Document number pattern is required");
-      if (!payload.filenameTemplate) throw new Error("Filename template is required");
       if (!payload.source) throw new Error("GQL source is required");
-      if (!payload.html) throw new Error("HTML template is required");
+      if (renderer.kind === "html" && !renderer.body) throw new Error("HTML body is required");
+      if (renderer.kind === "html" && !renderer.numberTemplate) throw new Error("Document number pattern is required");
+      if (renderer.kind === "html" && !renderer.filenameTemplate) throw new Error("Filename template is required");
+      if (renderer.kind === "profile" && !renderer.inputTemplate) throw new Error("Renderer input is required");
       const res = template
         ? await apiClient.documents.templates[":templateId"].$patch({ param: { templateId: template.id }, json: payload })
         : await apiClient.documents.templates["by-table"][":tableId"].$post({ param: { tableId: props.args.tableId }, json: payload });
@@ -181,14 +238,11 @@ function DocumentTemplateEditorDialog(props: {
   const previewPdf = async () => {
     const recordId = previewRecordId().trim();
     if (!recordId) throw new Error("Preview record ID is required");
+    const renderer = currentRenderer();
+    if (!renderer) throw new Error("Select an available Document renderer");
     const payload = {
       source: source().trim(),
-      html: html().trim(),
-      headerHtml: headerHtml().trim() || null,
-      footerHtml: footerHtml().trim() || null,
-      pageCss: pageCss().trim() || null,
-      numberTemplate: numberTemplate().trim(),
-      filenameTemplate: filenameTemplate().trim(),
+      renderer,
       recordId,
     };
     const signature = currentPreviewSignature();
@@ -260,13 +314,8 @@ function DocumentTemplateEditorDialog(props: {
   createEffect(() => {
     const recordId = previewRecordId().trim();
     const sourceText = source().trim();
-    const htmlText = html().trim();
-    const headerHtmlText = headerHtml().trim();
-    const footerHtmlText = footerHtml().trim();
-    const pageCssText = pageCss().trim();
-    const numberTemplateText = numberTemplate().trim();
-    const filenameTemplateText = filenameTemplate().trim();
-    if (!recordId || !sourceText || !htmlText) {
+    const renderer = currentRenderer();
+    if (!recordId || !sourceText || !renderer || !(renderer.kind === "html" ? renderer.body : renderer.inputTemplate)) {
       previewDataToken += 1;
       setPreviewData(null);
       setPreviewDataError(null);
@@ -283,12 +332,7 @@ function DocumentTemplateEditorDialog(props: {
       try {
         const payload = {
           source: sourceText,
-          html: htmlText,
-          headerHtml: headerHtmlText || null,
-          footerHtml: footerHtmlText || null,
-          pageCss: pageCssText || null,
-          numberTemplate: numberTemplateText,
-          filenameTemplate: filenameTemplateText,
+          renderer,
           recordId,
         };
         const response = template
@@ -343,6 +387,19 @@ function DocumentTemplateEditorDialog(props: {
               icon="ti ti-align-left"
               placeholder="Optional"
             />
+            <Select
+              label="Renderer"
+              description="Choose HTML/PDF or an installed renderer such as E-Invoice."
+              value={profileKey}
+              onValueChange={selectProfile}
+              options={(profiles() ?? []).map((profile) => ({
+                id: `${profile.id}@${profile.version}`,
+                label: profile.title,
+                description: profile.description,
+              }))}
+              placeholder="HTML/PDF"
+              clearable
+            />
             <div>
               <TextInput
                 label="Document number"
@@ -352,11 +409,14 @@ function DocumentTemplateEditorDialog(props: {
                 icon="ti ti-hash"
                 placeholder={defaultDocumentNumberTemplate}
                 required
+                disabled={profileKey() !== null}
               />
-              <NoticeCard tone={template?.numberSeries.migrationNote ? "warning" : "info"} icon={false} class="mt-2" role="status">
-                {template
-                  ? `Number series ${template.numberSeries.id} · Last allocated ${template.numberSeries.lastValue}. Technical gaps can occur; pattern changes apply only to future documents.`
-                  : "A durable number series is created automatically when this template is saved. Technical gaps can occur."}
+              <NoticeCard tone={template?.numberSeries?.migrationNote ? "warning" : "info"} icon={false} class="mt-2" role="status">
+                {profileKey()
+                  ? "The selected renderer owns numbering and filenames."
+                  : template?.numberSeries
+                    ? `Number series ${template.numberSeries.id} · Last allocated ${template.numberSeries.lastValue}. Technical gaps can occur; pattern changes apply only to future documents.`
+                    : "A durable number series is created automatically when this template is saved. Technical gaps can occur."}
               </NoticeCard>
             </div>
             <div>
@@ -368,6 +428,7 @@ function DocumentTemplateEditorDialog(props: {
                 icon="ti ti-file-text"
                 placeholder="{{ document.number }}.pdf"
                 required
+                disabled={profileKey() !== null}
               />
             </div>
             <div class="lg:col-span-2">
@@ -425,14 +486,15 @@ function DocumentTemplateEditorDialog(props: {
           </div>
 
           <DocumentTemplateEditorPanes
-            html={html}
-            setHtml={setHtml}
-            headerHtml={headerHtml}
-            setHeaderHtml={setHeaderHtml}
-            footerHtml={footerHtml}
-            setFooterHtml={setFooterHtml}
-            pageCss={pageCss}
-            setPageCss={setPageCss}
+            rendererKind={() => (profileKey() ? "profile" : "html")}
+            body={() => profileInput() ?? html()}
+            setBody={(value) => (profileKey() ? setProfileInput(value) : setHtml(value))}
+            header={headerHtml}
+            setHeader={setHeaderHtml}
+            footer={footerHtml}
+            setFooter={setFooterHtml}
+            css={pageCss}
+            setCss={setPageCss}
             templateVariables={templateVariables}
             previewData={previewData}
             previewDataLoading={previewDataLoading}

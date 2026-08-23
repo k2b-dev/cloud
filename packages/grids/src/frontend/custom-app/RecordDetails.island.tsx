@@ -1,11 +1,12 @@
 import type { DateContext } from "@k2b/stdlib";
 import { Button, DescriptionList, IconButton, PanelHeader, Placeholder, prompts } from "@k2b/ui";
 import { createSignal, Show } from "solid-js";
-import type { DocumentRunSummary, RecordMutationAudit, TableAuditPolicy } from "../../contracts";
+import type { RecordMutationAudit, TableAuditPolicy } from "../../contracts";
 import type { CustomAppBlock } from "../../custom-apps/contracts";
 import { recordAuditRequirementFor } from "../../record-audit-policy";
 import type { Field, GridFile, GridRecord } from "../../service";
 import { downloadPdfResponse } from "../_components/documents/document-download";
+import type { PublicDocument } from "../_components/documents/public-document-types";
 import { openRecordAuditDialog } from "../_components/records/RecordAuditDialog";
 import RecordFileField from "../_components/records/RecordFileField";
 import { formatRecordRelativeTime } from "../_components/records/RecordHistorySection";
@@ -13,7 +14,7 @@ import { openRecordUpsertDialog } from "../_components/records/RecordUpsertDialo
 import { FieldValue } from "../_components/table/FieldValue";
 
 type RecordBlock = Extract<CustomAppBlock, { type: "record" }>;
-type CustomAppDocumentRun = DocumentRunSummary & { downloadUrl: string };
+type CustomAppDocument = PublicDocument & { downloadUrl: string };
 
 const responseMessage = async (response: Response, fallback: string): Promise<string> => {
   const body = (await response.json().catch(() => null)) as { message?: string } | null;
@@ -31,7 +32,7 @@ export default function RecordDetails(props: {
   updateEndpoint?: string;
   fileEndpoints: Record<string, string>;
   filesByField: Record<string, GridFile[]>;
-  documentRuns: CustomAppDocumentRun[];
+  documents: CustomAppDocument[];
   dateConfig: DateContext;
 }) {
   const [record, setRecord] = createSignal(props.record);
@@ -94,11 +95,11 @@ export default function RecordDetails(props: {
     }
   };
 
-  const download = async (run: CustomAppDocumentRun) => {
+  const download = async (document: CustomAppDocument) => {
     if (downloadingId()) return;
-    setDownloadingId(run.id);
+    setDownloadingId(document.id);
     try {
-      await downloadPdfResponse(await fetch(run.downloadUrl, { headers: { Accept: "application/pdf" } }), run.filename);
+      await downloadPdfResponse(await fetch(document.downloadUrl, { headers: { Accept: "application/pdf" } }), document.filename);
     } catch (error) {
       prompts.error(error instanceof Error ? error.message : "Failed to download document");
     } finally {
@@ -154,14 +155,14 @@ export default function RecordDetails(props: {
         <section class="flex min-w-0 flex-col gap-3" aria-labelledby={`${props.block.id}-documents`}>
           <PanelHeader title={<span id={`${props.block.id}-documents`}>Documents</span>} as="h3" size="md" />
           <Show
-            when={props.documentRuns.length > 0}
+            when={props.documents.length > 0}
             fallback={<Placeholder align="left" class="px-0 py-1" description="No generated documents yet." />}
           >
             <DescriptionList
               layout="rows"
               size="sm"
               actionVisibility="progressive"
-              items={props.documentRuns.map((run) => ({
+              items={props.documents.map((document) => ({
                 term: (
                   <span class="flex items-center gap-2">
                     <i class="ti ti-file-type-pdf shrink-0 text-base text-secondary" aria-hidden="true" />
@@ -170,19 +171,19 @@ export default function RecordDetails(props: {
                 ),
                 description: (
                   <span class="flex min-w-0 items-center justify-between gap-3">
-                    <span class="truncate text-primary">{run.filename}</span>
-                    <span class="shrink-0 text-xs text-dimmed">{formatRecordRelativeTime(run.generatedAt, props.dateConfig)}</span>
+                    <span class="truncate text-primary">{document.filename}</span>
+                    <span class="shrink-0 text-xs text-dimmed">{formatRecordRelativeTime(document.createdAt, props.dateConfig)}</span>
                   </span>
                 ),
                 action: (
                   <IconButton
                     size="xs"
                     variant="ghost"
-                    label={`Download ${run.filename}`}
-                    loading={downloadingId() === run.id}
-                    loadingLabel={`Downloading ${run.filename}`}
+                    label={`Download ${document.filename}`}
+                    loading={downloadingId() === document.id}
+                    loadingLabel={`Downloading ${document.filename}`}
                     disabled={Boolean(downloadingId())}
-                    onClick={() => void download(run)}
+                    onClick={() => void download(document)}
                   >
                     <i class="ti ti-download" aria-hidden="true" />
                   </IconButton>

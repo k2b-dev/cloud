@@ -7,23 +7,23 @@ order: 135
 ---
 Document templates turn table records into repeatable PDFs. Use them for invoices, contracts, labels, certificates, delivery notes, quotes, packing lists, checklists, and record summaries.
 
-Each template belongs to one table and defines one document family. A generated document belongs to one selected record, receives a stable number and filename, and keeps a snapshot so it can be reproduced after the live records change.
+Each template belongs to one table and defines one document family. A generated document belongs to one selected record, receives a stable number and filename, and keeps the exact source snapshot after the live records change. It appears in the record's Documents section, its template workspace, and the Base-wide **All documents** catalog.
 
 Use a document template when output must be formatted for people, printed, shared by an expiring link, or redownloaded later. Use CSV or JSON export when you only need data for another system.
 
-## Ordinary Documents and Business Documents {icon="shield-check"}
+## One immutable Document model {icon="shield-check"}
 
-Ordinary Documents are record-bound PDFs made from editable GQL, Liquid, and CSS templates. They remain the right choice for normal letters, labels, reports, and other user-designed output.
+Every completed Document is immutable. It belongs to one template and one selected record, and the same Document appears in the record detail, the template workspace, and **All documents**. Retrying generation with the same idempotency key returns the same Document; reusing that key with different input fails.
 
-A **Business Document** is a different issuance path for document families where the readable PDF and structured data must come from one frozen, typed snapshot. Its profile is code-owned and versioned. One atomic issuance stores the source revision, number, correction or replacement link, validation result, renderer and validator versions, and the exact artifact bytes and hashes. Issued rows and bytes cannot be edited; issue a linked correction or replacement instead.
+A template selects one renderer. The HTML renderer turns Liquid HTML and CSS into a PDF. An installed E-Invoice renderer maps the selected record through Liquid JSON, then creates and validates the PDF and structured artifact together. The renderer changes the artifacts a Document contains, not the Document model or the way it is generated, listed, inspected, or downloaded.
 
-Business Documents accept either a native application snapshot or one bounded, permission-safe GQL result. Both require Base Write access and a stable idempotency key. Retrying the same request returns the original result; reusing the key for different input fails. Snapshot JSON and one GQL result are each limited to 5 MiB; GQL issuance also accepts at most 100 rows and requires a stable `observedAt` timestamp for retry-safe source evidence. A profile may produce 2–8 artifacts totaling at most 100 MiB.
+Validation proves only the technical checks named by the selected renderer and version. It is not a general tax, accounting, signature, custody, or legal-compliance decision. Use `cld grids documents renderers --json` to inspect the renderers available on this installation.
 
-A successful profile validation proves only the technical checks named by that profile and version. It is not a general tax, accounting, signature, custody, or legal-compliance decision. Use `cld grids business-documents profiles --json` to see which profiles this installation actually provides.
+The built-in `de.zugferd.en16931@1` renderer creates outgoing EUR invoices as a readable PDF/A-3b with an embedded `factur-x.xml`, and retains the XML as a separate artifact. It verifies the embedded XML after rendering, targets ZUGFeRD 2.5 / Factur-X 1.09 EN 16931, validates the generated CII XML against the pinned XSD, and uses exact decimal strings with documented half-up rounding. Version 1 supports German seller and buyer addresses, standard VAT categories, bank transfer, and invoice or linked correction/replacement output. It does not cover incoming invoices, foreign currencies, tax exemptions, allowances, charges, prepayments, cash discounts, self-billing, or filings. Production use still requires organization-specific tax and legal review.
 
 ## From record to PDF {icon="table"}
 
-The template separates data selection from page layout. **GQL** loads the rows and columns the document may use. **Liquid HTML and CSS** turn those values into wording, tables, conditions, loops, images, barcodes, page breaks, headers, and footers. Grids then creates the PDF.
+The template separates data selection from rendering. **GQL** loads the rows and columns the Document may use. The selected renderer then receives either Liquid HTML and CSS or one Liquid JSON object.
 
 **Pipeline**
 
@@ -31,12 +31,14 @@ The template separates data selection from page layout. **GQL** loads the rows a
 selected record
   -> fill record values into the GQL source
   -> run the GQL query
-  -> fill the body, header, footer, and page CSS
-  -> create the PDF
-  -> save the document details and source snapshot
+  -> render the selected HTML or E-Invoice input
+  -> create and validate the artifacts
+  -> save the Document and source snapshot
 ```
 
 Keep filtering, sorting, joins, grouping, and totals in GQL. Keep Liquid focused on wording and page layout.
+
+For an E-Invoice template, choose its renderer and map the preview data in **Renderer input**. The editor expects one JSON object. Use the `json` filter for every inserted value, for example `"buyerReference": {{ record.id | json }}`, so quotes and other characters remain valid JSON. Previewing runs that renderer's validation and PDF generation before the template is enabled.
 
 ## Create your first template {icon="file-description"}
 
@@ -76,7 +78,7 @@ A template has one data part and up to four layout parts. The GQL source is rend
 | Part       | Language      | Purpose                                                                                          | Common use                                                                |
 | ---------- | ------------- | ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
 | GQL source | Liquid + GQL  | Selects the rows and columns available to the document. Liquid is rendered before GQL is parsed. | Current record, joined rows, item lists, grouped summaries.               |
-| Body       | Liquid + HTML | The main printable document content. This part is required.                                      | Invoice body, contract clauses, label layout, record detail tables.       |
+| Body       | Liquid + HTML | Main printable content for the HTML renderer.                                                     | Invoice body, contract clauses, label layout, record detail tables.       |
 | Header     | Liquid + HTML | Optional header shown on each page.                                                              | Letterhead, sender identity, document class, contact block.               |
 | Footer     | Liquid + HTML | Optional footer shown on each page.                                                              | Legal footer, bank data, and page placeholders such as `<span class="pageNumber"></span>` and `<span class="totalPages"></span>`. |
 | Page CSS   | Liquid + CSS  | Optional CSS injected into the PDF body document.                                                | @page size/margins, table headers, page breaks, print typography.         |
@@ -85,16 +87,16 @@ A template has one data part and up to four layout parts. The GQL source is rend
 
 The Data tab is the source of truth for the current preview record. It shows the exact shape Liquid receives after the GQL source has run. Copy paths from this tree instead of guessing object shapes.
 
-Think of the data in layers: `record` is the selected record, `rows` and `columns` are the GQL result, and `document` describes a saved run. `template`, `run`, and `date` provide stable metadata for numbers and filenames. `app` contains public platform branding. `business` contains the base's document profile. Rows also expose GQL output labels, so readable aliases make templates easier to maintain.
+Think of the data in layers: `record` is the selected record, `rows` and `columns` are the GQL result, and `document` describes a saved Document. `template`, `run`, and `date` provide stable metadata for numbers and filenames. `app` contains public platform branding. `business` contains the Base's shared document details. Rows also expose GQL output labels, so readable aliases make templates easier to maintain.
 
 :::reference
 - **record:** The current record: public `record.id` and `record.tableId`, `record.version`, `record.data`, created and updated timestamps.
 - **rows and columns:** The rows and columns returned by the GQL source. Use column.key for row access and column.label for human-readable headers.
-- **template, run, date:** Stable metadata for patterns and document copy: `{{ template.name }}`, `{{ template.id }}`, `{{ run.id }}`, `{{ date.iso }}`, and `{{ date.yyyyMMdd }}`. Draft previews use draft run values until a saved run exists.
+- **template, document, date:** Stable metadata for patterns and document copy: `{{ template.name }}`, `{{ template.id }}`, `{{ document.id }}`, `{{ date.iso }}`, and `{{ date.yyyyMMdd }}`. Draft previews use draft document values until a Document exists.
 - **app:** Public platform values for document branding: `{{ app.name }}`, `{{ app.contactEmail }}`, `{{ app.url }}`, `{{ app.logoDataUri }}`, and `{{ app.timezone }}`.
-- **business:** Base-level document profile values such as `{{ business.legalName }}`, `{{ business.senderLine }}`, `{{ business.address }}`, `{{ business.paymentTerms }}`, `{{ business.iban }}`, and footer/contact fields. Edit them in Base settings → Documents.
+- **business:** Base-level document details such as `{{ business.legalName }}`, `{{ business.senderLine }}`, `{{ business.address }}`, `{{ business.paymentTerms }}`, `{{ business.iban }}`, and footer/contact fields. Edit them in Base settings → Documents.
 - **images:** Image files attached to file fields on the selected record. Use `{{ primaryImage.url }}` for the first supported image or loop over `images`. Oversized and unsupported files are omitted.
-- **document:** Generated document metadata such as `{{ document.number }}` and `{{ document.generatedAt }}`. Use it in filenames and body/header/footer HTML after the number pattern has rendered. Draft previews may not have final values yet.
+- **document:** Document metadata such as `{{ document.number }}` and `{{ document.createdAt }}`. Use it in filenames and body/header/footer HTML after the number pattern has rendered. Draft previews may not have final values yet.
 - **snapshot:** The captured record graph for generated runs. It is null in live draft previews before a run exists.
 - **barcode_data_url:** A Grids Liquid filter for labels and badges. It returns an SVG data URL for QR codes and supported BWIP barcode symbols.
 :::
@@ -133,14 +135,14 @@ limit 100
 
 ## Numbers and filenames {icon="paperclip"}
 
-A generated document has a stable `document.number` and a PDF filename. Every template owns a durable number series, created automatically with the template. The number pattern is rendered first. The filename pattern can then use `{{ document.number }}`. This keeps business identifiers separate from the downloadable file name.
+A generated Document has a stable `document.number`. An HTML template owns a durable number series. Its number pattern is rendered first, and its filename pattern can then use `{{ document.number }}`. An E-Invoice renderer owns its numbering and artifact filenames.
 
-The default number pattern remains `{{ template.id }}-{{ date.yyyyMMdd }}-{{ run.id }}` so existing templates keep their current output. A custom pattern may use the allocated `{{ series.value }}`. Allocations increase atomically and are never reused, but rollbacks and technical failures can leave gaps. Grids does not claim that a number pattern alone establishes legal compliance.
+The default HTML number pattern is `{{ template.id }}-{{ date.yyyyMMdd }}-{{ document.id }}`. A custom pattern may use the allocated `{{ series.value }}`. Allocations increase atomically and are never reused, but rollbacks and technical failures can leave gaps. Grids does not claim that a number pattern alone establishes legal compliance.
 
 **Default number**
 
 ```text
-{{ template.id }}-{{ date.yyyyMMdd }}-{{ run.id }}
+{{ template.id }}-{{ date.yyyyMMdd }}-{{ document.id }}
 ```
 
 **Default filename**
@@ -152,7 +154,7 @@ The default number pattern remains `{{ template.id }}-{{ date.yyyyMMdd }}-{{ run
 **Business-style number**
 
 ```text
-INV-{{ date.yyyy }}-{{ run.id }}
+INV-{{ date.yyyy }}-{{ document.id }}
 ```
 
 **Sequential number**

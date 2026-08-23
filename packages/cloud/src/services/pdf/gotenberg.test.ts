@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { type GotenbergConfig, GotenbergRenderError, mergePdfsWithConfig, renderHtmlToPdfWithConfig } from "./gotenberg";
+import {
+  type GotenbergConfig,
+  GotenbergRenderError,
+  mergePdfsWithConfig,
+  renderFacturXHtmlToPdfWithConfig,
+  renderHtmlToPdfWithConfig,
+} from "./gotenberg";
 
 const baseConfig = {
   url: "http://gotenberg:3000",
@@ -66,6 +72,21 @@ describe("Gotenberg PDF renderer", () => {
     });
 
     expect(authHeader).toBe("");
+  });
+
+  test("posts bounded Factur-X XML with the explicit EN 16931 PDF/A-3 contract", async () => {
+    let form: FormData | null = null;
+    await renderFacturXHtmlToPdfWithConfig({ html: "<h1>Invoice</h1>", xml: "<invoice/>" }, baseConfig, {
+      fetch: async (_url, init) => {
+        form = init?.body as FormData;
+        return pdfResponse();
+      },
+    });
+    expect((form as FormData | null)?.get("facturxConformanceLevel")).toBe("EN 16931");
+    expect((form as FormData | null)?.get("facturxDocumentType")).toBe("INVOICE");
+    expect((form as FormData | null)?.get("facturxVersion")).toBe("1.0");
+    expect((form as FormData | null)?.get("pdfa")).toBe("PDF/A-3b");
+    expect(((form as FormData | null)?.get("facturxXml") as File).name).toBe("factur-x.xml");
   });
 
   test("posts PDFs to the PDF engine merge endpoint in stable order", async () => {

@@ -17,7 +17,7 @@ export const loadDocumentTemplateState = async (
   const canWriteTemplate = gridsService.permission.hasAtLeast(level, "write");
   const canManageTemplate = gridsService.permission.hasAtLeast(level, "admin");
   const initialDocumentViewMode = common.params.initialDocumentViewMode ?? "list";
-  const initialBrowserPage = await gridsService.document.browseRunsForTemplate({
+  const initialBrowserPage = await gridsService.document.browseDocumentsForTemplate({
     templateId: template.id,
     q: "",
     tags: [],
@@ -41,7 +41,7 @@ export const loadDocumentTemplateState = async (
       initialBrowserPage: {
         path: initialBrowserPage.path,
         folders: initialBrowserPage.folders,
-        items: initialBrowserPage.items.map(gridsService.document.summarizeRun),
+        items: initialBrowserPage.items.map(gridsService.document.summarizeDocument),
         total: initialBrowserPage.total,
         limit: initialBrowserPage.limit,
         hasMore: initialBrowserPage.hasMore,

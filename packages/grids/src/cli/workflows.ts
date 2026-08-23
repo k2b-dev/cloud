@@ -1,6 +1,8 @@
 import { arg, command, confirmFlag, flag } from "@valentinkolb/cloud/cli";
 import type { WorkflowInvocationReceipt } from "@valentinkolb/cloud/workflows";
-import type { DocumentRunSummaryList, EmailTemplate } from "../contracts";
+import type { z } from "zod";
+import type { PublicWorkflowDocumentListSchema } from "../api/workflow-public-contracts";
+import type { EmailTemplate } from "../contracts";
 import {
   type GridsWorkflowLauncher,
   type GridsWorkflowRevisionSummary,
@@ -9,7 +11,7 @@ import {
   type WorkflowAutocompleteResponse,
   type GridsWorkflowRun as WorkflowRun,
 } from "../workflows/contracts";
-import { documentRunRows } from "./documents-support";
+import { documentRows } from "./documents-support";
 import { baseArgs, baseFlag, requirePublicId, resolveBaseFromCommand } from "./resources";
 import {
   applyDefined,
@@ -763,16 +765,16 @@ export const workflowRunCommands = [
       offset: flag.int({ min: 0, description: "Document offset" }),
     },
     async run({ ctx, args, flags }) {
-      const payload = await readApi<DocumentRunSummaryList>(
+      const payload = await readApi<z.infer<typeof PublicWorkflowDocumentListSchema>>(
         ctx,
         `/workflows/runs/${encodeURIComponent(requirePublicId(args.run, "Workflow run id"))}/documents${queryString({ limit: flags.limit, offset: flags.offset })}`,
       );
-      printJsonOrTable(ctx, payload, documentRunRows(payload.items), [
+      printJsonOrTable(ctx, payload, documentRows(payload.items), [
         { key: "id", label: "ID" },
         { key: "number", label: "NUMBER" },
         { key: "filename", label: "FILENAME" },
         { key: "tags", label: "TAGS" },
-        { key: "generatedAt", label: "GENERATED" },
+        { key: "createdAt", label: "CREATED" },
       ]);
     },
   }),

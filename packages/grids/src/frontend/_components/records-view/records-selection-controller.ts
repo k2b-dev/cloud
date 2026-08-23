@@ -22,7 +22,7 @@ const emptyDetail = (recordId: string): WorkspaceRecordDetail => ({
   recordId,
   relationLabels: {},
   filesByField: {},
-  documentRuns: [],
+  documents: { items: [], cursor: null, hasMore: false },
   snapshots: [],
   auditEntries: [],
   combinedOrigin: null,

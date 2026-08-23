@@ -12,7 +12,7 @@ const workspaceState = (): PublicOkWorkspaceState => ({
     id: "DEMO01",
     name: "Inventory",
     description: null,
-    documentProfile: {},
+    documentDefaults: {},
     createdBy: null,
     deletedAt: null,
     createdAt: "2026-01-01T00:00:00.000Z",

@@ -8,6 +8,7 @@ const tableId = "22222222-2222-4222-8222-222222222222";
 const recordId = "33333333-3333-4333-8333-333333333333";
 const runId = "55555555-5555-4555-8555-555555555555";
 const workflowId = "66666666-6666-4666-8666-666666666666";
+const templateId = "77777777-7777-4777-8777-777777777777";
 const baseId = "44444444-4444-4444-8444-444444444444";
 const tablePublicId = "T4BL01";
 const recordPublicId = "R3CRD1";
@@ -44,7 +45,7 @@ describe("Grids workspace record detail", () => {
     recordId,
     relationLabels: {},
     filesByField: {},
-    documentRuns: [],
+    documents: { items: [], nextCursor: null, hasMore: false },
     snapshots: [],
     auditEntries: [],
     combinedOrigin: null,
@@ -75,7 +76,7 @@ describe("Grids workspace record detail", () => {
       recordId: recordPublicId,
       relationLabels: { TARGET: "Camera" },
       filesByField: {},
-      documentRuns: [],
+      documents: { items: [], cursor: null, hasMore: false },
       snapshots: [],
       auditEntries: [],
       combinedOrigin: null,
@@ -137,7 +138,7 @@ describe("Grids workspace workflow run detail", () => {
     const publicDetail = { ...detail, run: { id: runPublicId, baseId: "BASE01", workflowId: "WORK01" } };
     let loadedOptions:
       | {
-          canReadDocument: (document: { baseId: string; tableId: string; templateId: string | null }) => Promise<boolean>;
+          canReadDocument: (document: { baseId: string; tableId: string; templateId: string }) => Promise<boolean>;
           workflow?: { id: string } | null;
           viewer?: { userId: string | null };
         }
@@ -164,7 +165,7 @@ describe("Grids workspace workflow run detail", () => {
       await loadedOptions?.canReadDocument({
         baseId,
         tableId,
-        templateId: null,
+        templateId,
       }),
     ).toBe(true);
   });

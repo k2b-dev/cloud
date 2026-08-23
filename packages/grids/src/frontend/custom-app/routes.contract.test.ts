@@ -19,7 +19,7 @@ describe("published App page routes", () => {
 
   test("keeps App document downloads public-capable and mutations authenticated", async () => {
     const source = await Bun.file(new URL("../../api/custom-apps.ts", import.meta.url)).text();
-    const download = source.indexOf('/documents/:runId/download"');
+    const download = source.indexOf('/documents/:documentId/download"');
     const authenticated = source.indexOf('.use(deps.requireAuthenticated ?? auth.requireRole("authenticated"))');
     const optionalActor = source.indexOf('const loadOptionalActor = deps.loadOptionalActor ?? auth.requireRole("*")');
     const records = source.indexOf('/records"');

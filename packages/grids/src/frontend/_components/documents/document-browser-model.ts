@@ -1,15 +1,14 @@
 import type { GridsDocumentViewMode } from "../sidebar/GridsSettingsStore";
-import type { PublicDocumentRunFolder, PublicDocumentRunSummary } from "./public-document-types";
+import type { PublicDocument, PublicDocumentFolder } from "./public-document-types";
 
 export type DocumentViewMode = GridsDocumentViewMode | "custom";
 type DocumentBrowserMode = "list" | "folders";
 type DocumentBrowserKey = { templateId: string; search: string; mode: DocumentBrowserMode; path: string[] };
 type DocumentBrowserPageState = {
-  runs: PublicDocumentRunSummary[];
-  folders: PublicDocumentRunFolder[];
-  total: number;
+  documents: PublicDocument[];
+  folders: PublicDocumentFolder[];
   hasMore: boolean;
-  nextCursor: string | null;
+  cursor: string | null;
 };
 
 export const activeDocumentViewMode = (viewMode: DocumentViewMode, search: string): DocumentBrowserMode =>
@@ -24,44 +23,42 @@ export const serializeDocumentBrowserKey = (key: DocumentBrowserKey): string =>
   `${key.templateId}:${key.mode}:${key.search.trim()}:${key.path.join("/")}`;
 
 export const replaceDocumentBrowserPage = (page: {
-  items: PublicDocumentRunSummary[];
-  folders: PublicDocumentRunFolder[];
-  total?: number;
-  hasMore?: boolean;
-  nextCursor?: string | null;
+  items: PublicDocument[];
+  folders: PublicDocumentFolder[];
+  hasMore: boolean;
+  cursor: string | null;
 }): DocumentBrowserPageState => ({
-  runs: page.items,
+  documents: page.items,
   folders: page.folders,
-  total: page.total ?? page.items.length,
-  hasMore: Boolean(page.hasMore),
-  nextCursor: page.nextCursor ?? null,
+  hasMore: page.hasMore,
+  cursor: page.cursor,
 });
 
 export const appendDocumentBrowserPage = (
   current: DocumentBrowserPageState,
-  page: { items: PublicDocumentRunSummary[]; total?: number; hasMore?: boolean; nextCursor?: string | null },
+  page: { items: PublicDocument[]; hasMore: boolean; cursor: string | null },
   requestKey: string,
   currentKey: string,
 ): DocumentBrowserPageState =>
   requestKey === currentKey
     ? {
         ...current,
-        runs: [...current.runs, ...page.items],
-        total: page.total ?? current.total,
-        hasMore: Boolean(page.hasMore),
-        nextCursor: page.nextCursor ?? null,
+        documents: [...current.documents, ...page.items],
+        hasMore: page.hasMore,
+        cursor: page.cursor,
       }
     : current;
 
 export const documentCountLabel = (
   mode: DocumentBrowserMode,
-  folders: PublicDocumentRunFolder[],
-  runs: PublicDocumentRunSummary[],
-  total: number,
+  folders: PublicDocumentFolder[],
+  documents: PublicDocument[],
+  hasMore: boolean,
 ): string => {
-  const effectiveTotal = mode === "folders" && folders.length > 0 ? folders.reduce((sum, folder) => sum + folder.count, 0) : total;
-  if (folders.length > 0) return `${effectiveTotal} documents`;
-  return effectiveTotal > runs.length ? `${runs.length} of ${effectiveTotal} documents` : `${runs.length} documents`;
+  if (mode === "folders" && folders.length > 0) {
+    return `${folders.reduce((sum, folder) => sum + folder.count, 0)} documents`;
+  }
+  return `${documents.length}${hasMore ? "+" : ""} documents`;
 };
 
 export const documentBrowserEmptyText = (search: string, mode: DocumentBrowserMode, folderPath: string[]): string => {
@@ -70,8 +67,8 @@ export const documentBrowserEmptyText = (search: string, mode: DocumentBrowserMo
   return "No generated documents yet.";
 };
 
-export const documentRunActionState = (canWrite: boolean, busyRunId: string | null, runId: string) => ({
+export const documentActionState = (canWrite: boolean, busyDocumentId: string | null, documentId: string) => ({
   showEdit: canWrite,
   showLink: canWrite,
-  downloadBusy: busyRunId === runId,
+  downloadBusy: busyDocumentId === documentId,
 });

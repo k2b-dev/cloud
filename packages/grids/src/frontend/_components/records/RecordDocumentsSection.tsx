@@ -4,28 +4,20 @@ import {
   Button,
   DetailPanel,
   Dropdown,
-  dialogCore,
   isStructuredDataValue,
-  NoticeCard,
-  PanelDialog,
-  PdfPreview,
   Placeholder,
-  panelDialogOptions,
   prompts,
   StructuredDataPreview,
   toast,
 } from "@k2b/ui";
 import { createEffect, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { openDocumentDetailsDialog } from "../documents/DocumentDetailsDialog";
+import { openDocumentGenerateDialog } from "../documents/DocumentGenerateDialog";
 import { downloadPdfResponse } from "../documents/document-download";
-import {
-  isPdfResponse,
-  requestDocumentRunDownload,
-  requestDocumentTemplateGeneration,
-  requestDocumentTemplatePreview,
-} from "../documents/document-transfer-client";
+import { requestDocumentDownload } from "../documents/document-transfer-client";
 import type {
-  PublicDocumentRunSummary,
+  PublicDocument,
   PublicDocumentTemplateSummary,
   PublicRecordSnapshot,
   PublicRecordSnapshotSummary,
@@ -41,124 +33,37 @@ import {
   snapshotTableName,
 } from "./record-snapshot-model";
 
-const openDocumentGenerationReviewDialog = (args: { tableId: string; recordId: string; template: PublicDocumentTemplateSummary }) =>
-  dialogCore.open<boolean>((close) => <DocumentGenerationReviewDialog args={args} close={close} />, panelDialogOptions);
-
-function DocumentGenerationReviewDialog(props: {
-  args: { tableId: string; recordId: string; template: PublicDocumentTemplateSummary };
-  close: (generated: boolean) => void;
-}) {
-  const [previewed, setPreviewed] = createSignal(false);
-  const generateMut = mutations.create<void, void>({
-    mutation: async () => {
-      const res = await requestDocumentTemplateGeneration({
-        templateId: props.args.template.id,
-        recordId: props.args.recordId,
-      });
-      await downloadPdfResponse(res, `${props.args.template.name}.pdf`);
-    },
-    onSuccess: () => props.close(true),
-    onError: (error) => prompts.error(error.message),
-  });
-
-  const previewPdf = async () => {
-    setPreviewed(false);
-    const response = await requestDocumentTemplatePreview({
-      templateId: props.args.template.id,
-      recordId: props.args.recordId,
-    });
-    if (isPdfResponse(response)) setPreviewed(true);
-    return response;
-  };
-
-  return (
-    <PanelDialog>
-      <PanelDialog.Header title={`Generate — ${props.args.template.name}`} icon="ti ti-file-type-pdf" close={() => props.close(false)} />
-      <PanelDialog.Body>
-        <div class="grid min-h-[30rem] gap-3 lg:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]">
-          <section class="paper flex min-h-0 flex-col gap-3 p-4">
-            <div>
-              <div class="mb-1 flex items-center gap-2 text-xs font-medium text-secondary">
-                <i class="ti ti-file-type-pdf" />
-                Document template
-              </div>
-              <h3 class="text-base font-semibold text-primary">{props.args.template.name}</h3>
-              <Show when={props.args.template.description}>
-                {(description) => <p class="mt-1 text-sm leading-relaxed text-dimmed">{description()}</p>}
-              </Show>
-            </div>
-
-            <NoticeCard
-              tone="info"
-              title="The generated PDF stays unchanged"
-              detail="Grids saves the PDF and the record information used to create it. You can download the same PDF again later."
-            />
-
-            <StructuredDataPreview
-              title="Selected record"
-              data={{
-                tableId: props.args.tableId,
-                recordId: props.args.recordId,
-              }}
-              maxRows={4}
-            />
-          </section>
-
-          <PdfPreview
-            title="PDF preview"
-            class="min-h-[30rem]"
-            buttonLabel="Render preview"
-            emptyText="Render a preview before generating the final document."
-            request={previewPdf}
-          />
-        </div>
-      </PanelDialog.Body>
-      <PanelDialog.Footer>
-        <span />
-        <div class="flex items-center justify-end gap-2">
-          <Button variant="secondary" size="sm" type="button" onClick={() => props.close(false)} disabled={generateMut.loading()}>
-            Cancel
-          </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            type="button"
-            onClick={() => generateMut.mutate(undefined)}
-            disabled={generateMut.loading() || !previewed()}
-          >
-            {generateMut.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-download" />}
-            Generate PDF
-          </Button>
-        </div>
-      </PanelDialog.Footer>
-    </PanelDialog>
-  );
-}
-
 export default function RecordDocumentsSection(props: {
   cloudUrl: string;
   tableId: string;
+  tableName: string;
   recordId: string;
   live: boolean;
   templates: PublicDocumentTemplateSummary[];
-  initialRuns: PublicDocumentRunSummary[];
+  initialDocuments: { items: PublicDocument[]; cursor: string | null; hasMore: boolean };
   initialSnapshots: PublicRecordSnapshotSummary[];
 }) {
-  const [runs, setRuns] = createSignal<PublicDocumentRunSummary[]>(props.initialRuns);
+  const [documents, setDocuments] = createSignal<PublicDocument[]>(props.initialDocuments.items);
+  const [documentCursor, setDocumentCursor] = createSignal(props.initialDocuments.cursor);
+  const [hasMoreDocuments, setHasMoreDocuments] = createSignal(props.initialDocuments.hasMore);
   const [snapshots, setSnapshots] = createSignal<PublicRecordSnapshotSummary[]>(props.initialSnapshots);
   const [activeDownloadId, setActiveDownloadId] = createSignal<string | null>(null);
   const [activeSnapshotId, setActiveSnapshotId] = createSignal<string | null>(null);
 
-  createEffect(() => setRuns(props.initialRuns));
+  createEffect(() => {
+    setDocuments(props.initialDocuments.items);
+    setDocumentCursor(props.initialDocuments.cursor);
+    setHasMoreDocuments(props.initialDocuments.hasMore);
+  });
   createEffect(() => setSnapshots(props.initialSnapshots));
 
-  const loadRuns = async () => {
-    const res = await apiClient.documents.runs["by-record"][":tableId"][":recordId"].$get({
+  const loadDocuments = async (cursor?: string | null) => {
+    const res = await apiClient.documents["by-record"][":tableId"][":recordId"].$get({
       param: { tableId: props.tableId, recordId: props.recordId },
+      query: { limit: "100", ...(cursor ? { cursor } : {}) },
     });
     if (!res.ok) throw new Error(await errorMessage(res, "Failed to load generated documents"));
-    const value = (await res.json()) as { items: PublicDocumentRunSummary[] } | PublicDocumentRunSummary[];
-    return Array.isArray(value) ? value : value.items;
+    return (await res.json()) as { items: PublicDocument[]; cursor: string | null; hasMore: boolean };
   };
 
   const loadSnapshots = async () => {
@@ -169,23 +74,39 @@ export default function RecordDocumentsSection(props: {
     return ((await res.json()) as { items: PublicRecordSnapshotSummary[] }).items;
   };
 
-  const refreshDocumentsMut = mutations.create<{ runs: PublicDocumentRunSummary[]; snapshots: PublicRecordSnapshotSummary[] }, void>({
+  const refreshDocumentsMut = mutations.create<
+    { documents: { items: PublicDocument[]; cursor: string | null; hasMore: boolean }; snapshots: PublicRecordSnapshotSummary[] },
+    void
+  >({
     mutation: async () => {
-      const [nextRuns, nextSnapshots] = await Promise.all([loadRuns(), loadSnapshots()]);
-      return { runs: nextRuns, snapshots: nextSnapshots };
+      const [nextDocuments, nextSnapshots] = await Promise.all([loadDocuments(), loadSnapshots()]);
+      return { documents: nextDocuments, snapshots: nextSnapshots };
     },
     onSuccess: (value) => {
-      setRuns(value.runs);
+      setDocuments(value.documents.items);
+      setDocumentCursor(value.documents.cursor);
+      setHasMoreDocuments(value.documents.hasMore);
       setSnapshots(value.snapshots);
     },
     onError: (error) => prompts.error(error.message),
   });
 
-  const redownloadMut = mutations.create<void, PublicDocumentRunSummary>({
-    onBefore: (run) => setActiveDownloadId(run.id),
-    mutation: async (run) => {
-      const res = await requestDocumentRunDownload(run.id);
-      await downloadPdfResponse(res, run.filename);
+  const loadMoreDocumentsMut = mutations.create<{ items: PublicDocument[]; cursor: string | null; hasMore: boolean }, void>({
+    mutation: () => loadDocuments(documentCursor()),
+    onSuccess: (page) => {
+      const known = new Set(documents().map((document) => document.id));
+      setDocuments((current) => [...current, ...page.items.filter((document) => !known.has(document.id))]);
+      setDocumentCursor(page.cursor);
+      setHasMoreDocuments(page.hasMore);
+    },
+    onError: (error) => prompts.error(error.message),
+  });
+
+  const redownloadMut = mutations.create<void, PublicDocument>({
+    onBefore: (document) => setActiveDownloadId(document.id),
+    mutation: async (document) => {
+      const res = await requestDocumentDownload(document.id);
+      await downloadPdfResponse(res, document.filename);
     },
     onError: (error) => prompts.error(error.message),
     onFinally: () => setActiveDownloadId(null),
@@ -283,17 +204,26 @@ export default function RecordDocumentsSection(props: {
   });
 
   const generate = async (template: PublicDocumentTemplateSummary) => {
-    const generated = await openDocumentGenerationReviewDialog({
+    await openDocumentGenerateDialog({
       template,
-      tableId: props.tableId,
-      recordId: props.recordId,
+      table: { id: props.tableId, name: props.tableName },
+      initialRecordId: props.recordId,
+      onGenerated: async () => refreshDocumentsMut.mutate(undefined),
     });
-    if (generated) await refreshDocumentsMut.mutate(undefined);
   };
 
   const availableTemplates = () => props.templates.filter((template) => template.enabled);
-  const generatedRuns = runs;
+  const generatedDocuments = documents;
   const manualSnapshots = snapshots;
+  const inspectDocument = (document: PublicDocument) => {
+    const template = props.templates.find((candidate) => candidate.id === document.templateId);
+    void openDocumentDetailsDialog({
+      document,
+      canWrite: props.live && availableTemplates().length > 0,
+      onDownload: (item) => redownloadMut.mutate(item),
+      ...(template ? { onGenerateAgain: () => generate(template) } : {}),
+    });
+  };
   const generationActions = () =>
     availableTemplates().map((template) => ({
       label: template.name,
@@ -349,12 +279,12 @@ export default function RecordDocumentsSection(props: {
         </DetailPanel.Group>
       </Show>
 
-      <Show when={generatedRuns().length > 0 || (props.live && availableTemplates().length > 0)}>
+      <Show when={generatedDocuments().length > 0 || (props.live && availableTemplates().length > 0)}>
         <DetailPanel.Group label="Generated documents">
           <DetailPanel.Section
             title="Documents"
             icon="ti ti-file-type-pdf"
-            meta={generatedRuns().length}
+            meta={hasMoreDocuments() ? `${generatedDocuments().length}+` : generatedDocuments().length}
             actions={
               <Show when={props.live && availableTemplates().length > 0}>
                 <Dropdown.Root position="bottom-left" width="16rem" items={generationActions()}>
@@ -367,37 +297,48 @@ export default function RecordDocumentsSection(props: {
               </Show>
             }
           >
-            <Show when={generatedRuns().length === 0}>
+            <Show when={generatedDocuments().length === 0}>
               <Placeholder align="left" description="No generated documents yet." />
             </Show>
-            <For each={generatedRuns()}>
-              {(run) => (
+            <For each={generatedDocuments()}>
+              {(document) => (
                 <DetailPanel.Action
                   type="button"
-                  title={run.filename}
-                  description={formatRecordRelativeTime(run.generatedAt)}
+                  title={document.filename}
+                  description={formatRecordRelativeTime(document.createdAt)}
                   leading={
                     <i
                       aria-hidden="true"
                       class={
-                        activeDownloadId() === run.id
+                        activeDownloadId() === document.id
                           ? "ti ti-loader-2 animate-spin"
                           : `ti ${fileIcons.getFileIcon({
-                              name: run.filename,
+                              name: document.filename,
                               type: "file",
                               mimeType: "application/pdf",
                             })}`
                       }
                     />
                   }
-                  trailing={<i aria-hidden="true" class="ti ti-download" />}
-                  aria-label={`Download ${run.filename}`}
-                  onClick={() => redownloadMut.mutate(run)}
-                  disabled={redownloadMut.loading()}
-                  aria-busy={activeDownloadId() === run.id}
+                  trailing={<i aria-hidden="true" class="ti ti-chevron-right" />}
+                  aria-label={`Open ${document.filename}`}
+                  onClick={() => inspectDocument(document)}
                 />
               )}
             </For>
+            <Show when={hasMoreDocuments()}>
+              <Button
+                variant="secondary"
+                size="sm"
+                type="button"
+                class="mt-2"
+                loading={loadMoreDocumentsMut.loading()}
+                loadingLabel="Loading documents"
+                onClick={() => loadMoreDocumentsMut.mutate(undefined)}
+              >
+                Load more
+              </Button>
+            </Show>
           </DetailPanel.Section>
         </DetailPanel.Group>
       </Show>

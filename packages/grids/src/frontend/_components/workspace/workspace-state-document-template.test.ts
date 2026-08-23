@@ -13,7 +13,7 @@ const base = {
   shortId: "BASE01",
   name: "Documents Base",
   description: null,
-  documentProfile: {},
+  documentDefaults: {},
   deletedAt: null,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
@@ -69,7 +69,7 @@ const templateSummary = {
   updatedAt: template.updatedAt,
 };
 
-const documentRun = {
+const document = {
   id: "66666666-6666-4666-8666-666666666666",
   shortId: "RUN001",
   baseId: base.id,
@@ -81,8 +81,8 @@ const documentRun = {
   snapshotId: "77777777-7777-4777-8777-777777777777",
   documentNumber: "INV-001",
   tags: [],
-  generatedBy: null,
-  generatedAt: "2026-01-01T00:00:00.000Z",
+  createdBy: null,
+  createdAt: "2026-01-01T00:00:00.000Z",
 };
 
 let baseLevel: "none" | "read" | "write" = "none";
@@ -116,19 +116,19 @@ describe("loadGridsWorkspaceState — document templates use Base access", () =>
     spyOn(gridsService.document, "getTemplateByShortIdForTable").mockImplementation(
       async (_tableId, publicId) => (template.shortId === publicId ? template : null) as never,
     );
-    spyOn(gridsService.document, "browseRunsForTemplate").mockImplementation(
+    spyOn(gridsService.document, "browseDocumentsForTemplate").mockImplementation(
       async () =>
         ({
           path: [],
           folders: [],
-          items: [documentRun],
+          items: [document],
           total: 1,
           limit: 200,
           hasMore: false,
           nextCursor: null,
         }) as never,
     );
-    spyOn(gridsService.document, "summarizeRun").mockImplementation((run) => run as never);
+    spyOn(gridsService.document, "summarizeDocument").mockImplementation((document) => document as never);
     spyOn(gridsService.document, "summarizeTemplate").mockImplementation(() => templateSummary as never);
     spyOn(gridsService.view, "getByShortIdForTable").mockImplementation(async () => null);
     spyOn(gridsService.workflow, "listForBase").mockImplementation(async () => []);

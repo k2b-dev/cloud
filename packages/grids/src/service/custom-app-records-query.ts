@@ -14,6 +14,7 @@ import {
 import { executePublishedCustomAppQuery } from "./custom-app-runtime-query";
 import { listByTable as listFields } from "./fields";
 import { listFirstImagePreviews } from "./files";
+import { resolvePublicId, resolvePublicIds } from "./public-resources";
 import { ALL_RECORD_ACCESS } from "./record-access";
 import { createReader } from "./record-read";
 import { buildPinnedRelationLabelCache } from "./relation-labels";
@@ -82,12 +83,16 @@ export const executePublishedCustomAppRecords = async (input: {
     block.type === "referenced_records"
       ? { kind: "gql" as const, query: referencedRecordsGqlSource(input.page, block) ?? "" }
       : block.source;
-  const view = source.kind === "view" ? await getView(source.viewId) : null;
+  const viewId = source.kind === "view" ? await resolvePublicId("view", source.viewId) : null;
+  const view = viewId ? await getView(viewId) : null;
   const capability: RecordsCapability | undefined =
     source.kind === "view"
-      ? input.capabilities.views.find((candidate) => candidate.viewId === source.viewId && candidate.tableId === view?.tableId)
+      ? input.capabilities.views.find((candidate) => candidate.viewId === viewId && candidate.tableId === view?.tableId)
       : input.capabilities.recordQueries.find((candidate) => candidate.pageId === input.page.id && candidate.blockId === block.id);
   if (!capability) return null;
+  const publicDisplayFieldIds = block.type === "records" && block.display.kind === "table" ? block.display.columnIds : [];
+  const displayFieldIds = await resolvePublicIds("field", publicDisplayFieldIds);
+  if (displayFieldIds.size !== publicDisplayFieldIds.length) return null;
 
   const search = block.searchable ? input.search?.trim().slice(0, 200) || undefined : undefined;
   const cursorSigningKey = process.env.APP_SECRET?.trim();
@@ -129,7 +134,7 @@ export const executePublishedCustomAppRecords = async (input: {
                 ? {
                     allowedFieldIds:
                       block.display.kind === "table"
-                        ? block.display.columnIds
+                        ? block.display.columnIds.map((fieldId) => displayFieldIds.get(fieldId)!)
                         : "displayConfig" in capability
                           ? capability.displayConfig?.cards?.fieldIds
                           : undefined,

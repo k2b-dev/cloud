@@ -1,5 +1,5 @@
 import type {
-  DocumentProfile,
+  DocumentDefaults,
   Field,
   FieldColumnSpec,
   GridRecord,
@@ -42,6 +42,7 @@ export type RecordList = {
 };
 
 export type AuditAction =
+  | "document.created"
   | "created"
   | "updated"
   | "deleted"
@@ -85,7 +86,6 @@ export type AuditAction =
   | "workflow.record.created"
   | "workflow.record.finalized"
   | "workflow.record.finalization.requested"
-  | "workflow.document.generated"
   | "workflow.document_link.created"
   | "workflow.email.sent"
   | "workflow.email.queued"
@@ -96,9 +96,6 @@ export type AuditAction =
   | "email_template.updated"
   | "email_template.deleted"
   | "document_template.created"
-  | "document.generated"
-  | "document.metadata.updated"
-  | "business_document.issued"
   | "record_snapshot.created"
   | "document_link.created"
   | "document_link.revoked"
@@ -152,11 +149,11 @@ export type GridFileContent = GridFile & {
   bytes: Uint8Array;
 };
 
-export type CreateBaseInput = { name: string; description?: string | null };
+export type CreateBaseInput = { name: string; description?: string | null; documentDefaults?: DocumentDefaults };
 export type UpdateBaseInput = {
   name?: string;
   description?: string | null;
-  documentProfile?: DocumentProfile;
+  documentDefaults?: DocumentDefaults;
 };
 
 export type CreateTableInput = {

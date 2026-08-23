@@ -36,6 +36,7 @@ export default ssr<AuthContext>(async (c) => {
         activeWorkflowSlug: c.req.param("workflowId") ?? null,
         activeDocumentTableSlug: c.req.param("documentTableId") ?? null,
         activeDocumentTemplateSlug: c.req.param("documentTemplateId") ?? null,
+        documentsRequested: c.req.path.endsWith("/documents"),
         activeCustomAppSlug: c.req.param("customAppId") ?? null,
         initialDocumentViewMode: parseDocumentViewMode(c.req.header("Cookie")),
         dateConfig: await getDateConfig(c),

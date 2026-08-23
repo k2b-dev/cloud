@@ -2,7 +2,7 @@ import * as access from "./access";
 import * as audit from "./audit";
 import * as baseCatalog from "./base-catalog";
 import * as bases from "./bases";
-import * as businessDocuments from "./business-documents";
+import * as documentIssuance from "./document-issuance";
 import * as combinedAudit from "./combined-audit";
 import * as controlledDestruction from "./controlled-destruction";
 import * as customApps from "./custom-apps";
@@ -85,7 +85,6 @@ export const gridsService = {
       summary: bases.adminSummary,
     },
   },
-  businessDocument: businessDocuments.businessDocumentService,
   table: {
     listByBase: tables.listByBase,
     adminOverview: tableAdminOverview,
@@ -261,25 +260,29 @@ export const gridsService = {
     buildTemplateAppData: documents.buildTemplateAppData,
     buildTemplateInputContext: documents.buildTemplateInputContext,
     buildRenderData: documents.buildRenderData,
-    buildDocumentRunRenderData: documents.buildDocumentRunRenderData,
+    buildDocumentRenderData: documents.buildDocumentRenderData,
     buildLiveRenderData: documents.buildLiveRenderData,
     rowsWithColumnLabels: documents.rowsWithColumnLabels,
     renderSource: documents.renderDocumentSource,
     renderHtml: documents.renderDocumentHtml,
     renderPdfPreview: documents.renderDocumentPdfPreview,
-    createRun: documents.createDocumentRun,
-    createRenderedRun: documents.createRenderedDocumentRun,
-    createRunForRecord: documents.createRunForRecord,
-    listRunSummariesForRecordByTemplates: documents.listRunSummariesForRecordByTemplates,
-    listRunsForRecord: documents.listRunsForRecord,
-    listRunsForWorkflowRun: documents.listRunsForWorkflowRun,
-    listRunsForTemplate: documents.listRunsForTemplate,
-    browseRunsForTemplate: documents.browseRunsForTemplate,
-    summarizeRun: documents.summarizeRun,
-    getRun: documents.getDocumentRun,
-    getRunByShortId: documents.getDocumentRunByShortId,
-    updateRunMetadata: documents.updateRunMetadata,
-    listDocumentLinksForRun: documents.listDocumentLinksForRun,
+    renderProfileInput: documents.renderDocumentProfileInput,
+    createDocumentForRecord: documents.createDocumentForRecord,
+    issueDocument: documentIssuance.documentIssuanceService.issueDocument,
+    profiles: documentIssuance.documentIssuanceService.profiles,
+    preview: documentIssuance.documentIssuanceService.preview,
+    listForBase: documents.listDocumentsForBase,
+    listForRecord: documents.listDocumentsForRecord,
+    listDocumentSummariesForRecordByTemplates: documents.listDocumentSummariesForRecordByTemplates,
+    listDocumentsForWorkflow: documents.listDocumentsForWorkflow,
+    listDocumentsForTemplate: documents.listDocumentsForTemplate,
+    browseDocumentsForTemplate: documents.browseDocumentsForTemplate,
+    summarizeDocument: documents.summarizeDocument,
+    getDocument: documents.getDocument,
+    getDocumentByShortId: documents.getDocumentByShortId,
+    getDocumentArtifacts: documents.getDocumentArtifacts,
+    getDocumentArtifact: documents.getDocumentArtifact,
+    listDocumentLinks: documents.listDocumentLinksForDocument,
     getDocumentLink: documents.getDocumentLink,
     getDocumentLinkByShortId: documents.getDocumentLinkByShortId,
     createDocumentLink: documents.createDocumentLink,
@@ -288,8 +291,8 @@ export const gridsService = {
     recordDocumentLinkAccess: documents.recordDocumentLinkAccess,
     publicDocumentLinkPath: documents.publicDocumentLinkPath,
     publicDocumentLinkUrl: documents.publicDocumentLinkUrl,
-    getRunPdf: documents.getRunPdf,
-    renderWorkflowRunPdf: documents.renderWorkflowRunPdf,
+    getPdf: documents.getDocumentPdf,
+    renderWorkflowDocumentsPdf: documents.renderWorkflowDocumentsPdf,
   },
   emailTemplate: {
     listForBase: emailTemplates.listForBase,

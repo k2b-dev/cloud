@@ -1,7 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import type {
-  DocumentRunBrowseResponse,
-  DocumentRunSummary,
+  DocumentBrowseResponse,
+  DocumentSummary,
   DocumentTemplate,
   DocumentTemplateSummary,
   DslQueryPreviewResponse,
@@ -124,7 +124,7 @@ export type WorkspaceRecordDetail = {
   recordId: string;
   relationLabels: Record<string, string>;
   filesByField: Record<string, GridFile[]>;
-  documentRuns: DocumentRunSummary[];
+  documents: { items: DocumentSummary[]; nextCursor: string | null; hasMore: boolean };
   snapshots: RecordSnapshotSummary[];
   auditEntries: RecordHistoryEntry[];
   combinedOrigin: CombinedRecordOrigin | null;
@@ -133,6 +133,8 @@ export type WorkspaceRecordDetail = {
 type WorkspaceEmptyRoute = {
   kind: "empty";
 };
+
+export type WorkspaceDocumentsRoute = { kind: "documents" };
 
 export type WorkspaceWorkflowsRoute = {
   kind: "workflows";
@@ -164,7 +166,7 @@ export type WorkspaceWorkflowRunDetail = {
   steps: GridsWorkflowStepRun[];
   stepsTruncated: boolean;
   documents: {
-    items: DocumentRunSummary[];
+    items: DocumentSummary[];
     total: number;
     hasMore: boolean;
     nextOffset: number | null;
@@ -191,7 +193,7 @@ export type WorkspaceDocumentTemplateRoute = {
   canManageTemplate: boolean;
   initialRecordId: string | null;
   initialDocumentViewMode: GridsDocumentViewMode;
-  initialBrowserPage: DocumentRunBrowseResponse;
+  initialBrowserPage: DocumentBrowseResponse;
 };
 
 export type WorkspaceCustomAppRoute = {
@@ -207,6 +209,7 @@ export type GridsWorkspaceRoute =
   | WorkspaceWorkflowsRoute
   | WorkspaceQueryRoute
   | WorkspaceDocumentTemplateRoute
+  | WorkspaceDocumentsRoute
   | WorkspaceEmptyRoute;
 
 export type GridsWorkspaceState =
@@ -242,6 +245,7 @@ export type LoadWorkspaceParams = {
   activeWorkflowSlug?: string | null;
   activeDocumentTableSlug?: string | null;
   activeDocumentTemplateSlug?: string | null;
+  documentsRequested?: boolean;
   activeCustomAppSlug?: string | null;
   initialDocumentViewMode?: GridsDocumentViewMode;
   dateConfig?: DateContext;

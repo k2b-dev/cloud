@@ -58,7 +58,7 @@ describe("record history storage boundary", () => {
         VALUES
           (${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, 'record_snapshot.created',
            '{"snapshotId":{"old":null,"new":"snapshot"}}'::jsonb, NULL),
-          (${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, 'document.generated', NULL, NULL),
+          (${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, 'document.created', NULL, NULL),
           (${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, 'workflow.record.updated', NULL, NULL),
           (${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, 'file.added', NULL, NULL),
           (${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, 'future.record.event',
@@ -81,7 +81,7 @@ describe("record history storage boundary", () => {
         viewer: { userId: null, userGroups: [], isAdmin: true },
       });
       expect(detail.auditEntries.map((entry) => entry.action).sort()).toEqual([
-        "document.generated",
+        "document.created",
         "file.added",
         "record_snapshot.created",
         "unknown",
@@ -97,7 +97,7 @@ describe("record history storage boundary", () => {
       expect(payload.recordId).toBe(record.shortId);
       expect(payload.relationLabels).toEqual({ [targetRecordShortId]: "Camera" });
       expect(payload.auditEntries.map((entry) => entry.action).sort()).toEqual([
-        "document.generated",
+        "document.created",
         "file.added",
         "record_snapshot.created",
         "unknown",

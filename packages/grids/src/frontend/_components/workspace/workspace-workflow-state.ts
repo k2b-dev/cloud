@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { Workflow } from "../../../service";
 import { gridsService } from "../../../service";
-import type { DocumentRunReadAuthorizer } from "../../../service/document-browse";
+import type { DocumentReadAuthorizer } from "../../../service/document-browse";
 import type { ExpansionViewer } from "../../../service/relation-access";
 import { buildRelationLabelCacheForIds } from "../../../service/relation-labels";
 import {
@@ -58,11 +58,11 @@ const workflowRunInputLabels = async (
 
 export const loadWorkflowRunDetail = async (
   run: GridsWorkflowRun,
-  options: { canReadDocument: DocumentRunReadAuthorizer; workflow?: Workflow | null; viewer?: ExpansionViewer },
+  options: { canReadDocument: DocumentReadAuthorizer; workflow?: Workflow | null; viewer?: ExpansionViewer },
 ): Promise<WorkspaceWorkflowRunDetail> => {
   const [stepPage, documents, provenance, inputLabels] = await Promise.all([
     listWorkflowStepRunsPage(run.id),
-    gridsService.document.listRunsForWorkflowRun(run.id, { limit: RUN_DOCUMENT_LIMIT }, options.canReadDocument),
+    gridsService.document.listDocumentsForWorkflow(run.id, { limit: RUN_DOCUMENT_LIMIT }, options.canReadDocument),
     getWorkflowRunProvenance(run.id),
     workflowRunInputLabels(run, options.workflow ?? null, options.viewer),
   ]);
@@ -85,7 +85,7 @@ const loadSelectedRun = async (
   selectedRunId: string | null,
   workflows: Workflow[],
   viewer: ExpansionViewer,
-  canReadDocument: DocumentRunReadAuthorizer,
+  canReadDocument: DocumentReadAuthorizer,
 ): Promise<WorkspaceWorkflowRunDetail | null> => {
   if (!selectedRunId || !z.string().uuid().safeParse(selectedRunId).success) return null;
   const run = await gridsService.workflow.getRun(selectedRunId);
@@ -95,11 +95,11 @@ const loadSelectedRun = async (
   return loadWorkflowRunDetail(run, { canReadDocument, workflow, viewer });
 };
 
-const workflowRunDocumentAuthorizer =
-  (common: WorkspaceCommon): DocumentRunReadAuthorizer =>
-  async (run) => {
-    if (run.baseId !== common.base.id) return false;
-    const level = await resolveBaseLevel(common.params.user, run.baseId);
+const workflowDocumentAuthorizer =
+  (common: WorkspaceCommon): DocumentReadAuthorizer =>
+  async (document) => {
+    if (document.baseId !== common.base.id) return false;
+    const level = await resolveBaseLevel(common.params.user, document.baseId);
     return gridsService.permission.hasAtLeast(level, "read");
   };
 
@@ -143,7 +143,7 @@ export const loadWorkflowState = async (
     }),
     activeWorkflow ? gridsService.workflow.launcher.list(activeWorkflow.id) : Promise.resolve([]),
     activeWorkflow ? getWorkflowTriggerRuntimeState(activeWorkflow) : Promise.resolve(null),
-    loadSelectedRun(selectedRunId, common.catalog.workflows, buildViewer(common.params.user), workflowRunDocumentAuthorizer(common)),
+    loadSelectedRun(selectedRunId, common.catalog.workflows, buildViewer(common.params.user), workflowDocumentAuthorizer(common)),
   ]);
   return okState(
     common,

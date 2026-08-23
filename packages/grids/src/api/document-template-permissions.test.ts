@@ -86,12 +86,12 @@ const template = {
   name: "Shipping label",
   description: "Printable label",
   source: `from table {${tableId}}`,
-  html: "<p>{{ record.id }}</p>",
-  headerHtml: null,
-  footerHtml: null,
-  pageCss: null,
-  numberTemplate: "{{ template.id }}-{{ run.id }}",
-  filenameTemplate: "{{ document.number }}.pdf",
+  renderer: {
+    kind: "html" as const,
+    body: "<p>{{ record.id }}</p>",
+    numberTemplate: "{{ template.id }}-{{ document.id }}",
+    filenameTemplate: "{{ document.number }}.pdf",
+  },
   enabled: true,
   position: 0,
   createdBy: user.id,
@@ -133,7 +133,7 @@ const relationField = {
 };
 const { tableId: _relationTableId, ...snapshotRelationField } = relationField;
 
-let baseLevel: "none" | "read" = "read";
+let baseLevel: "none" | "read" | "write" = "read";
 let fieldListCalls = 0;
 let snapshotListCalls = 0;
 let snapshotCreateCalls = 0;
@@ -248,6 +248,7 @@ describe("document template permission surfaces", () => {
       tableId: row.tableId,
       name: row.name,
       description: row.description,
+      renderer: row.renderer,
       enabled: row.enabled,
       position: row.position,
       createdAt: row.createdAt,
@@ -273,6 +274,7 @@ describe("document template permission surfaces", () => {
         tableId: tablePublicId,
         name: template.name,
         description: template.description,
+        renderer: template.renderer,
         enabled: template.enabled,
         position: template.position,
         createdAt: template.createdAt,
@@ -358,8 +360,8 @@ describe("document template permission surfaces", () => {
     expect(snapshotListCalls).toBe(1);
   });
 
-  test("requires base read access to create standalone snapshots", async () => {
-    baseLevel = "none";
+  test("requires base write access to create standalone snapshots", async () => {
+    baseLevel = "read";
     const app = createDocumentsApi({ requireAuthenticated: authenticated });
 
     const response = await app.request(`/snapshots/by-record/${tablePublicId}/${recordPublicId}`, { method: "POST" });
@@ -369,7 +371,8 @@ describe("document template permission surfaces", () => {
     expect(snapshotCreateCalls).toBe(0);
   });
 
-  test("creates standalone snapshots with base read access", async () => {
+  test("creates standalone snapshots with base write access", async () => {
+    baseLevel = "write";
     const app = createDocumentsApi({ requireAuthenticated: authenticated });
 
     const response = await app.request(`/snapshots/by-record/${tablePublicId}/${recordPublicId}`, { method: "POST" });

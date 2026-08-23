@@ -27,6 +27,9 @@ export const loadWorkspaceRoute = async (request: WorkspaceRequestContext): Prom
   const workflowWorkspaceRequested = common.chrome.url.pathname.includes("/workflows");
   const activeTableFromSlug = request.requestedViewTable ?? tableForPublicRouteId(common.catalog.tables, common.params.activeTableSlug);
 
+  if (common.params.documentsRequested) {
+    return okState(common, { kind: "documents" }, [...common.chrome.titleBase, { title: "Documents" }]);
+  }
   if (queryWorkspaceRequested) return loadQueryState(common, activeTableFromSlug, common.params.activeViewSlug);
   if (workflowWorkspaceRequested) {
     return loadWorkflowState(common, request.requestedWorkflow, common.params.activeWorkflowSlug);

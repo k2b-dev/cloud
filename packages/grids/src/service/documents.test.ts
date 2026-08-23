@@ -5,8 +5,10 @@ import {
   buildTemplateAppData,
   buildTemplateInputContext,
   documentNumberFor,
+  documentRecordDataWithPublicIds,
   publicDocumentLinkUrlForAppUrl,
   renderDocumentHtml,
+  renderDocumentProfileInput,
   renderDocumentSource,
   renderLiquidText,
   rowsWithColumnLabels,
@@ -15,6 +17,27 @@ import {
 } from "./documents";
 
 describe("document rendering", () => {
+  test("exposes record fields and relation values through public IDs", () => {
+    expect(
+      documentRecordDataWithPublicIds(
+        { "field-name-uuid": "Ada", "field-relation-uuid": ["record-uuid", "unreadable-record-uuid"] },
+        [
+          { id: "field-name-uuid", shortId: "NAME01", type: "text" },
+          { id: "field-relation-uuid", shortId: "REL001", type: "relation" },
+        ] as never,
+        new Map([["record-uuid", "REC001"]]),
+      ),
+    ).toEqual({ NAME01: "Ada", REL001: ["REC001", null] });
+  });
+
+  test("renders profile input as exact JSON without confusing values with JSON syntax", async () => {
+    const rendered = await renderDocumentProfileInput(
+      { renderer: { kind: "profile", id: "test.invoice", version: 1, inputTemplate: '{"customer": {{ record.data.customer | json }}}' } },
+      { record: { data: { customer: 'A & B "quoted"' } } },
+    );
+    expect(rendered).toEqual({ ok: true, data: { customer: 'A & B "quoted"' } });
+  });
+
   test("exposes stable public app data to document templates", async () => {
     const app = await buildTemplateAppData({
       app: {
@@ -67,7 +90,7 @@ describe("document rendering", () => {
     );
   });
 
-  test("exposes base document business profile to document templates", () => {
+  test("exposes Base document defaults as business data to document templates", () => {
     const table = { id: "table-1", shortId: "tbl1", name: "Items" };
     const record = {
       id: "record-1",
@@ -134,7 +157,17 @@ describe("document rendering", () => {
   });
 
   test("renders Liquid templates with escaped output by default", async () => {
-    const result = await renderDocumentHtml({ html: "<p>{{ record.data.name }}</p>" }, { record: { data: { name: "<b>Ada</b>" } } });
+    const result = await renderDocumentHtml(
+      {
+        renderer: {
+          kind: "html",
+          body: "<p>{{ record.data.name }}</p>",
+          numberTemplate: "DOC-{{ series.value }}",
+          filenameTemplate: "{{ document.number }}.pdf",
+        },
+      },
+      { record: { data: { name: "<b>Ada</b>" } } },
+    );
 
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.data).toBe("<p>&lt;b&gt;Ada&lt;&#x2F;b&gt;</p>");
@@ -198,12 +231,12 @@ describe("document rendering", () => {
     for (const starter of DOCUMENT_TEMPLATE_STARTERS) {
       const parts = [
         ["source", starter.source("11111111-1111-4111-8111-111111111111")],
-        ["numberTemplate", starter.numberTemplate],
-        ["filenameTemplate", starter.filenameTemplate],
-        ["html", starter.html],
-        ["headerHtml", starter.headerHtml],
-        ["footerHtml", starter.footerHtml],
-        ["pageCss", starter.pageCss],
+        ["numberTemplate", starter.renderer.numberTemplate],
+        ["filenameTemplate", starter.renderer.filenameTemplate],
+        ["body", starter.renderer.body],
+        ["header", starter.renderer.header],
+        ["footer", starter.renderer.footer],
+        ["css", starter.renderer.css],
       ] as const;
 
       for (const [part, value] of parts) {
@@ -214,12 +247,7 @@ describe("document rendering", () => {
 
       const writeResult = validateTemplateWrite({
         source: starter.source("11111111-1111-4111-8111-111111111111"),
-        html: starter.html,
-        headerHtml: starter.headerHtml,
-        footerHtml: starter.footerHtml,
-        pageCss: starter.pageCss,
-        numberTemplate: starter.numberTemplate,
-        filenameTemplate: starter.filenameTemplate,
+        renderer: starter.renderer,
       });
       expect(writeResult.ok, `${starter.id} write: ${writeResult.ok ? "" : writeResult.error.message}`).toBe(true);
     }
@@ -274,21 +302,21 @@ describe("document rendering", () => {
       images: [image],
       business,
       documentNumber: "tplA1-20260628-runB2",
-      generatedAt: "2026-06-28T12:00:00.000Z",
+      createdAt: "2026-06-28T12:00:00.000Z",
     });
     const emptyData = buildRenderData({ record, table, columns: [], rows: [], business });
 
     for (const starter of DOCUMENT_TEMPLATE_STARTERS) {
       for (const data of [filledData, emptyData]) {
-        const html = await renderDocumentHtml({ html: starter.html, pageCss: starter.pageCss ?? null }, data);
+        const html = await renderDocumentHtml({ renderer: starter.renderer }, data);
         expect(html.ok, `${starter.id} html: ${html.ok ? "" : html.error.message}`).toBe(true);
 
-        if (starter.headerHtml) {
-          const header = await renderLiquidText(starter.headerHtml, data);
+        if (starter.renderer.header) {
+          const header = await renderLiquidText(starter.renderer.header, data);
           expect(header.ok, `${starter.id} header: ${header.ok ? "" : header.error.message}`).toBe(true);
         }
-        if (starter.footerHtml) {
-          const footer = await renderLiquidText(starter.footerHtml, data);
+        if (starter.renderer.footer) {
+          const footer = await renderLiquidText(starter.renderer.footer, data);
           expect(footer.ok, `${starter.id} footer: ${footer.ok ? "" : footer.error.message}`).toBe(true);
         }
       }
@@ -305,10 +333,10 @@ describe("document rendering", () => {
       },
     });
     const invoice = DOCUMENT_TEMPLATE_STARTERS.find((starter) => starter.id === "invoice");
-    expect(invoice?.headerHtml).toBeTruthy();
-    if (!invoice?.headerHtml) throw new Error("invoice starter header is missing");
+    expect(invoice?.renderer.header).toBeTruthy();
+    if (!invoice?.renderer.header) throw new Error("invoice starter header is missing");
 
-    const result = await renderLiquidText(invoice.headerHtml, {
+    const result = await renderLiquidText(invoice.renderer.header, {
       app,
       business: {
         legalName: "Operations GmbH",
@@ -342,7 +370,7 @@ describe("document rendering", () => {
     if (!invoice) return;
 
     const rendered = await renderDocumentHtml(
-      { html: invoice.html, pageCss: invoice.pageCss },
+      { renderer: invoice.renderer },
       {
         app: { name: "Example Cloud" },
         business: {
@@ -355,7 +383,7 @@ describe("document rendering", () => {
           paymentTerms: "14 days net",
           iban: null,
         },
-        document: { number: "DOC-2026-0042", generatedAt: "2026-07-17" },
+        document: { number: "DOC-2026-0042", createdAt: "2026-07-17" },
         rows: [
           {
             invoice_number: "ORD-2026-0042",
@@ -429,17 +457,17 @@ describe("document rendering", () => {
     expect(result).toEqual({ ok: true, data: "where Loan = 'REC001'" });
   });
 
-  test("document number is stable for a run and uses the template pattern", () => {
+  test("document number is stable for a Document and uses the template pattern", () => {
     expect(
       documentNumberFor({
         template: {
           id: "33333333-3333-4333-8333-333333333333",
           shortId: "tplA1",
           name: "Invoice",
-          numberTemplate: "{{ template.id }}-{{ date.yyyyMMdd }}-{{ run.id }}",
+          numberTemplate: "{{ template.id }}-{{ date.yyyyMMdd }}-{{ document.id }}",
         },
-        runShortId: "runB2",
-        generatedAt: new Date("2026-06-26T12:00:00.000Z"),
+        documentShortId: "runB2",
+        createdAt: new Date("2026-06-26T12:00:00.000Z"),
       }),
     ).toEqual({ ok: true, data: "tplA1-20260626-runB2" });
   });
@@ -452,8 +480,8 @@ describe("document rendering", () => {
           name: "Invoice",
           numberTemplate: "{{ date.yyyyMMdd }}",
         },
-        runShortId: "runB2",
-        generatedAt: new Date("2026-06-26T22:30:00.000Z"),
+        documentShortId: "runB2",
+        createdAt: new Date("2026-06-26T22:30:00.000Z"),
         dateConfig: { timeZone: "Europe/Berlin" },
       }),
     ).toEqual({ ok: true, data: "20260627" });
@@ -462,9 +490,12 @@ describe("document rendering", () => {
   test("document pattern validation accepts Liquid loop built-ins and modifiers", () => {
     const result = validateTemplateWrite({
       source: "from table Items\nwhere record.id = '{{ record.id }}'",
-      html: "{% for row in rows reversed %}<p>{{ forloop.index }} {{ row.Name }}</p>{% endfor %}",
-      numberTemplate: "{{ template.id }}-{{ date.yyyyMMdd }}-{{ run.id }}",
-      filenameTemplate: "{{ document.number }}.pdf",
+      renderer: {
+        kind: "html",
+        body: "{% for row in rows reversed %}<p>{{ forloop.index }} {{ row.Name }}</p>{% endfor %}",
+        numberTemplate: "{{ template.id }}-{{ date.yyyyMMdd }}-{{ document.id }}",
+        filenameTemplate: "{{ document.number }}.pdf",
+      },
     });
 
     expect(result.ok).toBe(true);
@@ -473,9 +504,12 @@ describe("document rendering", () => {
   test("document pattern validation rejects loop locals outside their loop", () => {
     const result = validateTemplateWrite({
       source: "from table Items\nwhere record.id = '{{ record.id }}'",
-      html: "{% for row in rows %}<p>{{ row.Name }}</p>{% endfor %}<p>{{ row.Name }}</p>",
-      numberTemplate: "{{ template.id }}-{{ date.yyyyMMdd }}-{{ run.id }}",
-      filenameTemplate: "{{ document.number }}.pdf",
+      renderer: {
+        kind: "html",
+        body: "{% for row in rows %}<p>{{ row.Name }}</p>{% endfor %}<p>{{ row.Name }}</p>",
+        numberTemplate: "{{ template.id }}-{{ date.yyyyMMdd }}-{{ document.id }}",
+        filenameTemplate: "{{ document.number }}.pdf",
+      },
     });
 
     expect(result.ok).toBe(false);
@@ -485,9 +519,12 @@ describe("document rendering", () => {
   test("document pattern validation rejects unknown variables", () => {
     const result = validateTemplateWrite({
       source: "from table Items\nwhere record.id = '{{ record.id }}'",
-      html: "<p>{{ record.id }}</p>",
-      numberTemplate: "{{ records.name }}-{{ run.id }}",
-      filenameTemplate: "{{ document.number }}.pdf",
+      renderer: {
+        kind: "html",
+        body: "<p>{{ record.id }}</p>",
+        numberTemplate: "{{ records.name }}-{{ document.id }}",
+        filenameTemplate: "{{ document.number }}.pdf",
+      },
     });
 
     expect(result.ok).toBe(false);
@@ -497,9 +534,12 @@ describe("document rendering", () => {
   test("filename pattern validation rejects unknown variables", () => {
     const result = validateTemplateWrite({
       source: "from table Items\nwhere record.id = '{{ record.id }}'",
-      html: "<p>{{ record.id }}</p>",
-      numberTemplate: "{{ template.id }}-{{ date.yyyyMMdd }}-{{ run.id }}",
-      filenameTemplate: "{{ documents.number }}.pdf",
+      renderer: {
+        kind: "html",
+        body: "<p>{{ record.id }}</p>",
+        numberTemplate: "{{ template.id }}-{{ date.yyyyMMdd }}-{{ document.id }}",
+        filenameTemplate: "{{ documents.number }}.pdf",
+      },
     });
 
     expect(result.ok).toBe(false);

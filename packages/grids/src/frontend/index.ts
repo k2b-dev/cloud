@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { pdfResponse } from "../api/download-response";
 import { gridsService } from "../service";
 import documentTemplatePage from "./[baseId]/document/[documentTableId]/[documentTemplateId]/page";
+import documentsPage from "./[baseId]/documents/page";
 import baseDetailPage from "./[baseId]/page";
 import queryWorkspacePage from "./[baseId]/query/page";
 import queryReferencePage from "./[baseId]/query-reference/page";
@@ -31,12 +32,12 @@ export const publicRoutes = new Hono<AuthContext>()
     const requestAudit = auditRequestContext(c);
     const resolved = await gridsService.document.resolveDocumentLinkDownload(c.req.param("token") ?? "");
     if (!resolved.ok) return c.json({ message: "Document link not found" }, 404);
-    const pdf = await gridsService.document.getRunPdf(resolved.data.run);
+    const pdf = await gridsService.document.getPdf(resolved.data.document);
     if (!pdf.ok) return c.json({ message: pdf.error.message }, pdf.error.status);
     const access = await gridsService.document.recordDocumentLinkAccess(resolved.data.link.id, requestAudit);
     if (!access.ok) return c.json({ message: "Document link not found" }, 404);
-    return pdfResponse(pdf.data.pdf, resolved.data.run.filename, {
-      "X-Grids-Document-Run-Id": resolved.data.run.shortId,
+    return pdfResponse(pdf.data.pdf, resolved.data.document.filename, {
+      "X-Grids-Document-Id": resolved.data.document.shortId,
       "X-Grids-Document-Link-Id": resolved.data.link.shortId,
       "X-Grids-Document-Artifact": "stored",
     });
@@ -80,6 +81,7 @@ export default new Hono<AuthContext>()
   .get("/:baseId/table/:tableId", auth.requireRole("user", auth.redirectToLogin), ...tableRecordsPage)
   // Document template paths.
   .get("/:baseId/document/:documentTableId/:documentTemplateId", auth.requireRole("user", auth.redirectToLogin), ...documentTemplatePage)
+  .get("/:baseId/documents", auth.requireRole("user", auth.redirectToLogin), ...documentsPage)
   .get("/:baseId/reference/tables/:sourceId", auth.requireRole("user", auth.redirectToLogin), ...queryReferencePage)
   .get("/:baseId/reference/:tab", auth.requireRole("user", auth.redirectToLogin), ...queryReferencePage)
   .get("/:baseId/reference", auth.requireRole("user", auth.redirectToLogin), ...queryReferencePage)

@@ -2,7 +2,7 @@ import { confirmDiscardIfDirty, NoticeCard, SettingsGroup, SettingsModal } from 
 import type { AccessEntry } from "@valentinkolb/cloud/contracts";
 import { createSignal } from "solid-js";
 import type { PublicBase } from "../../../api/public-dto";
-import { DangerZone, DocumentProfileForm, GeneralForm, PermissionsSection, TrashSection } from "./BaseSettingsSections";
+import { DangerZone, DocumentDefaultsForm, GeneralForm, PermissionsSection, TrashSection } from "./BaseSettingsSections";
 import { ControlledDestructionSection } from "./ControlledDestructionSection";
 import { EvidenceExportsSection } from "./EvidenceExportsSection";
 import { PreservationHoldsSection } from "./PreservationHoldsSection";
@@ -93,7 +93,7 @@ export default function BaseSettingsPanel(props: Props) {
             icon="ti ti-file-type-pdf"
             description="Business details used by generated documents."
           >
-            <DocumentProfileForm
+            <DocumentDefaultsForm
               base={props.base}
               onDirtyChange={(value) => setSectionDirty("documents", value)}
               onSavingChange={(value) => setSectionSaving("documents", value)}

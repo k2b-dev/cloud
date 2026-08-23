@@ -125,7 +125,10 @@ export const createBasesApi = (deps: { requireAuthenticated?: MiddlewareHandler<
         // User-backed actors with write-capable credentials become the base
         // admin through the access entry created by the service.
         const body = c.req.valid("json");
-        const result = await gridsService.base.create({ name: body.name, description: body.description ?? null }, user.id);
+        const result = await gridsService.base.create(
+          { name: body.name, description: body.description ?? null, documentDefaults: body.documentDefaults },
+          user.id,
+        );
         return result.ok ? c.json(toPublicBase(result.data), 201) : c.json({ message: result.error.message }, result.error.status);
       },
     )

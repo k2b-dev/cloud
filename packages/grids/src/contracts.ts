@@ -11,7 +11,7 @@ import { AGGREGATE_KINDS } from "./aggregate-catalog";
 export const ShortIdSchema = z.string().regex(/^[A-Za-z0-9]{6}$/);
 const IconNameSchema = z.string().max(200).nullable().optional();
 
-export const DocumentProfileSchema = z
+export const DocumentDefaultsSchema = z
   .object({
     legalName: z.string().max(200).optional(),
     senderLine: z.string().max(500).optional(),
@@ -28,8 +28,9 @@ export const DocumentProfileSchema = z
     paymentTerms: z.string().max(500).optional(),
     footerText: z.string().max(1_000).optional(),
   })
+  .strict()
   .default({});
-export type DocumentProfile = z.infer<typeof DocumentProfileSchema>;
+export type DocumentDefaults = z.infer<typeof DocumentDefaultsSchema>;
 
 // ── Record display ────────────────────────────────────────────────────────
 //
@@ -218,7 +219,7 @@ export const BaseSchema = z.object({
   shortId: ShortIdSchema,
   name: z.string(),
   description: z.string().nullable(),
-  documentProfile: DocumentProfileSchema,
+  documentDefaults: DocumentDefaultsSchema,
   createdBy: z.string().uuid().nullable(),
   deletedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
@@ -226,16 +227,21 @@ export const BaseSchema = z.object({
 });
 export type Base = z.infer<typeof BaseSchema>;
 
-export const CreateBaseSchema = z.object({
-  name: z.string().min(1).max(200),
-  description: z.string().max(1000).nullable().optional(),
-});
+export const CreateBaseSchema = z
+  .object({
+    name: z.string().min(1).max(200),
+    description: z.string().max(1000).nullable().optional(),
+    documentDefaults: DocumentDefaultsSchema.optional(),
+  })
+  .strict();
 
-export const UpdateBaseSchema = z.object({
-  name: z.string().min(1).max(200).optional(),
-  description: z.string().max(1000).nullable().optional(),
-  documentProfile: DocumentProfileSchema.optional(),
-});
+export const UpdateBaseSchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    description: z.string().max(1000).nullable().optional(),
+    documentDefaults: DocumentDefaultsSchema.optional(),
+  })
+  .strict();
 
 // ── Table ─────────────────────────────────────────────────────────────────
 export const TableKindSchema = z.enum(["stored", "federated"]);
@@ -1124,6 +1130,41 @@ export const UpdateViewSchema = z.object({
 export const ViewListSchema = z.array(ViewSchema);
 
 // ── Documents ─────────────────────────────────────────────────────────────
+export const HtmlDocumentTemplateRendererSchema = z
+  .object({
+    kind: z.literal("html"),
+    body: z.string().trim().min(1).max(200_000),
+    header: z.string().trim().min(1).max(50_000).optional(),
+    footer: z.string().trim().min(1).max(50_000).optional(),
+    css: z.string().trim().min(1).max(50_000).optional(),
+    numberTemplate: z.string().trim().min(1).max(5_000),
+    filenameTemplate: z.string().trim().min(1).max(5_000),
+  })
+  .strict();
+export type HtmlDocumentTemplateRenderer = z.infer<typeof HtmlDocumentTemplateRendererSchema>;
+
+export const ProfileDocumentTemplateRendererSchema = z
+  .object({
+    kind: z.literal("profile"),
+    id: z.string().regex(/^[a-z][a-z0-9.-]{2,99}$/),
+    version: z.number().int().positive(),
+    inputTemplate: z.string().trim().min(1).max(200_000),
+  })
+  .strict();
+export type ProfileDocumentTemplateRenderer = z.infer<typeof ProfileDocumentTemplateRendererSchema>;
+
+export const DocumentTemplateRendererSchema = z.discriminatedUnion("kind", [
+  HtmlDocumentTemplateRendererSchema,
+  ProfileDocumentTemplateRendererSchema,
+]);
+export type DocumentTemplateRenderer = z.infer<typeof DocumentTemplateRendererSchema>;
+
+export const DocumentTemplateRendererSummarySchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("html") }).strict(),
+  ProfileDocumentTemplateRendererSchema.pick({ kind: true, id: true, version: true }).strict(),
+]);
+export type DocumentTemplateRendererSummary = z.infer<typeof DocumentTemplateRendererSummarySchema>;
+
 export const DocumentTemplateSchema = z.object({
   id: z.string().uuid(),
   shortId: ShortIdSchema,
@@ -1131,12 +1172,7 @@ export const DocumentTemplateSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   source: z.string().trim().min(1).max(20_000),
-  html: z.string().trim().min(1).max(200_000),
-  headerHtml: z.string().trim().max(50_000).nullable(),
-  footerHtml: z.string().trim().max(50_000).nullable(),
-  pageCss: z.string().trim().max(50_000).nullable(),
-  numberTemplate: z.string().trim().min(1).max(5_000),
-  filenameTemplate: z.string().trim().min(1).max(5_000),
+  renderer: DocumentTemplateRendererSchema,
   enabled: z.boolean(),
   position: z.number().int(),
   createdBy: z.string().uuid().nullable(),
@@ -1166,50 +1202,41 @@ const DocumentTemplateSummarySchema = DocumentTemplateSchema.pick({
   position: true,
   createdAt: true,
   updatedAt: true,
-});
+}).extend({ renderer: DocumentTemplateRendererSummarySchema });
 export type DocumentTemplateSummary = z.infer<typeof DocumentTemplateSummarySchema>;
 
 export const DocumentTemplateSummaryListSchema = z.array(DocumentTemplateSummarySchema);
 
-export const CreateDocumentTemplateSchema = z.object({
-  name: z.string().min(1).max(200),
-  description: z.string().max(2_000).nullable().optional(),
-  source: z.string().trim().min(1).max(20_000),
-  html: z.string().trim().min(1).max(200_000),
-  headerHtml: z.string().trim().max(50_000).nullable().optional(),
-  footerHtml: z.string().trim().max(50_000).nullable().optional(),
-  pageCss: z.string().trim().max(50_000).nullable().optional(),
-  numberTemplate: z.string().trim().min(1).max(5_000).optional(),
-  filenameTemplate: z.string().trim().min(1).max(5_000).optional(),
-  enabled: z.boolean().optional(),
-});
+export const CreateDocumentTemplateSchema = z
+  .object({
+    name: z.string().min(1).max(200),
+    description: z.string().max(2_000).nullable().optional(),
+    source: z.string().trim().min(1).max(20_000),
+    renderer: DocumentTemplateRendererSchema,
+    enabled: z.boolean().optional(),
+  })
+  .strict();
 export type CreateDocumentTemplateInput = z.infer<typeof CreateDocumentTemplateSchema>;
 
-export const UpdateDocumentTemplateSchema = z.object({
-  name: z.string().min(1).max(200).optional(),
-  description: z.string().max(2_000).nullable().optional(),
-  source: z.string().trim().min(1).max(20_000).optional(),
-  html: z.string().trim().min(1).max(200_000).optional(),
-  headerHtml: z.string().trim().max(50_000).nullable().optional(),
-  footerHtml: z.string().trim().max(50_000).nullable().optional(),
-  pageCss: z.string().trim().max(50_000).nullable().optional(),
-  numberTemplate: z.string().trim().min(1).max(5_000).optional(),
-  filenameTemplate: z.string().trim().min(1).max(5_000).optional(),
-  enabled: z.boolean().optional(),
-  position: z.number().int().optional(),
-});
+export const UpdateDocumentTemplateSchema = z
+  .object({
+    name: z.string().min(1).max(200).optional(),
+    description: z.string().max(2_000).nullable().optional(),
+    source: z.string().trim().min(1).max(20_000).optional(),
+    renderer: DocumentTemplateRendererSchema.optional(),
+    enabled: z.boolean().optional(),
+    position: z.number().int().optional(),
+  })
+  .strict();
 export type UpdateDocumentTemplateInput = z.infer<typeof UpdateDocumentTemplateSchema>;
 
-export const DocumentTemplateDraftPreviewSchema = z.object({
-  source: z.string().trim().min(1).max(20_000),
-  html: z.string().trim().min(1).max(200_000),
-  headerHtml: z.string().trim().max(50_000).nullable().optional(),
-  footerHtml: z.string().trim().max(50_000).nullable().optional(),
-  pageCss: z.string().trim().max(50_000).nullable().optional(),
-  numberTemplate: z.string().trim().min(1).max(5_000).optional(),
-  filenameTemplate: z.string().trim().min(1).max(5_000).optional(),
-  recordId: z.string().uuid(),
-});
+export const DocumentTemplateDraftPreviewSchema = z
+  .object({
+    source: z.string().trim().min(1).max(20_000),
+    renderer: DocumentTemplateRendererSchema,
+    recordId: z.string().uuid(),
+  })
+  .strict();
 
 export const RecordSnapshotSchema = z.object({
   id: z.string().uuid(),
@@ -1240,21 +1267,22 @@ export const RecordSnapshotListResponseSchema = z.object({
 });
 export type RecordSnapshotListResponse = z.infer<typeof RecordSnapshotListResponseSchema>;
 
-export const DocumentArtifactSummarySchema = z
+export const DocumentArtifactSchema = z
   .object({
-    mimeType: z.literal("application/pdf"),
+    key: z.string().regex(/^[a-z][a-z0-9._-]{0,63}$/),
+    fileId: z.string().uuid(),
+    filename: z.string().trim().min(1).max(255),
+    mimeType: z.string().trim().min(1).max(255),
     sizeBytes: z.number().int().positive(),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
-    rendererVersion: z.string().min(1),
-    templateRevision: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .strict();
-export type DocumentArtifactSummary = z.infer<typeof DocumentArtifactSummarySchema>;
+export type DocumentArtifact = z.infer<typeof DocumentArtifactSchema>;
 
-const DocumentRunSchema = z.object({
+const DocumentSchema = z.object({
   id: z.string().uuid(),
   shortId: ShortIdSchema,
-  templateId: z.string().uuid().nullable(),
+  templateId: z.string().uuid(),
   workflowRunId: z.string().uuid().nullable(),
   snapshotId: z.string().uuid(),
   baseId: z.string().uuid(),
@@ -1265,14 +1293,15 @@ const DocumentRunSchema = z.object({
   tags: z.array(z.string()),
   templateSnapshot: z.record(z.string(), z.unknown()),
   renderData: z.record(z.string(), z.unknown()),
-  artifactFileId: z.string().uuid(),
-  artifact: DocumentArtifactSummarySchema,
-  generatedBy: z.string().uuid().nullable(),
-  generatedAt: z.string().datetime(),
+  artifacts: z.array(DocumentArtifactSchema).min(1).max(8),
+  profile: z.object({ id: z.string(), version: z.number().int().positive() }).strict().nullable(),
+  validationStatus: z.enum(["valid", "warning"]).nullable(),
+  createdBy: z.string().uuid().nullable(),
+  createdAt: z.string().datetime(),
 });
-export type DocumentRun = z.infer<typeof DocumentRunSchema>;
+export type Document = z.infer<typeof DocumentSchema>;
 
-export const DocumentRunSummarySchema = DocumentRunSchema.pick({
+export const DocumentSummarySchema = DocumentSchema.pick({
   id: true,
   shortId: true,
   templateId: true,
@@ -1284,14 +1313,16 @@ export const DocumentRunSummarySchema = DocumentRunSchema.pick({
   documentNumber: true,
   filename: true,
   tags: true,
-  artifact: true,
-  generatedBy: true,
-  generatedAt: true,
+  artifacts: true,
+  profile: true,
+  validationStatus: true,
+  createdBy: true,
+  createdAt: true,
 });
-export type DocumentRunSummary = z.infer<typeof DocumentRunSummarySchema>;
+export type DocumentSummary = z.infer<typeof DocumentSummarySchema>;
 
-export const DocumentRunSummaryListSchema = z.object({
-  items: z.array(DocumentRunSummarySchema),
+export const DocumentSummaryListSchema = z.object({
+  items: z.array(DocumentSummarySchema),
   total: z.number().int().nonnegative().optional(),
   limit: z.number().int().positive().optional(),
   offset: z.number().int().nonnegative().optional(),
@@ -1299,7 +1330,7 @@ export const DocumentRunSummaryListSchema = z.object({
   nextOffset: z.number().int().nonnegative().nullable().optional(),
   nextCursor: z.string().nullable().optional(),
 });
-export type DocumentRunSummaryList = z.infer<typeof DocumentRunSummaryListSchema>;
+export type DocumentSummaryList = z.infer<typeof DocumentSummaryListSchema>;
 
 const DocumentLinkTtlSchema = z.enum(["1d", "7d", "30d", "90d"]);
 export type DocumentLinkTtl = z.infer<typeof DocumentLinkTtlSchema>;
@@ -1307,7 +1338,7 @@ export type DocumentLinkTtl = z.infer<typeof DocumentLinkTtlSchema>;
 export const DocumentLinkSchema = z.object({
   id: z.string().uuid(),
   shortId: ShortIdSchema,
-  documentRunId: z.string().uuid(),
+  documentId: z.string().uuid(),
   baseId: z.string().uuid(),
   tableId: z.string().uuid(),
   recordId: z.string().uuid(),
@@ -1401,25 +1432,25 @@ export const UpdateEmailTemplateSchema = z.object({
 });
 export type UpdateEmailTemplateInput = z.infer<typeof UpdateEmailTemplateSchema>;
 
-const DocumentRunFolderSchema = z.object({
+const DocumentFolderSchema = z.object({
   kind: z.enum(["year", "month"]),
   key: z.string(),
   label: z.string(),
   path: z.array(z.string()),
   count: z.number().int().nonnegative(),
 });
-export type DocumentRunFolder = z.infer<typeof DocumentRunFolderSchema>;
+export type DocumentFolder = z.infer<typeof DocumentFolderSchema>;
 
-export const DocumentRunBrowseResponseSchema = z.object({
+export const DocumentBrowseResponseSchema = z.object({
   path: z.array(z.string()),
-  folders: z.array(DocumentRunFolderSchema),
-  items: z.array(DocumentRunSummarySchema),
+  folders: z.array(DocumentFolderSchema),
+  items: z.array(DocumentSummarySchema),
   total: z.number().int().nonnegative().optional(),
   limit: z.number().int().positive().optional(),
   hasMore: z.boolean().optional(),
   nextCursor: z.string().nullable().optional(),
 });
-export type DocumentRunBrowseResponse = z.infer<typeof DocumentRunBrowseResponseSchema>;
+export type DocumentBrowseResponse = z.infer<typeof DocumentBrowseResponseSchema>;
 
 export const DocumentRecordBodySchema = z.object({
   recordId: z.string().uuid(),
@@ -1427,11 +1458,11 @@ export const DocumentRecordBodySchema = z.object({
   tags: z.array(z.string().trim().min(1).max(40)).max(20).optional().default([]),
 });
 
-export const UpdateDocumentRunMetadataSchema = z.object({
+export const UpdateDocumentMetadataSchema = z.object({
   filename: z.string().trim().min(1).max(255).optional(),
   tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
 });
-export type UpdateDocumentRunMetadataInput = z.infer<typeof UpdateDocumentRunMetadataSchema>;
+export type UpdateDocumentMetadataInput = z.infer<typeof UpdateDocumentMetadataSchema>;
 
 export const DocumentPreviewResponseSchema = z.object({
   html: z.string(),

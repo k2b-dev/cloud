@@ -7,6 +7,7 @@ const WORKSPACE_SURFACES = {
   customApp: "edge-to-edge",
   queryResultView: "inset",
   documentTemplate: "inset",
+  documents: "inset",
   empty: "inset",
   // Query panes own their full workbench gutters.
   query: "edge-to-edge",

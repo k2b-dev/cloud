@@ -368,7 +368,7 @@ export const allocateNumber = (params: {
 export const bindNumberAllocation = async (
   client: SqlClient,
   allocationId: string,
-  consumer: { kind: "record" | "document_run"; id: string },
+  consumer: { kind: "record" | "document"; id: string },
 ): Promise<void> => {
   await client`
     UPDATE grids.number_allocations

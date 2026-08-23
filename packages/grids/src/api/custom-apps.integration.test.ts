@@ -113,10 +113,18 @@ describe("Grids App Form runtime", () => {
       const [authUser] = await sql<Array<{ id: string }>>`SELECT id::text FROM auth.users ORDER BY id LIMIT 1`;
       if (!authUser) throw new Error("Grids App API integration test needs one auth user");
       const accessIds: string[] = [];
-      const artifactFileIds: string[] = [];
-      const artifactRunIds: string[] = [];
+      let userBaseAccessId: string | null = null;
       try {
         await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${basePublicId}, 'Grids App API')`;
+        const baseGrant = await grantAccess({
+          resourceType: "base",
+          resourceId: baseId,
+          permission: "admin",
+          principal: { type: "user", userId: authUser.id },
+        });
+        expect(baseGrant.ok).toBe(true);
+        if (!baseGrant.ok) throw new Error(baseGrant.error.message);
+        userBaseAccessId = baseGrant.data.accessId;
         await sql`
         INSERT INTO grids.tables (id, short_id, base_id, name)
         VALUES (${tableId}::uuid, ${tablePublicId}, ${baseId}::uuid, 'Requests')
@@ -157,10 +165,18 @@ describe("Grids App Form runtime", () => {
         )
       `;
         await sql`
-        INSERT INTO grids.document_templates (id, short_id, table_id, name, source, html)
+        INSERT INTO grids.document_templates (
+          id, short_id, table_id, name, source, renderer_kind, html, number_template, filename_template
+        )
         VALUES
-          (${documentTemplateId}::uuid, ${documentTemplatePublicId}, ${tableId}::uuid, 'Certificate', 'from table Requests', '<p>Certificate</p>'),
-          (${otherDocumentTemplateId}::uuid, ${otherDocumentTemplatePublicId}, ${tableId}::uuid, 'Internal certificate', 'from table Requests', '<p>Internal</p>')
+          (
+            ${documentTemplateId}::uuid, ${documentTemplatePublicId}, ${tableId}::uuid, 'Certificate',
+            'from table Requests', 'html', '<p>Certificate</p>', 'CERT-{{ document.id }}', '{{ document.number }}.pdf'
+          ),
+          (
+            ${otherDocumentTemplateId}::uuid, ${otherDocumentTemplatePublicId}, ${tableId}::uuid, 'Internal certificate',
+            'from table Requests', 'html', '<p>Internal</p>', 'INTERNAL-{{ document.id }}', '{{ document.number }}.pdf'
+          )
       `;
         await sql`
           INSERT INTO grids.workflow_profile (id, short_id, base_id, position, owner_user_id, enabled)
@@ -317,12 +333,12 @@ describe("Grids App Form runtime", () => {
             )
           `;
         };
-        const getDocumentRunPdf = async () => ok({ pdf: new Uint8Array([37, 80, 68, 70]), contentType: "application/pdf" as const });
+        const getDocumentPdf = async () => ok({ pdf: new Uint8Array([37, 80, 68, 70]), contentType: "application/pdf" as const });
         const publicApi = new Hono<AuthContext>().route(
           "/apps",
           createCustomAppsApi({
             requireAuthenticated: async (c) => c.json({ message: "Authentication required" }, 401),
-            getDocumentRunPdf,
+            getDocumentPdf,
           }),
         );
         const api = new Hono<AuthContext>().route(
@@ -358,7 +374,7 @@ describe("Grids App Form runtime", () => {
                 status: "queued",
               });
             },
-            getDocumentRunPdf,
+            getDocumentPdf,
           }),
         );
         const appResponse = await api.request(`/apps/${applied.data.shortId}`);
@@ -499,10 +515,10 @@ describe("Grids App Form runtime", () => {
 
         const snapshotId = testUuid();
         const snapshotPublicId = testShortId("N");
-        const documentRunId = testUuid();
-        const documentRunPublicId = testShortId("R");
-        const otherDocumentRunId = testUuid();
-        const otherDocumentRunPublicId = testShortId("Q");
+        const documentId = testUuid();
+        const documentPublicId = testShortId("R");
+        const otherDocumentId = testUuid();
+        const otherDocumentPublicId = testShortId("Q");
         const otherRecordId = testUuid();
         const otherRecordPublicId = testShortId("O");
         await sql`
@@ -528,18 +544,28 @@ describe("Grids App Form runtime", () => {
           '{}'::jsonb
         )
       `;
-        const documentArtifact = await insertTestDocumentArtifact({ runId: documentRunId, baseId, tableId, recordId });
-        const otherDocumentArtifact = await insertTestDocumentArtifact({ runId: otherDocumentRunId, baseId, tableId, recordId });
-        artifactFileIds.push(documentArtifact.fileId, otherDocumentArtifact.fileId);
-        artifactRunIds.push(documentRunId, otherDocumentRunId);
+        const documentArtifact = await insertTestDocumentArtifact({
+          documentId,
+          baseId,
+          tableId,
+          recordId,
+          filename: "certificate.pdf",
+        });
+        const otherDocumentArtifact = await insertTestDocumentArtifact({
+          documentId: otherDocumentId,
+          baseId,
+          tableId,
+          recordId,
+          filename: "internal-certificate.pdf",
+        });
         await sql`
-        INSERT INTO grids.document_runs (
+        INSERT INTO grids.documents (
           id, short_id, template_id, snapshot_id, base_id, table_id, record_id,
           document_number, filename, template_snapshot, render_data,
-          artifact_file_id, artifact_mime_type, artifact_size_bytes, artifact_sha256, renderer_version, template_revision
+          renderer_kind, renderer_version, template_revision, issued_actor
         ) VALUES (
-          ${documentRunId}::uuid,
-          ${documentRunPublicId},
+          ${documentId}::uuid,
+          ${documentPublicId},
           ${documentTemplateId}::uuid,
           ${snapshotId}::uuid,
           ${baseId}::uuid,
@@ -549,18 +575,18 @@ describe("Grids App Form runtime", () => {
           'certificate.pdf',
           '{}'::jsonb,
           '{}'::jsonb,
-          ${documentArtifact.fileId}::uuid, ${documentArtifact.mimeType}, ${documentArtifact.sizeBytes},
-          ${documentArtifact.sha256}, ${documentArtifact.rendererVersion}, ${documentArtifact.templateRevision}
+          'html', ${documentArtifact.rendererVersion}, ${documentArtifact.templateRevision}, ${{ kind: "user", userId: authUser.id }}::jsonb
         )
       `;
+        await documentArtifact.attach();
         await sql`
-        INSERT INTO grids.document_runs (
+        INSERT INTO grids.documents (
           id, short_id, template_id, snapshot_id, base_id, table_id, record_id,
           document_number, filename, template_snapshot, render_data,
-          artifact_file_id, artifact_mime_type, artifact_size_bytes, artifact_sha256, renderer_version, template_revision
+          renderer_kind, renderer_version, template_revision, issued_actor
         ) VALUES (
-          ${otherDocumentRunId}::uuid,
-          ${otherDocumentRunPublicId},
+          ${otherDocumentId}::uuid,
+          ${otherDocumentPublicId},
           ${otherDocumentTemplateId}::uuid,
           ${snapshotId}::uuid,
           ${baseId}::uuid,
@@ -570,23 +596,23 @@ describe("Grids App Form runtime", () => {
           'internal-certificate.pdf',
           '{}'::jsonb,
           '{}'::jsonb,
-          ${otherDocumentArtifact.fileId}::uuid, ${otherDocumentArtifact.mimeType}, ${otherDocumentArtifact.sizeBytes},
-          ${otherDocumentArtifact.sha256}, ${otherDocumentArtifact.rendererVersion}, ${otherDocumentArtifact.templateRevision}
+          'html', ${otherDocumentArtifact.rendererVersion}, ${otherDocumentArtifact.templateRevision}, ${{ kind: "user", userId: authUser.id }}::jsonb
         )
       `;
+        await otherDocumentArtifact.attach();
         const documentResponse = await publicApi.request(
-          `/apps/runtime/${applied.data.shortId}/request/record/documents/${documentRunPublicId}/download?request_id=${body.recordId}`,
+          `/apps/runtime/${applied.data.shortId}/request/record/documents/${documentPublicId}/download?request_id=${body.recordId}`,
           { headers: { "x-forwarded-for": `custom-app-document-${baseId}` } },
         );
         expect(documentResponse.status).toBe(200);
         expect(documentResponse.headers.get("content-type")).toBe("application/pdf");
-        expect(documentResponse.headers.get("X-Grids-Document-Run-Id")).toBe(documentRunPublicId);
+        expect(documentResponse.headers.get("X-Grids-Document-Id")).toBe(documentPublicId);
         expect(documentResponse.headers.get("X-Grids-Document-Artifact")).toBe("stored");
         expect(new Uint8Array(await documentResponse.arrayBuffer())).toEqual(new Uint8Array([37, 80, 68, 70]));
         expect(
           (
             await publicApi.request(
-              `/apps/runtime/${applied.data.shortId}/request/record/documents/${documentRunPublicId}/download?request_id=${otherRecordPublicId}`,
+              `/apps/runtime/${applied.data.shortId}/request/record/documents/${documentPublicId}/download?request_id=${otherRecordPublicId}`,
               { headers: { "x-forwarded-for": `custom-app-document-record-${baseId}` } },
             )
           ).status,
@@ -594,7 +620,7 @@ describe("Grids App Form runtime", () => {
         expect(
           (
             await publicApi.request(
-              `/apps/runtime/${applied.data.shortId}/request/record/documents/${otherDocumentRunPublicId}/download?request_id=${body.recordId}`,
+              `/apps/runtime/${applied.data.shortId}/request/record/documents/${otherDocumentPublicId}/download?request_id=${body.recordId}`,
               { headers: { "x-forwarded-for": `custom-app-document-template-${baseId}` } },
             )
           ).status,
@@ -748,7 +774,6 @@ describe("Grids App Form runtime", () => {
 
         const actionDefinition = structuredClone(definition);
         const actionAvailability = `from table {${tablePublicId}}\nwhere record.id = @params.request_id and {${fieldPublicId}} = 'Certificate request updated'\nlimit 1`;
-        const internalActionAvailability = `from table {${tableId}}\nwhere record.id = @params.request_id and {${fieldId}} = 'Certificate request updated'\nlimit 1`;
         actionDefinition.pages[1]!.rows[0]!.columns[0]!.blocks.push({
           id: "actions",
           type: "actions",
@@ -763,7 +788,7 @@ describe("Grids App Form runtime", () => {
             },
           ],
         });
-        const internalViewSource = `from table {${tableId}}\nselect {${fieldId}}`;
+        const viewSource = `from table {${tablePublicId}}\nselect {${fieldPublicId}}`;
         actionDefinition.pages[1]!.rows[0]!.columns[0]!.blocks.push({
           id: "request-view",
           type: "records",
@@ -773,7 +798,6 @@ describe("Grids App Form runtime", () => {
           display: { kind: "table", columnIds: [fieldPublicId] },
         });
         const rowSource = `from table {${tablePublicId}}`;
-        const internalRowSource = `from table {${tableId}}`;
         actionDefinition.pages[1]!.rows[0]!.columns[0]!.blocks.push({
           id: "requests",
           type: "records",
@@ -805,20 +829,20 @@ describe("Grids App Form runtime", () => {
         });
         const compiledActionAvailability = await compileCustomAppQuery({
           baseId,
-          source: internalActionAvailability,
+          source: actionAvailability,
           context: actionContext.query,
         });
         if (!compiledActionAvailability.ok) throw new Error(compiledActionAvailability.error);
-        const compiledRowSource = await compileCustomAppQuery({ baseId, source: internalRowSource, context: actionContext.query });
+        const compiledRowSource = await compileCustomAppQuery({ baseId, source: rowSource, context: actionContext.query });
         if (!compiledRowSource.ok) throw new Error(compiledRowSource.error);
-        const compiledViewSource = await compileCustomAppQuery({ baseId, source: internalViewSource, context: actionContext.query });
+        const compiledViewSource = await compileCustomAppQuery({ baseId, source: viewSource, context: actionContext.query });
         if (!compiledViewSource.ok) throw new Error(compiledViewSource.error);
         const actionCapability = {
           target: "action" as const,
           pageId: "request",
           blockId: "actions",
           actionId: "approve",
-          sourceHash: customAppViewSourceHash(baseId, internalActionAvailability),
+          sourceHash: customAppViewSourceHash(baseId, actionAvailability),
           planHash: compiledActionAvailability.data.planHash,
           tableIds: [tableId],
         };
@@ -847,7 +871,7 @@ describe("Grids App Form runtime", () => {
                 {
                   viewId,
                   tableId,
-                  sourceHash: customAppViewSourceHash(tableId, internalViewSource),
+                  sourceHash: customAppViewSourceHash(tableId, viewSource),
                   planHash: compiledViewSource.data.planHash,
                   tableIds: [tableId],
                 },
@@ -919,7 +943,7 @@ describe("Grids App Form runtime", () => {
         expect(anonymousAction.status).toBe(401);
         const directAvailability = await executePublishedCustomAppQuery({
           baseId,
-          source: internalActionAvailability,
+          source: actionAvailability,
           capability: actionCapability,
           context: actionContext.query,
           signal: new AbortController().signal,
@@ -933,7 +957,7 @@ describe("Grids App Form runtime", () => {
         expect(directAvailability.rows).toHaveLength(1);
         const changedPlanCapability = await executePublishedCustomAppQuery({
           baseId,
-          source: internalActionAvailability,
+          source: actionAvailability,
           capability: { ...actionCapability, planHash: "0".repeat(64) },
           context: actionContext.query,
           signal: new AbortController().signal,
@@ -948,7 +972,7 @@ describe("Grids App Form runtime", () => {
         });
         const changedTableCapability = await executePublishedCustomAppQuery({
           baseId,
-          source: internalActionAvailability,
+          source: actionAvailability,
           capability: { ...actionCapability, tableIds: [baseId] },
           context: actionContext.query,
           signal: new AbortController().signal,
@@ -1233,7 +1257,7 @@ describe("Grids App Form runtime", () => {
         const hiddenActionBlock = hiddenBlockDefinition.pages[1]!.rows[0]!.columns[0]!.blocks.find((block) => block.id === "actions");
         if (!hiddenActionBlock) throw new Error("Action block is missing");
         hiddenActionBlock.availableWhen = {
-          query: `from table {${tableId}}\nwhere {${fieldId}} = 'No matching action block record'\nlimit 1`,
+          query: `from table {${tablePublicId}}\nwhere {${fieldPublicId}} = 'No matching action block record'\nlimit 1`,
         };
         await sql`
           UPDATE grids.custom_apps
@@ -1251,7 +1275,7 @@ describe("Grids App Form runtime", () => {
           VALUES (${appId}::uuid, ${appGrant.data.accessId}::uuid)
         `;
 
-        const blockAvailability = `from table {${tableId}}\nwhere {${fieldId}} = 'No matching form record'\nlimit 1`;
+        const blockAvailability = `from table {${tablePublicId}}\nwhere {${fieldPublicId}} = 'No matching form record'\nlimit 1`;
         const unavailableFormDefinition = structuredClone(actionDefinition);
         const unavailableForm = unavailableFormDefinition.pages[0]!.rows[0]!.columns[0]!.blocks[0]!;
         unavailableForm.availableWhen = { query: blockAvailability };
@@ -1292,7 +1316,7 @@ describe("Grids App Form runtime", () => {
         });
         expect(unavailableFormResponse.status).toBe(404);
 
-        const pageAvailability = `from table {${tableId}}\nwhere {${fieldId}} = 'No matching page record'\nlimit 1`;
+        const pageAvailability = `from table {${tablePublicId}}\nwhere {${fieldPublicId}} = 'No matching page record'\nlimit 1`;
         const unavailablePageDefinition = structuredClone(unavailableFormDefinition);
         unavailablePageDefinition.pages[0]!.availableWhen = { query: pageAvailability };
         const compiledPageAvailability = await compileCustomAppQuery({
@@ -1361,16 +1385,11 @@ describe("Grids App Form runtime", () => {
       } finally {
         await sql`DELETE FROM grids.audit_log WHERE base_id = ${baseId}::uuid`;
         await sql`DELETE FROM grids.record_event_outbox WHERE base_id = ${baseId}::uuid`;
-        await sql`DELETE FROM grids.document_runs WHERE base_id = ${baseId}::uuid`;
-        if (artifactRunIds.length > 0) {
-          await sql`DELETE FROM grids.file_protected_references WHERE owner_kind = 'document_artifact' AND owner_id = ANY(${sql.array(artifactRunIds, "UUID")}::uuid[])`;
+        if (userBaseAccessId) {
+          await sql`DELETE FROM grids.base_access WHERE base_id = ${baseId}::uuid AND access_id = ${userBaseAccessId}::uuid`;
+          await sql`DELETE FROM auth.access WHERE id = ${userBaseAccessId}::uuid`;
         }
-        if (artifactFileIds.length > 0) {
-          await sql`DELETE FROM grids.files WHERE id = ANY(${sql.array(artifactFileIds, "UUID")}::uuid[])`;
-        }
-        await sql`DELETE FROM grids.record_snapshots WHERE base_id = ${baseId}::uuid`;
-        await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
-        for (const accessId of accessIds) await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
+        // Issued documents and their artifacts are immutable; the integration database owns fixture teardown.
       }
     },
     30_000,

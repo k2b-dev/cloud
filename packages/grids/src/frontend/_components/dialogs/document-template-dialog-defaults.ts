@@ -1,7 +1,7 @@
 import type { DocumentTemplateStarter } from "../../../document-template-starters";
 
 const defaultDocumentSource = (tableId: string) => `from table {${tableId}}\nwhere record.id = '{{ record.id }}'\nlimit 1`;
-export const defaultDocumentNumberTemplate = "{{ template.id }}-{{ date.yyyyMMdd }}-{{ run.id }}";
+export const defaultDocumentNumberTemplate = "{{ template.id }}-{{ date.yyyyMMdd }}-{{ document.id }}";
 const defaultDocumentFilenameTemplate = "{{ document.number }}.pdf";
 
 export const defaultDocumentStarter = (): DocumentTemplateStarter => ({
@@ -14,12 +14,12 @@ export const defaultDocumentStarter = (): DocumentTemplateStarter => ({
   expectedData: "One selected record.",
   page: "A4 portrait",
   source: (tableId) => defaultDocumentSource(tableId),
-  numberTemplate: defaultDocumentNumberTemplate,
-  filenameTemplate: defaultDocumentFilenameTemplate,
-  html: defaultDocumentHtml,
-  headerHtml: "",
-  footerHtml: "",
-  pageCss: "",
+  renderer: {
+    kind: "html",
+    body: defaultDocumentHtml,
+    numberTemplate: defaultDocumentNumberTemplate,
+    filenameTemplate: defaultDocumentFilenameTemplate,
+  },
 });
 
 const defaultDocumentHtml = `<html>
@@ -52,10 +52,5 @@ export const starterPayload = (starter: DocumentTemplateStarter, tableId: string
   name: starter.id === "blank" ? "" : starter.name,
   description: starter.id === "blank" ? "" : starter.description,
   source: starter.source(tableId),
-  numberTemplate: starter.numberTemplate ?? defaultDocumentNumberTemplate,
-  filenameTemplate: starter.filenameTemplate ?? defaultDocumentFilenameTemplate,
-  html: starter.html,
-  headerHtml: starter.headerHtml ?? "",
-  footerHtml: starter.footerHtml ?? "",
-  pageCss: starter.pageCss ?? "",
+  renderer: starter.renderer,
 });

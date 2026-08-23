@@ -82,8 +82,10 @@ const requiredProjected = (ids: ReadonlyMap<string, string>, internalId: string,
 };
 
 const resolveFieldValues = async (values: Readonly<Record<string, unknown>>): Promise<Record<string, unknown> | null> => {
-  const resolved = await resolvePublicIds("field", Object.keys(values));
-  if (resolved.size !== Object.keys(values).length) return null;
+  const fieldIds = Object.keys(values);
+  if (fieldIds.some((fieldId) => !ShortIdSchema.safeParse(fieldId).success)) return null;
+  const resolved = await resolvePublicIds("field", fieldIds);
+  if (resolved.size !== fieldIds.length) return null;
   return Object.fromEntries(Object.entries(values).map(([fieldId, value]) => [resolved.get(fieldId)!, value]));
 };
 
@@ -95,6 +97,7 @@ const resolveFormSubmission = async (submitted: Record<string, unknown>) => {
     ...Object.keys(parsed.inlineCreates),
     ...Object.values(parsed.inlineCreates).flatMap((drafts) => drafts.flatMap((draft) => Object.keys(draft.data))),
   ];
+  if (fieldIds.some((fieldId) => !ShortIdSchema.safeParse(fieldId).success)) return null;
   const resolved = await resolvePublicIds("field", fieldIds);
   if (resolved.size !== new Set(fieldIds).size) return null;
   return {
@@ -629,8 +632,12 @@ const resolvePublishedSidebarRuntime = async (c: Context<AuthContext>) => {
 
 const loadRuntimeBindingContext = async (runtime: PublishedRuntime) => {
   const parameterRecords = new Map<string, GridRecord>();
+  const publicTableIds = Object.values(runtime.page.parameters).map((parameter) => parameter.tableId);
+  if (publicTableIds.some((tableId) => !ShortIdSchema.safeParse(tableId).success)) return null;
+  const tableIds = await resolvePublicIds("table", publicTableIds);
+  if (tableIds.size !== new Set(publicTableIds).size) return null;
   for (const [parameterId, parameter] of Object.entries(runtime.page.parameters)) {
-    const record = await gridsService.record.get(parameter.tableId, runtime.pageParams[parameterId]!, {
+    const record = await gridsService.record.get(tableIds.get(parameter.tableId)!, runtime.pageParams[parameterId]!, {
       viewer: runtime.viewer,
       recordAccess: ALL_RECORD_ACCESS,
       dateConfig: runtime.dateConfig,
@@ -652,20 +659,18 @@ const resolveRuntimeComments = async (c: Context<AuthContext>) => {
     .find((candidate) => candidate.id === c.req.param("blockId") && candidate.type === "comments");
   if (!page?.record || !pageParams || !block || block.type !== "comments") return null;
   if (!(await runtime.available("block", block.availableWhen?.query, block.id))) return null;
-  const capability = capabilities.comments.find(
-    (candidate) => candidate.pageId === page.id && candidate.blockId === block.id && candidate.tableId === page.record!.tableId,
-  );
+  const capability = capabilities.comments.find((candidate) => candidate.pageId === page.id && candidate.blockId === block.id);
   if (!capability) return null;
 
   const recordId = pageParams[page.record.id.path];
   if (!recordId) return null;
-  const record = await gridsService.record.get(page.record.tableId, recordId, {
+  const record = await gridsService.record.get(capability.tableId, recordId, {
     viewer: runtime.viewer,
     recordAccess: ALL_RECORD_ACCESS,
   });
   if (!record) return null;
   const canModerate = (await gateAt(c, { baseId: app.baseId }, "admin")).ok;
-  return { app, page, block, recordId, canModerate } as const;
+  return { app, page, block, recordId, tableId: capability.tableId, canModerate } as const;
 };
 
 const resolveRuntimeRecordBlock = async (c: Context<AuthContext>) => {
@@ -678,12 +683,19 @@ const resolveRuntimeRecordBlock = async (c: Context<AuthContext>) => {
   if (!page?.record || !pageParams || !block || block.type !== "record") return null;
   if (!(await runtime.available("block", block.availableWhen?.query, block.id))) return null;
 
-  const capability = capabilities.records.find((candidate) => candidate.pageId === page.id && candidate.tableId === page.record!.tableId);
+  const tableId = await resolvePublicId("table", page.record.tableId);
+  if (!tableId) return null;
   const recordBlocks = page.rows.flatMap((row) =>
     row.columns.flatMap((column) => column.blocks.filter((candidate) => candidate.type === "record")),
   );
-  const expectedFieldIds = customAppPageRecordFieldIds(page);
-  const expectedEditableFieldIds = [...new Set(recordBlocks.flatMap((candidate) => candidate.editableFieldIds))].sort();
+  const publicFieldIds = customAppPageRecordFieldIds(page);
+  const publicEditableFieldIds = [...new Set(recordBlocks.flatMap((candidate) => candidate.editableFieldIds))];
+  if ([...publicFieldIds, ...publicEditableFieldIds].some((fieldId) => !ShortIdSchema.safeParse(fieldId).success)) return null;
+  const fieldIds = await resolvePublicIds("field", [...publicFieldIds, ...publicEditableFieldIds]);
+  if (fieldIds.size !== new Set([...publicFieldIds, ...publicEditableFieldIds]).size) return null;
+  const expectedFieldIds = publicFieldIds.map((fieldId) => fieldIds.get(fieldId)!).sort();
+  const expectedEditableFieldIds = publicEditableFieldIds.map((fieldId) => fieldIds.get(fieldId)!).sort();
+  const capability = capabilities.records.find((candidate) => candidate.pageId === page.id && candidate.tableId === tableId);
   if (
     !capability ||
     capability.fieldIds.join("\0") !== expectedFieldIds.join("\0") ||
@@ -694,12 +706,17 @@ const resolveRuntimeRecordBlock = async (c: Context<AuthContext>) => {
 
   const recordId = pageParams[page.record.id.path];
   if (!recordId) return null;
-  const record = await gridsService.record.get(page.record.tableId, recordId, {
+  const record = await gridsService.record.get(tableId, recordId, {
     viewer: runtime.viewer,
     recordAccess: ALL_RECORD_ACCESS,
   });
   if (!record) return null;
-  return { app, page, block, capability, record, viewer: runtime.viewer } as const;
+  const resolvedBlock = {
+    ...block,
+    fieldIds: block.fieldIds.map((fieldId) => fieldIds.get(fieldId)!),
+    editableFieldIds: block.editableFieldIds.map((fieldId) => fieldIds.get(fieldId)!),
+  };
+  return { app, page, block: resolvedBlock, capability, record, tableId, viewer: runtime.viewer } as const;
 };
 
 const resolveRuntimeRecordEdit = async (c: Context<AuthContext>) => {
@@ -712,7 +729,7 @@ const resolveRuntimeRecordFile = async (c: Context<AuthContext>, requireWrite: b
   if (!resolved) return null;
   const fieldId = internalIdParam(c, "fieldId") ?? "";
   if (!resolved.block.fieldIds.includes(fieldId) || (requireWrite && !resolved.block.editableFieldIds.includes(fieldId))) return null;
-  const field = (await gridsService.field.listByTable(resolved.page.record!.tableId)).find((candidate) => candidate.id === fieldId);
+  const field = (await gridsService.field.listByTable(resolved.tableId)).find((candidate) => candidate.id === fieldId);
   return field?.type === "file" && !field.deletedAt ? { ...resolved, fieldId } : null;
 };
 
@@ -727,7 +744,7 @@ const submitPublishedCustomAppForm = async (c: Context<AuthContext>, submitted: 
 
   const resolvedForm = await resolvePublishedCustomAppForm({ surface: block, page, capabilities });
   if (!resolvedForm) return c.json({ message: "Form not found" }, 404);
-  const { form } = resolvedForm;
+  const { form, surface } = resolvedForm;
 
   const bindingContext = await loadRuntimeBindingContext(runtime);
   if (!bindingContext) return c.json({ message: "Form not found" }, 404);
@@ -735,7 +752,7 @@ const submitPublishedCustomAppForm = async (c: Context<AuthContext>, submitted: 
   const submission = await resolveFormSubmission(submitted);
   if (!submission) return c.json({ message: "Invalid form submission" }, 400);
   const fixedValues: Record<string, unknown> = {};
-  for (const [fieldId, binding] of Object.entries(block.fixedValues)) {
+  for (const [fieldId, binding] of Object.entries(surface.fixedValues)) {
     const resolved = resolveCustomAppValueBinding(binding, bindingContext);
     if (!resolved.ok) return c.json({ message: "Form not found" }, 404);
     fixedValues[fieldId] = resolved.value;
@@ -771,11 +788,11 @@ const submitPublishedSidebarForm = async (c: Context<AuthContext>, submitted: Re
   const { app, action, dateConfig, viewer } = runtime;
   const resolvedForm = await resolvePublishedCustomAppForm({ surface: action, capabilities: runtime.capabilities });
   if (!resolvedForm) return c.json({ message: "Form not found" }, 404);
-  const { form } = resolvedForm;
+  const { form, surface } = resolvedForm;
   const submission = await resolveFormSubmission(submitted);
   if (!submission) return c.json({ message: "Invalid form submission" }, 400);
   const fixedValues: Record<string, unknown> = {};
-  for (const [fieldId, binding] of Object.entries(action.fixedValues)) {
+  for (const [fieldId, binding] of Object.entries(surface.fixedValues)) {
     const resolved = resolveCustomAppValueBinding(binding, {
       parameterRecords: new Map(),
       currentUserId: accessActorUser(runtime.access)?.id,
@@ -805,10 +822,12 @@ const resolveRuntimeScanner = async (c: Context<AuthContext>) => {
   if (!runtime) return null;
   const block = runtime.blocks.get(c.req.param("blockId") ?? "");
   if (!block || block.type !== "scanner" || !(await runtime.available("block", block.availableWhen?.query, block.id))) return null;
+  const launcherId = await resolvePublicId("workflowLauncher", block.launcherId);
+  if (!launcherId) return null;
   const capability = runtime.capabilities.scannerLaunchers.find(
-    (candidate) => candidate.pageId === runtime.page.id && candidate.blockId === block.id && candidate.launcherId === block.launcherId,
+    (candidate) => candidate.pageId === runtime.page.id && candidate.blockId === block.id && candidate.launcherId === launcherId,
   );
-  return capability ? { runtime, block, capability } : null;
+  return capability ? { runtime, block, capability, launcherId } : null;
 };
 
 export const createCustomAppsApi = (
@@ -817,7 +836,7 @@ export const createCustomAppsApi = (
     requireAuthenticated?: MiddlewareHandler<AuthContext>;
     invokeCustomAppLauncher?: typeof gridsService.workflow.launcher.invokeCustomApp;
     invokeScannerLauncher?: typeof gridsService.workflow.launcher.invokeScanner;
-    getDocumentRunPdf?: typeof gridsService.document.getRunPdf;
+    getDocumentPdf?: typeof gridsService.document.getPdf;
     getWorkflowRunScope?: typeof getWorkflowRunScope;
     getWorkflowRun?: typeof gridsService.workflow.getRun;
   } = {},
@@ -825,7 +844,7 @@ export const createCustomAppsApi = (
   const loadOptionalActor = deps.loadOptionalActor ?? auth.requireRole("*");
   const invokeCustomAppLauncher = deps.invokeCustomAppLauncher ?? gridsService.workflow.launcher.invokeCustomApp;
   const invokeScannerLauncher = deps.invokeScannerLauncher ?? gridsService.workflow.launcher.invokeScanner;
-  const getDocumentRunPdf = deps.getDocumentRunPdf ?? gridsService.document.getRunPdf;
+  const getDocumentPdf = deps.getDocumentPdf ?? gridsService.document.getPdf;
   const loadWorkflowRunScope = deps.getWorkflowRunScope ?? getWorkflowRunScope;
   const getWorkflowRun = deps.getWorkflowRun ?? gridsService.workflow.getRun;
   return new Hono<AuthContext>()
@@ -869,9 +888,9 @@ export const createCustomAppsApi = (
       submitPublishedSidebarForm(c, c.req.valid("json")),
     )
     .get(
-      "/runtime/:shortId/:pageId/:blockId/documents/:runId/download",
+      "/runtime/:shortId/:pageId/:blockId/documents/:documentId/download",
       loadOptionalActor,
-      requirePublicIdParam("runId", "documentRun", "Document run"),
+      requirePublicIdParam("documentId", "document", "Document"),
       async (c) => {
         const runtime = await resolvePublishedRuntime(c);
         if (!runtime) return c.json({ message: "Document not found" }, 404);
@@ -882,35 +901,39 @@ export const createCustomAppsApi = (
         if (!(await runtime.available("block", block.availableWhen?.query, block.id))) {
           return c.json({ message: "Document not found" }, 404);
         }
-        const templateIds = [...block.documents.templateIds].sort();
+        const publicTemplateIds = [...block.documents.templateIds];
+        if (publicTemplateIds.some((templateId) => !ShortIdSchema.safeParse(templateId).success)) {
+          return c.json({ message: "Document not found" }, 404);
+        }
+        const resolvedTemplateIds = await resolvePublicIds("documentTemplate", publicTemplateIds);
+        if (resolvedTemplateIds.size !== publicTemplateIds.length) return c.json({ message: "Document not found" }, 404);
+        const templateIds = [...resolvedTemplateIds.values()].sort();
         const capability = runtime.capabilities.documents.find(
           (candidate) =>
             candidate.pageId === runtime.page.id &&
             candidate.blockId === block.id &&
-            candidate.tableId === runtime.page.record!.tableId &&
             candidate.templateIds.join("\0") === templateIds.join("\0"),
         );
         const bindingContext = capability ? await loadRuntimeBindingContext(runtime) : null;
         const record = bindingContext?.pageRecord;
-        const run = record ? await gridsService.document.getRun(internalIdParam(c, "runId")!) : null;
+        const document = record ? await gridsService.document.getDocument(internalIdParam(c, "documentId")!) : null;
         if (
           !capability ||
           !record ||
-          !run ||
-          run.baseId !== runtime.app.baseId ||
-          run.tableId !== runtime.page.record.tableId ||
-          run.recordId !== record.id ||
-          !run.templateId ||
-          !templateIds.includes(run.templateId)
+          !document ||
+          document.baseId !== runtime.app.baseId ||
+          document.tableId !== capability.tableId ||
+          document.recordId !== record.id ||
+          !templateIds.includes(document.templateId)
         ) {
           return c.json({ message: "Document not found" }, 404);
         }
-        const pdf = await getDocumentRunPdf(run);
+        const pdf = await getDocumentPdf(document);
         if (!pdf.ok) return c.json({ message: pdf.error.message }, pdf.error.status);
-        return pdfResponse(pdf.data.pdf, run.filename, {
-          "X-Grids-Document-Run-Id": c.req.param("runId")!,
-          "X-Grids-Document-Number": run.documentNumber,
-          "X-Grids-Document-Filename": encodeHeaderValue(run.filename),
+        return pdfResponse(pdf.data.pdf, document.filename, {
+          "X-Grids-Document-Id": c.req.param("documentId")!,
+          "X-Grids-Document-Number": document.documentNumber,
+          "X-Grids-Document-Filename": encodeHeaderValue(document.filename),
           "X-Grids-Document-Artifact": "stored",
         });
       },
@@ -961,7 +984,8 @@ export const createCustomAppsApi = (
       if (!currentRecords?.response.ok || !currentRecords.response.rows.some((row) => row.recordId === token.recordId)) {
         return c.json({ message: "File not found" }, 404);
       }
-      const viewId = block.source.viewId;
+      const viewId = await resolvePublicId("view", block.source.viewId);
+      if (!viewId) return c.json({ message: "File not found" }, 404);
       const capability = runtime.capabilities.views.find((candidate) => candidate.viewId === viewId && candidate.tableId === token.tableId);
       if (!capability?.displayConfig || !capability.displayFieldHash || capability.displayConfig.cards?.imageFieldId !== token.fieldId) {
         return c.json({ message: "File not found" }, 404);
@@ -995,10 +1019,10 @@ export const createCustomAppsApi = (
     .post("/runtime/:shortId/:pageId/:blockId/scanner", v("json", ScannerLauncherRequestSchema), async (c) => {
       const resolved = await resolveRuntimeScanner(c);
       if (!resolved) return c.json({ message: "Scanner not found" }, 404);
-      const { runtime, block, capability } = resolved;
+      const { runtime, block, capability, launcherId } = resolved;
       const result = await invokeScannerLauncher({
         ...c.req.valid("json"),
-        launcherId: block.launcherId,
+        launcherId,
         expectedRevision: capability.revision,
         principal: currentWorkflowPrincipal(c),
         authorization: {
@@ -1033,11 +1057,12 @@ export const createCustomAppsApi = (
         const runtime = await resolvePublishedPageRun(c);
         if (!runtime) return c.json({ message: "Workflow run not found" }, 404);
         const block = runtime.blocks.get(c.req.param("blockId") ?? "");
+        const launcherId = block?.type === "scanner" ? await resolvePublicId("workflowLauncher", block.launcherId) : null;
         const capability =
-          block?.type === "scanner"
+          block?.type === "scanner" && launcherId
             ? runtime.capabilities.scannerLaunchers.find(
                 (candidate) =>
-                  candidate.pageId === runtime.page.id && candidate.blockId === block.id && candidate.launcherId === block.launcherId,
+                  candidate.pageId === runtime.page.id && candidate.blockId === block.id && candidate.launcherId === launcherId,
               )
             : null;
         if (!block || block.type !== "scanner" || !capability) return c.json({ message: "Workflow run not found" }, 404);
@@ -1082,7 +1107,7 @@ export const createCustomAppsApi = (
       if (query.cursor && !cursor) return c.json({ message: "Invalid comment cursor." }, 400);
       const result = await gridsService.record.comments.list({
         baseId: resolved.app.baseId,
-        tableId: resolved.page.record!.tableId,
+        tableId: resolved.tableId,
         recordId: resolved.recordId,
         recordAccess: ALL_RECORD_ACCESS,
         ...query,
@@ -1105,7 +1130,7 @@ export const createCustomAppsApi = (
       if (!resolved) return c.json({ message: "Comments not found" }, 404);
       const result = await gridsService.record.comments.create({
         baseId: resolved.app.baseId,
-        tableId: resolved.page.record!.tableId,
+        tableId: resolved.tableId,
         recordId: resolved.recordId,
         actorUserId: currentActorUserId(c),
         body: c.req.valid("json").body,
@@ -1123,7 +1148,7 @@ export const createCustomAppsApi = (
         if (!resolved) return c.json({ message: "Comments not found" }, 404);
         const result = await gridsService.record.comments.update({
           baseId: resolved.app.baseId,
-          tableId: resolved.page.record!.tableId,
+          tableId: resolved.tableId,
           recordId: resolved.recordId,
           commentId: internalIdParam(c, "commentId")!,
           actorUserId: currentActorUserId(c),
@@ -1143,7 +1168,7 @@ export const createCustomAppsApi = (
         if (!resolved) return c.json({ message: "Comments not found" }, 404);
         const result = await gridsService.record.comments.remove({
           baseId: resolved.app.baseId,
-          tableId: resolved.page.record!.tableId,
+          tableId: resolved.tableId,
           recordId: resolved.recordId,
           commentId: internalIdParam(c, "commentId")!,
           actorUserId: currentActorUserId(c),
@@ -1169,7 +1194,7 @@ export const createCustomAppsApi = (
         return c.json({ message: "Record update contains a field outside this published editor" }, 400);
       }
 
-      const fields = await gridsService.field.listByTable(resolved.page.record!.tableId);
+      const fields = await gridsService.field.listByTable(resolved.tableId);
       const fieldsById = new Map(fields.map((field) => [field.id, field]));
       if (
         resolved.block.editableFieldIds.some((fieldId) => {
@@ -1189,7 +1214,7 @@ export const createCustomAppsApi = (
       }
 
       const result = await gridsService.record.update(
-        resolved.page.record!.tableId,
+        resolved.tableId,
         resolved.record.id,
         values,
         currentActorUserId(c),
@@ -1206,10 +1231,7 @@ export const createCustomAppsApi = (
       const visibleFieldIds = new Set(resolved.block.fieldIds);
       const visibleFields = fields.filter((field) => visibleFieldIds.has(field.id));
       const visibleRelations = resolved.capability.relationLabels.filter((relation) => visibleFieldIds.has(relation.fieldId));
-      const relationTableIds = [
-        resolved.page.record!.tableId,
-        ...new Set(resolved.capability.relationLabels.map((relation) => relation.targetTableId)),
-      ];
+      const relationTableIds = [resolved.tableId, ...new Set(resolved.capability.relationLabels.map((relation) => relation.targetTableId))];
       const relationViewer = {
         ...resolved.viewer,
         isAdmin: false,
@@ -1238,7 +1260,7 @@ export const createCustomAppsApi = (
       const resolved = await resolveRuntimeRecordFile(c, false);
       if (!resolved) return c.json({ message: "Files not found" }, 404);
       const result = await gridsService.file.listForRecordField({
-        tableId: resolved.page.record!.tableId,
+        tableId: resolved.tableId,
         recordId: resolved.record.id,
         fieldId: resolved.fieldId,
       });
@@ -1254,7 +1276,7 @@ export const createCustomAppsApi = (
       const maxBytes = await getMaxFileSizeBytes();
       if (file.size > maxBytes) return c.json({ message: `File exceeds ${Math.round(maxBytes / 1024 / 1024)} MB limit` }, 413);
       const result = await gridsService.file.upload({
-        tableId: resolved.page.record!.tableId,
+        tableId: resolved.tableId,
         recordId: resolved.record.id,
         fieldId: resolved.fieldId,
         filename: file.name || "untitled",
@@ -1279,7 +1301,7 @@ export const createCustomAppsApi = (
         const maxBytes = await getMaxFileSizeBytes();
         if (file.size > maxBytes) return c.json({ message: `File exceeds ${Math.round(maxBytes / 1024 / 1024)} MB limit` }, 413);
         const result = await gridsService.file.replace({
-          tableId: resolved.page.record!.tableId,
+          tableId: resolved.tableId,
           recordId: resolved.record.id,
           fieldId: resolved.fieldId,
           fileId: internalIdParam(c, "fileId")!,
@@ -1301,7 +1323,7 @@ export const createCustomAppsApi = (
         const resolved = await resolveRuntimeRecordFile(c, false);
         if (!resolved) return c.json({ message: "File not found" }, 404);
         const result = await gridsService.file.getContent({
-          tableId: resolved.page.record!.tableId,
+          tableId: resolved.tableId,
           recordId: resolved.record.id,
           fieldId: resolved.fieldId,
           fileId: internalIdParam(c, "fileId")!,
@@ -1328,7 +1350,7 @@ export const createCustomAppsApi = (
         const resolved = await resolveRuntimeRecordFile(c, true);
         if (!resolved) return c.json({ message: "File editor not found" }, 404);
         const result = await gridsService.file.remove({
-          tableId: resolved.page.record!.tableId,
+          tableId: resolved.tableId,
           recordId: resolved.record.id,
           fieldId: resolved.fieldId,
           fileId: internalIdParam(c, "fileId")!,
@@ -1357,13 +1379,15 @@ export const createCustomAppsApi = (
         return c.json({ message: "Action not found" }, 404);
       }
 
+      const launcherId = await resolvePublicId("workflowLauncher", action.launcherId);
+      if (!launcherId) return c.json({ message: "Action not found" }, 404);
       const capability = capabilities.workflowLaunchers.find(
         (candidate) =>
           "pageId" in candidate &&
           candidate.pageId === page.id &&
           candidate.blockId === block.id &&
           candidate.actionId === action.id &&
-          candidate.launcherId === action.launcherId,
+          candidate.launcherId === launcherId,
       );
       if (!capability) return c.json({ message: "Action not found" }, 404);
 
@@ -1376,7 +1400,7 @@ export const createCustomAppsApi = (
         inputs[name] = resolved.value;
       }
       const result = await invokeCustomAppLauncher({
-        launcherId: action.launcherId,
+        launcherId,
         operationId: c.req.valid("json").operationId,
         mode: "execute",
         expectedRevision: capability.revision,
@@ -1424,13 +1448,15 @@ export const createCustomAppsApi = (
       ) {
         return c.json({ message: "Action not found" }, 404);
       }
+      const launcherId = await resolvePublicId("workflowLauncher", action.launcherId);
+      if (!launcherId) return c.json({ message: "Action not found" }, 404);
       const capability = capabilities.workflowLaunchers.find(
         (candidate) =>
           "pageId" in candidate &&
           candidate.pageId === page.id &&
           candidate.blockId === block.id &&
           candidate.actionId === action.id &&
-          candidate.launcherId === action.launcherId,
+          candidate.launcherId === launcherId,
       );
       if (!capability) return c.json({ message: "Action not found" }, 404);
 
@@ -1466,7 +1492,7 @@ export const createCustomAppsApi = (
         inputs[name] = resolved.value;
       }
       const result = await invokeCustomAppLauncher({
-        launcherId: action.launcherId,
+        launcherId,
         operationId: c.req.valid("json").operationId,
         mode: "execute",
         expectedRevision: capability.revision,
@@ -1516,14 +1542,15 @@ export const createCustomAppsApi = (
         if (!block || !workflowAction) {
           return c.json({ message: "Workflow run not found" }, 404);
         }
-        const capability = workflowAction
+        const launcherId = await resolvePublicId("workflowLauncher", workflowAction.launcherId);
+        const capability = launcherId
           ? runtime.capabilities.workflowLaunchers.find(
               (candidate) =>
                 "pageId" in candidate &&
                 candidate.pageId === runtime.page.id &&
                 candidate.blockId === block!.id &&
                 candidate.actionId === workflowAction.id &&
-                candidate.launcherId === workflowAction.launcherId,
+                candidate.launcherId === launcherId,
             )
           : null;
         const principal = currentWorkflowPrincipal(c);

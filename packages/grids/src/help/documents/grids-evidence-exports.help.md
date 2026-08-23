@@ -49,12 +49,12 @@ The package expires after seven days. Expiry removes its stored bytes; create a 
 | Schema and configuration | Base, tables, fields, policies, Finalization settings, templates, and schema snapshots |
 | Relations | Current links used by Relations and **Referenced by**; historical relation state remains in revisions |
 | Files | Current and revision-protected attachment bytes with their saved hashes |
-| Document artifacts | Exact stored ordinary Document bytes, snapshots, render data, and renderer metadata. A Base-scoped export also includes immutable Business Document snapshots, source revisions, validation evidence, and every exact artifact; nothing is rendered again. |
+| Document artifacts | Exact stored Document bytes, Record snapshots, render data, renderer metadata, validation evidence, and every exact artifact; nothing is rendered again. |
 | Number allocations | Number Series, format versions, and allocated values |
 
 Grids resource references use their six-character public IDs. UUID-shaped values without a Public ID in the selected Grids scope are represented as stable private references instead of exposing internal identifiers. The same source value receives the same private reference within the package.
 
-Business Documents belong to their Base rather than one Grids table because native applications can issue them too. They are therefore included only in a Base-scoped package. A table-scoped package reports that boundary in the manifest instead of guessing a table from arbitrary source metadata.
+Documents created from native application snapshots belong to their Base rather than one Grids table. They are therefore included only in a Base-scoped package. A table-scoped package reports that boundary in the manifest instead of guessing a table from arbitrary source metadata.
 
 ## Verify the download {icon="shield-check"}
 

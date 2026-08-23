@@ -6,7 +6,7 @@ import {
   renderTemplatePdfPreview,
   type TemplatePdfPreviewResult,
 } from "@valentinkolb/cloud/services";
-import type { DocumentRun, DocumentTemplate } from "../contracts";
+import { type Document, type DocumentTemplate, DocumentTemplateRendererSchema } from "../contracts";
 import { parseGridsQueryDsl } from "../query-dsl/parser";
 import { previewDslQuery } from "../query-dsl/preview";
 import { resolveDslQueryToQueryPlan } from "../query-dsl/resolver";
@@ -15,15 +15,16 @@ import {
   datePatternContext,
   documentLiquidFilters,
   documentNumberFor,
+  renderLiquidPlainText,
   renderLiquidText,
-  runPatternContext,
   templatePatternContext,
 } from "./document-liquid";
-import { normalizeDocumentTags, safePdfFilename } from "./document-run-values";
 import type { RecordSnapshotDraft, SnapshotRecord } from "./document-snapshots";
+import { normalizeDocumentTags, safePdfFilename } from "./document-values";
 import { listByTable as listFields } from "./fields";
 import { getContent as getFileContent, listForRecordField } from "./files";
 import { buildTrustedGqlResolverContext } from "./gql-resolver-context";
+import { projectPublicIds } from "./public-resource-ids";
 import { ensureRecordScanCode } from "./record-scan-codes";
 import {
   buildTemplateAppData,
@@ -36,7 +37,6 @@ import type { Field, GridRecord, Table } from "./types";
 
 export { buildTemplateAppData, buildTemplateBusinessData } from "./template-context";
 
-const DEFAULT_FILENAME_TEMPLATE = "{{ document.number }}.pdf";
 const SOURCE_MAX_BYTES = 20_000;
 const FILENAME_TEMPLATE_MAX_BYTES = 5_000;
 const TEMPLATE_PART_MAX_BYTES = 50_000;
@@ -85,6 +85,27 @@ const recordContextWithMeta = <T extends DocumentTemplateRecordContext | Snapsho
   ...record,
   meta,
 });
+
+export const documentRecordDataWithPublicIds = (
+  data: Record<string, unknown>,
+  fields: Field[],
+  recordIds: ReadonlyMap<string, string>,
+): Record<string, unknown> =>
+  Object.fromEntries(
+    fields.flatMap((field) => {
+      if (!(field.id in data)) return [];
+      const value = data[field.id];
+      const projected =
+        field.type === "relation"
+          ? Array.isArray(value)
+            ? value.map((id) => (typeof id === "string" ? (recordIds.get(id) ?? null) : id))
+            : typeof value === "string"
+              ? (recordIds.get(value) ?? null)
+              : value
+          : value;
+      return [[field.shortId, projected] as const];
+    }),
+  );
 
 const diagnosticsMessage = (diagnostics: Array<{ message: string }>): string =>
   diagnostics.map((diagnostic) => diagnostic.message).join("; ") || "invalid GQL source";
@@ -183,7 +204,7 @@ export const buildTemplateInputContext = (
     footerText: null,
   },
   template: Partial<Pick<DocumentTemplate, "id" | "shortId" | "name">> | null = null,
-  generatedAt: Date = new Date(),
+  createdAt: Date = new Date(),
   dateConfig?: DateContext,
   recordMeta: DocumentTemplateRecordMeta = {},
 ): Record<string, unknown> => ({
@@ -207,7 +228,7 @@ export const buildTemplateInputContext = (
   app: appData,
   business: businessData,
   template: templatePatternContext(template),
-  date: datePatternContext(generatedAt, dateConfig),
+  date: datePatternContext(createdAt, dateConfig),
 });
 
 export const buildRenderData = (params: {
@@ -216,14 +237,14 @@ export const buildRenderData = (params: {
   columns: unknown[];
   rows: unknown[];
   template?: Partial<Pick<DocumentTemplate, "id" | "shortId" | "name">> | null;
-  run?: { id?: string | null } | null;
+  document?: { id?: string | null } | null;
   images?: DocumentTemplateImage[];
   primaryImage?: DocumentTemplateImage | null;
   recordMeta?: DocumentTemplateRecordMeta;
   app?: DocumentTemplateAppData;
   business?: DocumentTemplateBusinessData;
   documentNumber?: string;
-  generatedAt?: string;
+  createdAt?: string;
   dateConfig?: DateContext;
   snapshot?: RecordSnapshotDraft;
 }): Record<string, unknown> => ({
@@ -236,8 +257,7 @@ export const buildRenderData = (params: {
   rows: params.rows,
   columns: params.columns,
   template: templatePatternContext(params.template),
-  run: runPatternContext(params.run?.id ?? null),
-  date: datePatternContext(params.generatedAt ? new Date(params.generatedAt) : new Date(), params.dateConfig),
+  date: datePatternContext(params.createdAt ? new Date(params.createdAt) : new Date(), params.dateConfig),
   images: params.images ?? [],
   primaryImage: params.primaryImage ?? params.images?.[0] ?? null,
   app: params.app ?? defaultTemplateAppData(),
@@ -260,8 +280,9 @@ export const buildRenderData = (params: {
       footerText: null,
     } satisfies DocumentTemplateBusinessData),
   document: {
+    id: params.document?.id ?? "draft",
     number: params.documentNumber ?? null,
-    generatedAt: params.generatedAt ?? null,
+    createdAt: params.createdAt ?? null,
   },
   snapshot: params.snapshot ?? null,
 });
@@ -298,7 +319,7 @@ export const buildLiveRenderData = async (params: {
   record: GridRecord;
   app?: DocumentTemplateAppData;
   dateConfig?: DateContext;
-  generatedAt?: Date;
+  createdAt?: Date;
 }): Promise<Result<{ source: string; columns: unknown[]; rows: Array<Record<string, unknown>>; data: Record<string, unknown> }>> => {
   const appData = params.app ?? (await buildTemplateAppData());
   const businessData = await buildTemplateBusinessData(params.table.baseId, appData);
@@ -307,15 +328,26 @@ export const buildLiveRenderData = async (params: {
     tableId: params.table.id,
     recordId: params.record.id,
   });
+  const fields = await listFields(params.table.id);
+  const relatedRecordIds = fields.flatMap((field) => {
+    if (field.type !== "relation") return [];
+    const value = params.record.data[field.id];
+    return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : typeof value === "string" ? [value] : [];
+  });
+  const publicRelatedRecordIds = await projectPublicIds("record", relatedRecordIds);
+  const templateRecord = {
+    ...params.record,
+    data: documentRecordDataWithPublicIds(params.record.data, fields, publicRelatedRecordIds),
+  };
   const source = await renderDocumentSource(
     params.template,
     buildTemplateInputContext(
-      params.record,
+      templateRecord,
       params.table,
       appData,
       businessData,
       params.template,
-      params.generatedAt,
+      params.createdAt,
       params.dateConfig,
       recordMeta,
     ),
@@ -329,11 +361,10 @@ export const buildLiveRenderData = async (params: {
     dateConfig: params.dateConfig,
   });
   if (!executed.ok) return executed;
-  const fields = await listFields(params.table.id);
   const images = await buildTemplateImages(params.table.id, params.record.id, fields);
 
   const data = buildRenderData({
-    record: params.record,
+    record: { ...templateRecord, id: templateRecord.shortId },
     table: params.table,
     columns: executed.data.columns,
     rows: executed.data.rows,
@@ -342,7 +373,7 @@ export const buildLiveRenderData = async (params: {
     recordMeta,
     app: appData,
     business: businessData,
-    generatedAt: params.generatedAt?.toISOString(),
+    createdAt: params.createdAt?.toISOString(),
     dateConfig: params.dateConfig,
   });
   return ok({ source: source.data, columns: executed.data.columns, rows: executed.data.rows, data });
@@ -357,12 +388,15 @@ const injectPageCss = (html: string, pageCss: string | null): string => {
 };
 
 export const renderDocumentHtml = async (
-  template: Pick<DocumentTemplate, "html"> & Partial<Pick<DocumentTemplate, "pageCss">>,
+  template: Pick<DocumentTemplate, "renderer">,
   data: Record<string, unknown>,
 ): Promise<Result<string>> => {
-  const html = await renderLiquidText(template.html, data, RENDER_MAX_BYTES);
+  if (template.renderer.kind !== "html") {
+    return fail(err.badInput("Document template uses a Document profile instead of HTML."));
+  }
+  const html = await renderLiquidText(template.renderer.body, data, RENDER_MAX_BYTES);
   if (!html.ok) return html;
-  const pageCss = await renderLiquidText(template.pageCss ?? "", data, TEMPLATE_PART_MAX_BYTES);
+  const pageCss = await renderLiquidText(template.renderer.css ?? "", data, TEMPLATE_PART_MAX_BYTES);
   if (!pageCss.ok) return pageCss;
   return ok(injectPageCss(html.data, pageCss.data));
 };
@@ -373,67 +407,93 @@ export const renderDocumentSource = async (
 ): Promise<Result<string>> => renderLiquidText(template.source, data, SOURCE_MAX_BYTES);
 
 export const renderDocumentPdfPreview = async (
-  template: Pick<DocumentTemplate, "html"> & Partial<Pick<DocumentTemplate, "headerHtml" | "footerHtml" | "pageCss">>,
+  template: Pick<DocumentTemplate, "renderer">,
   data: Record<string, unknown>,
   filename?: string,
   config?: GotenbergConfig,
-): Promise<TemplatePdfPreviewResult> =>
-  renderTemplatePdfPreview(
+): Promise<TemplatePdfPreviewResult> => {
+  if (template.renderer.kind !== "html") {
+    return { ok: false, error: { phase: "template", message: "Document template uses a Document profile instead of HTML.", status: 400 } };
+  }
+  return renderTemplatePdfPreview(
     {
-      htmlTemplate: template.html,
-      headerHtmlTemplate: template.headerHtml,
-      footerHtmlTemplate: template.footerHtml,
-      pageCssTemplate: template.pageCss,
+      htmlTemplate: template.renderer.body,
+      headerHtmlTemplate: template.renderer.header,
+      footerHtmlTemplate: template.renderer.footer,
+      pageCssTemplate: template.renderer.css,
       data,
       filters: documentLiquidFilters,
       filename,
     },
     config ? { config } : {},
   );
+};
 
-export const buildDocumentRunRenderData = async (params: {
-  template: Partial<Pick<DocumentTemplate, "id" | "shortId" | "name" | "numberTemplate" | "filenameTemplate">>;
+export const renderDocumentProfileInput = async (
+  template: Pick<DocumentTemplate, "renderer">,
+  data: Record<string, unknown>,
+): Promise<Result<Record<string, unknown>>> => {
+  if (template.renderer.kind !== "profile") return fail(err.badInput("Document template does not use a Document profile."));
+  const rendered = await renderLiquidPlainText(template.renderer.inputTemplate, data, RENDER_MAX_BYTES);
+  if (!rendered.ok) return rendered;
+  try {
+    const parsed: unknown = JSON.parse(rendered.data);
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
+      return fail(err.badInput("Document profile input must render a JSON object."));
+    }
+    return ok(parsed as Record<string, unknown>);
+  } catch (error) {
+    return fail(err.badInput(`Document profile input rendered invalid JSON: ${error instanceof Error ? error.message : "parse failed"}`));
+  }
+};
+
+export const buildDocumentRenderData = async (params: {
+  template: Pick<DocumentTemplate, "renderer"> & Partial<Pick<DocumentTemplate, "id" | "shortId" | "name">>;
   renderData: Record<string, unknown>;
-  runShortId: string;
-  generatedAt?: Date;
+  documentShortId: string;
+  createdAt?: Date;
   dateConfig?: DateContext;
   filename?: string | null;
   tags?: string[];
   documentNumber?: string;
   numberSeries?: { id: string; value: number };
 }): Promise<Result<{ documentNumber: string; filename: string; tags: string[]; data: Record<string, unknown> }>> => {
-  const generatedAt = params.generatedAt ?? new Date();
+  const createdAt = params.createdAt ?? new Date();
   const documentNumber = params.documentNumber
     ? ok(params.documentNumber)
-    : documentNumberFor({
-        template: params.template,
-        runShortId: params.runShortId,
-        generatedAt,
-        dateConfig: params.dateConfig,
-        data: params.renderData,
-        series: params.numberSeries,
-      });
+    : params.template.renderer.kind === "html"
+      ? documentNumberFor({
+          template: { ...params.template, numberTemplate: params.template.renderer.numberTemplate },
+          documentShortId: params.documentShortId,
+          createdAt,
+          dateConfig: params.dateConfig,
+          data: params.renderData,
+          series: params.numberSeries,
+        })
+      : fail(err.badInput("Document profile rendering requires an allocated document number."));
   if (!documentNumber.ok) return fail(documentNumber.error);
 
   const tags = normalizeDocumentTags(params.tags);
   const renderDataBase = {
     ...params.renderData,
     template: templatePatternContext(params.template),
-    run: runPatternContext(params.runShortId),
-    date: datePatternContext(generatedAt, params.dateConfig),
+    date: datePatternContext(createdAt, params.dateConfig),
     series: params.numberSeries ?? { id: "draft", value: 0 },
     document: {
       ...((typeof params.renderData.document === "object" && params.renderData.document !== null
         ? params.renderData.document
         : {}) as Record<string, unknown>),
+      id: params.documentShortId,
       number: documentNumber.data,
-      generatedAt: generatedAt.toISOString(),
+      createdAt: createdAt.toISOString(),
     },
   };
   const requestedFilename = params.filename?.trim() ?? "";
   const renderedFilename = requestedFilename
     ? ok(requestedFilename)
-    : await renderLiquidText(params.template.filenameTemplate || DEFAULT_FILENAME_TEMPLATE, renderDataBase, FILENAME_TEMPLATE_MAX_BYTES);
+    : params.template.renderer.kind === "html"
+      ? await renderLiquidText(params.template.renderer.filenameTemplate, renderDataBase, FILENAME_TEMPLATE_MAX_BYTES)
+      : ok(`${documentNumber.data}.pdf`);
   if (!renderedFilename.ok) return fail(renderedFilename.error);
 
   const filename = safePdfFilename(renderedFilename.data, `${documentNumber.data}.pdf`);
@@ -448,17 +508,19 @@ export const buildDocumentRunRenderData = async (params: {
   return ok({ documentNumber: documentNumber.data, filename, tags, data });
 };
 
-export const renderRunPdf = async (
-  run: Pick<DocumentRun, "templateSnapshot" | "renderData" | "filename">,
+export const renderDocumentPdf = async (
+  document: Pick<Document, "templateSnapshot" | "renderData" | "filename">,
 ): Promise<Result<RenderHtmlToPdfResult>> => {
+  const renderer = DocumentTemplateRendererSchema.safeParse(document.templateSnapshot.renderer);
+  if (!renderer.success || renderer.data.kind !== "html") return fail(err.badInput("Document snapshot does not contain an HTML renderer."));
   const rendered = await renderTemplatePdfPreview({
-    htmlTemplate: String(run.templateSnapshot.html ?? ""),
-    headerHtmlTemplate: typeof run.templateSnapshot.headerHtml === "string" ? run.templateSnapshot.headerHtml : null,
-    footerHtmlTemplate: typeof run.templateSnapshot.footerHtml === "string" ? run.templateSnapshot.footerHtml : null,
-    pageCssTemplate: typeof run.templateSnapshot.pageCss === "string" ? run.templateSnapshot.pageCss : null,
-    data: run.renderData,
+    htmlTemplate: renderer.data.body,
+    headerHtmlTemplate: renderer.data.header,
+    footerHtmlTemplate: renderer.data.footer,
+    pageCssTemplate: renderer.data.css,
+    data: document.renderData,
     filters: documentLiquidFilters,
-    filename: run.filename.replace(/\.pdf$/i, ".html"),
+    filename: document.filename.replace(/\.pdf$/i, ".html"),
   });
   if (rendered.ok) return ok(rendered.pdf);
   const message = `${rendered.error.phase}: ${rendered.error.message}`;

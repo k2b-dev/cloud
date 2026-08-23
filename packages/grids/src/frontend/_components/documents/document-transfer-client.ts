@@ -7,16 +7,18 @@ type PreviewDocumentTemplateInput = {
 type GenerateDocumentTemplateInput = PreviewDocumentTemplateInput & {
   filename?: string;
   tags?: string[];
+  idempotencyKey?: string;
 };
 
 type DocumentTemplateDraftPreviewInput = {
   source: string;
-  html: string;
+  html?: string | null;
   headerHtml?: string | null;
   footerHtml?: string | null;
   pageCss?: string | null;
   numberTemplate?: string;
   filenameTemplate?: string;
+  profile?: { id: string; version: number; inputTemplate: string } | null;
   recordId: string;
 };
 
@@ -40,11 +42,12 @@ export const requestDocumentTemplateGeneration = (input: GenerateDocumentTemplat
       recordId: input.recordId,
       filename: input.filename,
       tags: input.tags,
+      idempotencyKey: input.idempotencyKey,
     }),
   });
 
-export const requestDocumentRunDownload = (runId: string, signal?: AbortSignal): Promise<Response> =>
-  fetch(`/api/grids/documents/runs/${encodeURIComponent(runId)}/download`, signal ? { signal } : undefined);
+export const requestDocumentDownload = (documentId: string, signal?: AbortSignal): Promise<Response> =>
+  fetch(`/api/grids/documents/${encodeURIComponent(documentId)}/download`, signal ? { signal } : undefined);
 
 export const requestDocumentTemplateDraftPreview = (input: {
   tableId: string;

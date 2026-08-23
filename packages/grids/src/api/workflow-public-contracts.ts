@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DocumentArtifactSummarySchema, RecordQuerySchema, ShortIdSchema } from "../contracts";
+import { RecordQuerySchema, ShortIdSchema } from "../contracts";
 import {
   GRIDS_WORKFLOW_CHANNELS,
   type GridsWorkflow,
@@ -9,6 +9,7 @@ import {
   GridsWorkflowStepStatusSchema,
   WorkflowDiagnosticSchema,
 } from "../workflows/contracts";
+import { PublicDocumentSchema } from "./document-public-contracts";
 
 export const WorkflowValidateSchema = z.object({ source: z.string().min(1).max(200_000) });
 
@@ -319,31 +320,11 @@ export const PublicGridsWorkflowEmailDeliveryListSchema = z
   })
   .strict();
 
-export const PublicDocumentRunSummarySchema = z
+export const PublicWorkflowDocumentListSchema = z
   .object({
-    id: ShortIdSchema,
-    templateId: ShortIdSchema.nullable(),
-    workflowRunId: ShortIdSchema.nullable(),
-    snapshotId: ShortIdSchema,
-    baseId: ShortIdSchema,
-    tableId: ShortIdSchema,
-    recordId: ShortIdSchema,
-    documentNumber: z.string(),
-    filename: z.string(),
-    tags: z.array(z.string()),
-    artifact: DocumentArtifactSummarySchema,
-    generatedBy: z.string().uuid().nullable(),
-    generatedAt: z.string().datetime(),
-  })
-  .strict();
-export const PublicDocumentRunSummaryListSchema = z
-  .object({
-    items: z.array(PublicDocumentRunSummarySchema),
-    total: z.number().int().nonnegative().optional(),
-    limit: z.number().int().positive().optional(),
-    offset: z.number().int().nonnegative().optional(),
-    hasMore: z.boolean().optional(),
-    nextOffset: z.number().int().nonnegative().nullable().optional(),
-    nextCursor: z.string().nullable().optional(),
+    items: z.array(PublicDocumentSchema),
+    total: z.number().int().nonnegative(),
+    hasMore: z.boolean(),
+    nextOffset: z.number().int().nonnegative().nullable(),
   })
   .strict();

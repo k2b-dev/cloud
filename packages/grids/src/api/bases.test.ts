@@ -140,4 +140,51 @@ describe("Grids bases API", () => {
     );
     expect((await createBasesApi({ requireAuthenticated: requireServiceAccount(["grids:*"]) }).request("/", request)).status).toBe(403);
   });
+
+  test("creates a Base with document defaults through the canonical field", async () => {
+    let createInput: unknown = null;
+    spyOn(gridsService.base, "create").mockImplementation(async (input) => {
+      createInput = input;
+      return {
+        ok: true,
+        data: {
+          id: "44444444-4444-4444-8444-444444444444",
+          shortId: "BASE01",
+          name: input.name,
+          description: input.description ?? null,
+          documentDefaults: input.documentDefaults ?? {},
+          createdBy: user.id,
+          deletedAt: null,
+          createdAt: "2026-08-23T00:00:00.000Z",
+          updatedAt: "2026-08-23T00:00:00.000Z",
+        },
+      };
+    });
+
+    const response = await createBasesApi({ requireAuthenticated }).request("/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Invoices", documentDefaults: { legalName: "Example GmbH" } }),
+    });
+
+    expect(response.status).toBe(201);
+    expect(createInput).toEqual({
+      name: "Invoices",
+      description: null,
+      documentDefaults: { legalName: "Example GmbH" },
+    });
+    expect(await response.json()).toMatchObject({ documentDefaults: { legalName: "Example GmbH" } });
+  });
+
+  test("rejects the removed documentProfile Base field", async () => {
+    const create = spyOn(gridsService.base, "create");
+    const response = await createBasesApi({ requireAuthenticated }).request("/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "Invoices", documentProfile: { legalName: "Legacy GmbH" } }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(create).not.toHaveBeenCalled();
+  });
 });

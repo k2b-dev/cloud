@@ -671,7 +671,7 @@ describe("declared Grids workflow actions", () => {
         expect.objectContaining({ sourceRecordId: result.recordId, relationFieldId: fixture.originalRelationFieldId }),
       ]);
       const [documentsBeforeFinalization] = await sql<Array<{ count: number }>>`
-        SELECT count(*)::int AS count FROM grids.document_runs WHERE record_id = ${result.recordId}::uuid
+        SELECT count(*)::int AS count FROM grids.documents WHERE record_id = ${result.recordId}::uuid
       `;
       expect(documentsBeforeFinalization?.count).toBe(0);
 
@@ -689,7 +689,7 @@ describe("declared Grids workflow actions", () => {
       if (!finalRevisions.ok) throw finalRevisions.error;
       expect(finalRevisions.data.items.map((revision) => revision.action)).toEqual(["finalized", "created"]);
       const [documentsAfterFinalization] = await sql<Array<{ count: number }>>`
-        SELECT count(*)::int AS count FROM grids.document_runs WHERE record_id = ${result.recordId}::uuid
+        SELECT count(*)::int AS count FROM grids.documents WHERE record_id = ${result.recordId}::uuid
       `;
       expect(documentsAfterFinalization?.count).toBe(0);
 
@@ -1532,7 +1532,7 @@ describe("declared Grids workflow actions", () => {
       expect(await drive(runId, "dryRun")).toBe("succeeded");
 
       const [{ runs = 0 } = {}] = await sql<Array<{ runs: number }>>`
-        SELECT count(*)::int AS runs FROM grids.document_runs WHERE base_id = ${fixture.baseId}::uuid
+        SELECT count(*)::int AS runs FROM grids.documents WHERE base_id = ${fixture.baseId}::uuid
       `;
       expect(runs).toBe(0);
 
@@ -1540,7 +1540,7 @@ describe("declared Grids workflow actions", () => {
       // "Generate then link" has to stay a plannable pair: the second step
       // resolves the placeholder the first one planned, so a dry run does not
       // dead-end at the first step that has not really run.
-      expect(steps[0]?.outcome).toMatchObject({ state: "planned", output: { kind: "documentRun", planned: true } });
+      expect(steps[0]?.outcome).toMatchObject({ state: "planned", output: { kind: "document", planned: true } });
       expect(steps[1]?.outcome).toMatchObject({ state: "planned", output: { kind: "documentLink", expiresIn: "7d", planned: true } });
     } finally {
       await cleanupFixture(fixture);

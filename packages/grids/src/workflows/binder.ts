@@ -61,14 +61,14 @@ const gridsValueDescriptors: Record<string, WorkflowValuePathDescriptor> = {
       documentNumber: textValue,
       filename: textValue,
       tags: { kind: "array", type: "core.array", items: textValue },
-      generatedBy: textValue,
-      generatedAt: dateTimeValue,
+      createdBy: textValue,
+      createdAt: dateTimeValue,
     },
   },
   "grids.documentLink": {
     kind: "object",
     type: "grids.documentLink",
-    properties: { kind: textValue, id: textValue, documentRunId: textValue, url: textValue, expiresAt: dateTimeValue },
+    properties: { kind: textValue, id: textValue, documentId: textValue, url: textValue, expiresAt: dateTimeValue },
   },
   "grids.emailDelivery": {
     kind: "object",

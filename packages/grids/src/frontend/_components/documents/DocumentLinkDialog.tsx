@@ -4,10 +4,10 @@ import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
 import type { DocumentLinkTtl } from "../../../contracts";
 import { errorMessage } from "../utils/api-helpers";
-import type { PublicCreateDocumentLinkResponse, PublicDocumentLink, PublicDocumentRunSummary } from "./public-document-types";
+import type { PublicCreateDocumentLinkResponse, PublicDocumentLink, PublicDocument } from "./public-document-types";
 
 type DocumentLinkDialogArgs = {
-  run: PublicDocumentRunSummary;
+  document: PublicDocument;
   onCreated: (link: PublicDocumentLink) => void | Promise<void>;
 };
 
@@ -34,8 +34,8 @@ function DocumentLinkDialog(props: { args: DocumentLinkDialogArgs; close: () => 
   const [copiedOnCreate, setCopiedOnCreate] = createSignal(false);
   const createMut = mutations.create<PublicCreateDocumentLinkResponse, void>({
     mutation: async () => {
-      const res = await apiClient.documents.runs[":runId"].links.$post({
-        param: { runId: props.args.run.id },
+      const res = await apiClient.documents[":documentId"].links.$post({
+        param: { documentId: props.args.document.id },
         json: { expiresIn: expiresIn(), comment: comment().trim() || null },
       });
       if (!res.ok) throw new Error(await errorMessage(res, "Could not create document link"));
@@ -88,7 +88,7 @@ function DocumentLinkDialog(props: { args: DocumentLinkDialogArgs; close: () => 
 
   return (
     <PanelDialog>
-      <PanelDialog.Header title="Create public link" subtitle={props.args.run.filename} icon="ti ti-link" close={props.close} />
+      <PanelDialog.Header title="Create public link" subtitle={props.args.document.filename} icon="ti ti-link" close={props.close} />
       <PanelDialog.Body>
         <Show
           when={createdUrl()}

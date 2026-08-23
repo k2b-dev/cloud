@@ -3,6 +3,7 @@ import { createSignal, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import type { GridsWorkflowRun } from "../../../workflows/contracts";
 import CustomAppBuilder from "../custom-apps/CustomAppBuilder";
 import DocumentTemplateWorkspace from "../documents/DocumentTemplateWorkspace";
+import DocumentsWorkspace from "../documents/DocumentsWorkspace";
 import QueryResultView from "../query/QueryResultView";
 import QueryWorkspace from "../query/QueryWorkspace";
 import RecordsView from "../records-view/RecordsView";
@@ -207,6 +208,9 @@ export default function GridsRoute(props: { state: PublicOkWorkspaceState; cloud
                 />
               );
             })()}
+          </Match>
+          <Match when={route.kind === "documents"}>
+            <DocumentsWorkspace baseId={state.base.id} documentTemplateLevels={state.catalog.documentTemplateLevels} />
           </Match>
           <Match when={route.kind === "empty"}>
             <Placeholder

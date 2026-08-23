@@ -1,15 +1,17 @@
 export {
-  browseRunsForTemplate,
-  listRunSummariesForRecordByTemplates,
-  listRunsForRecord,
-  listRunsForTemplate,
-  listRunsForWorkflowRun,
+  browseDocumentsForTemplate,
+  listDocuments,
+  listDocumentsForBase,
+  listDocumentsForRecord,
+  listDocumentSummariesForRecordByTemplates,
+  listDocumentsForTemplate,
+  listDocumentsForWorkflow,
 } from "./document-browse";
 export {
   createDocumentLink,
   getDocumentLink,
   getDocumentLinkByShortId,
-  listDocumentLinksForRun,
+  listDocumentLinksForDocument,
   publicDocumentLinkBaseUrl,
   publicDocumentLinkBaseUrlForAppUrl,
   publicDocumentLinkPath,
@@ -26,33 +28,31 @@ export {
   validateLiquidRoots,
   validateLiquidTemplate,
 } from "./document-liquid";
+export { summarizeDocument, summarizeDocumentTemplate as summarizeTemplate } from "./document-mappers";
 export {
-  summarizeDocumentRun as summarizeRun,
-  summarizeDocumentTemplate as summarizeTemplate,
-} from "./document-mappers";
-export {
-  buildDocumentRunRenderData,
+  buildDocumentRenderData,
   buildLiveRenderData,
   buildRenderData,
   buildTemplateAppData,
   buildTemplateBusinessData,
   buildTemplateInputContext,
+  documentRecordDataWithPublicIds,
   renderDocumentHtml,
   renderDocumentPdfPreview,
+  renderDocumentProfileInput,
   renderDocumentSource,
   rowsWithColumnLabels,
 } from "./document-rendering";
-export type { DocumentPdfRenderer } from "./document-runs";
+export type { DocumentPdfRenderer } from "./document-core";
 export {
-  createDocumentRun,
-  createRenderedDocumentRun,
-  createRunForRecord,
-  getDocumentRun,
-  getDocumentRunByShortId,
-  getRunPdf,
-  renderWorkflowRunPdf,
-  updateRunMetadata,
-} from "./document-runs";
+  createDocumentForRecord,
+  getDocumentArtifact,
+  getDocumentArtifacts,
+  getDocument,
+  getDocumentByShortId,
+  getDocumentPdf,
+  renderWorkflowDocumentsPdf,
+} from "./document-core";
 export {
   createRecordSnapshot,
   createRecordSnapshotDraft,

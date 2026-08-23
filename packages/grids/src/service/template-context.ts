@@ -1,6 +1,6 @@
 import { coreSettings } from "@valentinkolb/cloud/services";
 import { CLOUD_LOGO_SVG } from "@valentinkolb/cloud/shared";
-import type { DocumentProfile } from "../contracts";
+import type { DocumentDefaults } from "../contracts";
 import { get as getBase } from "./bases";
 
 export type DocumentTemplateAppData = {
@@ -87,30 +87,30 @@ export const buildTemplateAppData = async (settings?: unknown): Promise<Document
   return appDataFromValues({ name, url, contactEmail, copyright, timezone, logo });
 };
 
-const documentProfileValue = (profile: DocumentProfile, key: keyof DocumentProfile): string => stringValue(profile[key]);
+const documentDefaultValue = (defaults: DocumentDefaults, key: keyof DocumentDefaults): string => stringValue(defaults[key]);
 
 export const buildTemplateBusinessData = async (
   baseId: string,
   appData: DocumentTemplateAppData = defaultTemplateAppData(),
 ): Promise<DocumentTemplateBusinessData> => {
-  const profile = (await getBase(baseId))?.documentProfile ?? {};
-  const legalName = documentProfileValue(profile, "legalName") || appData.name;
-  const address = documentProfileValue(profile, "address");
-  const senderLine = documentProfileValue(profile, "senderLine") || [legalName, address.replace(/\n/g, " | ")].filter(Boolean).join(" | ");
+  const defaults = (await getBase(baseId))?.documentDefaults ?? {};
+  const legalName = documentDefaultValue(defaults, "legalName") || appData.name;
+  const address = documentDefaultValue(defaults, "address");
+  const senderLine = documentDefaultValue(defaults, "senderLine") || [legalName, address.replace(/\n/g, " | ")].filter(Boolean).join(" | ");
   return {
     legalName,
     senderLine,
     address,
-    department: nullableStringValue(profile.department),
-    contactEmail: nullableStringValue(profile.contactEmail) ?? appData.contactEmail,
-    phone: nullableStringValue(profile.phone),
-    url: nullableStringValue(profile.url) ?? (appData.url || null),
-    taxId: nullableStringValue(profile.taxId),
-    registration: nullableStringValue(profile.registration),
-    bankName: nullableStringValue(profile.bankName),
-    iban: nullableStringValue(profile.iban),
-    bic: nullableStringValue(profile.bic),
-    paymentTerms: nullableStringValue(profile.paymentTerms),
-    footerText: nullableStringValue(profile.footerText),
+    department: nullableStringValue(defaults.department),
+    contactEmail: nullableStringValue(defaults.contactEmail) ?? appData.contactEmail,
+    phone: nullableStringValue(defaults.phone),
+    url: nullableStringValue(defaults.url) ?? (appData.url || null),
+    taxId: nullableStringValue(defaults.taxId),
+    registration: nullableStringValue(defaults.registration),
+    bankName: nullableStringValue(defaults.bankName),
+    iban: nullableStringValue(defaults.iban),
+    bic: nullableStringValue(defaults.bic),
+    paymentTerms: nullableStringValue(defaults.paymentTerms),
+    footerText: nullableStringValue(defaults.footerText),
   };
 };

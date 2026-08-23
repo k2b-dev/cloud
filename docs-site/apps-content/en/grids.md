@@ -91,14 +91,13 @@ documents, and workflows without splitting the domain across unrelated tools.
 - Keep relationships between compatible Form inputs, such as a start date that
   must not follow its due date, in server-enforced cross-field validation.
 - Generate documents or PDFs from reviewed templates and record data.
-- Download exact stored PDF bytes for completed document runs. **Generate again** creates a new immutable artifact.
-- Issue profile-owned Business Documents when a readable PDF and structured
-  artifact must come from one frozen typed snapshot. Native applications can
-  provide that snapshot directly, while Grids can freeze one bounded,
-  permission-safe GQL result. The number, source revision, validation evidence,
-  exact bytes, hashes, and correction or replacement chain are immutable.
-  Profile validation names technical checks; it is not a universal compliance
-  decision.
+- Download exact stored PDF bytes for completed Documents. **Generate again** creates a new immutable Document.
+- Select an installed E-Invoice renderer on a table's Document template when
+  one frozen Record snapshot must produce both a readable PDF and structured
+  artifact. Generate it from the Record detail or template workspace; the same
+  Document also appears in All documents. Its number, validation evidence,
+  exact bytes, and hashes are immutable. Renderer validation names technical
+  checks; it is not a universal compliance decision.
 - Use automatically provisioned durable number series for sequential ID fields
   and numbered Documents. Allocations are atomic and never reused; technical
   gaps are possible, and formatting changes affect future values only.
@@ -122,8 +121,7 @@ inputs, permissions, revisions, and observable runs.
 | Table, field, and record | Schema, typed columns, and stored domain rows |
 | View and form | Reusable read perspective and guided record submission |
 | Custom App | Immutable published capability surface for a focused audience |
-| Document and workflow | Generated output and a versioned sequence of checked effects |
-| Business Document | Immutable profile-owned issuance from one frozen native or GQL snapshot |
+| Document and workflow | Immutable template output from one Record, and a versioned sequence of checked effects |
 
 Base access opens the complete raw workspace and every record in that Base.
 Tables, Views, Forms, document templates, and Workflows do not have separate
@@ -196,4 +194,4 @@ Run `cld grids help` for bases, schema, records, views, forms, Custom Apps,
 documents, templates, and workflows. Run `cld grids <area> <command> --help`
 before changing schema, data, access, or automation.
 
-Business Document automation is available through `business-documents profiles|list|issue|issue-from-gql|get|download`. Issuance requires Base Write and a stable idempotency key; reads and artifact downloads require Base Read. Snapshot JSON and one GQL result are each limited to 5 MiB; GQL issuance also requires one complete result of at most 100 rows and a stable `observedAt`. A profile may produce 2–8 artifacts totaling at most 100 MiB. Public resource arguments use six-character IDs, never internal UUIDs. Base-scoped evidence packages include frozen Business Document input, source revisions, validation reports, and exact artifacts; table-scoped packages omit these Base-level documents explicitly.
+Document automation is available through `documents renderers|list|list-by-template|browse|by-record|generate|get|download|download-artifact`. Every completed Document belongs to one template and Record and uses the same API shape, whether its renderer produces only a PDF or PDF plus structured artifacts. Generation requires Base Write and an explicit stable idempotency key; reads and artifact downloads require Base Read. Public resource arguments use six-character IDs, never internal UUIDs. Base- and table-scoped evidence packages include the covered Documents and their exact artifacts.

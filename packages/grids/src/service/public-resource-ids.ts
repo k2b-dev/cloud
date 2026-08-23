@@ -12,7 +12,7 @@ export type PublicResourceType =
   | "view"
   | "form"
   | "documentTemplate"
-  | "documentRun"
+  | "document"
   | "documentSnapshot"
   | "documentLink"
   | "emailTemplate"
@@ -32,7 +32,7 @@ const resources: Record<PublicResourceType, { table: string; key: string; live: 
   view: { table: "views", key: "id", live: "deleted_at IS NULL" },
   form: { table: "forms", key: "id", live: "deleted_at IS NULL" },
   documentTemplate: { table: "document_templates", key: "id", live: "deleted_at IS NULL" },
-  documentRun: { table: "document_runs", key: "id", live: "TRUE" },
+  document: { table: "documents", key: "id", live: "TRUE" },
   documentSnapshot: { table: "record_snapshots", key: "id", live: "TRUE" },
   documentLink: { table: "document_links", key: "id", live: "TRUE" },
   emailTemplate: { table: "email_templates", key: "id", live: "deleted_at IS NULL" },

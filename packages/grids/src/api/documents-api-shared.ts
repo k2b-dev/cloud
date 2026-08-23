@@ -1,15 +1,34 @@
-import { type AuthContext, getDateConfig } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, type RequestActor } from "@valentinkolb/cloud/server";
 import type { Context } from "hono";
 import { z } from "zod";
-import { DocumentArtifactSummarySchema, type DocumentTemplateSummary, ShortIdSchema } from "../contracts";
+import {
+  DocumentTemplateRendererSchema,
+  DocumentTemplateRendererSummarySchema,
+  type DocumentTemplateSummary,
+  ShortIdSchema,
+} from "../contracts";
 import { gridsService } from "../service";
-import { decodeDocumentRunCursor } from "../service/document-run-values";
+import { decodeDocumentCursor } from "../service/document-values";
 import { loadDocumentNumberSeries } from "../service/number-series";
 import { projectPublicIds, resolvePublicIds } from "../service/public-resources";
 import { ALL_RECORD_ACCESS } from "../service/record-access";
+import { PublicDocumentSchema } from "./document-public-contracts";
 import { pdfResponse } from "./download-response";
 import { PublicNumberSeriesSummarySchema, toPublicNumberSeries } from "./number-series-dto";
 import { currentActorViewer, gateAt } from "./permissions";
+
+export { PublicDocumentArtifactSchema, PublicDocumentRendererSchema, PublicDocumentSchema } from "./document-public-contracts";
+
+export const documentActor = (actor: RequestActor | undefined) => {
+  if (!actor) return { kind: "system" as const };
+  if (actor.kind === "user") return { kind: "user" as const, userId: actor.user.id };
+  return {
+    kind: "service_account" as const,
+    serviceAccountId: actor.serviceAccount.id,
+    delegatedUserId: actor.delegatedUser?.id ?? null,
+    credentialId: actor.credentialId ?? null,
+  };
+};
 
 export const PublicDocumentTemplateSchema = z.object({
   id: ShortIdSchema,
@@ -17,12 +36,7 @@ export const PublicDocumentTemplateSchema = z.object({
   name: z.string(),
   description: z.string().nullable(),
   source: z.string(),
-  html: z.string(),
-  headerHtml: z.string().nullable(),
-  footerHtml: z.string().nullable(),
-  pageCss: z.string().nullable(),
-  numberTemplate: z.string(),
-  filenameTemplate: z.string(),
+  renderer: DocumentTemplateRendererSchema,
   enabled: z.boolean(),
   position: z.number().int(),
   createdBy: z.string().uuid().nullable(),
@@ -30,7 +44,7 @@ export const PublicDocumentTemplateSchema = z.object({
   deletedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
-  numberSeries: PublicNumberSeriesSummarySchema,
+  numberSeries: PublicNumberSeriesSummarySchema.nullable(),
 });
 export const PublicDocumentTemplateListSchema = z.array(PublicDocumentTemplateSchema);
 export const PublicDocumentTemplateSummarySchema = PublicDocumentTemplateSchema.pick({
@@ -42,7 +56,7 @@ export const PublicDocumentTemplateSummarySchema = PublicDocumentTemplateSchema.
   position: true,
   createdAt: true,
   updatedAt: true,
-});
+}).extend({ renderer: DocumentTemplateRendererSummarySchema });
 export const PublicDocumentTemplateSummaryListSchema = z.array(PublicDocumentTemplateSummarySchema);
 
 export const PublicRecordSnapshotSchema = z.object({
@@ -59,31 +73,14 @@ export const PublicRecordSnapshotSummarySchema = PublicRecordSnapshotSchema.omit
 export const PublicRecordSnapshotListResponseSchema = z.object({ items: z.array(PublicRecordSnapshotSummarySchema) });
 export const PublicCreateRecordSnapshotResponseSchema = z.object({ snapshot: PublicRecordSnapshotSchema });
 
-export const PublicDocumentRunSummarySchema = z.object({
-  id: ShortIdSchema,
-  templateId: ShortIdSchema.nullable(),
-  workflowRunId: ShortIdSchema.nullable(),
-  snapshotId: ShortIdSchema,
-  baseId: ShortIdSchema,
-  tableId: ShortIdSchema,
-  recordId: ShortIdSchema,
-  documentNumber: z.string(),
-  filename: z.string(),
-  tags: z.array(z.string()),
-  artifact: DocumentArtifactSummarySchema,
-  generatedBy: z.string().uuid().nullable(),
-  generatedAt: z.string().datetime(),
-});
-export const PublicDocumentRunSummaryListSchema = z.object({
-  items: z.array(PublicDocumentRunSummarySchema),
-  total: z.number().int().nonnegative().optional(),
-  limit: z.number().int().positive().optional(),
-  offset: z.number().int().nonnegative().optional(),
-  hasMore: z.boolean().optional(),
-  nextOffset: z.number().int().nonnegative().nullable().optional(),
-  nextCursor: z.string().nullable().optional(),
-});
-export const PublicDocumentRunBrowseResponseSchema = PublicDocumentRunSummaryListSchema.omit({ offset: true, nextOffset: true }).extend({
+export const PublicDocumentListSchema = z
+  .object({
+    items: z.array(PublicDocumentSchema),
+    cursor: z.string().nullable(),
+    hasMore: z.boolean(),
+  })
+  .strict();
+export const PublicDocumentBrowseResponseSchema = PublicDocumentListSchema.extend({
   path: z.array(z.string()),
   folders: z.array(
     z.object({
@@ -98,7 +95,7 @@ export const PublicDocumentRunBrowseResponseSchema = PublicDocumentRunSummaryLis
 
 export const PublicDocumentLinkSchema = z.object({
   id: ShortIdSchema,
-  documentRunId: ShortIdSchema,
+  documentId: ShortIdSchema,
   baseId: ShortIdSchema,
   tableId: ShortIdSchema,
   recordId: ShortIdSchema,
@@ -114,20 +111,20 @@ export const PublicDocumentLinkSchema = z.object({
 export const PublicDocumentLinkListResponseSchema = z.object({ items: z.array(PublicDocumentLinkSchema) });
 export const PublicCreateDocumentLinkResponseSchema = z.object({ link: PublicDocumentLinkSchema, url: z.string() });
 
-export const PublicDocumentTemplateDraftPreviewSchema = z.object({
-  source: z.string().trim().min(1).max(20_000),
-  html: z.string().trim().min(1).max(200_000),
-  headerHtml: z.string().trim().max(50_000).nullable().optional(),
-  footerHtml: z.string().trim().max(50_000).nullable().optional(),
-  pageCss: z.string().trim().max(50_000).nullable().optional(),
-  numberTemplate: z.string().trim().min(1).max(5_000).optional(),
-  filenameTemplate: z.string().trim().min(1).max(5_000).optional(),
-  recordId: ShortIdSchema,
-});
+export const PublicDocumentTemplateDraftPreviewSchema = z
+  .object({
+    source: z.string().trim().min(1).max(20_000),
+    renderer: DocumentTemplateRendererSchema,
+    recordId: ShortIdSchema,
+  })
+  .strict();
 export const PublicDocumentRecordBodySchema = z.object({
   recordId: ShortIdSchema,
   filename: z.string().trim().min(1).max(255).optional(),
   tags: z.array(z.string().trim().min(1).max(40)).max(20).optional().default([]),
+});
+export const PublicDocumentGenerateBodySchema = PublicDocumentRecordBodySchema.extend({
+  idempotencyKey: z.string().trim().min(1).max(200),
 });
 export const PublicReorderDocumentTemplatesSchema = z.object({
   templateIds: z
@@ -179,7 +176,6 @@ export const PublicDocumentPreviewDataSchema = z
     rows: z.array(z.record(z.string(), z.unknown())),
     columns: z.array(PublicDocumentPreviewColumnSchema),
     template: z.object({ id: z.union([ShortIdSchema, z.literal("draft")]), name: z.string() }).strict(),
-    run: z.object({ id: z.union([ShortIdSchema, z.literal("draft")]) }).strict(),
     date: z.record(z.string(), z.unknown()),
     images: z.array(PublicDocumentPreviewImageSchema),
     primaryImage: PublicDocumentPreviewImageSchema.nullable(),
@@ -201,7 +197,7 @@ const requiredPublicId = (ids: ReadonlyMap<string, string>, internalId: string, 
 
 type InternalDocumentTemplate =
   Awaited<ReturnType<typeof gridsService.document.getTemplateByShortId>> extends infer T ? NonNullable<T> : never;
-type InternalDocumentRunSummary = ReturnType<typeof gridsService.document.summarizeRun>;
+type InternalDocumentSummary = ReturnType<typeof gridsService.document.summarizeDocument>;
 type InternalDocumentLink = NonNullable<Awaited<ReturnType<typeof gridsService.document.getDocumentLink>>>;
 type InternalRecordSnapshot = NonNullable<Awaited<ReturnType<typeof gridsService.document.getSnapshot>>>;
 type InternalRecordSnapshotSummary = Awaited<ReturnType<typeof gridsService.document.listSnapshotsForRecord>>[number];
@@ -216,12 +212,13 @@ export const projectDocumentTemplates = async (templates: InternalDocumentTempla
   ]);
   return templates.map(({ id: _id, shortId, tableId, ...template }) => {
     const series = numberSeries.get(_id);
-    if (!series) throw new Error(`Grids document template ${_id} is missing its durable number series.`);
+    if (!series && template.renderer.kind === "html")
+      throw new Error(`Grids document template ${_id} is missing its durable number series.`);
     return {
       ...template,
       id: shortId,
       tableId: requiredPublicId(tableIds, tableId, "table"),
-      numberSeries: toPublicNumberSeries(series),
+      numberSeries: template.renderer.kind === "html" && series ? toPublicNumberSeries(series) : null,
     };
   });
 };
@@ -236,6 +233,7 @@ export const projectDocumentTemplateSummaries = async (templates: readonly Docum
     tableId: requiredPublicId(tableIds, template.tableId, "table"),
     name: template.name,
     description: template.description,
+    renderer: template.renderer,
     enabled: template.enabled,
     position: template.position,
     createdAt: template.createdAt,
@@ -280,54 +278,53 @@ export const projectRecordSnapshotSummaries = async (snapshots: InternalRecordSn
   }));
 };
 
-export const projectDocumentRunSummaries = async (runs: InternalDocumentRunSummary[]) => {
-  const [templates, workflowRuns, snapshots, bases, tables, records] = await Promise.all([
+export const projectDocuments = async (documents: InternalDocumentSummary[]) => {
+  const [templates, bases, tables, records] = await Promise.all([
     projectPublicIds(
       "documentTemplate",
-      runs.flatMap((run) => (run.templateId ? [run.templateId] : [])),
-    ),
-    projectPublicIds(
-      "workflowRun",
-      runs.flatMap((run) => (run.workflowRunId ? [run.workflowRunId] : [])),
-    ),
-    projectPublicIds(
-      "documentSnapshot",
-      runs.map((run) => run.snapshotId),
+      documents.map((document) => document.templateId),
     ),
     projectPublicIds(
       "base",
-      runs.map((run) => run.baseId),
+      documents.map((document) => document.baseId),
     ),
     projectPublicIds(
       "table",
-      runs.map((run) => run.tableId),
+      documents.map((document) => document.tableId),
     ),
     projectPublicIds(
       "record",
-      runs.map((run) => run.recordId),
+      documents.map((document) => document.recordId),
     ),
   ]);
-  return runs.map(({ id: _id, shortId, templateId, workflowRunId, snapshotId, baseId, tableId, recordId, ...run }) => ({
-    ...run,
-    id: shortId,
-    templateId: templateId ? requiredPublicId(templates, templateId, "document template") : null,
-    workflowRunId: workflowRunId ? requiredPublicId(workflowRuns, workflowRunId, "workflow run") : null,
-    snapshotId: requiredPublicId(snapshots, snapshotId, "document snapshot"),
-    baseId: requiredPublicId(bases, baseId, "base"),
-    tableId: requiredPublicId(tables, tableId, "table"),
-    recordId: requiredPublicId(records, recordId, "record"),
-  }));
+  return documents.map(
+    ({ id: _id, shortId, templateId, workflowRunId: _workflowRunId, snapshotId: _snapshotId, baseId, tableId, recordId, ...document }) => ({
+      id: shortId,
+      baseId: requiredPublicId(bases, baseId, "base"),
+      tableId: requiredPublicId(tables, tableId, "table"),
+      recordId: requiredPublicId(records, recordId, "record"),
+      templateId: requiredPublicId(templates, templateId, "document template"),
+      number: document.documentNumber,
+      filename: document.filename,
+      createdAt: document.createdAt,
+      tags: document.tags,
+      createdBy: document.createdBy,
+      renderer: document.profile ? { kind: "profile" as const, ...document.profile } : { kind: "html" as const },
+      validationStatus: document.validationStatus,
+      artifacts: document.artifacts.map(({ fileId: _fileId, ...artifact }) => artifact),
+    }),
+  );
 };
 
 export const projectDocumentLinks = async (links: InternalDocumentLink[]) => {
-  const [publicLinks, runs, bases, tables, records] = await Promise.all([
+  const [publicLinks, documents, bases, tables, records] = await Promise.all([
     projectPublicIds(
       "documentLink",
       links.map((link) => link.id),
     ),
     projectPublicIds(
-      "documentRun",
-      links.map((link) => link.documentRunId),
+      "document",
+      links.map((link) => link.documentId),
     ),
     projectPublicIds(
       "base",
@@ -342,10 +339,10 @@ export const projectDocumentLinks = async (links: InternalDocumentLink[]) => {
       links.map((link) => link.recordId),
     ),
   ]);
-  return links.map(({ id, shortId: _shortId, documentRunId, baseId, tableId, recordId, ...link }) => ({
+  return links.map(({ id, shortId: _shortId, documentId, baseId, tableId, recordId, ...link }) => ({
     ...link,
     id: requiredPublicId(publicLinks, id, "document link"),
-    documentRunId: requiredPublicId(runs, documentRunId, "document run"),
+    documentId: requiredPublicId(documents, documentId, "document"),
     baseId: requiredPublicId(bases, baseId, "base"),
     tableId: requiredPublicId(tables, tableId, "table"),
     recordId: requiredPublicId(records, recordId, "record"),
@@ -543,14 +540,18 @@ export const projectDocumentPreviewData = async (data: Record<string, unknown>) 
   const internalRecordId = typeof record.id === "string" ? record.id : null;
   if (!internalTableId || !internalRecordId) throw new Error("Document preview data is missing its record identity.");
   const fields = await gridsService.field.listByTable(internalTableId);
-  const fieldsById = new Map(fields.map((field) => [field.id, field]));
+  const fieldsByTemplateKey = new Map(fields.flatMap((field) => [[field.id, field] as const, [field.shortId, field] as const]));
   const columnFieldIds = columns.flatMap((column) => (typeof column.fieldId === "string" ? [column.fieldId] : []));
   const columnTableIds = columns.flatMap((column) => (typeof column.tableId === "string" ? [column.tableId] : []));
   const rowRecordIds = rows.flatMap((row) => (typeof row.recordId === "string" ? [row.recordId] : []));
   const rowTableIds = rows.flatMap((row) => (typeof row.tableId === "string" ? [row.tableId] : []));
   const relationRecordIds = Object.entries(objectValue(record.data) ?? {}).flatMap(([fieldId, value]) => {
-    if (fieldsById.get(fieldId)?.type !== "relation") return [];
-    return Array.isArray(value) ? value.filter((id): id is string => typeof id === "string") : typeof value === "string" ? [value] : [];
+    if (fieldsByTemplateKey.get(fieldId)?.type !== "relation") return [];
+    return Array.isArray(value)
+      ? value.filter((id): id is string => typeof id === "string" && z.string().uuid().safeParse(id).success)
+      : typeof value === "string" && z.string().uuid().safeParse(value).success
+        ? [value]
+        : [];
   });
   for (const row of rows) {
     for (const column of columns) {
@@ -579,9 +580,13 @@ export const projectDocumentPreviewData = async (data: Record<string, unknown>) 
   ]);
   const projectRelationValue = (value: unknown) =>
     Array.isArray(value)
-      ? value.map((id) => (typeof id === "string" ? requiredPublicId(records, id, "record") : id))
+      ? value.map((id) =>
+          typeof id === "string" && z.string().uuid().safeParse(id).success ? requiredPublicId(records, id, "record") : id,
+        )
       : typeof value === "string"
-        ? requiredPublicId(records, value, "record")
+        ? z.string().uuid().safeParse(value).success
+          ? requiredPublicId(records, value, "record")
+          : value
         : value;
   const projectRowRelationValue = (value: unknown): unknown =>
     Array.isArray(value)
@@ -620,7 +625,6 @@ export const projectDocumentPreviewData = async (data: Record<string, unknown>) 
   });
   const recordData = objectValue(record.data) ?? {};
   const template = objectValue(data.template) ?? {};
-  const run = objectValue(data.run) ?? {};
   const snapshot = objectValue(data.snapshot);
   return PublicDocumentPreviewDataSchema.parse({
     record: {
@@ -629,8 +633,9 @@ export const projectDocumentPreviewData = async (data: Record<string, unknown>) 
       ...(typeof record.version === "number" ? { version: record.version } : {}),
       data: Object.fromEntries(
         Object.entries(recordData).map(([fieldId, value]) => {
-          const field = fieldsById.get(fieldId);
-          return [requiredPublicId(publicFields, fieldId, "field"), field?.type === "relation" ? projectRelationValue(value) : value];
+          const field = fieldsByTemplateKey.get(fieldId);
+          if (!field) throw new Error(`Document preview data contains unknown field ${fieldId}.`);
+          return [field.shortId, field.type === "relation" ? projectRelationValue(value) : value];
         }),
       ),
       ...(typeof record.createdAt === "string" ? { createdAt: record.createdAt } : {}),
@@ -642,7 +647,6 @@ export const projectDocumentPreviewData = async (data: Record<string, unknown>) 
     rows: rows.map(projectRow),
     columns: projectedColumns,
     template: { id: String(template.id ?? "draft"), name: String(template.name ?? "Draft template") },
-    run: { id: String(run.id ?? "draft") },
     date: objectValue(data.date) ?? {},
     images: images.map(projectImage),
     primaryImage: primaryImage ? projectImage(primaryImage) : null,
@@ -680,15 +684,17 @@ export const RecordLookupQuerySchema = z.object({
     .pipe(z.array(ShortIdSchema)),
 });
 
-export const DocumentRunListQuerySchema = z.object({
-  q: z.string().optional().default(""),
-  limit: z.coerce.number().int().min(1).max(500).optional().default(200),
-  offset: z.coerce.number().int().min(0).optional().default(0),
+export const PublicDocumentPageQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).optional().default(50),
   cursor: z
     .string()
     .optional()
     .default("")
-    .refine((cursor) => !cursor || decodeDocumentRunCursor(cursor) !== null, "Invalid document cursor"),
+    .refine((cursor) => !cursor || decodeDocumentCursor(cursor) !== null, "Invalid document cursor"),
+});
+
+export const PublicDocumentListQuerySchema = PublicDocumentPageQuerySchema.extend({
+  q: z.string().optional().default(""),
   tags: z
     .string()
     .optional()
@@ -701,7 +707,7 @@ export const DocumentRunListQuerySchema = z.object({
     ),
 });
 
-export const DocumentRunBrowseQuerySchema = DocumentRunListQuerySchema.extend({
+export const DocumentBrowseQuerySchema = PublicDocumentListQuerySchema.extend({
   mode: z.enum(["list", "folders"]).optional().default("list"),
   path: z
     .string()
@@ -740,11 +746,11 @@ export const snapshotRecordAccessResolver = (c: Context<AuthContext>) => async (
   return resolved.ok ? ALL_RECORD_ACCESS : null;
 };
 
-export const gateRun = async (
+export const gateDocument = async (
   c: Context<AuthContext>,
-  run: NonNullable<Awaited<ReturnType<typeof gridsService.document.getRun>>>,
+  document: NonNullable<Awaited<ReturnType<typeof gridsService.document.getDocument>>>,
   required: "read" | "write",
-) => gateAt(c, { baseId: run.baseId }, required);
+) => gateAt(c, { baseId: document.baseId }, required);
 
 export const gateEnabledTemplateWrite = async (
   c: Context<AuthContext>,
@@ -765,7 +771,7 @@ export const liveRenderData = async (
       Partial<Pick<NonNullable<Awaited<ReturnType<typeof gridsService.document.getTemplate>>>, "id" | "shortId" | "name">>;
     tableId: string;
     recordId: string;
-    generatedAt?: Date;
+    createdAt?: Date;
     dateConfig?: Awaited<ReturnType<typeof getDateConfig>>;
   },
 ) => {
@@ -787,7 +793,7 @@ export const liveRenderData = async (
     record,
     app: await gridsService.document.buildTemplateAppData(),
     dateConfig,
-    generatedAt: params.generatedAt,
+    createdAt: params.createdAt,
   });
   if (!rendered.ok) return { ok: false as const, status: rendered.error.status, phase: "source" as const, message: rendered.error.message };
   return {
@@ -809,12 +815,7 @@ export const draftTemplateFromBody = (
   shortId: base?.shortId,
   name: base?.name,
   source: body.source,
-  html: body.html,
-  headerHtml: body.headerHtml ?? null,
-  footerHtml: body.footerHtml ?? null,
-  pageCss: body.pageCss ?? null,
-  numberTemplate: body.numberTemplate ?? base?.numberTemplate,
-  filenameTemplate: body.filenameTemplate ?? base?.filenameTemplate,
+  renderer: body.renderer,
 });
 
 export const addDraftDocumentMetadata = async (
@@ -822,16 +823,17 @@ export const addDraftDocumentMetadata = async (
   params: {
     template: ReturnType<typeof draftTemplateFromBody>;
     data: Record<string, unknown>;
-    generatedAt: Date;
+    createdAt: Date;
     dateConfig: Awaited<ReturnType<typeof getDateConfig>>;
   },
 ) => {
-  const built = await gridsService.document.buildDocumentRunRenderData({
+  const built = await gridsService.document.buildDocumentRenderData({
     template: params.template,
     renderData: params.data,
-    runShortId: "draft",
-    generatedAt: params.generatedAt,
+    documentShortId: "draft",
+    createdAt: params.createdAt,
     dateConfig: params.dateConfig,
+    documentNumber: params.template.renderer.kind === "profile" ? "draft" : undefined,
   });
   if (!built.ok) return { ok: false as const, response: c.json({ message: built.error.message, phase: "document" }, built.error.status) };
   return { ok: true as const, data: built.data.data };
@@ -845,12 +847,17 @@ export const renderDraftDataResponse = async (
     recordId: string;
   },
 ) => {
-  const generatedAt = new Date();
+  const createdAt = new Date();
   const dateConfig = await getDateConfig(c);
-  const rendered = await liveRenderData(c, { ...params, generatedAt, dateConfig });
+  const rendered = await liveRenderData(c, { ...params, createdAt, dateConfig });
   if (!rendered.ok) return c.json({ message: rendered.message, phase: rendered.phase }, rendered.status === 400 ? 400 : 404);
-  const data = await addDraftDocumentMetadata(c, { template: params.template, data: rendered.data, generatedAt, dateConfig });
+  const data = await addDraftDocumentMetadata(c, { template: params.template, data: rendered.data, createdAt, dateConfig });
   if (!data.ok) return data.response;
+  if (params.template.renderer.kind === "profile") {
+    const input = await gridsService.document.renderProfileInput(params.template, data.data);
+    if (!input.ok) return c.json({ message: input.error.message, phase: "profile" }, input.error.status);
+    return c.json({ html: "", source: rendered.source, data: await projectDocumentPreviewData(data.data) });
+  }
   const html = await gridsService.document.renderHtml(params.template, data.data);
   if (!html.ok) return c.json({ message: html.error.message, phase: "html" }, html.error.status);
   return c.json({ html: html.data, source: rendered.source, data: await projectDocumentPreviewData(data.data) });
@@ -864,13 +871,27 @@ export const renderDraftPdfResponse = async (
     recordId: string;
   },
 ) => {
-  const generatedAt = new Date();
+  const createdAt = new Date();
   const dateConfig = await getDateConfig(c);
-  const rendered = await liveRenderData(c, { ...params, generatedAt, dateConfig });
+  const rendered = await liveRenderData(c, { ...params, createdAt, dateConfig });
   if (!rendered.ok) return c.json({ message: rendered.message, phase: rendered.phase }, rendered.status === 400 ? 400 : 404);
-  const data = await addDraftDocumentMetadata(c, { template: params.template, data: rendered.data, generatedAt, dateConfig });
+  const data = await addDraftDocumentMetadata(c, { template: params.template, data: rendered.data, createdAt, dateConfig });
   if (!data.ok) return data.response;
 
+  if (params.template.renderer.kind === "profile") {
+    const input = await gridsService.document.renderProfileInput(params.template, data.data);
+    if (!input.ok) return c.json({ message: input.error.message, phase: "profile" }, input.error.status);
+    const preview = await gridsService.document.preview({
+      profileId: params.template.renderer.id,
+      profileVersion: params.template.renderer.version,
+      snapshot: input.data,
+      issuedAt: createdAt,
+    });
+    if (!preview.ok) return c.json({ message: preview.error.message, phase: "profile" }, preview.error.status);
+    const pdf = preview.data.find((artifact) => artifact.key === "pdf");
+    if (!pdf) return c.json({ message: "Document profile produced no PDF.", phase: "profile" }, 500);
+    return pdfResponse(pdf.bytes, pdf.filename, {}, "inline");
+  }
   const pdf = await gridsService.document.renderPdfPreview(params.template, data.data, "preview.html");
   if (!pdf.ok) {
     return c.json(

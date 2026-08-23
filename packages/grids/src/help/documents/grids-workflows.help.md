@@ -501,7 +501,7 @@ steps:
 :::
 
 :::note Saved output paths
-Saved outputs expose structured paths. Documents provide `id`, `templateId`, `workflowRunId`, `snapshotId`, `baseId`, `tableId`, `recordId`, `documentNumber`, `filename`, `tags`, `generatedBy`, and `generatedAt`. Document links provide `kind`, `id`, `url`, `expiresAt`, and `documentRunId`. Email results provide `subject`, `templateId`, and `recipients`; each recipient provides `id`, `deliveryId`, `kind`, `recipient`, and `status`. HTTP results provide `status`, `ok`, and `body`. Read them with expressions such as `${{ link.url }}`, `${{ emailResult.recipients }}`, or `${{ hook.status }}`.
+Saved outputs expose structured paths. Documents provide `id`, `templateId`, `baseId`, `tableId`, `recordId`, `number`, `filename`, `createdAt`, `createdBy`, `tags`, `renderer`, `validationStatus`, and `artifacts`. Document links provide `kind`, `id`, `url`, `expiresAt`, and `documentId`. Email results provide `subject`, `templateId`, and `recipients`; each recipient provides `id`, `deliveryId`, `kind`, `recipient`, and `status`. HTTP results provide `status`, `ok`, and `body`. Read them with expressions such as `${{ link.url }}`, `${{ emailResult.recipients }}`, or `${{ hook.status }}`.
 :::
 
 ## Email templates {icon="file-description"}

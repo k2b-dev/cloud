@@ -1,25 +1,24 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { toPgUuidArray } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
-import type { CreateDocumentTemplateInput, DocumentTemplate, UpdateDocumentTemplateInput } from "../contracts";
-import { logAudit } from "./audit";
 import {
-  DEFAULT_DOCUMENT_NUMBER_TEMPLATE,
-  DOCUMENT_NUMBER_ROOTS,
-  DOCUMENT_SOURCE_ROOTS,
-  utf8ByteLength,
-  validateDocumentLiquidTemplate,
-} from "./document-liquid";
+  type CreateDocumentTemplateInput,
+  type DocumentTemplate,
+  DocumentTemplateRendererSchema,
+  type UpdateDocumentTemplateInput,
+} from "../contracts";
+import { documentProfiles, profileKey, profileRegistry } from "../document-profiles";
+import { logAudit } from "./audit";
+import { DOCUMENT_NUMBER_ROOTS, DOCUMENT_SOURCE_ROOTS, utf8ByteLength, validateDocumentLiquidTemplate } from "./document-liquid";
 import { type DocumentDbRow, mapDocumentTemplate } from "./document-mappers";
 import { provisionDocumentNumberSeries, setNumberSeriesArchived, syncNumberSeriesFormat } from "./number-series";
 import { insertWithShortId } from "./short-id";
 import { get as getTable } from "./tables";
 
-const DEFAULT_SOURCE = (tableId: string) => `from table {${tableId}}\nwhere record.id = '{{ record.id }}'\nlimit 1`;
-const DEFAULT_FILENAME_TEMPLATE = "{{ document.number }}.pdf";
 const SOURCE_MAX_BYTES = 20_000;
 const FILENAME_TEMPLATE_MAX_BYTES = 5_000;
 const TEMPLATE_PART_MAX_BYTES = 50_000;
+const profiles = profileRegistry(documentProfiles);
 
 export const listTemplatesForTable = async (tableId: string): Promise<DocumentTemplate[]> => {
   const rows = await sql<DocumentDbRow[]>`
@@ -79,43 +78,46 @@ export const getTemplateByShortId = async (shortId: string): Promise<DocumentTem
   return row ? mapDocumentTemplate(row) : null;
 };
 
-export const validateTemplateWrite = (input: {
-  source?: string;
-  html?: string;
-  headerHtml?: string | null;
-  footerHtml?: string | null;
-  pageCss?: string | null;
-  numberTemplate?: string | null;
-  filenameTemplate?: string | null;
-}): Result<void> => {
-  if (input.source !== undefined && utf8ByteLength(input.source) > SOURCE_MAX_BYTES) return fail(err.badInput("GQL source is too large"));
-  if (input.html !== undefined) {
-    const valid = validateDocumentLiquidTemplate(input.html, "HTML template");
+export const validateTemplateWrite = (input: { source?: string; renderer?: DocumentTemplate["renderer"] }): Result<void> => {
+  if (input.source !== undefined) {
+    if (!input.source.trim()) return fail(err.badInput("GQL source is required"));
+    if (utf8ByteLength(input.source) > SOURCE_MAX_BYTES) return fail(err.badInput("GQL source is too large"));
+  }
+  const parsedRenderer = input.renderer === undefined ? null : DocumentTemplateRendererSchema.safeParse(input.renderer);
+  if (parsedRenderer && !parsedRenderer.success)
+    return fail(err.badInput(parsedRenderer.error.issues[0]?.message ?? "Invalid Document renderer"));
+  const renderer = parsedRenderer?.data;
+  if (renderer?.kind === "profile") {
+    if (!profiles.has(profileKey(renderer.id, renderer.version))) {
+      return fail(err.badInput(`Unknown Document profile ${renderer.id}@${renderer.version}`));
+    }
+    const valid = validateDocumentLiquidTemplate(renderer.inputTemplate, "Document profile input");
     if (!valid.ok) return valid;
   }
-  for (const [label, value] of [
-    ["header HTML", input.headerHtml],
-    ["footer HTML", input.footerHtml],
-    ["page CSS", input.pageCss],
-  ] as const) {
-    if (value === undefined || value === null || value === "") continue;
-    if (utf8ByteLength(value) > TEMPLATE_PART_MAX_BYTES) return fail(err.badInput(`${label} is too large`));
-    const valid = validateDocumentLiquidTemplate(value, label);
-    if (!valid.ok) return valid;
+  if (renderer?.kind === "html") {
+    const body = validateDocumentLiquidTemplate(renderer.body, "HTML template");
+    if (!body.ok) return body;
+    for (const [label, value] of [
+      ["header HTML", renderer.header],
+      ["footer HTML", renderer.footer],
+      ["page CSS", renderer.css],
+    ] as const) {
+      if (!value) continue;
+      if (utf8ByteLength(value) > TEMPLATE_PART_MAX_BYTES) return fail(err.badInput(`${label} is too large`));
+      const valid = validateDocumentLiquidTemplate(value, label);
+      if (!valid.ok) return valid;
+    }
+    if (utf8ByteLength(renderer.numberTemplate) > FILENAME_TEMPLATE_MAX_BYTES)
+      return fail(err.badInput("document number pattern is too large"));
+    const number = validateDocumentLiquidTemplate(renderer.numberTemplate, "document number pattern", DOCUMENT_NUMBER_ROOTS);
+    if (!number.ok) return number;
+    if (utf8ByteLength(renderer.filenameTemplate) > FILENAME_TEMPLATE_MAX_BYTES)
+      return fail(err.badInput("filename template is too large"));
+    const filename = validateDocumentLiquidTemplate(renderer.filenameTemplate, "filename template");
+    if (!filename.ok) return filename;
   }
   if (input.source !== undefined) {
     const valid = validateDocumentLiquidTemplate(input.source, "GQL source", DOCUMENT_SOURCE_ROOTS);
-    if (!valid.ok) return valid;
-  }
-  if (input.numberTemplate !== undefined && input.numberTemplate !== null) {
-    if (utf8ByteLength(input.numberTemplate) > FILENAME_TEMPLATE_MAX_BYTES)
-      return fail(err.badInput("document number pattern is too large"));
-    const valid = validateDocumentLiquidTemplate(input.numberTemplate, "document number pattern", DOCUMENT_NUMBER_ROOTS);
-    if (!valid.ok) return valid;
-  }
-  if (input.filenameTemplate !== undefined && input.filenameTemplate !== null) {
-    if (utf8ByteLength(input.filenameTemplate) > FILENAME_TEMPLATE_MAX_BYTES) return fail(err.badInput("filename template is too large"));
-    const valid = validateDocumentLiquidTemplate(input.filenameTemplate, "filename template");
     if (!valid.ok) return valid;
   }
   return ok();
@@ -133,20 +135,19 @@ export const createTemplate = async (
 
   const name = input.name.trim();
   if (!name) return fail(err.badInput("name required"));
-  const source = input.source.trim() || DEFAULT_SOURCE(tableId);
-  const html = input.html.trim();
-  const headerHtml = input.headerHtml?.trim() || null;
-  const footerHtml = input.footerHtml?.trim() || null;
-  const pageCss = input.pageCss?.trim() || null;
-  const numberTemplate = input.numberTemplate?.trim() || DEFAULT_DOCUMENT_NUMBER_TEMPLATE;
-  const filenameTemplate = input.filenameTemplate?.trim() || DEFAULT_FILENAME_TEMPLATE;
+  const source = input.source.trim();
+  const renderer = DocumentTemplateRendererSchema.parse(input.renderer);
+  const html = renderer.kind === "html" ? renderer : null;
+  const profile = renderer.kind === "profile" ? renderer : null;
 
   const row = await insertWithShortId<DocumentDbRow>(
     async (shortId) =>
       sql.begin(async (tx) => {
         const [created] = await tx<DocumentDbRow[]>`
           INSERT INTO grids.document_templates (
-            short_id, table_id, name, description, source, html, header_html, footer_html, page_css, number_template, filename_template,
+            short_id, table_id, name, description, source, renderer_kind,
+            html, header_html, footer_html, page_css, number_template, filename_template,
+            profile_id, profile_version, profile_input_template,
             enabled, position, created_by, updated_by
           )
           VALUES (
@@ -155,12 +156,16 @@ export const createTemplate = async (
             ${name},
             ${input.description ?? null},
             ${source},
-            ${html},
-            ${headerHtml},
-            ${footerHtml},
-            ${pageCss},
-            ${numberTemplate},
-            ${filenameTemplate},
+            ${renderer.kind},
+            ${html?.body ?? null},
+            ${html?.header ?? null},
+            ${html?.footer ?? null},
+            ${html?.css ?? null},
+            ${html?.numberTemplate ?? null},
+            ${html?.filenameTemplate ?? null},
+            ${profile?.id ?? null},
+            ${profile?.version ?? null},
+            ${profile?.inputTemplate ?? null},
             ${input.enabled ?? true},
             COALESCE((SELECT MAX(position) + 1 FROM grids.document_templates WHERE table_id = ${tableId}::uuid), 0),
             ${actorId}::uuid,
@@ -169,7 +174,7 @@ export const createTemplate = async (
           RETURNING *
         `;
         if (!created) throw new Error("insert returned no row");
-        await provisionDocumentNumberSeries(tx, created.id as string, numberTemplate);
+        if (html) await provisionDocumentNumberSeries(tx, created.id as string, html.numberTemplate);
         await logAudit(
           {
             baseId: table.baseId,
@@ -194,8 +199,12 @@ export const updateTemplate = async (
 ): Promise<Result<DocumentTemplate>> => {
   const existing = await getTemplate(templateId);
   if (!existing) return fail(err.notFound("Document template"));
-  const valid = validateTemplateWrite(input);
+  const candidate = { ...existing, ...input };
+  const valid = validateTemplateWrite(candidate);
   if (!valid.ok) return valid;
+  const renderer = input.renderer === undefined ? undefined : DocumentTemplateRendererSchema.parse(input.renderer);
+  const html = renderer?.kind === "html" ? renderer : null;
+  const profile = renderer?.kind === "profile" ? renderer : null;
 
   const [row] = await sql.begin(async (tx) => {
     const rows = await tx<DocumentDbRow[]>`
@@ -204,12 +213,16 @@ export const updateTemplate = async (
         name = COALESCE(${input.name?.trim() || null}, name),
         description = ${input.description === undefined ? sql`description` : input.description},
         source = COALESCE(${input.source?.trim() || null}, source),
-        html = COALESCE(${input.html?.trim() || null}, html),
-        header_html = ${input.headerHtml === undefined ? sql`header_html` : input.headerHtml?.trim() || null},
-        footer_html = ${input.footerHtml === undefined ? sql`footer_html` : input.footerHtml?.trim() || null},
-        page_css = ${input.pageCss === undefined ? sql`page_css` : input.pageCss?.trim() || null},
-        number_template = COALESCE(${input.numberTemplate?.trim() || null}, number_template),
-        filename_template = COALESCE(${input.filenameTemplate?.trim() || null}, filename_template),
+        renderer_kind = ${renderer?.kind ?? sql`renderer_kind`},
+        html = ${renderer === undefined ? sql`html` : (html?.body ?? null)},
+        header_html = ${renderer === undefined ? sql`header_html` : (html?.header ?? null)},
+        footer_html = ${renderer === undefined ? sql`footer_html` : (html?.footer ?? null)},
+        page_css = ${renderer === undefined ? sql`page_css` : (html?.css ?? null)},
+        number_template = ${renderer === undefined ? sql`number_template` : (html?.numberTemplate ?? null)},
+        filename_template = ${renderer === undefined ? sql`filename_template` : (html?.filenameTemplate ?? null)},
+        profile_id = ${renderer === undefined ? sql`profile_id` : (profile?.id ?? null)},
+        profile_version = ${renderer === undefined ? sql`profile_version` : (profile?.version ?? null)},
+        profile_input_template = ${renderer === undefined ? sql`profile_input_template` : (profile?.inputTemplate ?? null)},
         enabled = COALESCE(${input.enabled ?? null}, enabled),
         position = COALESCE(${input.position ?? null}, position),
         updated_by = ${actorId}::uuid,
@@ -222,10 +235,12 @@ export const updateTemplate = async (
       await syncNumberSeriesFormat(
         tx,
         { kind: "document_template", id: templateId },
-        {
-          strategy: "document",
-          numberTemplate: updated.number_template as string,
-        },
+        updated.renderer_kind === "html"
+          ? {
+              strategy: "document",
+              numberTemplate: updated.number_template as string,
+            }
+          : null,
       );
     }
     return rows;
@@ -296,7 +311,9 @@ export const restoreTemplate = async (templateId: string, actorId: string | null
       WHERE id = ${templateId}::uuid AND deleted_at IS NOT NULL
       RETURNING *
     `;
-    if (rows[0]) await setNumberSeriesArchived(tx, { kind: "document_template", id: templateId }, false);
+    if (rows[0] && existing.renderer.kind === "html") {
+      await setNumberSeriesArchived(tx, { kind: "document_template", id: templateId }, false);
+    }
     return rows;
   });
   return row ? ok(mapDocumentTemplate(row)) : fail(err.notFound("Document template"));

@@ -10,18 +10,6 @@ const postgresTest = process.env.GRIDS_DB_TEST === "1" ? test : test.skip;
 const uuid = () => Bun.randomUUIDv7();
 const shortId = (prefix: string) => `${prefix}${Math.random().toString(36).slice(2, 7)}`.slice(0, 6);
 
-const allowArtifactlessAlphaDocumentRuns = async (database: SQL): Promise<void> => {
-  await database`
-    ALTER TABLE grids.document_runs DROP CONSTRAINT IF EXISTS document_runs_artifact_complete_chk;
-    ALTER TABLE grids.document_runs ALTER COLUMN artifact_file_id DROP NOT NULL;
-    ALTER TABLE grids.document_runs ALTER COLUMN artifact_mime_type DROP NOT NULL;
-    ALTER TABLE grids.document_runs ALTER COLUMN artifact_size_bytes DROP NOT NULL;
-    ALTER TABLE grids.document_runs ALTER COLUMN artifact_sha256 DROP NOT NULL;
-    ALTER TABLE grids.document_runs ALTER COLUMN renderer_version DROP NOT NULL;
-    ALTER TABLE grids.document_runs ALTER COLUMN template_revision DROP NOT NULL;
-  `.simple();
-};
-
 const withIsolatedDatabase = async (run: (database: SQL) => Promise<void>) => {
   const sourceUrl = process.env.DATABASE_URL;
   if (!sourceUrl) throw new Error("DATABASE_URL is required for migration integration tests");
@@ -322,28 +310,33 @@ describe("grids schema migration", () => {
           "record_revisions",
           "table_schema_revisions",
         ]);
-        const businessDocumentTables = await database<Array<{ tableName: string }>>`
+        const documentIssuanceTables = await database<Array<{ tableName: string }>>`
           SELECT table_name AS "tableName"
           FROM information_schema.tables
           WHERE table_schema = 'grids'
-            AND table_name IN ('business_document_artifacts', 'business_document_counters', 'business_documents')
+            AND table_name IN ('document_artifacts', 'document_issuances', 'document_profile_counters')
           ORDER BY table_name
         `;
-        expect(businessDocumentTables.map((item) => item.tableName)).toEqual([
-          "business_document_artifacts",
-          "business_document_counters",
-          "business_documents",
+        expect(documentIssuanceTables.map((item) => item.tableName)).toEqual([
+          "document_artifacts",
+          "document_issuances",
+          "document_profile_counters",
         ]);
         const immutableTriggers = await database<Array<{ tableName: string }>>`
-          SELECT event_object_table AS "tableName"
+          SELECT DISTINCT event_object_table AS "tableName"
           FROM information_schema.triggers
           WHERE trigger_schema = 'grids' AND trigger_name IN (
-            'business_documents_immutable',
-            'business_document_artifacts_immutable'
+            'documents_immutable',
+            'document_artifacts_immutable',
+            'document_issuances_guard'
           )
           ORDER BY event_object_table
         `;
-        expect(immutableTriggers.map((item) => item.tableName)).toEqual(["business_document_artifacts", "business_documents"]);
+        expect(immutableTriggers.map((item) => item.tableName)).toEqual([
+          "document_artifacts",
+          "document_issuances",
+          "documents",
+        ]);
         const constraints = await database<Array<{ name: string }>>`
           SELECT conname AS name
           FROM pg_constraint
@@ -452,6 +445,376 @@ describe("grids schema migration", () => {
           FROM grids.operational_health
         `;
         expect(health).toEqual({ status: "ok", outboxPending: 0 });
+      });
+    },
+    30_000,
+  );
+
+  postgresTest(
+    "defines one bound Document, artifact, number, and issuance invariant",
+    async () => {
+      await withIsolatedDatabase(async (database) => {
+        await migrateCoreWorkflows(database);
+        await migrate(database);
+
+        const artifactColumns = await database<Array<{ name: string }>>`
+          SELECT column_name AS name
+          FROM information_schema.columns
+          WHERE table_schema = 'grids' AND table_name = 'document_artifacts'
+          ORDER BY column_name
+        `;
+        expect(artifactColumns.map((column) => column.name)).toEqual([
+          "artifact_key",
+          "created_at",
+          "document_id",
+          "file_id",
+        ]);
+        const documentColumns = await database<Array<{ name: string }>>`
+          SELECT column_name AS name
+          FROM information_schema.columns
+          WHERE table_schema = 'grids' AND table_name = 'documents'
+            AND (column_name LIKE 'artifact_%' OR column_name IN ('operation_key_hash', 'request_hash'))
+        `;
+        expect(documentColumns).toEqual([]);
+        const documentLinkColumns = await database<Array<{ name: string }>>`
+          SELECT column_name AS name
+          FROM information_schema.columns
+          WHERE table_schema = 'grids' AND table_name = 'document_links'
+          ORDER BY column_name
+        `;
+        expect(documentLinkColumns.map((column) => column.name)).toEqual([
+          "access_count",
+          "base_id",
+          "comment",
+          "created_at",
+          "created_by",
+          "document_id",
+          "expires_at",
+          "id",
+          "last_accessed_at",
+          "record_id",
+          "revoked_at",
+          "revoked_by",
+          "short_id",
+          "table_id",
+          "token_hash",
+        ]);
+        const documentShortIdIndexes = await database<Array<{ name: string }>>`
+          SELECT indexname AS name
+          FROM pg_indexes
+          WHERE schemaname = 'grids'
+            AND indexname IN (
+              'idx_grids_document_templates_short_id',
+              'idx_grids_record_snapshots_short_id',
+              'idx_grids_documents_short_id',
+              'idx_grids_document_links_short_id'
+            )
+          ORDER BY indexname
+        `;
+        expect(documentShortIdIndexes.map((index) => index.name)).toEqual([
+          "idx_grids_document_links_short_id",
+          "idx_grids_document_templates_short_id",
+          "idx_grids_documents_short_id",
+          "idx_grids_record_snapshots_short_id",
+        ]);
+
+        const baseA = uuid();
+        const baseB = uuid();
+        const tableA = uuid();
+        const tableB = uuid();
+        const recordA = uuid();
+        const recordB = uuid();
+        const templateA = uuid();
+        const templateB = uuid();
+        const snapshotA = uuid();
+        const snapshotB = uuid();
+        const documentA = uuid();
+        const documentB = uuid();
+        const documentAShortId = shortId("F");
+        const documentBShortId = shortId("G");
+        const mismatchedDocumentShortId = shortId("H");
+        const fileA = uuid();
+        const ordinaryFile = uuid();
+        await database`
+          INSERT INTO grids.bases (id, short_id, name) VALUES
+            (${baseA}::uuid, ${shortId("A")}, 'A'),
+            (${baseB}::uuid, ${shortId("B")}, 'B')
+        `;
+        await database`
+          INSERT INTO grids.tables (id, short_id, base_id, name) VALUES
+            (${tableA}::uuid, ${shortId("T")}, ${baseA}::uuid, 'A'),
+            (${tableB}::uuid, ${shortId("U")}, ${baseB}::uuid, 'B')
+        `;
+        await database`
+          INSERT INTO grids.records (id, short_id, table_id) VALUES
+            (${recordA}::uuid, ${shortId("R")}, ${tableA}::uuid),
+            (${recordB}::uuid, ${shortId("S")}, ${tableB}::uuid)
+        `;
+        await database`
+          INSERT INTO grids.document_templates (
+            id, short_id, table_id, name, source, renderer_kind, html, number_template, filename_template
+          ) VALUES
+            (${templateA}::uuid, ${shortId("D")}, ${tableA}::uuid, 'A', 'from table A', 'html', '<p>A</p>', 'INV-{{ series.value }}', '{{ document.number }}.pdf'),
+            (${templateB}::uuid, ${shortId("E")}, ${tableB}::uuid, 'B', 'from table B', 'html', '<p>B</p>', 'INV-{{ series.value }}', '{{ document.number }}.pdf')
+        `;
+        await database`
+          INSERT INTO grids.record_snapshots (id, short_id, base_id, table_id, record_id, root, graph) VALUES
+            (${snapshotA}::uuid, ${shortId("N")}, ${baseA}::uuid, ${tableA}::uuid, ${recordA}::uuid, '{}'::jsonb, '{}'::jsonb),
+            (${snapshotB}::uuid, ${shortId("O")}, ${baseB}::uuid, ${tableB}::uuid, ${recordB}::uuid, '{}'::jsonb, '{}'::jsonb)
+        `;
+        await database`
+          INSERT INTO grids.documents (
+            id, short_id, template_id, snapshot_id, base_id, table_id, record_id, document_number, filename,
+            template_snapshot, render_data, renderer_kind, renderer_version, template_revision, issued_actor
+          ) VALUES
+            (${documentA}::uuid, ${documentAShortId}, ${templateA}::uuid, ${snapshotA}::uuid, ${baseA}::uuid, ${tableA}::uuid,
+              ${recordA}::uuid, 'INV-1', 'INV-1.pdf', '{}'::jsonb, '{}'::jsonb, 'html', 'html-v1', ${"a".repeat(64)}, '{"kind":"system"}'::jsonb),
+            (${documentB}::uuid, ${documentBShortId}, ${templateB}::uuid, ${snapshotB}::uuid, ${baseB}::uuid, ${tableB}::uuid,
+              ${recordB}::uuid, 'INV-1', 'INV-1.pdf', '{}'::jsonb, '{}'::jsonb, 'html', 'html-v1', ${"b".repeat(64)}, '{"kind":"system"}'::jsonb)
+        `;
+        await expect(
+          (async () => {
+            await database`
+              INSERT INTO grids.documents (
+                id, short_id, template_id, snapshot_id, base_id, table_id, record_id, document_number, filename,
+                template_snapshot, render_data, renderer_kind, renderer_version, template_revision, issued_actor
+              ) VALUES (
+                ${uuid()}::uuid, ${shortId("H")}, ${templateA}::uuid, ${snapshotA}::uuid, ${baseA}::uuid, ${tableA}::uuid,
+                ${recordA}::uuid, 'INV-1', 'duplicate.pdf', '{}'::jsonb, '{}'::jsonb, 'html', 'html-v1', ${"c".repeat(64)}, '{"kind":"system"}'::jsonb
+              )
+            `;
+          })(),
+        ).rejects.toThrow("documents_base_id_document_number_key");
+        await expect(
+          (async () => {
+            await database`
+              INSERT INTO grids.documents (
+                id, short_id, template_id, workflow_run_id, snapshot_id, base_id, table_id, record_id, document_number, filename,
+                template_snapshot, render_data, renderer_kind, renderer_version, template_revision, issued_actor
+              ) VALUES (
+                ${uuid()}::uuid, ${shortId("I")}, ${templateA}::uuid, ${uuid()}::uuid, ${snapshotA}::uuid, ${baseA}::uuid,
+                ${tableA}::uuid, ${recordA}::uuid, 'INV-2', 'INV-2.pdf', '{}'::jsonb, '{}'::jsonb, 'html', 'html-v1', ${"d".repeat(64)}, '{"kind":"system"}'::jsonb
+              )
+            `;
+          })(),
+        ).rejects.toThrow("documents_workflow_pair_chk");
+        await expect(
+          (async () => {
+            await database`
+              INSERT INTO grids.document_templates (
+                id, short_id, table_id, name, source, renderer_kind, profile_id, profile_version, profile_input_template,
+                number_template
+              ) VALUES (
+                ${uuid()}::uuid, ${shortId("P")}, ${tableA}::uuid, 'Invalid profile', 'from table A', 'profile',
+                'test.profile', 1, '{}', 'ignored'
+              )
+            `;
+          })(),
+        ).rejects.toThrow("document_templates_renderer_chk");
+        await expect(
+          (async () => {
+            await database`
+              INSERT INTO grids.document_templates (
+                id, short_id, table_id, name, source, renderer_kind, html, header_html, number_template, filename_template
+              ) VALUES (
+                ${uuid()}::uuid, ${shortId("V")}, ${tableA}::uuid, 'Empty header', 'from table A', 'html',
+                '<p>A</p>', '', 'INV-{{ series.value }}', '{{ document.number }}.pdf'
+              )
+            `;
+          })(),
+        ).rejects.toThrow("document_templates_header_html_length_chk");
+        await expect(
+          (async () => {
+            await database`
+              INSERT INTO grids.document_templates (
+                id, short_id, table_id, name, source, renderer_kind, html, footer_html, number_template, filename_template
+              ) VALUES (
+                ${uuid()}::uuid, ${shortId("W")}, ${tableA}::uuid, 'Empty footer', 'from table A', 'html',
+                '<p>A</p>', '', 'INV-{{ series.value }}', '{{ document.number }}.pdf'
+              )
+            `;
+          })(),
+        ).rejects.toThrow("document_templates_footer_html_length_chk");
+        await expect(
+          (async () => {
+            await database`
+              INSERT INTO grids.document_templates (
+                id, short_id, table_id, name, source, renderer_kind, html, page_css, number_template, filename_template
+              ) VALUES (
+                ${uuid()}::uuid, ${shortId("X")}, ${tableA}::uuid, 'Empty CSS', 'from table A', 'html',
+                '<p>A</p>', '', 'INV-{{ series.value }}', '{{ document.number }}.pdf'
+              )
+            `;
+          })(),
+        ).rejects.toThrow("document_templates_page_css_length_chk");
+
+        await database`
+          INSERT INTO grids.files (id, short_id, filename, mime_type, size_bytes, sha256, bytes)
+          VALUES (${fileA}::uuid, ${shortId("J")}, 'INV-1.pdf', 'application/pdf', 4, ${"e".repeat(64)}, ${new TextEncoder().encode("%PDF")})
+        `;
+        await database`
+          INSERT INTO grids.files (id, short_id, filename, mime_type, size_bytes, sha256, bytes)
+          VALUES (${ordinaryFile}::uuid, ${shortId("K")}, 'draft.txt', 'text/plain', 5, ${"3".repeat(64)}, ${new TextEncoder().encode("draft")})
+        `;
+        await database`
+          INSERT INTO grids.file_protected_references (file_id, owner_kind, owner_id, base_id, table_id, record_id)
+          VALUES (
+            ${fileA}::uuid, 'document_artifact', ${documentA}::uuid,
+            ${baseA}::uuid, ${tableA}::uuid, ${recordA}::uuid
+          )
+        `;
+        await database`
+          INSERT INTO grids.document_artifacts (document_id, artifact_key, file_id)
+          VALUES (${documentA}::uuid, 'pdf', ${fileA}::uuid)
+        `;
+        await expect(
+          (async () => {
+            await database`
+              UPDATE grids.file_protected_references
+              SET owner_id = ${uuid()}::uuid
+              WHERE file_id = ${fileA}::uuid AND owner_kind = 'document_artifact'
+            `;
+          })(),
+        ).rejects.toThrow("Document artifact protection is immutable");
+        await expect(
+          (async () => {
+            await database`
+              DELETE FROM grids.file_protected_references
+              WHERE file_id = ${fileA}::uuid AND owner_kind = 'document_artifact'
+            `;
+          })(),
+        ).rejects.toThrow("Document artifact protection is immutable");
+        const revisionOwnerId = uuid();
+        await database`
+          INSERT INTO grids.file_protected_references (file_id, owner_kind, owner_id, base_id, table_id, record_id)
+          VALUES (
+            ${ordinaryFile}::uuid, 'record_revision', ${revisionOwnerId}::uuid,
+            ${baseA}::uuid, ${tableA}::uuid, ${recordA}::uuid
+          )
+        `;
+        await expect(
+          (async () => {
+            await database`
+              UPDATE grids.file_protected_references
+              SET owner_kind = 'document_artifact'
+              WHERE file_id = ${ordinaryFile}::uuid
+                AND owner_kind = 'record_revision'
+                AND owner_id = ${revisionOwnerId}::uuid
+            `;
+          })(),
+        ).rejects.toThrow("Document artifact protection is immutable");
+        await database`
+          DELETE FROM grids.file_protected_references
+          WHERE file_id = ${ordinaryFile}::uuid AND owner_kind = 'record_revision' AND owner_id = ${revisionOwnerId}::uuid
+        `;
+        const [releasedRevisionProtection] = await database<Array<{ exists: boolean }>>`
+          SELECT EXISTS (
+            SELECT 1 FROM grids.file_protected_references
+            WHERE file_id = ${ordinaryFile}::uuid AND owner_kind = 'record_revision'
+          ) AS exists
+        `;
+        expect(releasedRevisionProtection?.exists).toBe(false);
+        await expect(
+          (async () => {
+            await database`
+              INSERT INTO grids.document_issuances (
+                base_id, document_short_id, operation_key_hash, request_hash, frozen_request
+              ) VALUES (
+                ${baseA}::uuid, 'invalid', ${"8".repeat(64)}, ${"9".repeat(64)}, '{}'::jsonb
+              )
+            `;
+          })(),
+        ).rejects.toThrow("document_issuances_short_id_format_chk");
+        await database`
+          INSERT INTO grids.document_issuances (base_id, document_short_id, operation_key_hash, request_hash, frozen_request)
+          VALUES (${baseA}::uuid, ${documentAShortId}, ${"f".repeat(64)}, ${"1".repeat(64)}, '{"record":"A"}'::jsonb)
+        `;
+        await expect(
+          (async () => {
+            await database`
+              INSERT INTO grids.document_issuances (
+                base_id, document_short_id, operation_key_hash, request_hash, frozen_request
+              ) VALUES (
+                ${baseB}::uuid, ${documentAShortId}, ${"6".repeat(64)}, ${"7".repeat(64)}, '{}'::jsonb
+              )
+            `;
+          })(),
+        ).rejects.toThrow("document_issuances_document_short_id_key");
+        await database`
+          INSERT INTO grids.document_issuances (base_id, document_short_id, operation_key_hash, request_hash, frozen_request)
+          VALUES (${baseB}::uuid, ${mismatchedDocumentShortId}, ${"6".repeat(64)}, ${"7".repeat(64)}, '{}'::jsonb)
+        `;
+        await expect(
+          (async () => {
+            await database`
+              UPDATE grids.document_issuances
+              SET document_id = ${documentB}::uuid, completed_at = now(), frozen_request = NULL
+              WHERE base_id = ${baseB}::uuid AND operation_key_hash = ${"6".repeat(64)}
+            `;
+          })(),
+        ).rejects.toThrow("document_issuances_document_base_fkey");
+        await database`
+          UPDATE grids.document_issuances
+          SET document_id = ${documentA}::uuid, completed_at = now(), frozen_request = NULL
+          WHERE base_id = ${baseA}::uuid AND operation_key_hash = ${"f".repeat(64)}
+        `;
+        const [completedIssuance] = await database<Array<{ documentShortId: string }>>`
+          SELECT document_short_id AS "documentShortId"
+          FROM grids.document_issuances
+          WHERE base_id = ${baseA}::uuid AND operation_key_hash = ${"f".repeat(64)}
+        `;
+        expect(completedIssuance?.documentShortId).toBe(documentAShortId);
+        await expect(
+          (async () => {
+            await database`
+              UPDATE grids.document_issuances SET request_hash = ${"2".repeat(64)}
+              WHERE base_id = ${baseA}::uuid AND operation_key_hash = ${"f".repeat(64)}
+            `;
+          })(),
+        ).rejects.toThrow("immutable");
+        await expect(
+          (async () => {
+            await database`DELETE FROM grids.document_artifacts WHERE document_id = ${documentA}::uuid`;
+          })(),
+        ).rejects.toThrow("immutable");
+        await expect(
+          (async () => {
+            await database`DELETE FROM grids.documents WHERE id = ${documentA}::uuid`;
+          })(),
+        ).rejects.toThrow("immutable");
+        await expect(
+          (async () => {
+            await database`UPDATE grids.files SET bytes = ${new TextEncoder().encode("evil")} WHERE id = ${fileA}::uuid`;
+          })(),
+        ).rejects.toThrow("immutable");
+        await database`
+          UPDATE grids.files
+          SET filename = 'final.txt', size_bytes = 5, sha256 = ${"4".repeat(64)}, bytes = ${new TextEncoder().encode("final")}
+          WHERE id = ${ordinaryFile}::uuid
+        `;
+        const [updatedOrdinaryFile] = await database<Array<{ filename: string }>>`
+          SELECT filename FROM grids.files WHERE id = ${ordinaryFile}::uuid
+        `;
+        expect(updatedOrdinaryFile?.filename).toBe("final.txt");
+        await database`
+          UPDATE grids.document_templates
+          SET renderer_kind = 'profile',
+              html = NULL,
+              number_template = NULL,
+              filename_template = NULL,
+              profile_id = 'test.invoice',
+              profile_version = 1,
+              profile_input_template = '{}'
+          WHERE id = ${templateA}::uuid
+        `;
+        const [unchangedDocument] = await database<
+          Array<{ rendererKind: string; templateSnapshot: Record<string, unknown> }>
+        >`
+          SELECT renderer_kind AS "rendererKind", template_snapshot AS "templateSnapshot"
+          FROM grids.documents
+          WHERE id = ${documentA}::uuid
+        `;
+        expect(unchangedDocument).toEqual({ rendererKind: "html", templateSnapshot: {} });
       });
     },
     30_000,
@@ -1076,12 +1439,11 @@ describe("grids schema migration", () => {
   );
 
   postgresTest(
-    "drops obsolete access metadata and artifact-less alpha documents without changing supported domain rows or grants",
+    "drops obsolete access metadata without changing supported domain rows or grants",
     async () => {
       await withIsolatedDatabase(async (database) => {
         await migrateCoreWorkflows(database);
         await migrate(database);
-        await allowArtifactlessAlphaDocumentRuns(database);
         expect(GRIDS_WORKFLOW_SCHEMA_VERSION).toBe(8);
 
         const userId = uuid();
@@ -1094,7 +1456,8 @@ describe("grids schema migration", () => {
         const formId = uuid();
         const documentTemplateId = uuid();
         const snapshotId = uuid();
-        const documentRunId = uuid();
+        const documentId = uuid();
+        const documentFileId = uuid();
         const customAppId = uuid();
         const workflowId = uuid();
         const workflowLauncherId = uuid();
@@ -1147,7 +1510,7 @@ describe("grids schema migration", () => {
             (${baseAccessId}::uuid), (${appAccessId}::uuid), (${obsoleteAccessId}::uuid)
         `;
         await database`
-          INSERT INTO grids.bases (id, short_id, name, description, document_profile, created_by)
+          INSERT INTO grids.bases (id, short_id, name, description, document_defaults, created_by)
           VALUES (
             ${baseId}::uuid,
             ${shortId("B")},
@@ -1230,7 +1593,7 @@ describe("grids schema migration", () => {
         await database`
           INSERT INTO grids.document_templates (
             id, short_id, table_id, name, description, source, html, header_html, footer_html, page_css,
-            number_template, filename_template, enabled, position, created_by, updated_by
+            renderer_kind, number_template, filename_template, enabled, position, created_by, updated_by
           ) VALUES (
             ${documentTemplateId}::uuid,
             ${shortId("D")},
@@ -1242,7 +1605,8 @@ describe("grids schema migration", () => {
             '<header>Kept</header>',
             '<footer>Kept</footer>',
             '@page { size: A4; }',
-            'DOC-{{ run.id }}',
+            'html',
+            'DOC-{{ document.id }}',
             '{{ document.number }}.pdf',
             TRUE,
             6,
@@ -1324,14 +1688,16 @@ describe("grids schema migration", () => {
           )
         `;
         await database`
-          INSERT INTO grids.document_runs (
-            id, short_id, template_id, workflow_run_id, snapshot_id, base_id, table_id, record_id,
-            document_number, filename, tags, template_snapshot, render_data, generated_by
+          INSERT INTO grids.documents (
+            id, short_id, template_id, workflow_run_id, workflow_step_key, snapshot_id, base_id, table_id, record_id,
+            document_number, filename, tags, template_snapshot, render_data, renderer_kind, renderer_version,
+            template_revision, issued_actor, created_by
           ) VALUES (
-            ${documentRunId}::uuid,
+            ${documentId}::uuid,
             ${shortId("R")},
             ${documentTemplateId}::uuid,
             ${workflowRunId}::uuid,
+            'preserved-step',
             ${snapshotId}::uuid,
             ${baseId}::uuid,
             ${tableId}::uuid,
@@ -1341,8 +1707,23 @@ describe("grids schema migration", () => {
             ARRAY['preserved', 'migration'],
             '{"html":"<main>kept</main>"}'::jsonb,
             '{"record":{"name":"kept"}}'::jsonb,
+            'html',
+            'test-renderer-v1',
+            ${"a".repeat(64)},
+            '{"kind":"user"}'::jsonb,
             ${userId}::uuid
           )
+        `;
+        await database`
+          INSERT INTO grids.files (id, short_id, filename, mime_type, size_bytes, sha256, bytes, created_by)
+          VALUES (
+            ${documentFileId}::uuid, ${shortId("F")}, 'preserved.pdf', 'application/pdf', 4,
+            ${"b".repeat(64)}, ${new TextEncoder().encode("%PDF")}, ${userId}::uuid
+          )
+        `;
+        await database`
+          INSERT INTO grids.document_artifacts (document_id, artifact_key, file_id)
+          VALUES (${documentId}::uuid, 'pdf', ${documentFileId}::uuid)
         `;
         await database`INSERT INTO grids.base_access (base_id, access_id) VALUES (${baseId}::uuid, ${baseAccessId}::uuid)`;
         await database`
@@ -1391,7 +1772,7 @@ describe("grids schema migration", () => {
             SELECT 'grids.bases', id::text,
               jsonb_build_object(
                 'shortId', short_id, 'name', name, 'description', description,
-                'documentProfile', document_profile, 'createdBy', created_by::text, 'deletedAt', deleted_at
+                'documentDefaults', document_defaults, 'createdBy', created_by::text, 'deletedAt', deleted_at
               )
             FROM grids.bases WHERE id = ${baseId}::uuid
             UNION ALL
@@ -1408,15 +1789,15 @@ describe("grids schema migration", () => {
               )
             FROM grids.custom_apps WHERE id = ${customAppId}::uuid
             UNION ALL
-            SELECT 'grids.document_runs', id::text,
+            SELECT 'grids.documents', id::text,
               jsonb_build_object(
                 'shortId', short_id, 'templateId', template_id::text, 'workflowRunId', workflow_run_id::text,
                 'snapshotId', snapshot_id::text, 'baseId', base_id::text, 'tableId', table_id::text,
                 'recordId', record_id::text, 'documentNumber', document_number, 'filename', filename,
                 'tags', tags, 'templateSnapshot', template_snapshot, 'renderData', render_data,
-                'generatedBy', generated_by::text
+                'createdBy', created_by::text
               )
-            FROM grids.document_runs WHERE id = ${documentRunId}::uuid
+            FROM grids.documents WHERE id = ${documentId}::uuid
             UNION ALL
             SELECT 'grids.document_templates', id::text,
               jsonb_build_object(
@@ -1525,18 +1906,17 @@ describe("grids schema migration", () => {
         `;
 
         const before = await readPreservedRows();
-        const afterHardCut = before.filter((row) => row.entity !== "grids.document_runs");
         const workflowMigrationVersions = await readWorkflowMigrationVersions();
         expect(before).toHaveLength(22);
 
         await migrateCoreWorkflows(database);
         await migrate(database);
-        expect(await readPreservedRows()).toEqual(afterHardCut);
+        expect(await readPreservedRows()).toEqual(before);
         expect(await readWorkflowMigrationVersions()).toEqual(workflowMigrationVersions);
 
         await migrateCoreWorkflows(database);
         await migrate(database);
-        expect(await readPreservedRows()).toEqual(afterHardCut);
+        expect(await readPreservedRows()).toEqual(before);
         expect(await readWorkflowMigrationVersions()).toEqual(workflowMigrationVersions);
 
         const obsoleteTables = await database<Array<{ tableName: string }>>`
@@ -1696,83 +2076,6 @@ describe("grids schema migration", () => {
             `;
           })(),
         ).rejects.toThrow("tables_federated_read_only_chk");
-      });
-    },
-    30_000,
-  );
-
-  postgresTest(
-    "removes artifact-less alpha documents after preserving their number-series floor",
-    async () => {
-      await withIsolatedDatabase(async (database) => {
-        await migrateCoreWorkflows(database);
-        await migrate(database);
-        await allowArtifactlessAlphaDocumentRuns(database);
-
-        const baseId = uuid();
-        const workflowId = uuid();
-        const workflowRunId = uuid();
-        const tableId = uuid();
-        const recordId = uuid();
-        const templateId = uuid();
-        const templateShortId = shortId("T");
-        const snapshotId = uuid();
-        const documentRunId = uuid();
-        await database`
-          INSERT INTO grids.bases (id, short_id, name)
-          VALUES (${baseId}::uuid, ${shortId("B")}, 'Workflow reset artifacts')
-        `;
-        await database`
-          INSERT INTO grids.tables (id, short_id, base_id, name)
-          VALUES (${tableId}::uuid, ${shortId("T")}, ${baseId}::uuid, 'Documents')
-        `;
-        await database`
-          INSERT INTO grids.document_templates (id, short_id, table_id, name, source, html)
-          VALUES (${templateId}::uuid, ${templateShortId}, ${tableId}::uuid, 'Document', 'from table Documents', '<main>Document</main>')
-        `;
-        await insertTestWorkflow({ db: database, id: workflowId, baseId, name: "Old workflow", shortId: shortId("W") });
-        await database`
-          INSERT INTO grids.record_snapshots (id, short_id, base_id, table_id, record_id, root, graph)
-          VALUES (${snapshotId}::uuid, ${shortId("S")}, ${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, '{}'::jsonb, '{}'::jsonb)
-        `;
-        await database`
-          INSERT INTO grids.document_runs (
-            id, short_id, template_id, workflow_run_id, snapshot_id, base_id, table_id, record_id, document_number, filename,
-            template_snapshot, render_data
-          ) VALUES (
-            ${documentRunId}::uuid, ${shortId("D")}, ${templateId}::uuid, ${workflowRunId}::uuid, ${snapshotId}::uuid, ${baseId}::uuid,
-            ${tableId}::uuid, ${recordId}::uuid, 'DOC-1', 'DOC-1.pdf', ${{ id: templateShortId }}::jsonb, '{}'::jsonb
-          )
-        `;
-
-        await database`DELETE FROM grids.workflow_migrations WHERE version = ${GRIDS_WORKFLOW_SCHEMA_VERSION}`;
-        await migrateCoreWorkflows(database);
-        await migrate(database);
-
-        const [surviving] = await database<Array<{ count: number }>>`
-          SELECT count(*)::int AS count FROM grids.document_runs WHERE id = ${documentRunId}::uuid
-        `;
-        const [series] = await database<Array<{ baselineFloor: number }>>`
-          SELECT baseline_floor::int AS "baselineFloor"
-          FROM grids.number_series
-          WHERE document_template_id = ${templateId}::uuid
-        `;
-        expect(surviving).toEqual({ count: 0 });
-        expect(series?.baselineFloor).toBe(1);
-        await expect(
-          (async () => {
-            await database`
-              INSERT INTO grids.document_runs (
-                id, short_id, template_id, snapshot_id, base_id, table_id, record_id,
-                document_number, filename, template_snapshot, render_data
-              ) VALUES (
-                ${uuid()}::uuid, ${shortId("D")}, ${templateId}::uuid, ${snapshotId}::uuid,
-                ${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid,
-                'DOC-2', 'DOC-2.pdf', '{}'::jsonb, '{}'::jsonb
-              )
-            `;
-          })(),
-        ).rejects.toThrow("artifact_file_id");
       });
     },
     30_000,

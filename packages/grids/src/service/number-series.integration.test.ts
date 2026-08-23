@@ -6,8 +6,7 @@ import { projectDocumentTemplates } from "../api/documents-api-shared";
 import { toPublicField } from "../api/public-dto";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
 import { migrate } from "../migrate";
-import * as documentRuns from "./document-runs";
-import * as documentSnapshots from "./document-snapshots";
+import * as documents from "./document-core";
 import * as documentTemplates from "./document-templates";
 import * as fields from "./fields";
 import { ALL_RECORD_ACCESS } from "./record-access";
@@ -29,19 +28,7 @@ const createFixture = async () => {
 };
 
 const cleanupFixture = async (baseId: string) => {
-  const artifactRows = await sql<Array<{ id: string }>>`
-    SELECT artifact_file_id::text AS id FROM grids.document_runs
-    WHERE base_id = ${baseId}::uuid AND artifact_file_id IS NOT NULL
-  `;
-  await sql`DELETE FROM grids.document_runs WHERE base_id = ${baseId}::uuid`;
-  await sql`DELETE FROM grids.file_protected_references WHERE base_id = ${baseId}::uuid`;
-  if (artifactRows.length > 0)
-    await sql`DELETE FROM grids.files WHERE id = ANY(${sql.array(
-      artifactRows.map((row) => row.id),
-      "UUID",
-    )}::uuid[])`;
-  await sql`DELETE FROM grids.record_snapshots WHERE base_id = ${baseId}::uuid`;
-  await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+  void baseId;
 };
 
 const numberOf = (value: unknown): number => Number(String(value).replace(/^.*-/, ""));
@@ -159,7 +146,7 @@ describe("durable number series Postgres integration", () => {
   );
 
   postgresTest(
-    "uses the same allocator for document runs and keeps old rendered numbers after pattern changes",
+    "uses the same allocator for Documents and keeps old rendered numbers after pattern changes",
     async () => {
       await migrateCoreWorkflows();
       await migrate();
@@ -175,54 +162,83 @@ describe("durable number series Postgres integration", () => {
           {
             name: "Receipt",
             source: `from table {${table.shortId}}\nlimit 1`,
-            html: "<p>{{ document.number }}</p>",
-            numberTemplate: "DOC-{{ series.value }}",
+            renderer: {
+              kind: "html",
+              body: "<p>{{ document.number }}</p>",
+              numberTemplate: "DOC-{{ series.value }}",
+              filenameTemplate: "{{ document.number }}.pdf",
+            },
           },
           null,
         );
         expect(template.ok).toBe(true);
         if (!template.ok) throw new Error(template.error.message);
-        const snapshot = await documentSnapshots.createRecordSnapshotDraft({
-          baseId: fixture.baseId,
-          tableId: fixture.tableId,
-          recordId: record.data.id,
-          actorId: null,
-          resolveRecordAccess: async () => ALL_RECORD_ACCESS,
-        });
-        expect(snapshot.ok).toBe(true);
-        if (!snapshot.ok) throw new Error(snapshot.error.message);
-
-        const first = await documentRuns.createDocumentRun({
+        const first = await documents.createDocumentForRecord({
           template: template.data,
-          snapshot: snapshot.data,
-          renderData: { record: record.data, table },
-          actorId: null,
-          persistSnapshot: true,
+          table,
+          recordId: record.data.id,
+          actor: { kind: "system" },
+          idempotencyKey: `number-series-first-${testUuid()}`,
+          recordAccess: ALL_RECORD_ACCESS,
+          resolveRecordAccess: async () => ALL_RECORD_ACCESS,
           renderPdf,
         });
         expect(first.ok).toBe(true);
         if (!first.ok) throw new Error(first.error.message);
         expect(first.data.documentNumber).toBe("DOC-1");
+        if (template.data.renderer.kind !== "html") throw new Error("expected HTML renderer");
 
-        const updated = await documentTemplates.updateTemplate(template.data.id, { numberTemplate: "NEW-{{ series.value }}" }, null);
+        const updated = await documentTemplates.updateTemplate(
+          template.data.id,
+          {
+            renderer: {
+              ...template.data.renderer,
+              numberTemplate: "NEW-{{ series.value }}",
+            },
+          },
+          null,
+        );
         expect(updated.ok).toBe(true);
         if (!updated.ok) throw new Error(updated.error.message);
-        const secondSnapshot = { ...snapshot.data, id: testUuid() };
-        const second = await documentRuns.createDocumentRun({
+        const second = await documents.createDocumentForRecord({
           template: updated.data,
-          snapshot: secondSnapshot,
-          renderData: { record: record.data, table },
-          actorId: null,
-          persistSnapshot: true,
+          table,
+          recordId: record.data.id,
+          actor: { kind: "system" },
+          idempotencyKey: `number-series-second-${testUuid()}`,
+          recordAccess: ALL_RECORD_ACCESS,
+          resolveRecordAccess: async () => ALL_RECORD_ACCESS,
           renderPdf,
         });
         expect(second.ok).toBe(true);
         if (!second.ok) throw new Error(second.error.message);
         expect(second.data.documentNumber).toBe("NEW-2");
-        expect((await documentRuns.getDocumentRun(first.data.id))?.documentNumber).toBe("DOC-1");
+        expect((await documents.getDocument(first.data.id))?.documentNumber).toBe("DOC-1");
         const [publicTemplate] = await projectDocumentTemplates([updated.data]);
         expect(publicTemplate?.numberSeries).toMatchObject({ assignment: "creation", state: "active", lastValue: 2 });
-        expect(publicTemplate?.numberSeries.id).toMatch(/^[A-Za-z0-9]{6}$/);
+        expect(publicTemplate?.numberSeries?.id).toMatch(/^[A-Za-z0-9]{6}$/);
+
+        const profiled = await documentTemplates.updateTemplate(
+          template.data.id,
+          {
+            renderer: {
+              kind: "profile",
+              id: "de.zugferd.en16931",
+              version: 1,
+              inputTemplate: "{}",
+            },
+          },
+          null,
+        );
+        expect(profiled.ok).toBe(true);
+        if (!profiled.ok) throw new Error(profiled.error.message);
+        expect(profiled.data.renderer).toEqual({
+          kind: "profile",
+          id: "de.zugferd.en16931",
+          version: 1,
+          inputTemplate: "{}",
+        });
+        expect((await projectDocumentTemplates([profiled.data]))[0]?.numberSeries).toBeNull();
 
         expect((await documentTemplates.removeTemplate(template.data.id, null)).ok).toBe(true);
         const [archived] = await sql<Array<{ id: string; archived: boolean }>>`
@@ -236,7 +252,7 @@ describe("durable number series Postgres integration", () => {
           SELECT id::text, archived_at IS NOT NULL AS archived
           FROM grids.number_series WHERE document_template_id = ${template.data.id}::uuid
         `;
-        expect(active).toEqual({ id: archived!.id, archived: false });
+        expect(active).toEqual({ id: archived!.id, archived: true });
       } finally {
         await cleanupFixture(fixture.baseId);
       }

@@ -5,7 +5,7 @@ import { DocumentDataTree, RenderedDocumentSource } from "./DocumentTemplatePrev
 
 type TemplateSnippet = {
   id: string;
-  title: string;
+  title: string | Accessor<string>;
   icon: string;
   value: Accessor<string>;
   onInput: (value: string) => void;
@@ -13,14 +13,15 @@ type TemplateSnippet = {
 };
 
 type Props = {
-  html: Accessor<string>;
-  setHtml: (value: string) => void;
-  headerHtml: Accessor<string>;
-  setHeaderHtml: (value: string) => void;
-  footerHtml: Accessor<string>;
-  setFooterHtml: (value: string) => void;
-  pageCss: Accessor<string>;
-  setPageCss: (value: string) => void;
+  rendererKind: Accessor<"html" | "profile">;
+  body: Accessor<string>;
+  setBody: (value: string) => void;
+  header: Accessor<string>;
+  setHeader: (value: string) => void;
+  footer: Accessor<string>;
+  setFooter: (value: string) => void;
+  css: Accessor<string>;
+  setCss: (value: string) => void;
   templateVariables: Accessor<TemplateVariable[]>;
   previewData: Accessor<DocumentPreviewResponse | null>;
   previewDataLoading: Accessor<boolean>;
@@ -36,7 +37,7 @@ const createPanesLayout = (): PanesLayout => ({
     type: "split",
     direction: "horizontal",
     ratio: 0.58,
-    first: { type: "group", items: ["html", "header", "footer", "css"], active: "html" },
+    first: { type: "group", items: ["body", "header", "footer", "css"], active: "body" },
     second: { type: "group", items: ["preview", "data", "source"], active: "preview" },
   },
 });
@@ -45,42 +46,42 @@ export function DocumentTemplateEditorPanes(props: Props) {
   const [layout, setLayout] = createSignal(createPanesLayout());
   const snippets: TemplateSnippet[] = [
     {
-      id: "html",
-      title: "Body",
-      icon: "ti ti-code",
-      value: props.html,
-      onInput: props.setHtml,
-      placeholder: "Write the main document HTML...",
+      id: "body",
+      title: () => (props.rendererKind() === "html" ? "HTML body" : "Renderer input"),
+      icon: "ti ti-braces",
+      value: props.body,
+      onInput: props.setBody,
+      placeholder: "Write the template input for the selected renderer...",
     },
     {
       id: "header",
       title: "Header",
       icon: "ti ti-layout-navbar",
-      value: props.headerHtml,
-      onInput: props.setHeaderHtml,
+      value: props.header,
+      onInput: props.setHeader,
       placeholder: "Optional Gotenberg header HTML...",
     },
     {
       id: "footer",
       title: "Footer",
       icon: "ti ti-layout-bottombar",
-      value: props.footerHtml,
-      onInput: props.setFooterHtml,
+      value: props.footer,
+      onInput: props.setFooter,
       placeholder: "Optional Gotenberg footer HTML...",
     },
     {
       id: "css",
       title: "Page CSS",
       icon: "ti ti-braces",
-      value: props.pageCss,
-      onInput: props.setPageCss,
+      value: props.css,
+      onInput: props.setCss,
       placeholder: "@page { size: A4; margin: 28mm 14mm 22mm; }",
     },
   ];
   const items = [
     ...snippets.map((snippet) => ({
       id: snippet.id,
-      title: snippet.title,
+      title: typeof snippet.title === "string" ? snippet.title : snippet.title(),
       icon: snippet.icon,
       render: () => (
         <section class="flex h-full min-h-0 flex-col overflow-hidden">
@@ -105,7 +106,11 @@ export function DocumentTemplateEditorPanes(props: Props) {
             class="min-h-0 flex-1"
             buttonLabel="Render preview"
             emptyText="Choose a record and render a PDF preview from the unsaved draft."
-            disabled={() => !props.source().trim() || !props.html().trim() || !props.previewRecordId().trim()}
+            disabled={() =>
+              !props.source().trim() ||
+              !props.body().trim() ||
+              !props.previewRecordId().trim()
+            }
             request={props.previewPdf}
           />
         </section>

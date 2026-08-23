@@ -1036,12 +1036,7 @@ describe("built-in grid templates", () => {
           name: documentTemplate.name ?? starter.name,
           description: documentTemplate.description === undefined ? starter.description : documentTemplate.description,
           source,
-          html: starter.html,
-          headerHtml: starter.headerHtml,
-          footerHtml: starter.footerHtml,
-          pageCss: starter.pageCss,
-          numberTemplate: starter.numberTemplate,
-          filenameTemplate: starter.filenameTemplate,
+          renderer: starter.renderer,
           enabled: documentTemplate.enabled,
         };
         expect(CreateDocumentTemplateSchema.safeParse(payload).success, `${template.id}.${documentTemplate.key} document payload`).toBe(
@@ -1050,7 +1045,7 @@ describe("built-in grid templates", () => {
         expect(validateTemplateWrite(payload).ok, `${template.id}.${documentTemplate.key} document Liquid`).toBe(true);
         if (documentTemplate.starterId === "loan-agreement") {
           const rendered = await renderDocumentHtml(
-            { html: starter.html, pageCss: starter.pageCss },
+            { renderer: starter.renderer },
             {
               app: { name: "Cloud" },
               business: { legalName: "Example Operations", senderLine: "Example Operations", address: "Example Street 1" },

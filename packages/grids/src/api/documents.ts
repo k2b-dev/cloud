@@ -1,8 +1,9 @@
 import { type AuthContext, auth } from "@valentinkolb/cloud/server";
 import { Hono, type MiddlewareHandler } from "hono";
+import { createDocumentCollectionRoutes } from "./document-collection-routes";
 import { createDocumentLinkRoutes } from "./document-link-routes";
 import { createDocumentRenderRoutes } from "./document-render-routes";
-import { createDocumentRunRoutes } from "./document-run-routes";
+import { createDocumentResourceRoutes } from "./document-resource-routes";
 import { createDocumentSnapshotRoutes } from "./document-snapshot-routes";
 import { createDocumentTemplateRoutes } from "./document-template-routes";
 
@@ -14,10 +15,11 @@ export const createDocumentsApi = (deps: { requireAuthenticated?: MiddlewareHand
 
     .route("/", createDocumentRenderRoutes())
 
-    .route("/", createDocumentRunRoutes())
+    .route("/", createDocumentCollectionRoutes())
 
     .route("/", createDocumentLinkRoutes())
 
-    .route("/", createDocumentSnapshotRoutes());
+    .route("/", createDocumentSnapshotRoutes())
+    .route("/", createDocumentResourceRoutes({ requireAuthenticated: async (_c, next) => next() }));
 
 export default createDocumentsApi();

@@ -17,8 +17,8 @@ type DocumentLinkApiFixture = {
   tableId: string;
   recordId: string;
   snapshotId: string;
-  runId: string;
-  runShortId: string;
+  documentId: string;
+  documentShortId: string;
   artifactFileId: string;
   accessIds: string[];
 };
@@ -79,9 +79,10 @@ const insertFixture = async (userId: string): Promise<DocumentLinkApiFixture> =>
   const tableId = uuid();
   const recordId = uuid();
   const snapshotId = uuid();
-  const runId = uuid();
-  const runShortId = shortId("D");
-  const documentNumber = `INV-API-${runId.slice(0, 8)}`;
+  const templateId = uuid();
+  const documentId = uuid();
+  const documentShortId = shortId("D");
+  const documentNumber = `INV-API-${documentId.slice(0, 8)}`;
 
   await sql`
     INSERT INTO grids.bases (id, short_id, name)
@@ -96,6 +97,10 @@ const insertFixture = async (userId: string): Promise<DocumentLinkApiFixture> =>
     VALUES (${recordId}::uuid, ${shortId("R")}, ${tableId}::uuid, '{}'::jsonb)
   `;
   await sql`
+    INSERT INTO grids.document_templates (id, short_id, table_id, name, source, renderer_kind, html, number_template, filename_template)
+    VALUES (${templateId}::uuid, ${shortId("T")}, ${tableId}::uuid, 'Invoice', 'from table Invoices', 'html', '<p>Invoice</p>', 'INV-{{ series.value }}', '{{ document.number }}.pdf')
+  `;
+  await sql`
     INSERT INTO grids.record_snapshots (id, short_id, base_id, table_id, record_id, root, graph)
     VALUES (
       ${snapshotId}::uuid,
@@ -107,17 +112,17 @@ const insertFixture = async (userId: string): Promise<DocumentLinkApiFixture> =>
       ${{ rootId: `${tableId}:${recordId}`, records: {} }}::jsonb
     )
   `;
-  const artifact = await insertTestDocumentArtifact({ runId, baseId, tableId, recordId });
+  const artifact = await insertTestDocumentArtifact({ documentId, baseId, tableId, recordId, filename: "invoice-api-1.pdf" });
   await sql`
-    INSERT INTO grids.document_runs (
+    INSERT INTO grids.documents (
       id, short_id, template_id, snapshot_id, base_id, table_id, record_id,
       document_number, filename, tags, template_snapshot, render_data,
-      artifact_file_id, artifact_mime_type, artifact_size_bytes, artifact_sha256, renderer_version, template_revision
+      renderer_kind, renderer_version, template_revision, issued_actor
     )
     VALUES (
-      ${runId}::uuid,
-      ${runShortId},
-      NULL,
+      ${documentId}::uuid,
+      ${documentShortId},
+      ${templateId}::uuid,
       ${snapshotId}::uuid,
       ${baseId}::uuid,
       ${tableId}::uuid,
@@ -125,35 +130,27 @@ const insertFixture = async (userId: string): Promise<DocumentLinkApiFixture> =>
       ${documentNumber},
       'invoice-api-1.pdf',
       '{}'::text[],
-      ${{ html: "<p>{{ document.number }}</p>", headerHtml: null, footerHtml: null, pageCss: null }}::jsonb,
-      ${{ document: { number: documentNumber, generatedAt: "2026-07-07T00:00:00.000Z" } }}::jsonb,
-      ${artifact.fileId}::uuid, ${artifact.mimeType}, ${artifact.sizeBytes}, ${artifact.sha256},
-      ${artifact.rendererVersion}, ${artifact.templateRevision}
+      ${{ renderer: { kind: "html", body: "<p>{{ document.number }}</p>", numberTemplate: "INV-{{ series.value }}", filenameTemplate: "{{ document.number }}.pdf" } }}::jsonb,
+      ${{ document: { id: documentShortId, number: documentNumber, createdAt: "2026-07-07T00:00:00.000Z" } }}::jsonb,
+      'html', ${artifact.rendererVersion}, ${artifact.templateRevision}, ${{ kind: "user", userId }}::jsonb
     )
   `;
+  await artifact.attach();
 
   return {
     baseId,
     tableId,
     recordId,
     snapshotId,
-    runId,
-    runShortId,
+    documentId,
+    documentShortId,
     artifactFileId: artifact.fileId,
     accessIds: [await insertAccess(baseId, userId, "read")],
   };
 };
 
 const cleanupFixture = async (fixture: DocumentLinkApiFixture): Promise<void> => {
-  await sql`DELETE FROM grids.document_links WHERE document_run_id = ${fixture.runId}::uuid`;
-  await sql`DELETE FROM grids.document_runs WHERE id = ${fixture.runId}::uuid`;
-  await sql`DELETE FROM grids.file_protected_references WHERE owner_kind = 'document_artifact' AND owner_id = ${fixture.runId}::uuid`;
-  await sql`DELETE FROM grids.files WHERE id = ${fixture.artifactFileId}::uuid`;
-  await sql`DELETE FROM grids.record_snapshots WHERE id = ${fixture.snapshotId}::uuid`;
-  await sql`DELETE FROM grids.bases WHERE id = ${fixture.baseId}::uuid`;
-  for (const accessId of fixture.accessIds) {
-    await sql`DELETE FROM auth.access WHERE id = ${accessId}::uuid`;
-  }
+  void fixture;
 };
 
 const jsonRequest = (body: unknown): RequestInit => ({
@@ -172,7 +169,7 @@ describe("document link API permissions", () => {
     const app = apiFor(testUser(userId));
     const fixture = await insertFixture(userId);
     try {
-      const linksPath = `/documents/runs/${fixture.runShortId}/links`;
+      const linksPath = `/documents/${fixture.documentShortId}/links`;
       const readList = await app.request(linksPath);
       expect(readList.status).toBe(403);
 

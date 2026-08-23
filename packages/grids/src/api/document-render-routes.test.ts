@@ -3,6 +3,7 @@ import type { User } from "@valentinkolb/cloud/contracts";
 import type { AuthContext, PermissionLevel } from "@valentinkolb/cloud/server";
 import { Hono, type MiddlewareHandler } from "hono";
 import { generateSpecs } from "hono-openapi";
+import type { Document } from "../contracts";
 import { gridsService } from "../service";
 import { createDocumentsApi } from "./documents";
 
@@ -12,7 +13,7 @@ const templateId = "33333333-3333-4333-8333-333333333333";
 const recordId = "44444444-4444-4444-8444-444444444444";
 const userId = "55555555-5555-4555-8555-555555555555";
 const snapshotId = "66666666-6666-4666-8666-666666666666";
-const runId = "77777777-7777-4777-8777-777777777777";
+const documentId = "77777777-7777-4777-8777-777777777777";
 const fieldId = "88888888-8888-4888-8888-888888888888";
 const relationFieldId = "99999999-9999-4999-8999-999999999999";
 const relatedRecordId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -22,7 +23,7 @@ const tablePublicId = "TABL01";
 const templatePublicId = "TMPL01";
 const recordPublicId = "RECD01";
 const snapshotPublicId = "SNAP01";
-const runPublicId = "DRUN01";
+const documentPublicId = "DOC001";
 const fieldPublicId = "FELD01";
 const relationFieldPublicId = "RELA01";
 const relatedRecordPublicId = "RECD02";
@@ -34,7 +35,7 @@ const publicToInternal = new Map([
   [templatePublicId, templateId],
   [recordPublicId, recordId],
   [snapshotPublicId, snapshotId],
-  [runPublicId, runId],
+  [documentPublicId, documentId],
   [fieldPublicId, fieldId],
   [relationFieldPublicId, relationFieldId],
   [relatedRecordPublicId, relatedRecordId],
@@ -79,12 +80,12 @@ const template = {
   name: "Invoice July",
   description: null,
   source: `from table {${tablePublicId}}`,
-  html: "<p>{{ record.id }}</p>",
-  headerHtml: null,
-  footerHtml: null,
-  pageCss: null,
-  numberTemplate: "{{ template.id }}-{{ run.id }}",
-  filenameTemplate: "{{ document.number }}.pdf",
+  renderer: {
+    kind: "html" as const,
+    body: "<p>{{ record.id }}</p>",
+    numberTemplate: "{{ template.id }}-{{ document.id }}",
+    filenameTemplate: "{{ document.number }}.pdf",
+  },
   enabled: true,
   position: 0,
   createdBy: userId,
@@ -94,6 +95,15 @@ const template = {
   updatedAt: "2026-07-11T08:00:00.000Z",
 };
 const disabledTemplate = { ...template, enabled: false };
+const profileTemplate = {
+  ...template,
+  renderer: {
+    kind: "profile" as const,
+    id: "test.statement",
+    version: 1,
+    inputTemplate: '{"title":"Invoice","net":"100.00","tax":"19.00"}',
+  },
+};
 const record = { id: recordId, values: { total: 42 } };
 const fields = [
   { id: fieldId, shortId: fieldPublicId, tableId, type: "number" },
@@ -108,16 +118,15 @@ const liveData = {
   rows: queryRows,
   columns,
   template: { id: templatePublicId, name: template.name },
-  run: { id: "draft" },
   date: {},
   images: [{ fieldId, fieldName: "Receipt", fileId, filename: "receipt.png", mimeType: "image/png", sizeBytes: 12, url: "data:" }],
   primaryImage: { fieldId, fieldName: "Receipt", fileId, filename: "receipt.png", mimeType: "image/png", sizeBytes: 12, url: "data:" },
   app: {},
   business: {},
-  document: { number: null },
+  document: { id: "draft", number: null },
   snapshot: null,
 };
-const enrichedData = { ...liveData, document: { number: "draft" } };
+const enrichedData = { ...liveData, document: { ...liveData.document, number: "draft" } };
 const publicEnrichedData = {
   ...enrichedData,
   record: {
@@ -172,9 +181,9 @@ const snapshot = {
   createdBy: userId,
   createdAt: "2026-07-11T08:00:00.000Z",
 };
-const run = {
-  id: runId,
-  shortId: runPublicId,
+const document: Document = {
+  id: documentId,
+  shortId: documentPublicId,
   templateId,
   workflowRunId: null,
   snapshotId,
@@ -186,8 +195,11 @@ const run = {
   tags: ["finance"],
   templateSnapshot: template,
   renderData: { ...liveData, snapshot },
-  generatedBy: userId,
-  generatedAt: "2026-07-11T08:00:00.000Z",
+  artifacts: [{ key: "pdf", fileId, filename: "Invoice July.pdf", mimeType: "application/pdf", sizeBytes: 4, sha256: "a".repeat(64) }],
+  profile: null,
+  validationStatus: null,
+  createdBy: userId,
+  createdAt: "2026-07-11T08:00:00.000Z",
 };
 const pdfBytes = new Uint8Array([37, 80, 68, 70]);
 const dateConfig = { timeZone: "UTC", locale: "en", firstDayOfWeek: 1 };
@@ -199,7 +211,7 @@ const forbiddenResponse = {
 
 let baseLevel: PermissionLevel = "admin";
 let currentTable: typeof table | null = table;
-let currentTemplate: typeof template | null = template;
+let currentTemplate: typeof template | typeof profileTemplate | null = template;
 let currentRecord: typeof record | null = record;
 let liveResult:
   | { ok: true; data: { source: string; columns: unknown[]; rows: unknown[]; data: typeof liveData } }
@@ -212,17 +224,13 @@ let htmlResult: { ok: true; data: string } | { ok: false; error: { message: stri
 let previewPdfResult:
   | { ok: true; pdf: { pdf: Uint8Array } }
   | { ok: false; error: { message: string; phase: "html" | "pdf"; code: string; status: 400 | 500 | 502 } };
-let snapshotResult: { ok: true; data: typeof snapshot } | { ok: false; error: { message: string; status: 400 | 500 } };
-let runResult:
-  | { ok: true; data: { run: typeof run; pdf: { pdf: Uint8Array } } }
-  | { ok: false; error: { message: string; status: 400 | 500 | 502 } };
+let createResult: { ok: true; data: typeof document } | { ok: false; error: { message: string; status: 400 | 500 | 502 } };
 let permissionChecks: PermissionLevel[] = [];
 let liveInputs: unknown[] = [];
 let metadataInputs: unknown[] = [];
 let htmlInputs: unknown[][] = [];
 let previewPdfInputs: unknown[][] = [];
-let snapshotInput: unknown;
-let createRunInput: unknown;
+let createInput: unknown;
 let callOrder: string[] = [];
 
 const authenticated: MiddlewareHandler<AuthContext> = async (c, next) => {
@@ -243,11 +251,17 @@ const postJson = (body: unknown): RequestInit => ({
 });
 const draftBody = {
   source: ` from table {${tablePublicId}} `,
-  html: " <p>Draft</p> ",
-  headerHtml: " <header>Draft</header> ",
+  renderer: {
+    kind: "html",
+    body: " <p>Draft</p> ",
+    header: " <header>Draft</header> ",
+    numberTemplate: "{{ template.id }}-{{ document.id }}",
+    filenameTemplate: "{{ document.number }}.pdf",
+  },
   recordId: recordPublicId,
 };
 const recordBody = { recordId: recordPublicId, filename: " Custom invoice.pdf ", tags: ["finance", "july"] };
+const generateBody = { ...recordBody, idempotencyKey: "invoice-july-v1" };
 
 const publicIdOpenApiSchema = {
   type: "string",
@@ -255,17 +269,41 @@ const publicIdOpenApiSchema = {
 };
 const draftRequestSchema = {
   type: "object",
+  additionalProperties: false,
   properties: {
     source: { type: "string", minLength: 1, maxLength: 20_000 },
-    html: { type: "string", minLength: 1, maxLength: 200_000 },
-    headerHtml: { anyOf: [{ type: "string", maxLength: 50_000 }, { type: "null" }] },
-    footerHtml: { anyOf: [{ type: "string", maxLength: 50_000 }, { type: "null" }] },
-    pageCss: { anyOf: [{ type: "string", maxLength: 50_000 }, { type: "null" }] },
-    numberTemplate: { type: "string", minLength: 1, maxLength: 5_000 },
-    filenameTemplate: { type: "string", minLength: 1, maxLength: 5_000 },
+    renderer: {
+      oneOf: [
+        {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            kind: { type: "string", const: "html" },
+            body: { type: "string", minLength: 1, maxLength: 200_000 },
+            header: { type: "string", minLength: 1, maxLength: 50_000 },
+            footer: { type: "string", minLength: 1, maxLength: 50_000 },
+            css: { type: "string", minLength: 1, maxLength: 50_000 },
+            numberTemplate: { type: "string", minLength: 1, maxLength: 5_000 },
+            filenameTemplate: { type: "string", minLength: 1, maxLength: 5_000 },
+          },
+          required: ["kind", "body", "numberTemplate", "filenameTemplate"],
+        },
+        {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            kind: { type: "string", const: "profile" },
+            id: { type: "string", pattern: "^[a-z][a-z0-9.-]{2,99}$" },
+            version: { type: "integer", exclusiveMinimum: 0, maximum: 9007199254740991 },
+            inputTemplate: { type: "string", minLength: 1, maxLength: 200_000 },
+          },
+          required: ["kind", "id", "version", "inputTemplate"],
+        },
+      ],
+    },
     recordId: publicIdOpenApiSchema,
   },
-  required: ["source", "html", "recordId"],
+  required: ["source", "renderer", "recordId"],
 };
 const recordRequestSchema = {
   type: "object",
@@ -280,6 +318,14 @@ const recordRequestSchema = {
     },
   },
   required: ["recordId"],
+};
+const generateRequestSchema = {
+  ...recordRequestSchema,
+  properties: {
+    ...recordRequestSchema.properties,
+    idempotencyKey: { type: "string", minLength: 1, maxLength: 200 },
+  },
+  required: ["recordId", "idempotencyKey"],
 };
 const previewResponseSchema = {
   type: "object",
@@ -316,7 +362,7 @@ const renderRoutes = [
   ],
   ["/templates/{templateId}/preview", recordRequestSchema, jsonSchemaResponse("Rendered HTML preview", previewResponseSchema)],
   ["/templates/{templateId}/preview-pdf", recordRequestSchema, { description: "PDF preview" }],
-  ["/templates/{templateId}/generate", recordRequestSchema, { description: "Generated PDF" }],
+  ["/templates/{templateId}/generate", generateRequestSchema, { description: "Generated PDF" }],
 ] as const;
 
 const requestRoutes = [
@@ -326,7 +372,7 @@ const requestRoutes = [
   [`/templates/${templatePublicId}/preview-data-draft`, draftBody],
   [`/templates/${templatePublicId}/preview`, recordBody],
   [`/templates/${templatePublicId}/preview-pdf`, recordBody],
-  [`/templates/${templatePublicId}/generate`, recordBody],
+  [`/templates/${templatePublicId}/generate`, generateBody],
 ] as const;
 
 const expectForbidden = async (response: Response) => {
@@ -353,15 +399,13 @@ describe("document render routes", () => {
     metadataResult = { ok: true, data: { data: enrichedData } };
     htmlResult = { ok: true, data: "<p>Rendered invoice</p>" };
     previewPdfResult = { ok: true, pdf: { pdf: pdfBytes } };
-    snapshotResult = { ok: true, data: snapshot };
-    runResult = { ok: true, data: { run, pdf: { pdf: pdfBytes } } };
+    createResult = { ok: true, data: document };
     permissionChecks = [];
     liveInputs = [];
     metadataInputs = [];
     htmlInputs = [];
     previewPdfInputs = [];
-    snapshotInput = undefined;
-    createRunInput = undefined;
+    createInput = undefined;
     callOrder = [];
 
     spyOn(gridsService.table, "get").mockImplementation(async (id) => (id === tableId ? currentTable : null) as never);
@@ -379,7 +423,7 @@ describe("document render routes", () => {
       liveInputs.push(input);
       return liveResult as never;
     });
-    spyOn(gridsService.document, "buildDocumentRunRenderData").mockImplementation(async (input) => {
+    spyOn(gridsService.document, "buildDocumentRenderData").mockImplementation(async (input) => {
       callOrder.push("metadata");
       metadataInputs.push(input);
       return metadataResult as never;
@@ -394,15 +438,31 @@ describe("document render routes", () => {
       previewPdfInputs.push(input);
       return previewPdfResult as never;
     });
-    spyOn(gridsService.document, "createRecordSnapshotDraft").mockImplementation(async (input) => {
-      callOrder.push("snapshot");
-      snapshotInput = input;
-      return snapshotResult as never;
+    spyOn(gridsService.document, "renderProfileInput").mockImplementation(
+      async () =>
+        ({
+          ok: true,
+          data: { title: "Invoice", net: "100.00", tax: "19.00" },
+        }) as never,
+    );
+    spyOn(gridsService.document, "preview").mockImplementation(
+      async () =>
+        ({
+          ok: true,
+          data: [{ key: "pdf", filename: "PREVIEW.pdf", mediaType: "application/pdf", bytes: pdfBytes, sha256: "a".repeat(64) }],
+        }) as never,
+    );
+    spyOn(gridsService.document, "createDocumentForRecord").mockImplementation(async (input) => {
+      callOrder.push("create");
+      createInput = input;
+      return createResult as never;
     });
-    spyOn(gridsService.document, "createRenderedRun").mockImplementation(async (input) => {
-      callOrder.push("run");
-      createRunInput = input;
-      return runResult as never;
+    spyOn(gridsService.document, "getDocumentArtifact").mockImplementation(async () => {
+      const storedDocument = createResult.ok ? createResult.data : document;
+      return {
+        ok: true,
+        data: { bytes: pdfBytes, ...storedDocument.artifacts[0]! },
+      } as never;
     });
     spyOn(gridsService.permission, "loadBaseGrantsForSubject").mockImplementation(async () => []);
     spyOn(gridsService.permission, "resolve").mockImplementation(() => baseLevel);
@@ -500,7 +560,7 @@ describe("document render routes", () => {
 
   test("generate requires base write", async () => {
     baseLevel = "read";
-    await expectForbidden(await app().request(path(`/templates/${templatePublicId}/generate`), postJson(recordBody)));
+    await expectForbidden(await app().request(path(`/templates/${templatePublicId}/generate`), postJson(generateBody)));
     expect(callOrder).toEqual([]);
   });
 
@@ -515,12 +575,13 @@ describe("document render routes", () => {
         shortId: undefined,
         name: undefined,
         source: `from table {${tablePublicId}}`,
-        html: "<p>Draft</p>",
-        headerHtml: "<header>Draft</header>",
-        footerHtml: null,
-        pageCss: null,
-        numberTemplate: undefined,
-        filenameTemplate: undefined,
+        renderer: {
+          kind: "html",
+          body: "<p>Draft</p>",
+          header: "<header>Draft</header>",
+          numberTemplate: "{{ template.id }}-{{ document.id }}",
+          filenameTemplate: "{{ document.number }}.pdf",
+        },
       },
       enrichedData,
       "preview.html",
@@ -542,13 +603,19 @@ describe("document render routes", () => {
 
     await expectPdf(response, `inline; filename="preview.pdf"; filename*=UTF-8''preview.pdf`);
     expect(previewPdfInputs[0]).toEqual([
-      expect.objectContaining({
+      {
         id: templateId,
         shortId: template.shortId,
         name: template.name,
-        numberTemplate: template.numberTemplate,
-        filenameTemplate: template.filenameTemplate,
-      }),
+        source: `from table {${tablePublicId}}`,
+        renderer: {
+          kind: "html",
+          body: "<p>Draft</p>",
+          header: "<header>Draft</header>",
+          numberTemplate: "{{ template.id }}-{{ document.id }}",
+          filenameTemplate: "{{ document.number }}.pdf",
+        },
+      },
       enrichedData,
       "preview.html",
     ]);
@@ -562,7 +629,11 @@ describe("document render routes", () => {
     expect(body).toEqual({ html: "<p>Rendered invoice</p>", source: "compiled source", data: publicEnrichedData });
     expectPublicPreviewData(body.data);
     expect(htmlInputs[0]?.[0]).toEqual(
-      expect.objectContaining({ id: templateId, source: `from table {${tablePublicId}}`, html: "<p>Draft</p>" }),
+      expect.objectContaining({
+        id: templateId,
+        source: `from table {${tablePublicId}}`,
+        renderer: expect.objectContaining({ kind: "html", body: "<p>Draft</p>" }),
+      }),
     );
   });
 
@@ -573,10 +644,20 @@ describe("document render routes", () => {
     const body = await response.json();
     expect(body).toEqual({ html: "<p>Rendered invoice</p>", source: "compiled source", data: publicEnrichedData });
     expectPublicPreviewData(body.data);
-    expect(liveInputs[0]).toEqual(expect.objectContaining({ template, table, record, dateConfig, generatedAt: expect.any(Date) }));
-    expect(metadataInputs[0]).toEqual(
-      expect.objectContaining({ template, renderData: liveData, dateConfig, generatedAt: expect.any(Date) }),
-    );
+    expect(liveInputs[0]).toEqual(expect.objectContaining({ template, table, record, dateConfig, createdAt: expect.any(Date) }));
+    expect(metadataInputs[0]).toEqual(expect.objectContaining({ template, renderData: liveData, dateConfig, createdAt: expect.any(Date) }));
+  });
+
+  test("keeps the saved preview contract for a profiled template", async () => {
+    currentTemplate = profileTemplate;
+
+    const response = await app().request(path(`/templates/${templatePublicId}/preview`), postJson(recordBody));
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toEqual({ html: "", source: "compiled source", data: publicEnrichedData });
+    expectPublicPreviewData(body.data);
+    expect(htmlInputs).toEqual([]);
   });
 
   test("renders a saved PDF preview with template write and exact inline headers", async () => {
@@ -601,7 +682,7 @@ describe("document render routes", () => {
 
   test("rejects disabled generation with 400 before permissions or side effects", async () => {
     currentTemplate = disabledTemplate;
-    const response = await app().request(path(`/templates/${templatePublicId}/generate`), postJson(recordBody));
+    const response = await app().request(path(`/templates/${templatePublicId}/generate`), postJson(generateBody));
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({ message: "Document template is disabled" });
@@ -609,45 +690,83 @@ describe("document render routes", () => {
     expect(callOrder).toEqual([]);
   });
 
-  test("persists only an already-rendered run with actor inputs and exact download headers", async () => {
+  test("issues an immutable Document with actor and idempotency inputs", async () => {
     baseLevel = "write";
-    const response = await app().request(path(`/templates/${templatePublicId}/generate`), postJson(recordBody));
+    const response = await app().request(path(`/templates/${templatePublicId}/generate`), postJson(generateBody));
 
     await expectPdf(response, `attachment; filename="Invoice July.pdf"; filename*=UTF-8''Invoice%20July.pdf`, {
-      "x-grids-document-run-id": runPublicId,
-      "x-grids-document-number": run.documentNumber,
+      "x-grids-document-id": documentPublicId,
+      "x-grids-document-number": document.documentNumber,
       "x-grids-document-filename": "Invoice%20July.pdf",
     });
-    expect(callOrder).toEqual(["live-data", "snapshot", "run"]);
-    const { resolveRecordAccess, viewer, ...snapshotParams } = snapshotInput as {
-      baseId: string;
-      tableId: string;
+    expect(callOrder).toEqual(["create"]);
+    const { resolveRecordAccess, viewer, ...params } = createInput as {
+      template: typeof template;
+      table: typeof table;
       recordId: string;
-      actorId: string;
+      actor: { kind: "user"; userId: string };
+      idempotencyKey: string;
+      recordAccess: { kind: "all" };
       dateConfig: typeof dateConfig;
+      filename: string;
+      tags: string[];
       viewer: unknown;
       resolveRecordAccess: (target: { baseId: string; tableId: string }) => Promise<{ kind: "all" } | null>;
     };
-    expect(snapshotParams).toEqual({ baseId, tableId, recordId, actorId: userId, dateConfig });
-    expect(viewer).toMatchObject({ userId });
-    expect(await resolveRecordAccess({ baseId, tableId })).toEqual({ kind: "all" });
-    expect(createRunInput).toEqual({
+    expect(params).toEqual({
       template,
-      snapshot,
-      renderData: { ...liveData, snapshot },
-      actorId: userId,
-      generatedAt: expect.any(Date),
+      table,
+      recordId,
+      actor: { kind: "user", userId },
+      idempotencyKey: "invoice-july-v1",
+      recordAccess: { kind: "all" },
       dateConfig,
       filename: "Custom invoice.pdf",
       tags: ["finance", "july"],
-      persistSnapshot: true,
+    });
+    expect(viewer).toMatchObject({ userId });
+    expect(await resolveRecordAccess({ baseId, tableId })).toEqual({ kind: "all" });
+  });
+
+  test("generates a profiled template through the same record-bound endpoint", async () => {
+    currentTemplate = profileTemplate;
+    const renderedDocument = {
+      ...document,
+      documentNumber: "STAT-0001",
+      filename: "STAT-0001.pdf",
+      profile: { id: "test.statement", version: 1 },
+      validationStatus: "valid" as const,
+      artifacts: [{ ...document.artifacts[0]!, filename: "STAT-0001.pdf" }],
+    };
+    createResult = { ok: true, data: renderedDocument };
+    const response = await app().request(
+      path(`/templates/${templatePublicId}/generate`),
+      postJson({ recordId: recordPublicId, tags: ["invoice"], idempotencyKey: "profile-record-v1" }),
+    );
+
+    await expectPdf(response, `attachment; filename="STAT-0001.pdf"; filename*=UTF-8''STAT-0001.pdf`, {
+      "X-Grids-Document-Id": documentPublicId,
+      "X-Grids-Document-Number": "STAT-0001",
+    });
+    expect(createInput).toEqual({
+      template: profileTemplate,
+      table,
+      recordId,
+      actor: { kind: "user", userId },
+      idempotencyKey: "profile-record-v1",
+      recordAccess: { kind: "all" },
+      resolveRecordAccess: expect.any(Function),
+      viewer: expect.any(Object),
+      dateConfig,
+      filename: undefined,
+      tags: ["invoice"],
     });
   });
 
   test("does not generate without base write access", async () => {
     baseLevel = "read";
 
-    const response = await app().request(path(`/templates/${templatePublicId}/generate`), postJson(recordBody));
+    const response = await app().request(path(`/templates/${templatePublicId}/generate`), postJson(generateBody));
 
     expect(response.status).toBe(403);
     expect(callOrder).toEqual([]);
@@ -666,7 +785,6 @@ describe("document render routes", () => {
     [`/templates/${templatePublicId}/preview-data-draft`, draftBody, 400, 400, { message: "Live render data failed", phase: "source" }],
     [`/templates/${templatePublicId}/preview`, recordBody, 500, 500, { message: "Live render data failed" }],
     [`/templates/${templatePublicId}/preview-pdf`, recordBody, 500, 500, { message: "Live render data failed" }],
-    [`/templates/${templatePublicId}/generate`, recordBody, 500, 500, { message: "Live render data failed" }],
   ] as const) {
     test(`POST ${suffix} stops after a liveRenderData failure`, async () => {
       liveResult = { ok: false, error: { message: "Live render data failed", status: failureStatus } };
@@ -678,6 +796,16 @@ describe("document render routes", () => {
       expect(callOrder).toEqual(["live-data"]);
     });
   }
+
+  test("forwards owner-local generation failures without reading an artifact", async () => {
+    createResult = { ok: false, error: { message: "Record changed while the Document was frozen", status: 400 } };
+
+    const response = await app().request(path(`/templates/${templatePublicId}/generate`), postJson(generateBody));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ message: "Record changed while the Document was frozen" });
+    expect(callOrder).toEqual(["create"]);
+  });
 
   for (const [suffix, body] of [
     [`/templates/by-table/${tablePublicId}/preview-draft`, draftBody],
@@ -697,26 +825,6 @@ describe("document render routes", () => {
       expect(callOrder).toEqual(["live-data", "metadata"]);
     });
   }
-
-  test("generate stops after a snapshot failure", async () => {
-    snapshotResult = { ok: false, error: { message: "Snapshot failed", status: 500 } };
-
-    const response = await app().request(path(`/templates/${templatePublicId}/generate`), postJson(recordBody));
-
-    expect(response.status).toBe(500);
-    expect(await response.json()).toEqual({ message: "Snapshot failed" });
-    expect(callOrder).toEqual(["live-data", "snapshot"]);
-  });
-
-  test("generate stops after a createRun failure", async () => {
-    runResult = { ok: false, error: { message: "Run creation failed", status: 500 } };
-
-    const response = await app().request(path(`/templates/${templatePublicId}/generate`), postJson(recordBody));
-
-    expect(response.status).toBe(500);
-    expect(await response.json()).toEqual({ message: "Run creation failed" });
-    expect(callOrder).toEqual(["live-data", "snapshot", "run"]);
-  });
 
   for (const [suffix, body, status, expectedBody] of [
     [`/templates/by-table/${tablePublicId}/preview-data-draft`, draftBody, 400, { message: "HTML render failed", phase: "html" }],
@@ -760,14 +868,14 @@ describe("document render routes", () => {
   }
 
   for (const status of [400, 502, 500] as const) {
-    test(`generate rejects an unrenderable run with status ${status}`, async () => {
-      runResult = { ok: false, error: { message: "Stored PDF render failed", status } };
+    test(`generate forwards owner-local creation status ${status}`, async () => {
+      createResult = { ok: false, error: { message: "Stored PDF render failed", status } };
 
-      const response = await app().request(path(`/templates/${templatePublicId}/generate`), postJson(recordBody));
+      const response = await app().request(path(`/templates/${templatePublicId}/generate`), postJson(generateBody));
 
       expect(response.status).toBe(status);
       expect(await response.json()).toEqual({ message: "Stored PDF render failed" });
-      expect(callOrder).toEqual(["live-data", "snapshot", "run"]);
+      expect(callOrder).toEqual(["create"]);
     });
   }
 });

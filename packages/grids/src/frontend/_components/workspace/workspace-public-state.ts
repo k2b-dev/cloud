@@ -1,6 +1,6 @@
 import { projectCustomApp, projectCustomAppSummaries } from "../../../api/custom-apps";
 import {
-  projectDocumentRunSummaries,
+  projectDocuments,
   projectDocumentTemplateSummaries,
   projectDocumentTemplates,
   projectRecordSnapshotSummaries,
@@ -115,11 +115,11 @@ const projectCatalog = async (catalog: WorkspaceCatalog): Promise<PublicWorkspac
 
 export const projectPublicWorkspaceRecordDetail = async (detail: WorkspaceRecordDetail, fields: readonly Field[]) => {
   const files = Object.values(detail.filesByField).flat();
-  const [publicFiles, fieldIds, relationRecordIds, documentRuns, snapshots] = await Promise.all([
+  const [publicFiles, fieldIds, relationRecordIds, documents, snapshots] = await Promise.all([
     toPublicFiles(files),
     projectPublicIds("field", Object.keys(detail.filesByField)),
     projectPublicIds("record", Object.keys(detail.relationLabels)),
-    projectDocumentRunSummaries(detail.documentRuns),
+    projectDocuments(detail.documents.items),
     projectRecordSnapshotSummaries(detail.snapshots),
   ]);
   const filesByField: Record<string, typeof publicFiles> = {};
@@ -138,7 +138,7 @@ export const projectPublicWorkspaceRecordDetail = async (detail: WorkspaceRecord
       }),
     ),
     filesByField,
-    documentRuns,
+    documents: { items: documents, cursor: detail.documents.nextCursor, hasMore: detail.documents.hasMore },
     snapshots,
     auditEntries: await toPublicAuditEntries(detail.auditEntries, fields),
   };
@@ -150,7 +150,7 @@ export const projectPublicWorkspaceWorkflowRunDetail = async (detail: WorkspaceW
     ...detail,
     run,
     steps: (await toPublicWorkflowSteps({ items: detail.steps, truncated: detail.stepsTruncated }, run.id)).items,
-    documents: { ...detail.documents, items: await projectDocumentRunSummaries(detail.documents.items) },
+    documents: { ...detail.documents, items: await projectDocuments(detail.documents.items) },
   };
 };
 
@@ -261,11 +261,15 @@ const projectRoute = async (state: OkWorkspaceState, catalog: PublicWorkspaceCat
       editableTemplate: editable,
       initialRecordId: route.initialRecordId ? required(await projectPublicId("record", route.initialRecordId), "document record") : null,
       initialBrowserPage: {
-        ...route.initialBrowserPage,
-        items: await projectDocumentRunSummaries(route.initialBrowserPage.items),
+        items: await projectDocuments(route.initialBrowserPage.items),
+        cursor: route.initialBrowserPage.nextCursor ?? null,
+        hasMore: route.initialBrowserPage.hasMore ?? false,
+        path: route.initialBrowserPage.path,
+        folders: route.initialBrowserPage.folders,
       },
     };
   }
+  if (route.kind === "documents") return route;
   const workflows = await toPublicWorkflows(route.activeWorkflow ? [route.activeWorkflow] : []);
   const overviewRuns = await toPublicWorkflowRuns(route.initialOverview.runs.items);
   const overviewLaunchers = await toPublicWorkflowLaunchers(route.initialOverview.launchers);

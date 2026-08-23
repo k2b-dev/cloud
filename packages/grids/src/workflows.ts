@@ -24,8 +24,9 @@ import { workflowAction } from "@valentinkolb/cloud/workflows";
 import { sql } from "bun";
 import type { RecordMutationAudit, Table } from "./contracts";
 import { logAudit, type SqlClient } from "./service/audit";
-import { summarizeDocumentRun } from "./service/document-mappers";
-import { createDocumentLink, createRunForRecord, getDocumentRun, getTemplate, publicDocumentLinkBaseUrl } from "./service/documents";
+import { summarizeDocument } from "./service/document-mappers";
+import { createDocumentForRecord, createDocumentLink, getDocument, getTemplate, publicDocumentLinkBaseUrl } from "./service/documents";
+import type { DocumentIssuanceActor } from "./service/document-issuance";
 import { get as getEmailTemplate } from "./service/email-templates";
 import { listByTable as listFields } from "./service/field-read";
 import { assertMutationAllowed } from "./service/mutation-policy";
@@ -108,6 +109,19 @@ const viewerForScope = (scope: GridsWorkflowActionScope) => ({
   userGroups: scope.principal.groupIds,
   serviceAccountId: scope.principal.serviceAccountId,
 });
+
+const documentActorForScope = (scope: GridsWorkflowActionScope): DocumentIssuanceActor => {
+  const serviceAccountId = scope.principal.actorServiceAccountId ?? scope.principal.serviceAccountId;
+  if (serviceAccountId) {
+    return {
+      kind: "service_account",
+      serviceAccountId,
+      delegatedUserId: scope.principal.userId,
+      credentialId: scope.principal.credential?.id ?? null,
+    };
+  }
+  return scope.principal.userId ? { kind: "user", userId: scope.principal.userId } : { kind: "system" };
+};
 
 /**
  * Domain refusals are results, not exceptions.
@@ -374,9 +388,9 @@ const documentReferenceId = (value: WorkflowJsonValue | undefined): { id: string
 /** The document a link is created for. It has to exist: the link points at it. */
 const documentToLink = async (ctx: WorkflowActionContext, scope: GridsWorkflowActionScope, reference: string) => {
   const { id } = documentReferenceId(await ctx.resolveReference(reference, "document"));
-  const run = await getDocumentRun(id);
-  if (!run || run.baseId !== scope.baseId) throw actionError("NOT_FOUND", "Generated document is no longer available");
-  return run;
+  const document = await getDocument(id);
+  if (!document || document.baseId !== scope.baseId) throw actionError("NOT_FOUND", "Generated document is no longer available");
+  return document;
 };
 
 /**
@@ -389,19 +403,19 @@ const plannedDocumentToLink = async (
   scope: GridsWorkflowActionScope,
   reference: string,
 ): Promise<LinkableDocument> => {
-  const { id, document } = documentReferenceId(await ctx.resolveReference(reference, "document"));
-  if (document.planned === true && typeof document.tableId === "string" && typeof document.recordId === "string") {
+  const { id, document: referenceDocument } = documentReferenceId(await ctx.resolveReference(reference, "document"));
+  if (referenceDocument.planned === true && typeof referenceDocument.tableId === "string" && typeof referenceDocument.recordId === "string") {
     return {
       id,
       baseId: scope.baseId,
-      tableId: document.tableId,
-      templateId: typeof document.templateId === "string" ? document.templateId : null,
-      recordId: document.recordId,
+      tableId: referenceDocument.tableId,
+      templateId: typeof referenceDocument.templateId === "string" ? referenceDocument.templateId : null,
+      recordId: referenceDocument.recordId,
     };
   }
-  const run = await getDocumentRun(id);
-  if (!run || run.baseId !== scope.baseId) throw actionError("NOT_FOUND", "Generated document is no longer available");
-  return run;
+  const document = await getDocument(id);
+  if (!document || document.baseId !== scope.baseId) throw actionError("NOT_FOUND", "Generated document is no longer available");
+  return document;
 };
 
 const emailInput = async (
@@ -1222,12 +1236,13 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const record = await documentRecord(ctx, scope, table.id, config.record, "read");
         await requirePermission(scope, "write");
         const recordAccess = await requireRecordAccess(scope, table.id, "read");
-        const run = requireOk(
-          await createRunForRecord({
+        const document = requireOk(
+          await createDocumentForRecord({
             template,
             table,
             recordId: record.recordId,
-            actorId: actorId(scope),
+            actor: documentActorForScope(scope),
+            idempotencyKey: ctx.effectKey,
             recordAccess,
             resolveRecordAccess: ({ tableId }) => requireRecordAccess(scope, tableId, "read").catch(() => null),
             viewer: {
@@ -1242,29 +1257,34 @@ export const GRIDS_WORKFLOW_ACTIONS = {
             workflowStepKey: ctx.stepKey,
           }),
         );
-        await logAudit({
-          baseId: scope.baseId,
-          tableId: run.tableId,
-          recordId: run.recordId,
-          userId: actorId(scope),
-          action: "workflow.document.generated",
-          diff: {
-            workflowDocumentGenerate: {
-              old: null,
-              new: {
-                ...workflowAuditMeta(scope),
-                templateId: template.id,
-                documentRunId: run.id,
-                documentNumber: run.documentNumber,
-                filename: run.filename,
-              },
-            },
-          },
-        });
-        // Only the summary. The document run already carries the rendered
+        // Only the summary. The Document already carries the rendered
         // record content, so copying it into the step outcome would duplicate
         // a potentially large immutable payload.
-        return { state: "succeeded", output: summarizeDocumentRun(run) as unknown as WorkflowJsonValue };
+        const summary = summarizeDocument(document);
+        return {
+          state: "succeeded",
+          output: {
+            id: summary.id,
+            baseId: summary.baseId,
+            tableId: summary.tableId,
+            recordId: summary.recordId,
+            templateId: summary.templateId,
+            number: summary.documentNumber,
+            filename: summary.filename,
+            createdAt: summary.createdAt,
+            tags: summary.tags,
+            createdBy: summary.createdBy,
+            renderer: summary.profile ? { kind: "profile", ...summary.profile } : { kind: "html" },
+            validationStatus: summary.validationStatus,
+            artifacts: summary.artifacts.map(({ key, filename, mimeType, sizeBytes, sha256 }) => ({
+              key,
+              filename,
+              mimeType,
+              sizeBytes,
+              sha256,
+            })),
+          } as WorkflowJsonValue,
+        };
       }),
 
     plan: (ctx, config) =>
@@ -1279,7 +1299,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           summary: `Generate "${template.name}" for one record`,
           consumes: { documents: 1 },
           output: {
-            kind: "documentRun",
+            kind: "document",
             id: `dry-run:${ctx.stepKey}`,
             baseId: scope.baseId,
             tableId: template.tableId,
@@ -1310,14 +1330,14 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         const tx = transaction(ctx);
         const scope = await workflowRunScope(ctx, tx);
         await requireExecution(scope, tx);
-        const run = await documentToLink(ctx, scope, config.document);
-        await currentTable(scope, run.tableId);
+        const document = await documentToLink(ctx, scope, config.document);
+        await currentTable(scope, document.tableId);
         await requirePermission(scope, "write", tx);
         const expiresIn = linkExpiry(config.expiresIn);
         const baseUrl = await publicDocumentLinkBaseUrl();
         const created = requireOk(
           await createDocumentLink({
-            run,
+            document,
             input: { expiresIn, comment: typeof config.comment === "string" ? config.comment : null },
             actorId: actorId(scope),
             client: tx,
@@ -1326,8 +1346,8 @@ export const GRIDS_WORKFLOW_ACTIONS = {
         await logAudit(
           {
             baseId: scope.baseId,
-            tableId: run.tableId,
-            recordId: run.recordId,
+            tableId: document.tableId,
+            recordId: document.recordId,
             userId: actorId(scope),
             action: "workflow.document_link.created",
             diff: {
@@ -1335,7 +1355,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
                 old: null,
                 new: {
                   ...workflowAuditMeta(scope),
-                  documentRunId: run.id,
+                  documentId: document.id,
                   documentLinkId: created.link.id,
                   expiresAt: created.link.expiresAt,
                 },
@@ -1349,7 +1369,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           output: {
             kind: "documentLink",
             id: created.link.id,
-            documentRunId: run.id,
+            documentId: document.id,
             url: `${baseUrl}${encodeURIComponent(created.token)}`,
             expiresAt: created.link.expiresAt,
           },
@@ -1360,8 +1380,8 @@ export const GRIDS_WORKFLOW_ACTIONS = {
       planned(async () => {
         const scope = await workflowRunScope(ctx);
         await requireExecution(scope);
-        const run = await plannedDocumentToLink(ctx, scope, config.document);
-        await currentTable(scope, run.tableId);
+        const document = await plannedDocumentToLink(ctx, scope, config.document);
+        await currentTable(scope, document.tableId);
         await requirePermission(scope, "write");
         const expiresIn = linkExpiry(config.expiresIn);
         return {
@@ -1369,7 +1389,7 @@ export const GRIDS_WORKFLOW_ACTIONS = {
           output: {
             kind: "documentLink",
             id: `dry-run:${ctx.stepKey}`,
-            documentRunId: run.id,
+            documentId: document.id,
             url: `https://example.invalid/grids-document-link/${encodeURIComponent(ctx.stepKey)}`,
             expiresIn,
             planned: true,

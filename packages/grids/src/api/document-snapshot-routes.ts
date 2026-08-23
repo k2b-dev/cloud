@@ -61,7 +61,7 @@ export const createDocumentSnapshotRoutes = () =>
         if (!recordId) return c.json({ message: "Record not found" }, 404);
         const table = await gridsService.table.get(tableId);
         if (!table) return c.json({ message: "Table not found" }, 404);
-        const gate = await gateAt(c, { baseId: table.baseId }, "read");
+        const gate = await gateAt(c, { baseId: table.baseId }, "write");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const snapshot = await gridsService.document.createRecordSnapshot({
           baseId: table.baseId,

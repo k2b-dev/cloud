@@ -12,14 +12,14 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const [{ default: BaseSettingsPanel }, { DocumentProfileForm }, { buildPreservationHoldInput, CreatePreservationHoldDialog }] =
+const [{ default: BaseSettingsPanel }, { DocumentDefaultsForm }, { buildPreservationHoldInput, CreatePreservationHoldDialog }] =
   await Promise.all([import("./BaseSettingsPanel.tsx"), import("./BaseSettingsSections.tsx"), import("./PreservationHoldsSection.tsx")]);
 
 const base = {
   id: "BASE01",
   name: "Operations",
   description: "Operational records",
-  documentProfile: {},
+  documentDefaults: {},
   createdBy: null,
   deletedAt: null,
   createdAt: "2026-08-15T00:00:00.000Z",
@@ -130,7 +130,7 @@ describe("Grids Base settings composition", () => {
         children: createComponent(SettingsModal.Tab, {
           id: "documents",
           title: "Documents",
-          children: createComponent(DocumentProfileForm, {
+          children: createComponent(DocumentDefaultsForm, {
             base,
             onDirtyChange: () => undefined,
             onSavingChange: () => undefined,
@@ -143,7 +143,7 @@ describe("Grids Base settings composition", () => {
     expect(html).toContain("Contact");
     expect(html).toContain("Billing and footer");
     expect(html.match(/<footer class="k2b-settings__footer">/g)).toHaveLength(1);
-    expect(html).not.toContain("Save document profile");
+    expect(html).not.toContain("Save document defaults");
   });
 
   test("keeps every dialog exit behind the dirty and save guards", () => {

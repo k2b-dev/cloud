@@ -6,7 +6,7 @@ import { CreateDocumentLinkSchema } from "../contracts";
 import { gridsService } from "../service";
 import {
   auditRequestContext,
-  gateRun,
+  gateDocument,
   PublicCreateDocumentLinkResponseSchema,
   PublicDocumentLinkListResponseSchema,
   PublicDocumentLinkSchema,
@@ -18,7 +18,7 @@ import { resolvePublicIdParam } from "./route-params";
 export const createDocumentLinkRoutes = () =>
   new Hono<AuthContext>()
     .get(
-      "/runs/:runId/links",
+      "/:documentId/links",
       describeRoute({
         tags: ["Grids:Document"],
         summary: "List expiring public links for a generated document",
@@ -28,18 +28,18 @@ export const createDocumentLinkRoutes = () =>
         },
       }),
       async (c) => {
-        const runId = await resolvePublicIdParam(c, "runId", "documentRun");
-        if (!runId) return c.json({ message: "Document run not found" }, 404);
-        const run = await gridsService.document.getRun(runId);
-        if (!run) return c.json({ message: "Document run not found" }, 404);
-        const gate = await gateRun(c, run, "write");
+        const documentId = await resolvePublicIdParam(c, "documentId", "document");
+        if (!documentId) return c.json({ message: "Document not found" }, 404);
+        const document = await gridsService.document.getDocument(documentId);
+        if (!document) return c.json({ message: "Document not found" }, 404);
+        const gate = await gateDocument(c, document, "write");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
-        return c.json({ items: await projectDocumentLinks(await gridsService.document.listDocumentLinksForRun(run.id)) });
+        return c.json({ items: await projectDocumentLinks(await gridsService.document.listDocumentLinks(document.id)) });
       },
     )
 
     .post(
-      "/runs/:runId/links",
+      "/:documentId/links",
       describeRoute({
         tags: ["Grids:Document"],
         summary: "Create an expiring public link for a generated document",
@@ -50,14 +50,14 @@ export const createDocumentLinkRoutes = () =>
       }),
       v("json", CreateDocumentLinkSchema),
       async (c) => {
-        const runId = await resolvePublicIdParam(c, "runId", "documentRun");
-        if (!runId) return c.json({ message: "Document run not found" }, 404);
-        const run = await gridsService.document.getRun(runId);
-        if (!run) return c.json({ message: "Document run not found" }, 404);
-        const gate = await gateRun(c, run, "write");
+        const documentId = await resolvePublicIdParam(c, "documentId", "document");
+        if (!documentId) return c.json({ message: "Document not found" }, 404);
+        const document = await gridsService.document.getDocument(documentId);
+        if (!document) return c.json({ message: "Document not found" }, 404);
+        const gate = await gateDocument(c, document, "write");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
         const created = await gridsService.document.createDocumentLink({
-          run,
+          document,
           input: c.req.valid("json"),
           actorId: currentActorUserId(c),
           ...auditRequestContext(c),
@@ -88,9 +88,9 @@ export const createDocumentLinkRoutes = () =>
         if (!linkId) return c.json({ message: "Document link not found" }, 404);
         const link = await gridsService.document.getDocumentLink(linkId);
         if (!link) return c.json({ message: "Document link not found" }, 404);
-        const run = await gridsService.document.getRun(link.documentRunId);
-        if (!run) return c.json({ message: "Document run not found" }, 404);
-        const gate = await gateRun(c, run, "read");
+        const document = await gridsService.document.getDocument(link.documentId);
+        if (!document) return c.json({ message: "Document not found" }, 404);
+        const gate = await gateDocument(c, document, "read");
         if (!gate.ok) return respond(c, () => Promise.resolve(gate));
 
         const userId = currentActorUserId(c);

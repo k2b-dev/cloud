@@ -5,34 +5,28 @@ import {
   documentBrowserEmptyText,
   documentBrowserKey,
   documentCountLabel,
-  documentRunActionState,
+  documentActionState,
   replaceDocumentBrowserPage,
   serializeDocumentBrowserKey,
 } from "./document-browser-model";
-import type { PublicDocumentRunFolder, PublicDocumentRunSummary } from "./public-document-types";
+import type { PublicDocumentFolder, PublicDocument } from "./public-document-types";
 
-const run = (id: string): PublicDocumentRunSummary => ({
+const document = (id: string): PublicDocument => ({
   id,
   baseId: "base",
   tableId: "table",
   recordId: "record",
   filename: `${id}.pdf`,
   templateId: "template",
-  workflowRunId: null,
-  snapshotId: "snapshot",
-  documentNumber: id,
+  number: id,
   tags: [],
-  artifact: {
-    mimeType: "application/pdf",
-    sizeBytes: 4,
-    sha256: "a".repeat(64),
-    rendererVersion: "test",
-    templateRevision: "b".repeat(64),
-  },
-  generatedBy: null,
-  generatedAt: "2026-01-01T00:00:00.000Z",
+  artifacts: [{ key: "pdf", filename: `${id}.pdf`, mimeType: "application/pdf", sizeBytes: 4, sha256: "a".repeat(64) }],
+  renderer: { kind: "html" },
+  validationStatus: null,
+  createdBy: null,
+  createdAt: "2026-01-01T00:00:00.000Z",
 });
-const folder = (label: string, count: number): PublicDocumentRunFolder => ({ kind: "year", key: label, label, count, path: [label] });
+const folder = (label: string, count: number): PublicDocumentFolder => ({ kind: "year", key: label, label, count, path: [label] });
 
 describe("document browser model", () => {
   test("search always uses list mode and removes folder scope", () => {
@@ -52,29 +46,29 @@ describe("document browser model", () => {
   });
 
   test("pagination appends only to the browser request that started it", () => {
-    const initial = replaceDocumentBrowserPage({ items: [run("one")], folders: [], total: 3, hasMore: true, nextCursor: "next" });
+    const initial = replaceDocumentBrowserPage({ items: [document("one")], folders: [], hasMore: true, cursor: "next" });
     const appended = appendDocumentBrowserPage(
       initial,
-      { items: [run("two")], total: 3, hasMore: true, nextCursor: "last" },
+      { items: [document("two")], hasMore: true, cursor: "last" },
       "same",
       "same",
     );
-    expect(appended.runs.map((item) => item.id)).toEqual(["one", "two"]);
-    expect(appended.nextCursor).toBe("last");
+    expect(appended.documents.map((item) => item.id)).toEqual(["one", "two"]);
+    expect(appended.cursor).toBe("last");
 
-    const stale = appendDocumentBrowserPage(appended, { items: [run("stale")] }, "old", "new");
+    const stale = appendDocumentBrowserPage(appended, { items: [document("stale")], hasMore: false, cursor: null }, "old", "new");
     expect(stale).toBe(appended);
   });
 
   test("count and empty labels match list, search, and folder states", () => {
-    expect(documentCountLabel("list", [], [run("one")], 3)).toBe("1 of 3 documents");
-    expect(documentCountLabel("folders", [folder("2026", 4), folder("2025", 2)], [], 0)).toBe("6 documents");
+    expect(documentCountLabel("list", [], [document("one")], true)).toBe("1+ documents");
+    expect(documentCountLabel("folders", [folder("2026", 4), folder("2025", 2)], [], false)).toBe("6 documents");
     expect(documentBrowserEmptyText("invoice", "list", [])).toBe("No documents match this search.");
     expect(documentBrowserEmptyText("", "folders", ["2026"])).toBe("This folder is empty.");
   });
 
-  test("read users only get download actions and busy state is per run", () => {
-    expect(documentRunActionState(false, "one", "one")).toEqual({ showEdit: false, showLink: false, downloadBusy: true });
-    expect(documentRunActionState(true, "one", "two")).toEqual({ showEdit: true, showLink: true, downloadBusy: false });
+  test("read users only get download actions and busy state is per Document", () => {
+    expect(documentActionState(false, "one", "one")).toEqual({ showEdit: false, showLink: false, downloadBusy: true });
+    expect(documentActionState(true, "one", "two")).toEqual({ showEdit: true, showLink: true, downloadBusy: false });
   });
 });

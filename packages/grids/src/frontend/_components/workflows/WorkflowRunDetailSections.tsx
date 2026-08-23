@@ -1,6 +1,6 @@
 import { Button, IconButton, NoticeCard, Placeholder, StatusBadge, Tooltip } from "@k2b/ui";
 import { For, Show } from "solid-js";
-import type { PublicDocumentRunSummary } from "../documents/public-document-types";
+import type { PublicDocument } from "../documents/public-document-types";
 import type { PublicWorkflowRun, PublicWorkflowStepRun, PublicWorkspaceWorkflowRunDetail } from "../workspace/workspace-public-state-model";
 import {
   channelLabels,
@@ -166,7 +166,7 @@ export function WorkflowRunDocumentsSection(props: {
   downloadingAll: boolean;
   loadingMore: boolean;
   loadMoreError?: string;
-  onDownload: (document: PublicDocumentRunSummary) => void;
+  onDownload: (document: PublicDocument) => void;
   onDownloadAll: () => void;
   onLoadMore: (offset: number) => void;
 }) {
@@ -190,7 +190,7 @@ export function WorkflowRunDocumentsSection(props: {
               <i class="ti ti-file-type-pdf text-dimmed" />
               <span class="min-w-0">
                 <span class="block truncate text-primary">{document.filename}</span>
-                <span class="block truncate text-dimmed">{document.documentNumber}</span>
+                <span class="block truncate text-dimmed">{document.number}</span>
               </span>
               <Tooltip.Anchor content="Download document">
                 <IconButton

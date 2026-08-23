@@ -1,6 +1,7 @@
 import type { getDateConfig } from "@valentinkolb/cloud/server";
+import { ShortIdSchema } from "../contracts";
 import type { CustomAppAction, CustomAppBlock, CustomAppRowAction } from "../custom-apps/contracts";
-import { customAppPageHref, resolveCustomAppPage, resolveCustomAppPageParams } from "../custom-apps/routing";
+import { customAppPageHref, resolveCustomAppPage } from "../custom-apps/routing";
 import {
   buildCustomAppGlobalRuntimeContext,
   buildCustomAppRuntimeContext,
@@ -8,6 +9,7 @@ import {
 } from "../custom-apps/runtime-context";
 import { gridsService } from "../service";
 import { publishedCustomAppAvailability } from "../service/custom-app-runtime-query";
+import { resolvePublicIds } from "../service/public-resources";
 import { actorViewerFor, type GridsAccessContext, gateCustomAppAtAccess } from "./permissions";
 
 type PublishedCustomAppRuntimeInput = {
@@ -82,15 +84,24 @@ export const resolvePublishedCustomAppRuntime = async (input: PublishedCustomApp
   const { app, definition, base, authSubjectIds, viewer } = global;
   const page = resolveCustomAppPage(definition, input.pageId);
   if (!page) return null;
-  const pageParams = resolveCustomAppPageParams(page, input.query);
-  if (!pageParams) return null;
+  const publicPageParams: Record<string, string> = {};
+  for (const parameterId of Object.keys(page.parameters)) {
+    const value = input.query[parameterId];
+    if (!value || !ShortIdSchema.safeParse(value).success) return null;
+    publicPageParams[parameterId] = value;
+  }
+  const records = await resolvePublicIds("record", Object.values(publicPageParams));
+  if (records.size !== Object.keys(publicPageParams).length) return null;
+  const pageParams = Object.fromEntries(
+    Object.entries(publicPageParams).map(([parameterId, recordId]) => [parameterId, records.get(recordId!)!]),
+  );
   const runtimeContext = buildCustomAppRuntimeContext({
     access: input.access,
     app,
     base,
     page,
-    pageUrl: customAppPageHref(app.shortId, page.id, pageParams),
-    pageParams,
+    pageUrl: customAppPageHref(app.shortId, page.id, publicPageParams),
+    pageParams: publicPageParams,
     dateConfig: input.dateConfig,
     now: global.globalRuntimeContext.now,
     authSubjectIds,

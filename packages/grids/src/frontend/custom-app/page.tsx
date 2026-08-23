@@ -2,9 +2,10 @@ import { MarkdownView, Placeholder, StatCell, StatGrid } from "@k2b/ui";
 import { type AuthContext, getDateConfig } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { resolvePublishedCustomAppRuntime } from "../../api/custom-app-published-runtime";
+import { projectDocuments } from "../../api/documents-api-shared";
 import { accessActorUser, actorViewerFor, gridsAccessContext } from "../../api/permissions";
 import { ssr } from "../../config";
-import type { DocumentRunSummary, Field, GridRecord } from "../../contracts";
+import type { Field, GridRecord } from "../../contracts";
 import { customAppPageRecordFieldIds } from "../../custom-apps/conditions";
 import type { CustomAppBlock, CustomAppDefinition, CustomAppPage } from "../../custom-apps/contracts";
 import { renderCustomAppMarkdown } from "../../custom-apps/markdown-context";
@@ -45,6 +46,7 @@ import type { PublicRenderableForm } from "../../service/forms";
 import { ALL_RECORD_ACCESS } from "../../service/record-access";
 import { scannerLauncherPromptInputSources } from "../../workflows/contracts";
 import FormSubmit from "../_components/forms/PublicFormSubmit.island";
+import type { PublicDocument } from "../_components/documents/public-document-types";
 import RecordComments from "../_components/records/RecordComments.island";
 import type { WorkflowScannerState } from "../_components/workflows/WorkflowScannerSurface";
 import Actions, { type CustomAppRenderedAction } from "./Actions.island";
@@ -90,7 +92,7 @@ type FormBlockData =
       submitUrl: string;
     }
   | { ok: false; message: string };
-type CustomAppDocumentRun = DocumentRunSummary & { downloadUrl: string };
+type CustomAppDocument = PublicDocument & { downloadUrl: string };
 type ResolvedPublishedForm = NonNullable<Awaited<ReturnType<typeof resolvePublishedCustomAppForm>>>;
 
 const preparePublishedForm = (
@@ -214,7 +216,7 @@ const Record = (props: {
   pageRecord: PageRecord | null;
   baseId: string;
   updateEndpoint?: string;
-  documentRuns: CustomAppDocumentRun[];
+  documents: CustomAppDocument[];
   dateConfig: ReturnType<typeof getDateConfig>;
 }) => {
   if (!props.pageRecord) {
@@ -239,7 +241,7 @@ const Record = (props: {
       updateEndpoint={props.updateEndpoint}
       fileEndpoints={props.pageRecord.fileEndpoints}
       filesByField={props.pageRecord.filesByField}
-      documentRuns={props.documentRuns}
+      documents={props.documents}
       dateConfig={props.dateConfig}
     />
   );
@@ -276,7 +278,7 @@ const CustomAppPage = (props: {
   rowActions: Map<string, CustomAppRenderedRowAction[]>;
   recordEndpoints: Map<string, string>;
   recordUpdateEndpoints: Map<string, string>;
-  documentRuns: Map<string, CustomAppDocumentRun[]>;
+  documents: Map<string, CustomAppDocument[]>;
   pageRecords: Map<string, PageRecord>;
   renderedHtml: Map<string, { html: unknown; fieldName: string }>;
   dateConfig: ReturnType<typeof getDateConfig>;
@@ -319,7 +321,7 @@ const CustomAppPage = (props: {
             pageRecord={props.pageRecords.get(block.id) ?? null}
             baseId={props.definition.baseId}
             updateEndpoint={props.recordUpdateEndpoints.get(block.id)}
-            documentRuns={props.documentRuns.get(block.id) ?? []}
+            documents={props.documents.get(block.id) ?? []}
             dateConfig={props.dateConfig}
           />
         ) : block.type === "html" ? (
@@ -453,7 +455,7 @@ export default ssr<AuthContext>(async (c) => {
   const pageRecords = new Map<string, PageRecord>();
   const renderedHtml = new Map<string, { html: unknown; fieldName: string }>();
   const recordUpdateEndpoints = new Map<string, string>();
-  const documentRuns = new Map<string, CustomAppDocumentRun[]>();
+  const documents = new Map<string, CustomAppDocument[]>();
   if (page.record) {
     const capability = capabilities.records.find((candidate) => candidate.pageId === page.id && candidate.tableId === page.record!.tableId);
     const expectedFieldIds = customAppPageRecordFieldIds(page);
@@ -577,17 +579,27 @@ export default ssr<AuthContext>(async (c) => {
       if (!template || template.tableId !== page.record.tableId) continue;
       readableTemplateIds.push(templateId);
     }
-    const runs = await gridsService.document.listRunSummariesForRecordByTemplates(page.record.tableId, record.id, readableTemplateIds);
+    const documentSummaries = await gridsService.document.listDocumentSummariesForRecordByTemplates(
+      page.record.tableId,
+      record.id,
+      readableTemplateIds,
+    );
+    const projectedDocuments = await projectDocuments(documentSummaries);
     for (const block of documentBlocks) {
       const allowed = new Set(block.documents?.templateIds ?? []);
-      documentRuns.set(
+      documents.set(
         block.id,
-        runs
-          .filter((run) => run.templateId && allowed.has(run.templateId))
-          .map((run) => ({
-            ...run,
-            downloadUrl: customAppDocumentDownloadUrl(app.shortId, page.id, block.id, run.id, pageParams),
-          })),
+        documentSummaries.flatMap((documentSummary, index) => {
+          const document = projectedDocuments[index];
+          return document && allowed.has(documentSummary.templateId)
+            ? [
+                {
+                  ...document,
+                  downloadUrl: customAppDocumentDownloadUrl(app.shortId, page.id, block.id, documentSummary.id, pageParams),
+                },
+              ]
+            : [];
+        }),
       );
     }
   }
@@ -875,7 +887,7 @@ export default ssr<AuthContext>(async (c) => {
         rowActions={rowActions}
         recordEndpoints={recordEndpoints}
         recordUpdateEndpoints={recordUpdateEndpoints}
-        documentRuns={documentRuns}
+        documents={documents}
         pageRecords={pageRecords}
         renderedHtml={renderedHtml}
         dateConfig={dateConfig}

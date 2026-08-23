@@ -329,7 +329,7 @@ const ExternalRecordIdentitySchema = z
 export const RecordExternalUpsertInputSchema = z
   .object({
     tableId: ShortIdSchema.describe("Public ID of the writable stored Table that owns the Record."),
-    externalRef: ExternalRecordIdentitySchema,
+    externalRef: ExternalRecordIdentitySchema.describe("Case-sensitive durable identity of the source record outside Grids."),
     values: RecordValuesSchema.describe("Public Field IDs mapped to explicitly supplied values."),
     ifVersion: z
       .number()

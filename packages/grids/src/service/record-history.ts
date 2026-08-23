@@ -8,6 +8,7 @@ import type { AuditAction } from "./types";
 // explicit decision here; persisted actions from a newer producer remain
 // readable as one redacted unknown event.
 const AUDIT_ACTION_VISIBILITY = {
+  "document.created": "record",
   created: "record",
   updated: "record",
   deleted: "record",
@@ -24,11 +25,7 @@ const AUDIT_ACTION_VISIBILITY = {
   "workflow.record.created": "record",
   "workflow.record.finalized": "record",
   "workflow.record.finalization.requested": "record",
-  "workflow.document.generated": "record",
   "workflow.document_link.created": "record",
-  "document.generated": "record",
-  "document.metadata.updated": "record",
-  "business_document.issued": "operational",
   "record_snapshot.created": "record",
   "document_link.created": "record",
   "document_link.revoked": "record",
@@ -113,9 +110,10 @@ export const listByRecord = async (
 ): Promise<RecordHistoryEntry[]> => {
   const table = await getTable(tableId);
   if (!table) return [];
-  const entries = table.kind === "federated"
-    ? combinedAudit.listByRecord(tableId, recordId, limit, fieldIds)
-    : storedAudit.listByRecord(tableId, recordId, limit, NON_RECORD_HISTORY_ACTIONS);
+  const entries =
+    table.kind === "federated"
+      ? combinedAudit.listByRecord(tableId, recordId, limit, fieldIds)
+      : storedAudit.listByRecord(tableId, recordId, limit, NON_RECORD_HISTORY_ACTIONS);
   return (await entries).flatMap((entry) => {
     const projected = projectRecordHistoryEntry(entry);
     return projected ? [projected] : [];

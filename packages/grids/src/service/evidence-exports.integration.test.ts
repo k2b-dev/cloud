@@ -42,10 +42,15 @@ beforeAll(async () => {
 });
 
 describe("evidence export integration", () => {
-  postgresTest("includes immutable Business Document metadata and exact artifacts only in Base-scoped document evidence", async () => {
+  postgresTest("includes profile metadata and exact artifacts through the common record-bound Document evidence path", async () => {
     const baseId = testUuid();
     const tableId = testUuid();
     const documentId = testUuid();
+    const recordId = testUuid();
+    const templateId = testUuid();
+    const snapshotId = testUuid();
+    const pdfFileId = testUuid();
+    const structuredFileId = testUuid();
     const exportId = testUuid();
     const tableExportId = testUuid();
     const serviceAccountId = testUuid();
@@ -60,25 +65,51 @@ describe("evidence export integration", () => {
     try {
       await sql`INSERT INTO grids.bases (id, short_id, name) VALUES (${baseId}::uuid, ${baseShortId}, 'Business evidence')`;
       await sql`INSERT INTO grids.tables (id, short_id, base_id, name) VALUES (${tableId}::uuid, ${tableShortId}, ${baseId}::uuid, 'Orders')`;
+      await sql`INSERT INTO grids.records (id, short_id, table_id, data) VALUES (${recordId}::uuid, ${testShortId("R")}, ${tableId}::uuid, '{}'::jsonb)`;
       await sql`
-        INSERT INTO grids.business_documents (
-          id, short_id, base_id, profile_id, profile_version, operation_key_hash, request_hash,
-          source, source_revision, snapshot, snapshot_sha256, document_number, relationship_kind,
-          renderer_version, validator_version, validation_status, validation_report, issued_actor, issued_at
+        INSERT INTO grids.document_templates (
+          id, short_id, table_id, name, source, renderer_kind, profile_id, profile_version, profile_input_template
         ) VALUES (
-          ${documentId}::uuid, ${documentShortId}, ${baseId}::uuid, 'test.statement', 1, ${"a".repeat(64)}, ${"b".repeat(64)},
+          ${templateId}::uuid, ${testShortId("T")}, ${tableId}::uuid, 'Statement', 'from table Orders',
+          'profile', 'test.statement', 1, '{}'
+        )
+      `;
+      await sql`
+        INSERT INTO grids.record_snapshots (id, short_id, base_id, table_id, record_id, root, graph)
+        VALUES (${snapshotId}::uuid, ${testShortId("S")}, ${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, '{"version":1}'::jsonb, '{}'::jsonb)
+      `;
+      await sql`
+        INSERT INTO grids.files (id, short_id, filename, mime_type, size_bytes, sha256, bytes) VALUES
+          (${pdfFileId}::uuid, ${testShortId("F")}, 'statement.pdf', 'application/pdf', ${pdf.byteLength}, ${digest(pdf)}, ${pdf}),
+          (${structuredFileId}::uuid, ${testShortId("F")}, 'statement.json', 'application/json', ${structured.byteLength}, ${digest(structured)}, ${structured})
+      `;
+      await sql`
+        INSERT INTO grids.documents (
+          id, short_id, template_id, snapshot_id, base_id, table_id, record_id, renderer_kind, profile_id, profile_version,
+          source, source_revision, profile_snapshot, snapshot_sha256, document_number, filename, tags,
+          template_snapshot, render_data, relationship_kind,
+          renderer_version, template_revision, validator_version, validation_status, validation_report, issued_actor, created_at
+        ) VALUES (
+          ${documentId}::uuid, ${documentShortId}, ${templateId}::uuid, ${snapshotId}::uuid,
+          ${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, 'profile', 'test.statement', 1,
           ${{ appId: "orders", resourceType: "order", resourceId: "42" }}::jsonb,
           ${{ id: "v7", observedAt: "2026-08-22T10:00:00.000Z", evidence: { version: 7 } }}::jsonb,
-          ${{ number: "STAT-0001", total: "119.00" }}::jsonb, ${"c".repeat(64)}, 'STAT-0001', 'original',
-          'renderer-v1', 'validator-v1', 'valid', ${{ arithmetic: "exact-decimal" }}::jsonb,
+          ${{ number: "STAT-0001", total: "119.00" }}::jsonb, ${"c".repeat(64)}, 'STAT-0001', 'statement.pdf', '{}',
+          ${{ renderer: { kind: "profile", id: "test.statement", version: 1, inputTemplate: "{}" } }}::jsonb, '{}'::jsonb, 'original',
+          'renderer-v1', ${"d".repeat(64)}, 'validator-v1', 'valid', ${{ arithmetic: "exact-decimal" }}::jsonb,
           ${{ kind: "service_account", serviceAccountId, delegatedUserId: null, credentialId: null }}::jsonb,
           '2026-08-22T10:00:00.000Z'
         )
       `;
       await sql`
-        INSERT INTO grids.business_document_artifacts (document_id, artifact_key, filename, media_type, bytes, size_bytes, sha256) VALUES
-          (${documentId}::uuid, 'pdf', 'statement.pdf', 'application/pdf', ${pdf}, ${pdf.byteLength}, ${digest(pdf)}),
-          (${documentId}::uuid, 'structured', 'statement.json', 'application/json', ${structured}, ${structured.byteLength}, ${digest(structured)})
+        INSERT INTO grids.file_protected_references (file_id, owner_kind, owner_id, base_id, table_id, record_id) VALUES
+          (${pdfFileId}::uuid, 'document_artifact', ${documentId}::uuid, ${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid),
+          (${structuredFileId}::uuid, 'document_artifact', ${documentId}::uuid, ${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid)
+      `;
+      await sql`
+        INSERT INTO grids.document_artifacts (document_id, artifact_key, file_id) VALUES
+          (${documentId}::uuid, 'pdf', ${pdfFileId}::uuid),
+          (${documentId}::uuid, 'structured', ${structuredFileId}::uuid)
       `;
       const preview = await preflight({ baseId, tableId: null, from: null, to: null, sections: ["documents"] });
       expect(preview.known).toMatchObject({ documents: 1, documentEntries: 3, documentBytes: pdf.byteLength + structured.byteLength });
@@ -91,9 +122,9 @@ describe("evidence export integration", () => {
       const result = await download(exportShortId);
       if (!result.ok) throw result.error;
       const entries = readTar(await collect(result.data.body));
-      expect(entries.get(`business-documents/${documentShortId}/statement.pdf`)).toEqual(pdf);
-      expect(entries.get(`business-documents/${documentShortId}/statement.json`)).toEqual(structured);
-      const metadata = new TextDecoder().decode(entries.get(`business-documents/metadata/${documentShortId}.json`));
+      expect(entries.get(`documents/${documentShortId}/statement.pdf`)).toEqual(pdf);
+      expect(entries.get(`documents/${documentShortId}/statement.json`)).toEqual(structured);
+      const metadata = new TextDecoder().decode(entries.get(`documents/metadata/${documentShortId}.json`));
       expect(metadata).toContain('"total": "119.00"');
       expect(metadata).toContain('"document_number": "STAT-0001"');
       expect(metadata).toContain('"kind": "service_account"');
@@ -110,12 +141,9 @@ describe("evidence export integration", () => {
       const tableResult = await download(tableExportShortId);
       if (!tableResult.ok) throw tableResult.error;
       const tableEntries = readTar(await collect(tableResult.data.body));
-      expect([...tableEntries.keys()].some((path) => path.startsWith("business-documents/"))).toBe(false);
+      expect([...tableEntries.keys()].some((path) => path.includes(documentShortId))).toBe(true);
     } finally {
-      await sql`DELETE FROM grids.evidence_exports WHERE base_id = ${baseId}::uuid`;
-      await sql`DELETE FROM grids.business_document_artifacts WHERE document_id = ${documentId}::uuid`;
-      await sql`DELETE FROM grids.business_documents WHERE id = ${documentId}::uuid`;
-      await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
+      void baseId;
     }
   });
 
@@ -133,7 +161,7 @@ describe("evidence export integration", () => {
     const revisionId = testUuid();
     const templateId = testUuid();
     const snapshotId = testUuid();
-    const runId = testUuid();
+    const documentId = testUuid();
     const attachmentFileId = testUuid();
     const artifactFileId = testUuid();
     const seriesId = testUuid();
@@ -151,7 +179,7 @@ describe("evidence export integration", () => {
     const revisionShortId = testShortId("V");
     const templateShortId = testShortId("D");
     const snapshotShortId = testShortId("S");
-    const runShortId = testShortId("N");
+    const documentShortId = testShortId("N");
     const attachmentShortId = testShortId("I");
     const artifactShortId = testShortId("P");
     const seriesShortId = testShortId("C");
@@ -221,8 +249,12 @@ describe("evidence export integration", () => {
         VALUES (${attachmentFileId}::uuid, ${recordId}::uuid, ${fileFieldId}::uuid, ${actorId}::uuid)
       `;
       await sql`
-        INSERT INTO grids.document_templates (id, short_id, table_id, name, source, html, created_by, updated_by)
-        VALUES (${templateId}::uuid, ${templateShortId}, ${tableId}::uuid, 'Case PDF', 'from table', '<p>Case</p>', ${actorId}::uuid, ${actorId}::uuid)
+        INSERT INTO grids.document_templates (
+          id, short_id, table_id, name, source, renderer_kind, html, number_template, filename_template, created_by, updated_by
+        ) VALUES (
+          ${templateId}::uuid, ${templateShortId}, ${tableId}::uuid, 'Case PDF', 'from table', 'html', '<p>Case</p>',
+          'CASE-{{ series.value }}', '{{ document.number }}.pdf', ${actorId}::uuid, ${actorId}::uuid
+        )
       `;
       await sql`
         INSERT INTO grids.record_snapshots (id, short_id, base_id, table_id, record_id, root, graph, created_by)
@@ -231,19 +263,23 @@ describe("evidence export integration", () => {
           ${{ rootId: recordId, records: { [recordId]: { id: recordId } } }}::jsonb, ${actorId}::uuid)
       `;
       await sql`
-        INSERT INTO grids.document_runs (
+        INSERT INTO grids.documents (
           id, short_id, template_id, snapshot_id, base_id, table_id, record_id, document_number, filename,
-          template_snapshot, render_data, artifact_file_id, artifact_mime_type, artifact_size_bytes, artifact_sha256,
-          renderer_version, template_revision, generated_by
+          template_snapshot, render_data, renderer_kind, renderer_version, template_revision, issued_actor, created_by
         ) VALUES (
-          ${runId}::uuid, ${runShortId}, ${templateId}::uuid, ${snapshotId}::uuid, ${baseId}::uuid, ${tableId}::uuid,
-          ${recordId}::uuid, 'CASE-1', 'case.pdf', '{}'::jsonb, '{}'::jsonb, ${artifactFileId}::uuid,
-          'application/pdf', ${artifactBytes.byteLength}, ${sha256(artifactBytes)}, 'fixture-renderer', ${"b".repeat(64)}, ${actorId}::uuid
+          ${documentId}::uuid, ${documentShortId}, ${templateId}::uuid, ${snapshotId}::uuid, ${baseId}::uuid, ${tableId}::uuid,
+          ${recordId}::uuid, 'CASE-1', 'case.pdf',
+          ${{ renderer: { kind: "html", body: "<p>Case</p>", numberTemplate: "CASE-{{ series.value }}", filenameTemplate: "{{ document.number }}.pdf" } }}::jsonb,
+          '{}'::jsonb, 'html', 'fixture-renderer', ${"b".repeat(64)}, ${{ kind: "user", userId: actorId }}::jsonb, ${actorId}::uuid
         )
       `;
       await sql`
         INSERT INTO grids.file_protected_references (file_id, owner_kind, owner_id, base_id, table_id, record_id, created_by)
-        VALUES (${artifactFileId}::uuid, 'document_artifact', ${runId}::uuid, ${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, ${actorId}::uuid)
+        VALUES (${artifactFileId}::uuid, 'document_artifact', ${documentId}::uuid, ${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, ${actorId}::uuid)
+      `;
+      await sql`
+        INSERT INTO grids.document_artifacts (document_id, artifact_key, file_id)
+        VALUES (${documentId}::uuid, 'pdf', ${artifactFileId}::uuid)
       `;
       await sql`
         INSERT INTO grids.number_series (id, short_id, owner_kind, field_id) VALUES (${seriesId}::uuid, ${seriesShortId}, 'field', ${textFieldId}::uuid)
@@ -330,7 +366,7 @@ describe("evidence export integration", () => {
         to: null,
       });
       expect(entries.get(`files/${attachmentShortId}/evidence.txt`)).toEqual(attachmentBytes);
-      expect(entries.get(`documents/${runShortId}/case.pdf`)).toEqual(artifactBytes);
+      expect(entries.get(`documents/${documentShortId}/case.pdf`)).toEqual(artifactBytes);
       for (const entry of manifest.entries) {
         const bytes = entries.get(entry.path);
         expect(bytes).toBeDefined();
@@ -349,7 +385,7 @@ describe("evidence export integration", () => {
         revisionId,
         templateId,
         snapshotId,
-        runId,
+        documentId,
         attachmentFileId,
         artifactFileId,
         seriesId,
@@ -401,25 +437,12 @@ describe("evidence export integration", () => {
         SELECT
           (SELECT count(*)::int FROM grids.records WHERE table_id = ${tableId}::uuid) AS records,
           (SELECT count(*)::int FROM grids.record_revisions WHERE table_id = ${tableId}::uuid) AS revisions,
-          (SELECT count(*)::int FROM grids.document_runs WHERE table_id = ${tableId}::uuid) AS documents,
+          (SELECT count(*)::int FROM grids.documents WHERE table_id = ${tableId}::uuid) AS documents,
           (SELECT count(*)::int FROM grids.number_allocations WHERE series_id = ${seriesId}::uuid) AS allocations
       `;
       expect(domainCounts).toEqual({ records: 2, revisions: 1, documents: 1, allocations: 1 });
     } finally {
-      await sql`DELETE FROM grids.evidence_exports WHERE base_id = ${baseId}::uuid`;
-      await sql`DELETE FROM grids.audit_log WHERE base_id = ${baseId}::uuid`;
-      await sql`DELETE FROM grids.document_runs WHERE base_id = ${baseId}::uuid`;
-      await sql`DELETE FROM grids.file_protected_references WHERE base_id = ${baseId}::uuid`;
-      await sql`DELETE FROM grids.record_snapshots WHERE base_id = ${baseId}::uuid`;
-      await sql`DELETE FROM grids.number_series WHERE id = ${seriesId}::uuid`;
-      await sql`DELETE FROM grids.table_finalization_activations WHERE table_id = ${tableId}::uuid`;
-      await sql`UPDATE grids.records SET finalized_at = NULL, finalized_by = NULL, final_revision_id = NULL WHERE table_id = ${tableId}::uuid`;
-      await sql`DELETE FROM grids.durable_history_activations WHERE table_id = ${tableId}::uuid`;
-      await sql`DELETE FROM grids.record_revisions WHERE table_id = ${tableId}::uuid`;
-      await sql`DELETE FROM grids.table_schema_revisions WHERE table_id = ${tableId}::uuid`;
-      await sql`DELETE FROM grids.bases WHERE id = ${baseId}::uuid`;
-      await sql`DELETE FROM grids.files WHERE id IN (${attachmentFileId}::uuid, ${artifactFileId}::uuid)`;
-      await sql`DELETE FROM auth.users WHERE id = ${actorId}::uuid`;
+      void baseId;
     }
   });
 

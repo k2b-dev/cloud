@@ -1,7 +1,14 @@
 import type { CliInputFlagValue, CloudCliContext } from "@valentinkolb/cloud/cli";
 import { flag } from "@valentinkolb/cloud/cli";
+import type { z } from "zod";
+import type {
+  PublicDocumentBrowseResponseSchema,
+  PublicDocumentSchema,
+  PublicDocumentTemplateSchema,
+  PublicDocumentTemplateSummarySchema,
+} from "../api/documents-api-shared";
 import type { PublicBase as Base, PublicTable as Table } from "../api/public-dto";
-import type { DocumentLink, DocumentRunBrowseResponse, DocumentRunSummary, DocumentTemplate, DocumentTemplateSummary } from "../contracts";
+import type { DocumentLink, DocumentTemplateRenderer } from "../contracts";
 import { resolveBaseFromCommand, resolveNamedResource, resolveTable } from "./resources";
 import { applyDefined, queryString, readApi, readJsonInput, readTextInput } from "./runtime";
 
@@ -13,12 +20,8 @@ export const DOCUMENT_TEMPLATE_REFERENCE = {
   fields: {
     name: "Template label shown in Grids.",
     source: "GQL source. Use {{ record.id }} in the where clause for per-record templates.",
-    html: "Liquid HTML body rendered by Gotenberg.",
-    headerHtml: "Optional Liquid HTML header.",
-    footerHtml: "Optional Liquid HTML footer.",
-    pageCss: "Optional CSS for @page, print layout, and shared document styles.",
-    numberTemplate: "Liquid pattern for immutable document.number.",
-    filenameTemplate: "Liquid pattern for the generated PDF filename.",
+    renderer:
+      "Renderer definition. Use {kind:'html', body, header?, footer?, css?, numberTemplate, filenameTemplate} or {kind:'profile', id, version, inputTemplate}.",
     enabled: "Disabled templates are hidden from normal generation flows.",
   },
   liquidData: [
@@ -30,8 +33,8 @@ export const DOCUMENT_TEMPLATE_REFERENCE = {
     "template.id",
     "template.name",
     "document.number",
-    "run.id",
-    "generatedAt",
+    "document.id",
+    "document.createdAt",
     "app.name",
     "app.logo",
     "business.legalName",
@@ -39,31 +42,49 @@ export const DOCUMENT_TEMPLATE_REFERENCE = {
   examples: [
     {
       source: 'from table Invoices\nwhere record.id = "{{ record.id }}"\nlimit 1',
-      html: "<h1>Invoice {{ document.number }}</h1>\n<p>{{ record.data.Customer }}</p>",
-      filenameTemplate: "invoice-{{ document.number }}.pdf",
+      renderer: {
+        kind: "html",
+        body: "<h1>Invoice {{ document.number }}</h1>\n<p>{{ record.data.Customer }}</p>",
+        numberTemplate: "INV-{{ date.yyyy }}-{{ document.id }}",
+        filenameTemplate: "invoice-{{ document.number }}.pdf",
+      },
+    },
+    {
+      source: 'from table Invoices\nwhere record.id = "{{ record.id }}"\nlimit 1',
+      renderer: {
+        kind: "profile",
+        id: "de.zugferd.en16931",
+        version: 1,
+        inputTemplate: '{"invoiceDate": {{ record.data.InvoiceDate | json }}, "currency": "EUR"}',
+      },
     },
   ],
 };
+
+type PublicDocumentTemplate = z.infer<typeof PublicDocumentTemplateSchema>;
+type PublicDocumentTemplateSummary = z.infer<typeof PublicDocumentTemplateSummarySchema>;
+type PublicDocument = z.infer<typeof PublicDocumentSchema>;
+type PublicDocumentBrowseResponse = z.infer<typeof PublicDocumentBrowseResponseSchema>;
 
 export const listDocumentTemplates = (
   ctx: CloudCliContext,
   tableId: string,
   options: { full?: boolean; min?: "read" | "write" | "admin" } = {},
-): Promise<Array<DocumentTemplate | DocumentTemplateSummary>> =>
+): Promise<Array<PublicDocumentTemplate | PublicDocumentTemplateSummary>> =>
   options.full
-    ? readApi<DocumentTemplate[]>(ctx, `/documents/templates/by-table/${encodeURIComponent(tableId)}/full`)
-    : readApi<DocumentTemplateSummary[]>(
+    ? readApi<PublicDocumentTemplate[]>(ctx, `/documents/templates/by-table/${encodeURIComponent(tableId)}/full`)
+    : readApi<PublicDocumentTemplateSummary[]>(
         ctx,
         `/documents/templates/by-table/${encodeURIComponent(tableId)}${queryString({ min: options.min ?? "read" })}`,
       );
 
-export const resolveDocumentTemplate = async (ctx: CloudCliContext, table: Table | null, ref: string): Promise<DocumentTemplate> => {
+export const resolveDocumentTemplate = async (ctx: CloudCliContext, table: Table | null, ref: string): Promise<PublicDocumentTemplate> => {
   if (!table) throw new Error("Resolving a document template requires --table because names and ids are table-scoped.");
   const summary = resolveNamedResource(await listDocumentTemplates(ctx, table.id, { full: true }), ref, "document template");
-  return summary as DocumentTemplate;
+  return summary as PublicDocumentTemplate;
 };
 
-export const documentTemplateRows = (items: Array<DocumentTemplate | DocumentTemplateSummary>) =>
+export const documentTemplateRows = (items: Array<PublicDocumentTemplate | PublicDocumentTemplateSummary>) =>
   items.map((template) => ({
     id: template.id,
     name: template.name,
@@ -71,16 +92,16 @@ export const documentTemplateRows = (items: Array<DocumentTemplate | DocumentTem
     updatedAt: template.updatedAt,
   }));
 
-export const documentRunRows = (items: DocumentRunSummary[]) =>
-  items.map((run) => ({
-    id: run.id,
-    number: run.documentNumber,
-    filename: run.filename,
-    tags: run.tags.join(", "),
-    generatedAt: run.generatedAt,
+export const documentRows = (items: PublicDocument[]) =>
+  items.map((document) => ({
+    id: document.id,
+    number: document.number,
+    filename: document.filename,
+    tags: document.tags.join(", "),
+    createdAt: document.createdAt,
   }));
 
-export const documentFolderRows = (items: DocumentRunBrowseResponse["folders"]) =>
+export const documentFolderRows = (items: PublicDocumentBrowseResponse["folders"]) =>
   items.map((folder) => ({
     kind: folder.kind,
     label: folder.label,
@@ -109,7 +130,7 @@ export const readDraftTemplateBody = async (
     numberTemplate?: string;
     filenameTemplate?: string;
   },
-  template: DocumentTemplate | null,
+  template: PublicDocumentTemplate | null,
 ) => {
   const body = (await readJsonInput<Record<string, unknown>>(flags.body, "document template draft JSON", false)) ?? {};
   const source = await readTextInput(flags.source, "draft GQL source", false);
@@ -117,38 +138,52 @@ export const readDraftTemplateBody = async (
   const headerHtml = await readTextInput(flags.headerHtml, "draft header HTML", false);
   const footerHtml = await readTextInput(flags.footerHtml, "draft footer HTML", false);
   const pageCss = await readTextInput(flags.pageCss, "draft page CSS", false);
-  applyDefined(body, {
-    source,
-    html,
-    headerHtml,
-    footerHtml,
-    pageCss,
-    numberTemplate: flags.numberTemplate,
-    filenameTemplate: flags.filenameTemplate,
-    recordId: flags.record,
-  });
+  applyDefined(body, { source, recordId: flags.record });
+  applyHtmlRendererFlags(body, { html, headerHtml, footerHtml, pageCss, numberTemplate: flags.numberTemplate, filenameTemplate: flags.filenameTemplate }, template);
   if (template) {
     applyDefined(body, {
       source: body.source ?? template.source,
-      html: body.html ?? template.html,
-      headerHtml: body.headerHtml ?? template.headerHtml,
-      footerHtml: body.footerHtml ?? template.footerHtml,
-      pageCss: body.pageCss ?? template.pageCss,
-      numberTemplate: body.numberTemplate ?? template.numberTemplate,
-      filenameTemplate: body.filenameTemplate ?? template.filenameTemplate,
+      renderer: body.renderer ?? template.renderer,
     });
   }
   if (!body.recordId) throw new Error("Missing record id. Pass --record or --body JSON.");
   if (!body.source) throw new Error("Missing draft GQL source. Pass --source, --source-file, --body JSON, or a template argument.");
-  if (!body.html) throw new Error("Missing draft HTML. Pass --html, --html-file, --body JSON, or a template argument.");
+  if (!body.renderer) throw new Error("Missing draft renderer. Pass --html, renderer in --body JSON, or a template argument.");
   return body;
+};
+
+export const applyHtmlRendererFlags = (
+  body: Record<string, unknown>,
+  flags: {
+    html?: string;
+    headerHtml?: string;
+    footerHtml?: string;
+    pageCss?: string;
+    numberTemplate?: string;
+    filenameTemplate?: string;
+  },
+  template: PublicDocumentTemplate | null = null,
+) => {
+  const hasOverride = Object.values(flags).some((value) => value !== undefined);
+  if (!hasOverride) return;
+  const current = body.renderer as DocumentTemplateRenderer | undefined;
+  const base = current?.kind === "html" ? current : template?.renderer.kind === "html" ? template.renderer : null;
+  body.renderer = {
+    kind: "html",
+    body: flags.html ?? base?.body ?? "",
+    header: flags.headerHtml ?? base?.header,
+    footer: flags.footerHtml ?? base?.footer,
+    css: flags.pageCss ?? base?.css,
+    numberTemplate: flags.numberTemplate ?? base?.numberTemplate ?? "",
+    filenameTemplate: flags.filenameTemplate ?? base?.filenameTemplate ?? "",
+  } satisfies DocumentTemplateRenderer;
 };
 
 export const resolveDocumentTemplateFromCommand = async (
   ctx: CloudCliContext,
   args: string[],
   refs: { table?: string; template?: string },
-): Promise<{ base: Base; table: Table | null; template: DocumentTemplate }> => {
+): Promise<{ base: Base; table: Table | null; template: PublicDocumentTemplate }> => {
   const { base, rest } = await resolveBaseFromCommand(ctx, args, refs.table || refs.template ? 0 : 2);
   const table = refs.table
     ? await resolveTable(ctx, base.id, refs.table)

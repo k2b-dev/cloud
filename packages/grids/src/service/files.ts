@@ -799,6 +799,7 @@ export const createProtected = async (
 type ProtectionIdentity = Pick<ProtectParams, "fileId" | "ownerKind" | "ownerId">;
 
 const releaseProtectionWithClient = async (params: ProtectionIdentity, client: SqlClient): Promise<Result<void>> => {
+  if (params.ownerKind === "document_artifact") return fail(err.badInput("Document artifact protection cannot be released"));
   const [asset] = await client<{ id: string }[]>`
     SELECT id::text AS id FROM grids.files WHERE id = ${params.fileId}::uuid FOR UPDATE
   `;

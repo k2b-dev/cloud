@@ -1,9 +1,5 @@
 import { expect, test } from "bun:test";
-import {
-  canonicalizeGqlSourceForPublicIdMigration,
-  migrateDocumentRunPublicIdArtifacts,
-  type PublicIdMigrationRow,
-} from "./public-id-source-migration";
+import { canonicalizeGqlSourceForPublicIdMigration, type PublicIdMigrationRow } from "./public-id-source-migration";
 import type { Field } from "./types";
 
 const tableId = "11111111-1111-4111-8111-111111111111";
@@ -75,59 +71,6 @@ test("public-id migration preserves typed dynamic GQL context values", () => {
   ).toBe(
     "from table {TABLE1}\nwhere record.id = @params.record_id and oneof(record.createdBy, @auth.subjects) and @time.today = @time.today",
   );
-});
-
-test("document run artifacts expose id-only identities and rewrite only Liquid tokens", () => {
-  expect(
-    migrateDocumentRunPublicIdArtifacts({
-      templateId: "TPL001",
-      runId: "RUN001",
-      templateSnapshot: {
-        id: "11111111-1111-4111-8111-111111111111",
-        shortId: "OLD01",
-        html: "{{ template.shortId }} / {% assign ref = run.shortId %} / plain template.shortId",
-      },
-      renderData: {
-        template: { id: "11111111-1111-4111-8111-111111111111", shortId: "OLD01", name: "Invoice" },
-        run: { id: "22222222-2222-4222-8222-222222222222", shortId: "OLD02" },
-      },
-    }),
-  ).toEqual({
-    templateSnapshot: {
-      id: "TPL001",
-      html: "{{ template.id }} / {% assign ref = run.id %} / plain template.shortId",
-    },
-    renderData: {
-      template: { id: "TPL001", name: "Invoice" },
-      run: { id: "RUN001" },
-    },
-  });
-});
-
-test("document run artifacts preserve template-less historical runs", () => {
-  expect(
-    migrateDocumentRunPublicIdArtifacts({
-      templateSnapshot: { html: "<p>{{ document.number }}</p>" },
-      renderData: { document: { number: "INV-1" } },
-      runId: "RUN001",
-    }),
-  ).toEqual({
-    templateSnapshot: { html: "<p>{{ document.number }}</p>" },
-    renderData: { document: { number: "INV-1" }, run: { id: "RUN001" } },
-  });
-});
-
-test("document run artifacts remove orphaned template identities", () => {
-  expect(
-    migrateDocumentRunPublicIdArtifacts({
-      templateSnapshot: { id: tableId, shortId: "OLD01", name: "Deleted template" },
-      renderData: { template: { id: tableId, shortId: "OLD01", name: "Deleted template" } },
-      runId: "RUN001",
-    }),
-  ).toEqual({
-    templateSnapshot: { name: "Deleted template" },
-    renderData: { template: { name: "Deleted template" }, run: { id: "RUN001" } },
-  });
 });
 
 test("public-id migration fails closed for unresolved UUID refs", () => {

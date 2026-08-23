@@ -794,7 +794,7 @@ const runRecordExternalUpsert = async (input: z.infer<typeof RecordExternalUpser
   const access = accessContext(context);
   const table = await requireTableRecordAccess(input.tableId, access, "write");
   if (!table.ok) return table;
-  const operationScope = `capability:record.upsertExternal:${gridsService.record.external.externalRecordRequestHash(context.accessSubject)}`;
+  const operationScope = `capability:record.upsert-external:${gridsService.record.external.externalRecordRequestHash(context.accessSubject)}`;
   const requestHash = gridsService.record.external.externalRecordRequestHash(input);
   const replay = await gridsService.record.external.replay({
     operationScope,
@@ -1004,7 +1004,7 @@ export const gridsCapabilities = defineCapabilities({
       idempotency: "none",
       run: runRecordCreate,
     },
-    "record.upsertExternal": {
+    "record.upsert-external": {
       title: "Upsert external Grids Record",
       description:
         "Retry-safely bind provider + providerAccount + resourceKind + externalId to one Record. " +

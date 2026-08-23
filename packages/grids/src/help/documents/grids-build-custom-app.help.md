@@ -21,7 +21,7 @@ You must be a base administrator. Prepare these resources in the same base:
 | **Certificate** document template | Uses one Certificate requests record |
 | **Approve and generate certificate** workflow launcher | Validates the request, updates it, generates the document, then notifies the requester |
 
-Do not add a requester field only to duplicate identity. Every record already stores its creator, and the app's GQL can compare `record.createdBy` with `@auth.id`. Generated PDFs stay attached through their document runs instead of being copied into another file field.
+Do not add a requester field only to duplicate identity. Every record already stores its creator, and the app's GQL can compare `record.createdBy` with `@auth.id`. Generated PDFs stay attached as Documents instead of being copied into another file field.
 
 ## Configure access first {icon="lock"}
 
@@ -112,7 +112,7 @@ Requester fields should normally be read-only after submission. If corrections a
 
 When the page record is missing, the Record block can show configured empty text. An existing request with no generated certificate simply has no download entry; the current schema has no document-specific empty copy.
 
-**Checkpoint:** status, comments, and generated documents remain attached to the same request after reload. A failure belongs to the Record binding, Comments access, or document run named by the failing block.
+**Checkpoint:** status, comments, and generated Documents remain attached to the same request after reload. A failure belongs to the Record binding, Comments access, or Document named by the failing block.
 
 ## Keep processing outside the layout {icon="route"}
 
@@ -151,7 +151,7 @@ When something fails, fix the owning layer:
 | Missing or unavailable request | Published query, page parameter, or `availableWhen` |
 | Rejected input | Form |
 | Stale transition or partial record change | Workflow |
-| Missing PDF | Document template or document run |
+| Missing PDF | Document template or Document |
 | Unavailable action | Published capability, launcher state, or permission |
 
 Read [Pages & blocks](/app/grids/help/grids-custom-app-pages-blocks) for every setting, [Publish & permissions](/app/grids/help/grids-publish-custom-app) for preflight behavior, and [YAML & CLI](/app/grids/help/grids-custom-app-yaml-cli) for the equivalent agent workflow.

@@ -111,8 +111,16 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
         </AppWorkspace.SidebarSection>
       )}
 
-      {state.catalog.sidebarDocumentTemplates.length > 0 && (
-        <AppWorkspace.SidebarSection title="Documents">
+      <AppWorkspace.SidebarSection title="Documents">
+          <SidebarLink
+            href={keepEdit(`/app/grids/${state.base.id}/documents`, state.adminModeRequested)}
+            active={route.kind === "documents"}
+            class={itemClass(route.kind === "documents", state.adminModeRequested)}
+            title="All completed documents"
+          >
+            <AppWorkspace.SidebarItemIcon icon="ti ti-files" />
+            <AppWorkspace.SidebarItemLabel>All documents</AppWorkspace.SidebarItemLabel>
+          </SidebarLink>
           {state.catalog.sidebarDocumentTemplates.map(({ template, table }) => {
             const active = route.kind === "documentTemplate" && route.template.id === template.id;
             return (
@@ -128,8 +136,7 @@ export default function GridsSidebar(props: { state: PublicOkWorkspaceState }) {
               </SidebarLink>
             );
           })}
-        </AppWorkspace.SidebarSection>
-      )}
+      </AppWorkspace.SidebarSection>
 
       {(state.catalog.workflows.length > 0 || (state.adminModeRequested && state.canManageBase)) && (
         <AppWorkspace.SidebarSection title="Workflows">

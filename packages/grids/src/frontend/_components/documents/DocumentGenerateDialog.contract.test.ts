@@ -6,10 +6,10 @@ describe("document generation dialog", () => {
 
     expect(source).toContain("panelDialogFixedOptions");
     expect(source).toContain("is-wide");
-    expect(source).toContain("Choose the record whose current data should be used for this PDF.");
+    expect(source).toContain("Choose the record whose current data should be used for this Document.");
     expect(source).toContain("Optional labels for finding and organizing the generated document.");
-    expect(source).toContain('title="The generated PDF stays unchanged"');
-    expect(source).toContain("Generate again to create a new PDF.");
+    expect(source).toContain('title="The generated Document stays unchanged"');
+    expect(source).toContain("Generate again to create a new Document.");
     expect(source).toContain("min-h-[36rem]");
     expect(source).not.toContain("recursive snapshot");
     expect(source).not.toContain("Liquid filename pattern");

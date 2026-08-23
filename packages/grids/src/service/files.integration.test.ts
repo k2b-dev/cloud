@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { sql } from "bun";
 import { migrate as migrateCoreWorkflows } from "../../../core/src/migrate/core/workflows";
 import { postgresTest, testShortId, testUuid } from "../integration-test-utils";
@@ -41,6 +41,19 @@ const destroyFixture = async (baseId: string) => {
 const bytes = (value: string) => new TextEncoder().encode(value);
 
 describe("durable file asset lifecycle Postgres integration", () => {
+  test("refuses to release immutable Document artifact protection before accessing storage", async () => {
+    const result = await releaseProtection({
+      fileId: testUuid(),
+      ownerKind: "document_artifact",
+      ownerId: testUuid(),
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("BAD_INPUT");
+      expect(result.error.message).toBe("Document artifact protection cannot be released");
+    }
+  });
+
   postgresTest("keeps protected exact bytes after detach and cleans them after the last protection is released", async () => {
     const fixture = await createFixture();
     const ownerId = testUuid();
@@ -215,7 +228,7 @@ describe("durable file asset lifecycle Postgres integration", () => {
 
   postgresTest("replaces the current attachment atomically without destroying a protected previous asset", async () => {
     const fixture = await createFixture();
-    const artifactId = testUuid();
+    const revisionId = testUuid();
     try {
       const original = await upload({
         ...fixture,
@@ -228,8 +241,8 @@ describe("durable file asset lifecycle Postgres integration", () => {
       if (!original.ok) throw original.error;
       const protectedResult = await protect({
         fileId: original.data.id,
-        ownerKind: "document_artifact",
-        ownerId: artifactId,
+        ownerKind: "record_revision",
+        ownerId: revisionId,
         ...fixture,
         userId: null,
       });
@@ -256,8 +269,8 @@ describe("durable file asset lifecycle Postgres integration", () => {
       expect(attachment?.file_id).toBe(replaced.data.id);
       const previous = await getProtectedContent({
         fileId: original.data.id,
-        ownerKind: "document_artifact",
-        ownerId: artifactId,
+        ownerKind: "record_revision",
+        ownerId: revisionId,
       });
       expect(previous.ok).toBe(true);
       if (previous.ok) expect(previous.data.bytes).toEqual(bytes("original"));

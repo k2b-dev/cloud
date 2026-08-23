@@ -11,6 +11,7 @@ import {
   type EvidenceExportSection,
   type EvidenceExportStatus,
 } from "../evidence-export-contracts";
+import { readDocumentArtifact } from "./document-issuance";
 import {
   EVIDENCE_EXPORT_MAX_ENTRIES,
   EVIDENCE_EXPORT_MAX_PACKAGE_BYTES,
@@ -196,17 +197,11 @@ export const preflight = async (params: {
       FROM grids.file_protected_references protection
       WHERE protection.owner_kind = 'record_revision' AND protection.owner_id IN (SELECT id FROM selected_revisions)
     ), selected_documents AS (
-      SELECT artifact_file_id, artifact_size_bytes
-      FROM grids.document_runs
+      SELECT id
+      FROM grids.documents
       WHERE table_id IN (SELECT id FROM selected_tables)
-        AND (${params.from}::timestamptz IS NULL OR generated_at >= ${params.from}::timestamptz)
-        AND (${params.to}::timestamptz IS NULL OR generated_at <= ${params.to}::timestamptz)
-    ), selected_business_documents AS (
-      SELECT document.id
-      FROM grids.business_documents document
-      WHERE document.base_id = ${params.baseId}::uuid AND ${params.tableId}::uuid IS NULL
-        AND (${params.from}::timestamptz IS NULL OR document.issued_at >= ${params.from}::timestamptz)
-        AND (${params.to}::timestamptz IS NULL OR document.issued_at <= ${params.to}::timestamptz)
+        AND (${params.from}::timestamptz IS NULL OR created_at >= ${params.from}::timestamptz)
+        AND (${params.to}::timestamptz IS NULL OR created_at <= ${params.to}::timestamptz)
     )
     SELECT
       (SELECT count(*) FROM grids.records WHERE table_id IN (SELECT id FROM selected_tables))::int AS records,
@@ -217,14 +212,14 @@ export const preflight = async (params: {
         AND (${params.to}::timestamptz IS NULL OR created_at <= ${params.to}::timestamptz))::int AS audit_events,
       (SELECT count(*) FROM selected_files)::int AS files,
       COALESCE((SELECT sum(file.size_bytes) FROM grids.files file WHERE file.id IN (SELECT file_id FROM selected_files)), 0)::bigint AS file_bytes,
-      ((SELECT count(*) FROM selected_documents) + (SELECT count(*) FROM selected_business_documents))::int AS documents,
-      ((SELECT count(*) * 2 FROM selected_documents)
-        + (SELECT count(*) FROM selected_business_documents)
-        + (SELECT count(*) FROM grids.business_document_artifacts
-          WHERE document_id IN (SELECT id FROM selected_business_documents)))::int AS document_entries,
-      (COALESCE((SELECT sum(artifact_size_bytes) FROM selected_documents), 0)
-        + COALESCE((SELECT sum(size_bytes) FROM grids.business_document_artifacts
-          WHERE document_id IN (SELECT id FROM selected_business_documents)), 0))::bigint AS document_bytes,
+      (SELECT count(*) FROM selected_documents)::int AS documents,
+      ((SELECT count(*) FROM selected_documents)
+        + (SELECT count(*) FROM grids.document_artifacts
+          WHERE document_id IN (SELECT id FROM selected_documents)))::int AS document_entries,
+      COALESCE((SELECT sum(file.size_bytes)
+        FROM grids.document_artifacts artifact
+        JOIN grids.files file ON file.id = artifact.file_id
+        WHERE artifact.document_id IN (SELECT id FROM selected_documents)), 0)::bigint AS document_bytes,
       (SELECT count(DISTINCT series.id) FROM grids.number_series series
         LEFT JOIN grids.fields field ON field.id = series.field_id
         LEFT JOIN grids.document_templates template ON template.id = series.document_template_id
@@ -404,7 +399,7 @@ export const projectEvidenceValue = (value: unknown, publicIds: ReadonlyMap<stri
 };
 
 const withoutPrivateColumns = (row: DbRow): DbRow =>
-  Object.fromEntries(Object.entries(row).filter(([key]) => key !== "cursor_id" && key !== "id" && key !== "artifact_file_id"));
+  Object.fromEntries(Object.entries(row).filter(([key]) => key !== "cursor_id" && key !== "id"));
 
 const loadPublicIds = async (db: SQL, scope: ExportScope): Promise<Map<string, string>> => {
   const rows = await db<Array<{ internal_id: string; public_id: string }>>`
@@ -432,9 +427,8 @@ const loadPublicIds = async (db: SQL, scope: ExportScope): Promise<Map<string, s
         AND (${scope.tableId}::uuid IS NULL OR protection.table_id = ${scope.tableId}::uuid)
     )
     UNION ALL SELECT template.id::text, template.short_id FROM grids.document_templates template WHERE template.table_id IN (SELECT id FROM scoped_tables)
-    UNION ALL SELECT run.id::text, run.short_id FROM grids.document_runs run WHERE run.table_id IN (SELECT id FROM scoped_tables)
-    UNION ALL SELECT document.id::text, document.short_id FROM grids.business_documents document
-      WHERE document.base_id = ${scope.baseId}::uuid AND ${scope.tableId}::uuid IS NULL
+    UNION ALL SELECT doc.id::text, doc.short_id FROM grids.documents doc
+      WHERE doc.table_id IN (SELECT id FROM scoped_tables)
     UNION ALL SELECT snapshot.id::text, snapshot.short_id FROM grids.record_snapshots snapshot WHERE snapshot.table_id IN (SELECT id FROM scoped_tables)
     UNION ALL SELECT series.id::text, series.short_id FROM grids.number_series series
       LEFT JOIN grids.fields field ON field.id = series.field_id
@@ -502,7 +496,7 @@ const timeRangeSql = (scope: ExportScope, column: SQLQuery) => sql`
 const addSchema = async (ctx: BuildContext): Promise<number> => {
   let count = 0;
   const baseRows = await ctx.db<DbRow[]>`
-    SELECT short_id AS public_id, name, description, document_profile, deleted_at, created_at, updated_at
+    SELECT short_id AS public_id, name, description, document_defaults, deleted_at, created_at, updated_at
     FROM grids.bases WHERE id = ${ctx.scope.baseId}::uuid
   `;
   for (const row of baseRows) {
@@ -669,23 +663,16 @@ const assetBytes = async function* (db: SQL, fileId: string, sizeBytes: number):
 type EvidenceFileRow = DbRow & { id: string; public_id: string; size_bytes: number | string };
 type EvidenceDocumentRow = DbRow & {
   id: string;
-  artifact_file_id: string;
   public_id: string;
-  artifact_size_bytes: number | string;
 };
 
-type EvidenceBusinessDocumentRow = DbRow & {
-  id: string;
-  public_id: string;
-  predecessor_public_id: string | null;
-};
-
-type EvidenceBusinessDocumentArtifactRow = DbRow & {
+type EvidenceDocumentArtifactRow = DbRow & {
   artifact_key: string;
+  file_id: string;
   filename: string;
-  media_type: string;
-  bytes: Uint8Array;
+  mime_type: string;
   size_bytes: number | string;
+  sha256: string;
 };
 
 const addFiles = async (ctx: BuildContext): Promise<number> => {
@@ -744,83 +731,53 @@ const addDocuments = async (ctx: BuildContext): Promise<number> => {
   let count = 0;
   for (;;) {
     const rows: EvidenceDocumentRow[] = await ctx.db<EvidenceDocumentRow[]>`
-      SELECT run.id::text AS id, run.short_id AS public_id, template.short_id AS template_public_id,
+      SELECT doc.id::text AS id, doc.short_id AS public_id, template.short_id AS template_public_id,
              snapshot.short_id AS snapshot_public_id, record.short_id AS record_public_id, table_info.short_id AS table_public_id,
-             run.document_number, run.filename, run.tags, run.template_snapshot, run.render_data, run.artifact_file_id::text,
-             run.artifact_mime_type, run.artifact_size_bytes, run.artifact_sha256, run.renderer_version, run.template_revision,
-             run.generated_at, snapshot.root AS record_snapshot_root, snapshot.graph AS record_snapshot_graph, snapshot.created_at AS snapshot_created_at
-      FROM grids.document_runs run
-      JOIN grids.tables table_info ON table_info.id = run.table_id
-      LEFT JOIN grids.document_templates template ON template.id = run.template_id
-      JOIN grids.record_snapshots snapshot ON snapshot.id = run.snapshot_id
-      LEFT JOIN grids.records record ON record.id = run.record_id
+             doc.document_number, doc.filename, doc.tags, doc.template_snapshot, doc.render_data,
+             doc.renderer_kind, doc.renderer_version, doc.template_revision, doc.profile_id, doc.profile_version,
+             doc.source, doc.source_revision, doc.profile_snapshot, doc.snapshot_sha256, doc.relationship_kind,
+             doc.validator_version, doc.validation_status, doc.validation_report, doc.issued_actor,
+             doc.created_at, snapshot.root AS record_snapshot_root, snapshot.graph AS record_snapshot_graph, snapshot.created_at AS snapshot_created_at
+      FROM grids.documents doc
+      JOIN grids.tables table_info ON table_info.id = doc.table_id
+      LEFT JOIN grids.document_templates template ON template.id = doc.template_id
+      JOIN grids.record_snapshots snapshot ON snapshot.id = doc.snapshot_id
+      LEFT JOIN grids.records record ON record.id = doc.record_id
       WHERE table_info.base_id = ${ctx.scope.baseId}::uuid AND (${ctx.scope.tableId}::uuid IS NULL OR table_info.id = ${ctx.scope.tableId}::uuid)
-        AND ${timeRangeSql(ctx.scope, sql`run.generated_at`)}
-        AND (${cursor}::uuid IS NULL OR run.id > ${cursor}::uuid)
-      ORDER BY run.id
+        AND ${timeRangeSql(ctx.scope, sql`doc.created_at`)}
+        AND (${cursor}::uuid IS NULL OR doc.id > ${cursor}::uuid)
+      ORDER BY doc.id
       LIMIT ${PAGE_SIZE}
     `;
     for (const row of rows) {
       if (count >= MAX_SOURCE_ROWS)
         throw new EvidenceExportBoundError(`Evidence export exceeds the ${MAX_SOURCE_ROWS} Document-row budget.`);
       cursor = row.id;
-      const filename = safeArchiveSegment(String(row.filename), "document.pdf");
-      const path = `documents/${row.public_id}/${filename}`;
-      const metadata = withoutPrivateColumns(row);
-      delete metadata.artifact_file_id;
-      await addRow(ctx, "documents/metadata", String(row.public_id), { ...metadata, path });
-      await ctx.writer.add(
-        path,
-        "documents",
-        String(row.artifact_mime_type),
-        Number(row.artifact_size_bytes),
-        assetBytes(ctx.db, row.artifact_file_id, Number(row.artifact_size_bytes)),
-      );
-      count += 1;
-    }
-    if (rows.length < PAGE_SIZE) break;
-  }
-
-  if (ctx.scope.tableId) return count;
-  cursor = null;
-  for (;;) {
-    const rows: EvidenceBusinessDocumentRow[] = await ctx.db<EvidenceBusinessDocumentRow[]>`
-      SELECT document.id::text AS id, document.short_id AS public_id, document.profile_id, document.profile_version,
-             document.source, document.source_revision, document.snapshot, document.snapshot_sha256,
-             document.document_number, document.relationship_kind, predecessor.short_id AS predecessor_public_id,
-             document.renderer_version, document.validator_version, document.validation_status,
-             document.validation_report, document.issued_actor, document.issued_by,
-             issuer.display_name AS issued_by_display_name, document.issued_at
-      FROM grids.business_documents document
-      LEFT JOIN grids.business_documents predecessor ON predecessor.id = document.predecessor_id
-      LEFT JOIN auth.users issuer ON issuer.id = document.issued_by
-      WHERE document.base_id = ${ctx.scope.baseId}::uuid
-        AND ${timeRangeSql(ctx.scope, sql`document.issued_at`)}
-        AND (${cursor}::uuid IS NULL OR document.id > ${cursor}::uuid)
-      ORDER BY document.id
-      LIMIT ${PAGE_SIZE}
-    `;
-    for (const row of rows) {
-      if (count >= MAX_SOURCE_ROWS)
-        throw new EvidenceExportBoundError(`Evidence export exceeds the ${MAX_SOURCE_ROWS} Document-row budget.`);
-      cursor = row.id;
-      const artifacts = await ctx.db<EvidenceBusinessDocumentArtifactRow[]>`
-        SELECT artifact_key, filename, media_type, bytes, size_bytes, sha256
-        FROM grids.business_document_artifacts WHERE document_id = ${row.id}::uuid ORDER BY artifact_key
+      const artifacts = await ctx.db<EvidenceDocumentArtifactRow[]>`
+        SELECT artifact.artifact_key, artifact.file_id::text, file.filename, file.mime_type, file.size_bytes, file.sha256
+        FROM grids.document_artifacts artifact
+        JOIN grids.files file ON file.id = artifact.file_id
+        WHERE artifact.document_id = ${row.id}::uuid
+        ORDER BY artifact.artifact_key
       `;
-      await addRow(ctx, "business-documents/metadata", row.public_id, {
+      await addRow(ctx, "documents/metadata", row.public_id, {
         ...withoutPrivateColumns(row),
-        artifacts: artifacts.map(({ bytes: _bytes, ...artifact }) => artifact),
+        artifacts: artifacts.map(({ file_id: _fileId, ...artifact }) => artifact),
       });
       for (const artifact of artifacts) {
         ctx.processed += 1;
         await checkBudgetAndCancellation(ctx);
+        const content = await readDocumentArtifact(row.id, String(artifact.artifact_key), ctx.db);
+        if (!content.ok) throw content.error;
         const filename = safeArchiveSegment(String(artifact.filename), String(artifact.artifact_key));
-        await ctx.writer.addBytes(
-          `business-documents/${row.public_id}/${filename}`,
+        await ctx.writer.add(
+          `documents/${row.public_id}/${filename}`,
           "documents",
-          String(artifact.media_type),
-          artifact.bytes,
+          content.data.mimeType,
+          content.data.sizeBytes,
+          (async function* () {
+            yield content.data.bytes;
+          })(),
         );
       }
       count += 1;
@@ -867,14 +824,14 @@ const addNumbers = async (ctx: BuildContext): Promise<number> => {
     (cursor) => ctx.db<DbRow[]>`
       SELECT allocation.id::text AS cursor_id, series.short_id AS series_public_id, allocation.version, allocation.scope,
              allocation.value, allocation.rendered_value, allocation.consumer_kind,
-             COALESCE(record.short_id, run.short_id) AS consumer_public_id, allocation.allocated_at
+             COALESCE(record.short_id, doc.short_id) AS consumer_public_id, allocation.allocated_at
       FROM grids.number_allocations allocation
       JOIN grids.number_series series ON series.id = allocation.series_id
       LEFT JOIN grids.fields field ON field.id = series.field_id
       LEFT JOIN grids.document_templates template ON template.id = series.document_template_id
       JOIN grids.tables table_info ON table_info.id = COALESCE(field.table_id, template.table_id)
       LEFT JOIN grids.records record ON allocation.consumer_kind = 'record' AND record.id = allocation.consumer_id
-      LEFT JOIN grids.document_runs run ON allocation.consumer_kind = 'document_run' AND run.id = allocation.consumer_id
+      LEFT JOIN grids.documents doc ON allocation.consumer_kind = 'document' AND doc.id = allocation.consumer_id
       WHERE table_info.base_id = ${ctx.scope.baseId}::uuid AND (${ctx.scope.tableId}::uuid IS NULL OR table_info.id = ${ctx.scope.tableId}::uuid)
         AND ${timeRangeSql(ctx.scope, sql`allocation.allocated_at`)}
         AND (${cursor}::uuid IS NULL OR allocation.id > ${cursor}::uuid)
@@ -950,8 +907,8 @@ const sourceCoverage = (scope: ExportScope, cutAt: Date) =>
           currentAt: null,
           ...range,
           note: scope.tableId
-            ? "Exact stored table Document runs generated in the requested period; Base-level Business Documents are outside a table-scoped export."
-            : "Exact stored Document runs and immutable Business Documents issued in the requested period.",
+            ? "Exact stored Documents bound to the table and created in the requested period."
+            : "Exact stored Documents created in the requested period, including profile artifacts and validation evidence.",
         };
       case "numbers":
         return {

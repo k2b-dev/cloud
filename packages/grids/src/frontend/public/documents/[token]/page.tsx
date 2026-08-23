@@ -93,12 +93,12 @@ export default ssr<AuthContext>(async (c) => {
     timeZone: dateConfig.timeZone,
   }).format(new Date(expiresAt));
 
-  c.get("page").title = resolved.data.run.filename;
+  c.get("page").title = resolved.data.document.filename;
   c.get("page").description = "A PDF document shared through Grids.";
 
   return () => (
     <PublicDocumentShare
-      filename={resolved.data.run.filename}
+      filename={resolved.data.document.filename}
       expiresAt={expiresAt}
       expiresAtLabel={expiresAtLabel}
       downloadHref={`/share/grids/documents/${encodeURIComponent(token)}/download`}

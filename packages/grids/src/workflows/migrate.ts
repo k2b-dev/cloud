@@ -31,11 +31,10 @@ const resetAlphaWorkflowSchema = async (sql: SQL): Promise<boolean> => {
    *
    * The ledger itself is dropped too. It was named after an engine Grids no
    * longer has, and carrying the old name forward would have meant explaining
-   * it to every reader from here on.
-   */
+  * it to every reader from here on.
+  */
   await sql`
-    ALTER TABLE grids.document_runs DROP CONSTRAINT IF EXISTS document_runs_workflow_run_id_fkey;
-    UPDATE grids.document_runs SET workflow_run_id = NULL WHERE workflow_run_id IS NOT NULL;
+    UPDATE grids.documents SET workflow_run_id = NULL, workflow_step_key = NULL WHERE workflow_run_id IS NOT NULL;
     DROP TABLE IF EXISTS grids.workflow_effect_intents CASCADE;
     DROP TABLE IF EXISTS grids.workflow_email_deliveries CASCADE;
     DROP TABLE IF EXISTS grids.workflow_step_runs CASCADE;
@@ -199,10 +198,9 @@ const migrateDefinitionLinks = async (sql: SQL): Promise<void> => {
 };
 
 const migrateDeliveries = async (sql: SQL): Promise<void> => {
-  await sql`ALTER TABLE grids.document_runs ADD COLUMN IF NOT EXISTS workflow_step_key TEXT`.simple();
   await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_document_runs_workflow_step
-    ON grids.document_runs(workflow_run_id, workflow_step_key)
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_grids_documents_workflow_step
+    ON grids.documents(workflow_run_id, workflow_step_key)
     WHERE workflow_run_id IS NOT NULL AND workflow_step_key IS NOT NULL
   `.simple();
   await sql`

@@ -23,8 +23,8 @@ import type {
 import type { RecordDisplayConfig, RecordQuery } from "../../../contracts";
 import type { CombinedRecordOrigin } from "../../../service";
 import type {
-  PublicDocumentRunBrowseResponse,
-  PublicDocumentRunSummary,
+  PublicDocumentBrowseResponse,
+  PublicDocument,
   PublicDocumentTemplate,
   PublicDocumentTemplateSummary,
   PublicRecordSnapshotSummary,
@@ -71,7 +71,7 @@ export type PublicWorkspaceRecordDetail = {
   recordId: string;
   relationLabels: Record<string, string>;
   filesByField: Record<string, PublicGridFile[]>;
-  documentRuns: PublicDocumentRunSummary[];
+  documents: { items: PublicDocument[]; cursor: string | null; hasMore: boolean };
   snapshots: PublicRecordSnapshotSummary[];
   auditEntries: PublicRecordHistoryEntry[];
   combinedOrigin: CombinedRecordOrigin | null;
@@ -138,7 +138,7 @@ export type PublicWorkspaceWorkflowRunDetail = {
   provenance: { workflowName: string | null; actorLabel: string | null; serviceAccountLabel: string | null; launcherName: string | null };
   steps: PublicWorkflowStepRun[];
   stepsTruncated: boolean;
-  documents: { items: PublicDocumentRunSummary[]; total: number; hasMore: boolean; nextOffset: number | null };
+  documents: { items: PublicDocument[]; total: number; hasMore: boolean; nextOffset: number | null };
 };
 
 export type PublicWorkspaceRoute =
@@ -177,8 +177,9 @@ export type PublicWorkspaceRoute =
       canManageTemplate: boolean;
       initialRecordId: string | null;
       initialDocumentViewMode: GridsDocumentViewMode;
-      initialBrowserPage: PublicDocumentRunBrowseResponse;
+      initialBrowserPage: PublicDocumentBrowseResponse;
     }
+  | { kind: "documents" }
   | { kind: "empty" };
 
 type WorkspaceFailureState =

@@ -253,7 +253,7 @@ export const listWorkflowRunsPage = async (params: {
 
 // ─── Reading a run's steps ───────────────────────────────────────────────────
 
-// Document runs used to be persisted into the step outcome in full, including
+// Documents used to be persisted into the step outcome in full, including
 // `templateSnapshot` and `renderData` — the rendered record content. Step
 // outcomes are readable with workflow "read" alone, so those keys are stripped
 // on the way out. New runs already persist only the document summary; this
