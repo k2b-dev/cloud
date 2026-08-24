@@ -3,7 +3,7 @@ import type { Context, TypedResponse } from "hono";
 import type { StatusCode } from "hono/utils/http-status";
 
 type LegacyErrorStatus = ServiceError["status"] | 413 | 422 | 502 | 503 | 504;
-type LegacyErrorResult<S extends number = number> = { ok: false; error: string; status: S };
+type LegacyErrorResult<S extends number = number> = { ok: false; error: string; status: S; code?: string };
 type LegacyResult<T = void> = { ok: true; data: T } | LegacyErrorResult;
 
 type AnyResult<T = unknown> = Result<T> | LegacyResult<T>;
@@ -23,9 +23,9 @@ const toErrorResponse = (result: AnyResult): [ApiErrorBody, number] => {
     throw new Error("toErrorResponse called with successful result");
   }
 
-  // Legacy shape: { ok: false, error: string, status: number }
+  // Legacy shape: { ok: false, error: string, status: number, code?: string }
   if ("status" in result && typeof result.status === "number") {
-    return [{ message: result.error }, result.status];
+    return [result.code ? { message: result.error, code: result.code } : { message: result.error }, result.status];
   }
 
   // New shape: { ok: false, error: ServiceError }

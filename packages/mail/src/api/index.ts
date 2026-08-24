@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { ErrorResponseSchema, GrantAccessSchema, UpdateAccessSchema } from "@valentinkolb/cloud/contracts";
-import { auth, jsonResponse, rateLimit, requiresAuth, v } from "@valentinkolb/cloud/server";
+import { auth, jsonResponse, rateLimit, requiresAuth, respond, v } from "@valentinkolb/cloud/server";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describeRoute } from "hono-openapi";
@@ -374,7 +374,10 @@ const respondMailboxes = <T>(c: Context<MailApiContext>, result: Result<T> | Pro
 const respondAppDependency = <T>(
   c: Context<MailApiContext>,
   result: Result<T> | { ok: false; code: string; message: string; status: 503 },
-) => (!result.ok && "message" in result ? c.json({ message: result.message, code: result.code }, result.status) : respondPublic(c, result));
+) =>
+  !result.ok && "message" in result
+    ? respond(c, { ok: false, error: result.message, code: result.code, status: result.status })
+    : respondPublic(c, result);
 const respondFolders = async <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) =>
   respondPublic(c, await projectRootRelation(await result, "parentId", "folders"), "folders");
 const respondConversations = <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) =>
