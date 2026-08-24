@@ -14,9 +14,10 @@ Every request carries one canonical locale and one timezone. Cloud resolves
 both per request, keeps them separate, and never stores them in process-global
 state, so concurrent requests with different preferences stay isolated.
 
-The locale drives *formatting and document language only*. Cloud ships its
-product copy untranslated; resolving a locale does not translate UI text,
-validation messages, capability errors, help, notifications, or emails.
+The locale drives formatting, the document language, and the selection of
+opt-in application [message catalogs](#opt-into-message-catalogs). It does not
+automatically translate product copy: Cloud ships its UI text, validation
+messages, capability errors, help, notifications, and emails untranslated.
 
 ## Resolve the request locale
 
@@ -79,8 +80,9 @@ Browser islands are independent Solid roots: they inherit
 `document.documentElement.lang` through `useLocale()` instead of requiring a
 top-level island provider. Because `<html lang>` and the SSR provider carry
 the same resolved locale, server and browser passes agree and reloads keep
-the same result. A page may override the document language for one response
-by setting `c.get("page").lang` in its handler.
+the same result. The document language is framework-owned: `<html lang>`, the
+`LocaleProvider`, and `getDateConfig` always use the same canonical
+`getLocale(c)`, and a page handler cannot override it.
 
 ## Locale as capability metadata
 
@@ -109,26 +111,18 @@ await invokeCapability(invocation, {
 
 ## Opt into message catalogs
 
-Applications that want localized human-facing strings define a
-`@k2b/stdlib` message catalog and resolve it with the request locale. The
-catalog owns regional fallback (`de-CH` falls back to `de`, then the base
-locale); Cloud and capability callers never need to know an application's
-message keys:
+Applications that want localized human-facing strings own their
+`@k2b/stdlib` message catalog (`i18n.define`) and resolve it with the request
+locale. The catalog owns regional fallback (`de-CH` falls back to `de`, then
+the base locale); Cloud and capability callers never need to know an
+application's message keys:
 
 ```ts
-import { i18n } from "@k2b/stdlib";
 import { getLocale } from "@valentinkolb/cloud/server";
-
-const catalog = i18n.define({
-  baseLocale: "en",
-  messages: {
-    en: { emptyList: "No items yet." },
-    de: { emptyList: "Noch keine Einträge." },
-  },
-});
+import { messages } from "../i18n"; // the app-owned @k2b/stdlib catalog
 
 router.get("/api/inventory", (c) => {
-  const { t } = catalog.resolve([getLocale(c)]);
+  const { t } = messages.resolve([getLocale(c)]);
   return c.json({ emptyMessage: t.emptyList });
 });
 ```

@@ -57,6 +57,19 @@ const server = new Hono()
           },
         });
     }),
+  )
+  .get(
+    "/override",
+    ...app.ssr((c) => {
+      c.get("page").lang = "fr";
+      return () =>
+        createComponent(Layout, {
+          c: c as unknown as LayoutContextArg,
+          get children() {
+            return createComponent(LocaleEcho, {});
+          },
+        });
+    }),
   );
 
 const htmlLang = (html: string): string | undefined => html.match(/<html lang="([^"]*)"/)?.[1];
@@ -87,6 +100,13 @@ describe("SSR locale isolation", () => {
       headers: { Cookie: "cloud.locale=DE-ch", "Accept-Language": "en-US" },
     });
     expect(htmlLang(await response.text())).toBe("de-CH");
+  });
+
+  test("a page handler cannot override the canonical request locale", async () => {
+    const response = await server.request("/override", { headers: { "Accept-Language": "de-CH" } });
+    const html = await response.text();
+    expect(htmlLang(html)).toBe("de-CH");
+    expect(echoedLocale(html)).toBe("de-CH");
   });
 
   test("preference-free requests fall back deterministically", async () => {

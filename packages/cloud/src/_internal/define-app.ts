@@ -48,7 +48,7 @@ type PageOptions = {
   title?: string;
   description?: string;
   theme?: "light" | "dark";
-  /** BCP 47 document language; defaults to the resolved request locale. */
+  /** Framework-resolved BCP 47 document language — always the canonical request locale, never a page override. */
   lang?: string;
 };
 
@@ -290,10 +290,12 @@ export const defineApp = <
   //
   // The finalize hook resolves the request locale for `<html lang>` after all
   // route middlewares ran (so the settings snapshot is present), keeping the
-  // document language request-scoped without per-page plumbing.
+  // document language request-scoped without per-page plumbing. It assigns
+  // unconditionally: `<html lang>`, the Layout LocaleProvider, and
+  // `getDateConfig` share one canonical `getLocale(c)` that page handlers
+  // cannot override.
   const ssr = createStatusPreservingSsrHandler<PageOptions>(html, (c) => {
-    const page = c.get("page");
-    if (!page.lang) page.lang = getLocale(c);
+    c.get("page").lang = getLocale(c);
   });
 
   // ── 2. Meta ───────────────────────────────────────────────────────────

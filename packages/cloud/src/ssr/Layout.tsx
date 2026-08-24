@@ -32,7 +32,7 @@ type Breadcrumb = LayoutBreadcrumb;
 type AppLink = { id: string; iconClass: string; label: string; href: string; match: string; description?: string; accent?: string };
 type LayoutContext = {
   get(key: "user"): User | undefined;
-  get(key: "page"): { theme?: "light" | "dark"; lang?: string };
+  get(key: "page"): { theme?: "light" | "dark" };
   get(key: "runtime"): RuntimeContext;
   get(key: "announcements"): LayoutAnnouncementsState | undefined;
   /**
@@ -157,11 +157,10 @@ export default function Layout(props: LayoutProps) {
   const cookie = c.req.raw.headers.get("Cookie") ?? "";
   c.get("page").theme = readThemeFromCookieHeader(cookie);
   // One request-scoped locale drives <html lang>, the LocaleProvider below,
-  // and date formatting. The SSR seam resolves page.lang before render; the
-  // fallback keeps directly rendered layouts (tests) on the same resolver.
+  // and date formatting. The SSR seam and this component both resolve through
+  // the same canonical getLocale(c), so pages cannot diverge the three seams.
   const dateConfig = getDateConfig(c);
-  const lang = c.get("page").lang ?? getLocale(c);
-  c.get("page").lang = lang;
+  const lang = getLocale(c);
   const user = c.get("user");
   const pathname = new URL(c.req.raw.url).pathname;
   const currentApp = resolveCurrentApp(runtime.apps, pathname);

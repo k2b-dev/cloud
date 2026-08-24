@@ -100,7 +100,7 @@ export const CORE_SETTINGS = {
     label: "Locale",
     default: "en",
     description:
-      "Default BCP 47 locale for requests without a locale preference; drives the document language and date/number formatting, never translations",
+      "Default BCP 47 locale for requests without a locale preference; drives the document language, date/number formatting, and opt-in app message catalogs. It does not translate built-in product copy.",
     placeholder: "e.g. de-CH",
   },
   "app.timezone": {
