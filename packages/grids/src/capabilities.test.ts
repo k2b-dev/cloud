@@ -55,6 +55,7 @@ const userContext = (user: User): CapabilityExecutionContext => ({
   actor: { kind: "user", user },
   accessSubject: { type: "user", userId: user.id },
   user,
+  locale: "en",
   signal: new AbortController().signal,
 });
 
@@ -587,9 +588,7 @@ describe("Grids capabilities", () => {
       if (!groupedRelationColumn) throw new Error("Expected grouped relation GQL column");
       expect(groupedRelationColumn.sqlType).toBe("uuid");
       expect(
-        groupedRelationQuery.data.data.rows.map(
-          (row: { values: Record<string, unknown> }) => row.values[groupedRelationColumn.key],
-        ),
+        groupedRelationQuery.data.data.rows.map((row: { values: Record<string, unknown> }) => row.values[groupedRelationColumn.key]),
       ).toEqual([relatedBId]);
 
       const preview = await invoke(
@@ -817,6 +816,7 @@ describe("Grids capabilities", () => {
         },
         accessSubject: { type: "service_account", serviceAccountId: serviceAccount.id },
         user: null,
+        locale: "en",
         signal: new AbortController().signal,
       };
 

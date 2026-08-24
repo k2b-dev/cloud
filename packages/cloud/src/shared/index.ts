@@ -5,15 +5,16 @@
 export { dates, dates as calendar, encoding, fileIcons, gradients } from "@k2b/stdlib";
 export * from "./account-display";
 export * from "./account-session";
-export * from "./app-url";
 export type { AiPromptContextInput, AiToolPromptHint } from "./ai-platform-prompt";
 export { AI_PLATFORM_PROMPT_TEMPLATE, aiPromptContext, renderAiPlatformPrompt } from "./ai-platform-prompt";
+export * from "./app-url";
 export * from "./branding";
 export * from "./email-html";
 export * from "./format";
 export type * from "./help";
 export type * from "./icons";
 export { icons } from "./icons";
+export * from "./locale";
 export * from "./login-method";
 export { markdown } from "./markdown";
 export type { ErrorCode, EvalContext, EvalError, EvalResult, EvalValue, ProgressValue } from "./markdown/formula";

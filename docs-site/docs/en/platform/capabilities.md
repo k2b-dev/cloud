@@ -773,6 +773,17 @@ and rejects invalid app responses. The app authenticates again, reconstructs
 the actor and access subject, validates the input, and authorizes the resource.
 Reviewing an Action never authorizes its later invocation.
 
+Core also forwards the caller's resolved locale as invocation metadata in the
+internal `x-cloud-locale` header, next to authorization and tracing. Query,
+Action, and review handlers receive it as `context.locale` in their
+`CapabilityExecutionContext` without declaring it in an input schema; without
+a caller preference it falls back to the operator's `app.locale` default. Use
+it only for human-facing formatting or optional message catalogs — stable
+error codes and result data must not depend on it, and callers never need to
+interpret provider message codes. See
+[Locale and time](/en/docs/server/locale-and-time) for the resolution
+contract.
+
 Browser and client islands use the same-origin public client:
 
 ```ts

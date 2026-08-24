@@ -91,6 +91,7 @@ const userContext = {
   actor: { kind: "user", user },
   accessSubject: { type: "user", userId },
   user,
+  locale: "en",
   signal: new AbortController().signal,
 } satisfies CapabilityExecutionContext;
 
@@ -114,6 +115,7 @@ const serviceAccountContext = {
   },
   accessSubject: { type: "service_account", serviceAccountId },
   user: null,
+  locale: "en",
   signal: new AbortController().signal,
 } satisfies CapabilityExecutionContext;
 

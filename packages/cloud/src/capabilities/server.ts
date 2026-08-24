@@ -2,6 +2,7 @@ import { z } from "zod";
 import { getCapability } from "../_internal/registry";
 import { dispatchCapability, loadCapabilityCatalogPage } from "../api/capabilities";
 import { CapabilityActionReviewSchema, capabilityResultSchema } from "../contracts/capabilities";
+import { LOCALE_HEADER } from "../shared/locale";
 import { readCapabilityResponse } from "./response";
 import { combineCapabilitySignals } from "./signals";
 import type {
@@ -27,6 +28,8 @@ export type CapabilityCaller = {
   requestId?: string | null;
   traceparent?: string | null;
   tracestate?: string | null;
+  /** BCP 47 locale of the originating request, forwarded as invocation metadata. */
+  locale?: string | null;
   signal?: AbortSignal;
 };
 
@@ -37,6 +40,7 @@ const callerRequest = (caller: CapabilityCaller, idempotencyKey?: string, invoca
   if (caller.requestId) headers.set("x-request-id", caller.requestId);
   if (caller.traceparent) headers.set("traceparent", caller.traceparent);
   if (caller.tracestate) headers.set("tracestate", caller.tracestate);
+  if (caller.locale) headers.set(LOCALE_HEADER, caller.locale);
   if (idempotencyKey) headers.set("idempotency-key", idempotencyKey);
   const signal = combineCapabilitySignals(caller.signal, invocationSignal);
   return new Request("http://cloud.internal/api/capabilities/v1", { headers, signal });

@@ -176,6 +176,34 @@ describe("capability API", () => {
     expect(forwarded?.get("x-cloud-capability-schema-hash")).toBe(compiled.manifest.queries[0]?.schemaHash);
   });
 
+  test("folds the caller's locale preference into one metadata header", async () => {
+    let forwarded: Headers | undefined;
+    const routes = createCapabilityRoutes({
+      getCapability: async () => entry(),
+      authenticate,
+      fetch: async (_input, init) => {
+        forwarded = new Headers(init?.headers);
+        return Response.json({ data: { id: "one" } });
+      },
+    });
+    const invoke = (headers: Record<string, string>) =>
+      routes.request("/capabilities/v1/queries/demo/get", {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ input: { id: "one" } }),
+      });
+
+    expect((await invoke({ "accept-language": "en;q=0.5, de-CH" })).status).toBe(200);
+    expect(forwarded?.get("x-cloud-locale")).toBe("de-CH");
+    expect(forwarded?.get("accept-language")).toBeNull();
+
+    expect((await invoke({ cookie: "cloud.locale=fr; session_token=session-value", "accept-language": "de" })).status).toBe(200);
+    expect(forwarded?.get("x-cloud-locale")).toBe("fr");
+
+    expect((await invoke({})).status).toBe(200);
+    expect(forwarded?.get("x-cloud-locale")).toBeNull();
+  });
+
   test("prefers an explicit bearer over a session cookie and enforces its OAuth scope", async () => {
     let requested = false;
     const routes = createCapabilityRoutes({

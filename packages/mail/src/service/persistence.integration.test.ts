@@ -747,6 +747,7 @@ suite("mail PostgreSQL foundation", () => {
           actor: context.actor,
           accessSubject: context.accessSubject,
           user: context.actor.kind === "user" ? context.actor.user : context.actor.delegatedUser,
+          locale: "en",
           signal: AbortSignal.timeout(10_000),
         },
       );

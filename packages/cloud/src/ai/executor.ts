@@ -6,6 +6,7 @@ import type { CapabilityActionReview } from "../contracts/capabilities";
 import type { AccessSubject, RequestActor } from "../server";
 import { logger } from "../services/logging";
 import { coreSettings } from "../services/settings/api";
+import { normalizeLocale } from "../shared/locale";
 import { type AiToolApprovalContext, aiToolAllowsAlways, aiToolApprovalScope, hasRememberedAiToolApproval } from "./approvals";
 import { createAiToolResolver } from "./capabilities";
 import { executeAiCapability, resolveAiCapabilityActor, reviewAiCapability } from "./capability-execution";
@@ -695,6 +696,7 @@ export class AiTurnExecutor {
     const memoryActive = Boolean(prefs?.memoryEnabled);
     const memory = memoryActive && user ? await aiMemories.selectHot(user.id, query) : null;
     const timeZone = String((await coreSettings.get<string>("app.timezone")) || "").trim() || "UTC";
+    const promptLocale = normalizeLocale(await coreSettings.get<string>("app.locale"));
     const project = config.project;
     const projectSubject = project ? accessSubjectForActor(material.actor) : null;
     // Skills are an Assistant/default-tool capability. Custom and structured
@@ -936,6 +938,7 @@ export class AiTurnExecutor {
       toolHints: aiToolPromptHints(activeTools),
       memory: memory?.text,
       timeZone,
+      locale: promptLocale,
     });
     const priorToolRounds = toolRoundState(loopMessages);
     const toolRoundPolicy = applyToolRoundPolicy({

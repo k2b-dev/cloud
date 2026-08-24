@@ -29,6 +29,7 @@ const context = {
   },
   accessSubject: { type: "user" as const, userId: "user-1" },
   user: { id: "user-1", roles: ["user"] } as any,
+  locale: "en",
   signal: new AbortController().signal,
 };
 
@@ -1132,6 +1133,52 @@ describe("capability v1 compilation", () => {
       ok: false,
       error: { code: "INVALID_APP_RESPONSE", status: 500 },
     });
+  });
+
+  test("query, action, and review handlers receive the transported locale metadata", async () => {
+    const compiled = compileCapabilities("example", example());
+    const seen: string[] = [];
+    compiled.queries.get("get")!.definition.run = async (input: any, executionContext: any) => {
+      seen.push(executionContext.locale);
+      return ok({ data: { id: input.id, name: "Example" } });
+    };
+    const action = compiled.actions.get("rename")!.definition as any;
+    const actionRun = action.run;
+    const actionReview = action.review;
+    action.run = async (input: any, executionContext: any) => {
+      seen.push(executionContext.locale);
+      return actionRun(input, executionContext);
+    };
+    action.review = async (input: any, executionContext: any) => {
+      seen.push(executionContext.locale);
+      return actionReview(input, executionContext);
+    };
+
+    const localized = { ...context, locale: "de-CH" };
+    await invokeCompiledCapability({
+      compiled,
+      kind: "query",
+      localId: "get",
+      input: { id: "one" },
+      expectedSchemaHash: compiled.manifest.queries[0]!.schemaHash,
+      context: localized,
+    });
+    await invokeCompiledCapability({
+      compiled,
+      kind: "action",
+      localId: "rename",
+      input: { id: "one", name: "Two" },
+      expectedSchemaHash: compiled.manifest.actions[0]!.schemaHash,
+      context: { ...localized, idempotencyKey: "a".repeat(24) },
+    });
+    await reviewCompiledCapability({
+      compiled,
+      localId: "rename",
+      input: { id: "one", name: "Two" },
+      expectedSchemaHash: compiled.manifest.actions[0]!.schemaHash,
+      context: localized,
+    });
+    expect(seen).toEqual(["de-CH", "de-CH", "de-CH"]);
   });
 });
 

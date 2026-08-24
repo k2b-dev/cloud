@@ -1,9 +1,12 @@
-import { AppWorkspace, Avatar, NoticeCard, appWorkspaceLayoutStyle } from "@k2b/ui";
+import type { DateContext } from "@k2b/stdlib";
+import { AppWorkspace, Avatar, appWorkspaceLayoutStyle, LocaleProvider, NoticeCard } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import { readAppWorkspaceLayoutCookie, resolveAppWorkspaceLayoutForSidebar } from "../_internal/app-workspace-state";
 import { resolveNavMatch } from "../contracts/app"; // ==========================
 import { hasRole, type User } from "../contracts/shared";
+import { getLocale } from "../server/locale";
 import type { LayoutAnnouncementsState } from "../server/middleware/settings";
+import { getDateConfig } from "../server/time";
 import { dates } from "../shared";
 import { readThemeFromCookieHeader } from "../shared/theme";
 import AppLaunchpad, { type AppLaunchpadApp } from "./AppLaunchpad.island";
@@ -29,7 +32,7 @@ type Breadcrumb = LayoutBreadcrumb;
 type AppLink = { id: string; iconClass: string; label: string; href: string; match: string; description?: string; accent?: string };
 type LayoutContext = {
   get(key: "user"): User | undefined;
-  get(key: "page"): { theme?: "light" | "dark" };
+  get(key: "page"): { theme?: "light" | "dark"; lang?: string };
   get(key: "runtime"): RuntimeContext;
   get(key: "announcements"): LayoutAnnouncementsState | undefined;
   /**
@@ -103,7 +106,7 @@ function ProfileWarnings({ user }: { user: User }) {
     </a>
   );
 }
-function ExpiryWarnings({ user }: { user: User }) {
+function ExpiryWarnings({ user, dateConfig }: { user: User; dateConfig: DateContext }) {
   const now = Date.now();
   const warnThreshold = now + WARN_DAYS * 24 * 60 * 60 * 1000;
   const warnings: { icon: string; message: string; expired: boolean }[] = [];
@@ -114,7 +117,7 @@ function ExpiryWarnings({ user }: { user: User }) {
     else if (expires < warnThreshold)
       warnings.push({
         icon: "ti-calendar-event",
-        message: `Your ${accountLabel} expires on ${dates.formatDate(user.accountExpires)}.`,
+        message: `Your ${accountLabel} expires on ${dates.formatDate(user.accountExpires, dateConfig)}.`,
         expired: false,
       });
   }
@@ -123,7 +126,11 @@ function ExpiryWarnings({ user }: { user: User }) {
     if (expires < now)
       warnings.push({ icon: "ti-key", message: "Your password has expired. Please log out and in again to change it.", expired: true });
     else if (expires < warnThreshold)
-      warnings.push({ icon: "ti-key", message: `Your password expires on ${dates.formatDate(user.ipa.passwordExpires)}.`, expired: false });
+      warnings.push({
+        icon: "ti-key",
+        message: `Your password expires on ${dates.formatDate(user.ipa.passwordExpires, dateConfig)}.`,
+        expired: false,
+      });
   }
   if (warnings.length === 0) return null;
   return (
@@ -141,19 +148,20 @@ function ExpiryWarnings({ user }: { user: User }) {
 // Sub-Components
 // ==========================
 // Main Layout
-export default function Layout({
-  children,
-  c,
-  title,
-  fullPage,
-  fullWidth,
-  focusMode,
-  flushCanvas,
-  workspaceSidebarCollapsible,
-}: LayoutProps) {
+// `children` stays on `props` so the getter runs inside the provider subtree
+// below; eager destructuring would render children before `LocaleProvider`
+// (and the workspace layout provider) exist.
+export default function Layout(props: LayoutProps) {
+  const { c, title, fullPage, fullWidth, focusMode, flushCanvas, workspaceSidebarCollapsible } = props;
   const runtime = getRuntimeContext(c);
   const cookie = c.req.raw.headers.get("Cookie") ?? "";
   c.get("page").theme = readThemeFromCookieHeader(cookie);
+  // One request-scoped locale drives <html lang>, the LocaleProvider below,
+  // and date formatting. The SSR seam resolves page.lang before render; the
+  // fallback keeps directly rendered layouts (tests) on the same resolver.
+  const dateConfig = getDateConfig(c);
+  const lang = c.get("page").lang ?? getLocale(c);
+  c.get("page").lang = lang;
   const user = c.get("user");
   const pathname = new URL(c.req.raw.url).pathname;
   const currentApp = resolveCurrentApp(runtime.apps, pathname);
@@ -221,146 +229,150 @@ export default function Layout({
       .join(";") || undefined;
   if (focusMode) {
     return (
+      <LocaleProvider locale={lang}>
+        <div
+          class="cloud-app-canvas flex h-dvh w-full overflow-hidden"
+          style={canvasStyle}
+          data-app-id={currentApp?.id}
+          data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
+        >
+          <TimezoneCookie />
+          {registeredHelp && <RegisteredHelpDocuments documents={registeredHelp.documents} pageBase={registeredHelp.pageBase} />}
+          <main class="min-h-0 min-w-0 flex-1">
+            <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
+          </main>
+        </div>
+      </LocaleProvider>
+    );
+  }
+  return (
+    <LocaleProvider locale={lang}>
       <div
-        class="cloud-app-canvas flex h-dvh w-full overflow-hidden"
+        class={`cloud-app-canvas relative flex w-full ${fullPage ? "h-dvh overflow-hidden" : "min-h-screen md:h-screen md:overflow-hidden"}`}
         style={canvasStyle}
         data-app-id={currentApp?.id}
         data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
       >
         <TimezoneCookie />
         {registeredHelp && <RegisteredHelpDocuments documents={registeredHelp.documents} pageBase={registeredHelp.pageBase} />}
-        <main class="min-h-0 min-w-0 flex-1">
-          <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{children}</AppWorkspace.LayoutStateProvider>
-        </main>
-      </div>
-    );
-  }
-  return (
-    <div
-      class={`cloud-app-canvas relative flex w-full ${fullPage ? "h-dvh overflow-hidden" : "min-h-screen md:h-screen md:overflow-hidden"}`}
-      style={canvasStyle}
-      data-app-id={currentApp?.id}
-      data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
-    >
-      <TimezoneCookie />
-      {registeredHelp && <RegisteredHelpDocuments documents={registeredHelp.documents} pageBase={registeredHelp.pageBase} />}
-      <AppWorkspaceController appId={currentApp?.id} />
-      {user && <BrowserNotifications userId={user.id} />}
-      {showRail && <AppLaunchpad apps={launchpadApps} legalLinks={legalLinks} />}
-      {showRail && (
-        <script id="cloud-app-launchpad-data" type="application/json">
-          {jsonScript({ apps: launchpadApps, legalLinks })}
-        </script>
-      )}{" "}
-      {showRail && (
-        <aside class="layout-rail hidden w-10 shrink-0 flex-col md:flex">
-          <div class="layout-rail-logo flex h-[2.875rem] shrink-0 items-center justify-center">
-            <a href="/" aria-label="Home">
-              <img src="/branding/logo" alt="Logo" class="h-5 w-5" />
-            </a>
-          </div>
-          <nav class="layout-rail-navigation flex min-h-0 flex-1 flex-col items-center gap-1" aria-label="Apps">
-            {primaryApps.map((app) => (
-              <a
-                href={app.href}
-                class={`rail-item ${active(pathname, app.match) ? "rail-item-active" : ""}`}
-                aria-label={app.label}
-                aria-current={active(pathname, app.match) ? "page" : undefined}
-                title={app.label}
-                style={appAccentStyle(app.accent)}
-              >
-                <i class={`${app.iconClass} text-base`} />
+        <AppWorkspaceController appId={currentApp?.id} />
+        {user && <BrowserNotifications userId={user.id} />}
+        {showRail && <AppLaunchpad apps={launchpadApps} legalLinks={legalLinks} />}
+        {showRail && (
+          <script id="cloud-app-launchpad-data" type="application/json">
+            {jsonScript({ apps: launchpadApps, legalLinks })}
+          </script>
+        )}{" "}
+        {showRail && (
+          <aside class="layout-rail hidden w-10 shrink-0 flex-col md:flex">
+            <div class="layout-rail-logo flex h-[2.875rem] shrink-0 items-center justify-center">
+              <a href="/" aria-label="Home">
+                <img src="/branding/logo" alt="Logo" class="h-5 w-5" />
               </a>
-            ))}
-            <AppLaunchpad apps={launchpadApps} legalLinks={legalLinks} variant="rail" label="Open apps" />
-            <div class="mt-auto flex flex-col items-center gap-1">
-              <GlobalSearchTrigger variant="rail" searchHelpApps={searchHelpApps} />
-              <HotkeysHelpRail variant="rail" registerHotkey searchHelpApps={searchHelpApps} accent={currentApp?.appearance?.accent} />
-              <ThemeToggleRail />
             </div>
-          </nav>
-        </aside>
-      )}
-      <div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col">
-        <header
-          class="layout-header paper flex min-h-[2.875rem] shrink-0 items-center justify-between px-2 py-1.5 md:px-3 md:py-2"
-          style="box-shadow: var(--ui-shadow-surface)"
-        >
-          <div class="flex min-w-0 items-center gap-2">
-            {!showRail && (
-              <a href="/" class="flex shrink-0 items-center" aria-label="Home">
-                <img src="/branding/logo" alt="Logo" class="h-6 w-6" />
-              </a>
-            )}
-            {showRail && (
-              <a
-                href="/"
-                aria-label="Home"
-                class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-dimmed transition-colors hover:bg-zinc-100 hover:text-secondary md:hidden dark:hover:bg-zinc-800"
-              >
-                <img src="/branding/logo" alt="Home" class="h-4 w-4" />
-              </a>
-            )}
-            <div class="hidden min-w-0 items-center md:flex">
-              <LayoutBreadcrumbs breadcrumbs={breadcrumbs} />
-            </div>
-            <div class="flex min-w-0 items-center md:hidden">
-              <LayoutBreadcrumbs breadcrumbs={breadcrumbs} mobile />
-            </div>
-          </div>
-          <div class="flex shrink-0 items-center gap-1">
-            <div class="flex items-center gap-1 md:hidden">
-              <HotkeysHelpRail
-                variant="header"
-                registerHotkey={!showRail}
-                searchHelpApps={searchHelpApps}
-                accent={currentApp?.appearance?.accent}
-              />
-              {user && <GlobalSearchTrigger variant="header" registerHotkey searchHelpApps={searchHelpApps} />}
-            </div>
-            {user ? (
-              <>
-                <a href="/me" class="hidden cursor-pointer items-center justify-center md:flex" aria-label="Profile">
-                  <Avatar
-                    name={user.displayName || user.uid}
-                    src={
-                      user.avatarHash
-                        ? `/api/accounts/users/${encodeURIComponent(user.id)}/avatar?rev=${encodeURIComponent(user.avatarHash)}`
-                        : undefined
-                    }
-                    size="xs"
-                  />
+            <nav class="layout-rail-navigation flex min-h-0 flex-1 flex-col items-center gap-1" aria-label="Apps">
+              {primaryApps.map((app) => (
+                <a
+                  href={app.href}
+                  class={`rail-item ${active(pathname, app.match) ? "rail-item-active" : ""}`}
+                  aria-label={app.label}
+                  aria-current={active(pathname, app.match) ? "page" : undefined}
+                  title={app.label}
+                  style={appAccentStyle(app.accent)}
+                >
+                  <i class={`${app.iconClass} text-base`} />
                 </a>
-                <div class="md:hidden">
-                  <div class="flex items-center gap-1">
-                    <AppLaunchpad apps={launchpadApps} legalLinks={legalLinks} variant="header" label="Open apps" />
+              ))}
+              <AppLaunchpad apps={launchpadApps} legalLinks={legalLinks} variant="rail" label="Open apps" />
+              <div class="mt-auto flex flex-col items-center gap-1">
+                <GlobalSearchTrigger variant="rail" searchHelpApps={searchHelpApps} />
+                <HotkeysHelpRail variant="rail" registerHotkey searchHelpApps={searchHelpApps} accent={currentApp?.appearance?.accent} />
+                <ThemeToggleRail />
+              </div>
+            </nav>
+          </aside>
+        )}
+        <div class="layout-shell-content flex min-h-0 min-w-0 flex-1 flex-col">
+          <header
+            class="layout-header paper flex min-h-[2.875rem] shrink-0 items-center justify-between px-2 py-1.5 md:px-3 md:py-2"
+            style="box-shadow: var(--ui-shadow-surface)"
+          >
+            <div class="flex min-w-0 items-center gap-2">
+              {!showRail && (
+                <a href="/" class="flex shrink-0 items-center" aria-label="Home">
+                  <img src="/branding/logo" alt="Logo" class="h-6 w-6" />
+                </a>
+              )}
+              {showRail && (
+                <a
+                  href="/"
+                  aria-label="Home"
+                  class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-dimmed transition-colors hover:bg-zinc-100 hover:text-secondary md:hidden dark:hover:bg-zinc-800"
+                >
+                  <img src="/branding/logo" alt="Home" class="h-4 w-4" />
+                </a>
+              )}
+              <div class="hidden min-w-0 items-center md:flex">
+                <LayoutBreadcrumbs breadcrumbs={breadcrumbs} />
+              </div>
+              <div class="flex min-w-0 items-center md:hidden">
+                <LayoutBreadcrumbs breadcrumbs={breadcrumbs} mobile />
+              </div>
+            </div>
+            <div class="flex shrink-0 items-center gap-1">
+              <div class="flex items-center gap-1 md:hidden">
+                <HotkeysHelpRail
+                  variant="header"
+                  registerHotkey={!showRail}
+                  searchHelpApps={searchHelpApps}
+                  accent={currentApp?.appearance?.accent}
+                />
+                {user && <GlobalSearchTrigger variant="header" registerHotkey searchHelpApps={searchHelpApps} />}
+              </div>
+              {user ? (
+                <>
+                  <a href="/me" class="hidden cursor-pointer items-center justify-center md:flex" aria-label="Profile">
+                    <Avatar
+                      name={user.displayName || user.uid}
+                      src={
+                        user.avatarHash
+                          ? `/api/accounts/users/${encodeURIComponent(user.id)}/avatar?rev=${encodeURIComponent(user.avatarHash)}`
+                          : undefined
+                      }
+                      size="xs"
+                    />
+                  </a>
+                  <div class="md:hidden">
+                    <div class="flex items-center gap-1">
+                      <AppLaunchpad apps={launchpadApps} legalLinks={legalLinks} variant="header" label="Open apps" />
+                    </div>
                   </div>
-                </div>
-              </>
-            ) : (
-              <NavMenu user={navMenuUser} />
-            )}
-          </div>
-        </header>
-        {user && announcements && (
-          <GlobalAnnouncements
-            banners={announcements.banners}
-            announcements={announcements.announcements}
-            latestAnnouncementVersion={announcements.latestAnnouncementVersion}
-            cookieState={announcements.cookieState}
-          />
-        )}
-        {user && <ProfileWarnings user={user} />}
-        {user && <ExpiryWarnings user={user} />}
-        <main class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}>
-          <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{children}</AppWorkspace.LayoutStateProvider>
-        </main>
-        {!fullPage && !showRail && (
-          <div class="hidden shrink-0 md:block">
-            <Footer isLoggedIn={!!user} appName={settings?.app?.copyright || appName} legalLinks={legalLinks} />
-          </div>
-        )}
+                </>
+              ) : (
+                <NavMenu user={navMenuUser} />
+              )}
+            </div>
+          </header>
+          {user && announcements && (
+            <GlobalAnnouncements
+              banners={announcements.banners}
+              announcements={announcements.announcements}
+              latestAnnouncementVersion={announcements.latestAnnouncementVersion}
+              cookieState={announcements.cookieState}
+            />
+          )}
+          {user && <ProfileWarnings user={user} />}
+          {user && <ExpiryWarnings user={user} dateConfig={dateConfig} />}
+          <main class={`layout-content-main min-h-0 min-w-0 flex-1 ${mainLayoutClass}`}>
+            <AppWorkspace.LayoutStateProvider state={workspaceLayout}>{props.children}</AppWorkspace.LayoutStateProvider>
+          </main>
+          {!fullPage && !showRail && (
+            <div class="hidden shrink-0 md:block">
+              <Footer isLoggedIn={!!user} appName={settings?.app?.copyright || appName} legalLinks={legalLinks} />
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </LocaleProvider>
   );
 }

@@ -43,6 +43,12 @@ Load data, redirect, and set metadata before the returned function.
 The returned function must be synchronous. Solid SSR creates JSX inside
 `renderToString()`.
 
+The framework resolves the request locale into `c.get("page").lang` and the
+document's `<html lang>` attribute for every SSR page; `Layout` provides the
+same value to `@k2b/ui` components and browser islands inherit it from the
+document. See [Locale and time](/en/docs/server/locale-and-time) before
+formatting dates or numbers in a page.
+
 ## Authorize page data
 
 An SSR page calls a service directly. API route middleware does not run for

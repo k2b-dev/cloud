@@ -18,6 +18,7 @@ import type { AppRegistryEntry } from "../contracts/registry";
 import type { AppSettingsMap, KindToType } from "../contracts/settings-types";
 import type { Role } from "../contracts/shared";
 import type { HelpDefinition } from "../server/help";
+import { getLocale, resolveLocale } from "../server/locale";
 import { type AuthContext, auth } from "../server/middleware/auth";
 import { routeTemplate } from "../server/middleware/route-template";
 import { logger } from "../services/logging";
@@ -26,6 +27,7 @@ import { get, loadCache as loadSettingsCache, set } from "../services/settings";
 import { createSettingsAPI, type SettingsAPI } from "../services/settings/api";
 import { registerSettings, toLegacySettingDefs } from "../services/settings/defaults";
 import { cloudMcpResourceUri } from "../shared/app-url";
+import { normalizeLocale } from "../shared/locale";
 import { themeBootstrapScript } from "../shared/theme";
 import { appFaviconHref } from "./app-favicon";
 import { readBoundedJson } from "./bounded-json";
@@ -46,6 +48,8 @@ type PageOptions = {
   title?: string;
   description?: string;
   theme?: "light" | "dark";
+  /** BCP 47 document language; defaults to the resolved request locale. */
+  lang?: string;
 };
 
 // ── Public types ────────────────────────────────────────────────────────────
@@ -253,10 +257,10 @@ export const defineApp = <
     verbose: true,
     rootDir: opts.appRoot ?? process.cwd(),
     basePath: opts.basePath,
-    template: ({ body, scripts, title, description, theme }) => {
+    template: ({ body, scripts, title, description, theme, lang }) => {
       const themeFixed = theme !== undefined;
       return `<!DOCTYPE html>
-<html lang="de" class="${theme ?? "light"}"${themeFixed ? " data-theme-fixed" : ""}>
+<html lang="${normalizeLocale(lang)}" class="${theme ?? "light"}"${themeFixed ? " data-theme-fixed" : ""}>
   <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="view-transition" content="same-origin">
     <title>${title ?? "Cloud"}</title>
@@ -283,7 +287,14 @@ export const defineApp = <
   // Pass PageOptions explicitly so c.get("page") in apps' SSR handlers is
   // typed as Partial<PageOptions> (with title/description/theme), not the
   // bare `object` fallback the constraint would otherwise produce.
-  const ssr = createStatusPreservingSsrHandler<PageOptions>(html);
+  //
+  // The finalize hook resolves the request locale for `<html lang>` after all
+  // route middlewares ran (so the settings snapshot is present), keeping the
+  // document language request-scoped without per-page plumbing.
+  const ssr = createStatusPreservingSsrHandler<PageOptions>(html, (c) => {
+    const page = c.get("page");
+    if (!page.lang) page.lang = getLocale(c);
+  });
 
   // ── 2. Meta ───────────────────────────────────────────────────────────
   const meta: AppMeta = {
@@ -502,6 +513,9 @@ export const defineApp = <
         const actor = c.get("actor");
         const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
         const idempotencyKey = c.req.header("idempotency-key") || undefined;
+        // Framework-owned endpoints run before the app's settings middleware,
+        // so the operator default is read directly instead of via a snapshot.
+        const requestLocale = resolveLocale(c.req.raw.headers, await get<string>("app.locale"));
         const invocation = {
           compiled: compiledCapabilities,
           localId: c.req.param("capabilityId") ?? "",
@@ -512,6 +526,7 @@ export const defineApp = <
             accessSubject: c.get("accessSubject"),
             user,
             idempotencyKey,
+            locale: requestLocale,
             signal: c.req.raw.signal,
           },
           onUnexpectedError: (error: unknown) =>

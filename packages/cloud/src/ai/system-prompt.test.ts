@@ -11,6 +11,7 @@ describe("aiGlobalInstructionsContext", () => {
       chatId: "abc123",
       now: new Date("2026-07-08T10:30:00Z"),
       timeZone: "Europe/Berlin",
+      locale: "de-DE",
     });
     expect(context.user).toEqual({ displayName: "Valentin Kolb", uid: "vkolb", mail: "valentin@example.org" });
     expect(context.now).toBe("2026-07-08T10:30:00.000Z");
@@ -18,6 +19,15 @@ describe("aiGlobalInstructionsContext", () => {
     expect(context.time).toBe("12:30");
     expect(context.chatId).toBe("abc123");
     expect(String(context.today)).toContain("2026");
+  });
+
+  it("formats the runtime clock with the canonical fallback locale by default", () => {
+    const context = aiGlobalInstructionsContext({
+      now: new Date("2026-07-08T10:30:00Z"),
+      timeZone: "Europe/Berlin",
+    });
+    expect(context.time).toBe("12:30 PM");
+    expect(String(context.today)).toContain("July");
   });
 
   it("keeps user lookups safe without an actor", () => {
@@ -33,6 +43,7 @@ describe("renderAiPlatformPrompt", () => {
       chatId: "abc123",
       now: new Date("2026-07-08T10:30:00Z"),
       timeZone: "Europe/Berlin",
+      locale: "de-DE",
     });
     expect(prompt).toContain("Valentin Kolb's Cloud workspace");
     expect(prompt).toContain("User: Valentin Kolb (vkolb)");

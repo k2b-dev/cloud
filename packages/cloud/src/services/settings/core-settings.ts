@@ -95,6 +95,14 @@ export const CORE_SETTINGS = {
     default: "",
     description: "Favicon",
   },
+  "app.locale": {
+    kind: "string",
+    label: "Locale",
+    default: "en",
+    description:
+      "Default BCP 47 locale for requests without a locale preference; drives the document language and date/number formatting, never translations",
+    placeholder: "e.g. de-CH",
+  },
   "app.timezone": {
     kind: "timezone",
     label: "Timezone",

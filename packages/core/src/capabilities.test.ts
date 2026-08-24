@@ -19,8 +19,8 @@ import {
   capabilityResultSchema,
   type User,
 } from "@valentinkolb/cloud/contracts";
-import { aiCapabilities } from "./capabilities";
 import * as taskRuntime from "./ai-chat-tasks-runtime";
+import { aiCapabilities } from "./capabilities";
 
 const user: User = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -46,6 +46,7 @@ const context: CapabilityExecutionContext = {
   actor: { kind: "user", user },
   accessSubject: { type: "user", userId: user.id },
   user,
+  locale: "en",
   signal: new AbortController().signal,
 };
 

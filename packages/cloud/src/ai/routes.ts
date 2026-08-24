@@ -15,6 +15,7 @@ import {
   v,
 } from "../server";
 import { coreSettings } from "../services/settings/api";
+import { normalizeLocale } from "../shared/locale";
 import type { AiToolApprovalContext } from "./approvals";
 import { buildAiCapabilityCatalog } from "./capabilities";
 import { createConfiguredDefaultCloudAiTools } from "./default-tools";
@@ -361,6 +362,7 @@ export const aiRoutes = (() => {
           : [];
         const memoryToolEnabled = tools.some((tool) => tool.def.name === "memory");
         const timeZone = String((await coreSettings.get<string>("app.timezone")) || "").trim() || "UTC";
+        const promptLocale = normalizeLocale(await coreSettings.get<string>("app.locale"));
         const prompt = composeAiSystemPrompt({
           globalInstructions: state.globalInstructions,
           user,
@@ -374,6 +376,7 @@ export const aiRoutes = (() => {
           omittedSkillCount: skillCatalog.omitted,
           memory: memory?.text,
           timeZone,
+          locale: promptLocale,
         });
         return respond(c, ok({ prompt, renderedAt: new Date().toISOString() }));
       })

@@ -23,6 +23,7 @@ export const aiGlobalInstructionsContext = (input: {
   appId?: string;
   now?: Date;
   timeZone?: string;
+  locale?: string;
 }): Record<string, unknown> => aiPromptContext(input);
 
 /** Render the admin global instructions as Liquid; fall back to the raw template on render errors. */
@@ -74,6 +75,8 @@ export type AiSystemPromptInput = {
   now?: Date;
   /** IANA timezone used for the runtime clock. */
   timeZone?: string;
+  /** BCP 47 locale used to format the runtime clock. */
+  locale?: string;
 };
 
 /**
@@ -94,6 +97,7 @@ export const composeAiSystemPrompt = (input: AiSystemPromptInput): string => {
     tools: input.toolHints,
     now: input.now,
     timeZone: input.timeZone,
+    locale: input.locale,
   };
 
   let platform: string;

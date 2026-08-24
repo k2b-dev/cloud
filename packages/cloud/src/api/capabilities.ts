@@ -17,7 +17,7 @@ import {
   capabilityResultJsonSchema,
 } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry } from "../contracts/registry";
-import { type AuthContext, auth, jsonResponse, requiresAuth, v } from "../server";
+import { type AuthContext, auth, jsonResponse, LOCALE_HEADER, preferredLocale, requiresAuth, v } from "../server";
 import { logger } from "../services";
 
 const log = logger("capabilities");
@@ -143,6 +143,12 @@ export const capabilityCredentialHeaders = (request: Request): Headers => {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
+  // Locale travels as invocation metadata next to auth and tracing. The
+  // caller's preference (explicit header, locale cookie, Accept-Language) is
+  // folded into one canonical header; without a preference the header stays
+  // absent and the provider falls back to the shared operator default.
+  const preferred = preferredLocale(request.headers);
+  if (preferred) headers.set(LOCALE_HEADER, preferred);
   return headers;
 };
 

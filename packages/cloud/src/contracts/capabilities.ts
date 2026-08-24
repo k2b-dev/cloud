@@ -225,6 +225,13 @@ export type CapabilityExecutionContext = {
   accessSubject: AccessSubject;
   user: User | null;
   idempotencyKey?: string;
+  /**
+   * Canonical BCP 47 locale of the originating request, transported as
+   * invocation metadata (never inside the input schema or auth token). Use it
+   * for human-facing formatting or `@k2b/stdlib` message catalogs; stable
+   * error codes and data must not depend on it.
+   */
+  locale: string;
   signal: AbortSignal;
 };
 

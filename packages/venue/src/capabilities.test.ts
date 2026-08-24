@@ -36,6 +36,7 @@ const userContext = (user: User): CapabilityExecutionContext => ({
   actor: { kind: "user", user },
   accessSubject: { type: "user", userId: user.id },
   user,
+  locale: "en",
   signal: new AbortController().signal,
 });
 
@@ -472,6 +473,7 @@ describe("Venue capabilities", () => {
         },
         accessSubject: { type: "service_account", serviceAccountId: serviceAccount.id },
         user: null,
+        locale: "en",
         signal: new AbortController().signal,
       };
 

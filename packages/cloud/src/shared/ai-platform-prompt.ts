@@ -1,5 +1,6 @@
 import { dates } from "@k2b/stdlib";
 import type { User } from "../contracts/shared";
+import { normalizeLocale } from "./locale";
 import { renderLiquidTemplate } from "./template-rendering";
 
 /** One-line "when to use" hint shown in the system prompt's Tool guidance section. */
@@ -91,6 +92,8 @@ export type AiPromptContextInput = {
   tools?: AiToolPromptHint[];
   now?: Date;
   timeZone?: string;
+  /** BCP 47 locale for the runtime clock rendering; defaults to `"en"`. */
+  locale?: string;
 };
 
 /**
@@ -101,6 +104,7 @@ export type AiPromptContextInput = {
 export const aiPromptContext = (input: AiPromptContextInput): Record<string, unknown> => {
   const now = input.now ?? new Date();
   const timeZone = dates.normalizeTimeZone(input.timeZone ?? "", "UTC");
+  const locale = normalizeLocale(input.locale);
   return {
     user: {
       displayName: input.user?.displayName ?? "",
@@ -110,8 +114,8 @@ export const aiPromptContext = (input: AiPromptContextInput): Record<string, unk
     chatId: input.chatId ?? "",
     appId: input.appId ?? "",
     now: now.toISOString(),
-    today: now.toLocaleDateString("de-DE", { dateStyle: "full", timeZone }),
-    time: now.toLocaleTimeString("de-DE", { timeStyle: "short", timeZone }),
+    today: now.toLocaleDateString(locale, { dateStyle: "full", timeZone }),
+    time: now.toLocaleTimeString(locale, { timeStyle: "short", timeZone }),
     timeZone,
     memoryEnabled: Boolean(input.memoryEnabled),
     memoryToolEnabled: Boolean(input.memoryToolEnabled),

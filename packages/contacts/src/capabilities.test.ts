@@ -63,6 +63,7 @@ const context = {
   actor: { kind: "user", user },
   accessSubject: { type: "user", userId },
   user,
+  locale: "en",
   signal: new AbortController().signal,
 } satisfies CapabilityExecutionContext;
 
