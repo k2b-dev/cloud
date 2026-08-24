@@ -382,7 +382,6 @@ export default function VersionHistory(props: Props) {
                       <span
                         class="ml-auto flex items-center -space-x-1"
                         title={`Contributors: ${version.contributors!.map((contributor) => contributor.displayName).join(", ")}`}
-                        aria-label={`Contributors: ${version.contributors!.map((contributor) => contributor.displayName).join(", ")}`}
                       >
                         <For each={version.contributors!.slice(0, 3)}>
                           {(contributor) => <Avatar name={contributor.displayName} size="xs" />}
