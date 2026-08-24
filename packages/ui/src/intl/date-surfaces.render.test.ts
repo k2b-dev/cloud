@@ -12,7 +12,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { Calendar, DatePicker, DateTimePicker, LocaleProvider } = await import("../index");
+const { Calendar, DatePicker, DateRangePicker, DateTimePicker, LocaleProvider } = await import("../index");
 
 const provided = (locale: string, child: () => JSX.Element): JSX.Element =>
   createComponent(LocaleProvider, {
@@ -55,6 +55,23 @@ describe("date surfaces inherit the render locale", () => {
     const expected = dates.formatDateTime(value, { locale: "de", timeZone: "America/New_York", weekStartsOn: 1 });
     expect(html).toContain(expected);
     expect(html).toContain("America/New_York");
+  });
+
+  test("DateRangePicker formats its timed duration in the inherited locale", () => {
+    const start = "2026-07-27T09:00:00.000Z";
+    const end = "2026-07-27T10:00:00.000Z";
+    const html = renderToString(() =>
+      provided("de", () =>
+        createComponent(DateRangePicker, {
+          label: "Zeitraum",
+          value: { start, end },
+          withTime: true,
+          dateConfig: { timeZone: "UTC" },
+        }),
+      ),
+    );
+    expect(html).toContain(dates.formatDuration(start, end, { locale: "de", timeZone: "UTC" }));
+    expect(html).not.toContain(dates.formatDuration(start, end, { locale: "en", timeZone: "UTC" }));
   });
 
   test("Calendar inherits the provider locale and preserves explicit overrides", () => {

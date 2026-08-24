@@ -655,7 +655,7 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
     if (!isCompleteTime(startTime()) || !isCompleteTime(endTime())) return "";
     const start = toDateTimeValue(current.start, startTime(), dateConfig());
     const end = toDateTimeValue(current.end, endTime(), dateConfig());
-    return start && end ? dates.formatDuration(start, end) : "";
+    return start && end ? dates.formatDuration(start, end, dateConfig()) : "";
   };
 
   const commit = (close: () => void) => {

@@ -107,8 +107,11 @@ describe("@k2b/ui intl browser behavior", () => {
 
     input.focus();
     input.value = "3.14";
+    input.setSelectionRange(2, 2);
     input.dispatchEvent(new Event("input", { bubbles: true }));
     expect(input.value).toBe("3,14");
+    expect(input.selectionStart).toBe(2);
+    expect(input.selectionEnd).toBe(2);
     expect(changes.at(-1)).toBe(3.14);
     expect(input.getAttribute("aria-valuenow")).toBe("3.14");
 

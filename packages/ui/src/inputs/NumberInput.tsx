@@ -176,10 +176,19 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
             aria-valuenow={(focused() ? parse(raw()) : value()) ?? undefined}
             onFocus={() => setFocused(true)}
             onInput={(event) => {
-              const next = filter(event.currentTarget.value);
+              const input = event.currentTarget;
+              const current = input.value;
+              const selectionStart = input.selectionStart;
+              const selectionEnd = input.selectionEnd;
+              const next = filter(current);
               // Only write back when the filter actually dropped something —
               // re-assigning an unchanged value moves the caret to the end.
-              if (event.currentTarget.value !== next) event.currentTarget.value = next;
+              if (current !== next) {
+                input.value = next;
+                if (selectionStart !== null && selectionEnd !== null) {
+                  input.setSelectionRange(filter(current.slice(0, selectionStart)).length, filter(current.slice(0, selectionEnd)).length);
+                }
+              }
               setRaw(next);
               emit(parse(next));
             }}

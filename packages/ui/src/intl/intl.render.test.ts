@@ -157,6 +157,7 @@ describe("Format components SSR", () => {
       createComponent(Format.Duration, { from: "2025-03-05T12:00:00Z", to: "2025-03-05T14:30:00Z", locale: "de" }),
       createComponent(Format.Duration, { from: "2025-03-05T12:00:00Z", to: null }),
       createComponent(Format.DurationMs, { value: 90_000 }),
+      createComponent(Format.DurationMs, { value: 500, class: "subsecond" }),
       createComponent(Format.DurationMs, { value: 0 }),
       createComponent(Format.DurationMs, { value: -5 }),
     ]);
@@ -164,6 +165,7 @@ describe("Format components SSR", () => {
     expect(html).toContain("2 Stunden, 30 Minuten");
     expect(html).toContain('datetime="PT1M30S"');
     expect(html).toContain("1m 30s");
+    expect(html).toMatch(/class="subsecond\s*" datetime="PT0\.5S">500ms<\/time>/);
     expect(html).toContain('datetime="PT0S"');
     expect(html).toContain("0ms");
     expect(html).toContain("—");

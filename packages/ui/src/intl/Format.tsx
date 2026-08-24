@@ -101,13 +101,16 @@ const toDate = (value: Date | string | null | undefined): Date | null => {
 
 /** ISO 8601 duration for the `<time datetime>` attribute, e.g. `"PT2H30M"`. */
 const isoDuration = (ms: number): string => {
-  const totalSeconds = Math.round(ms / 1000);
-  if (totalSeconds <= 0) return "PT0S";
+  const totalMilliseconds = Math.round(ms);
+  if (totalMilliseconds <= 0) return "PT0S";
+  const totalSeconds = Math.floor(totalMilliseconds / 1000);
+  const milliseconds = totalMilliseconds % 1000;
   const days = Math.floor(totalSeconds / 86_400);
   const hours = Math.floor((totalSeconds % 86_400) / 3_600);
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
   const seconds = totalSeconds % 60;
-  const time = `${hours ? `${hours}H` : ""}${minutes ? `${minutes}M` : ""}${seconds ? `${seconds}S` : ""}`;
+  const fractionalSeconds = milliseconds ? `${seconds}.${String(milliseconds).padStart(3, "0").replace(/0+$/, "")}S` : "";
+  const time = `${hours ? `${hours}H` : ""}${minutes ? `${minutes}M` : ""}${fractionalSeconds || (seconds ? `${seconds}S` : "")}`;
   return `P${days ? `${days}D` : ""}${time ? `T${time}` : ""}`;
 };
 
