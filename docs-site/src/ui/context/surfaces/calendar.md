@@ -76,7 +76,10 @@ the canonical links.
 
 `dateConfig` passes the `@k2b/stdlib` date context. `timeZone` and
 `firstDayOfWeek` are convenience overrides. `withWeekNumbers` adds week
-labels.
+labels. An explicit `dateConfig.locale` wins; without one the calendar
+inherits the render locale from `LocaleProvider` or the browser's
+`<html lang>` (see the Locale and formatting page). The timezone never comes
+from the locale context.
 
 Day and week views accept `startHour`, `endHour`, `visibleStartHour`, and
 `visibleEndHour`. `hideAllDay` and `allDayMaxHeightRem` control the all-day

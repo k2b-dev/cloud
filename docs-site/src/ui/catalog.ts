@@ -197,6 +197,12 @@ const portableSections = [
       page("template-editor", "Template editor", "ti ti-template", "HTML and Liquid editing, sandboxed preview, and sample data."),
       page("docs", "Documentation", "ti ti-book", "In-product documentation layout and prose primitives."),
       page("markdown", "Markdown", "ti ti-markdown", "Trusted rendered HTML and controlled Markdown editing."),
+      page(
+        "intl",
+        "Locale and formatting",
+        "ti ti-language",
+        "Inherited render locale with unstyled semantic number, currency, and date formatters.",
+      ),
     ],
   },
   {
@@ -274,7 +280,7 @@ const cloudEntries = cloudPages.map((page, pageIndex) => entry("cloud", "Cloud c
 export const uiCatalogEntries: UiCatalogEntry[] = [...portableEntries, ...cloudEntries];
 
 /** Runtime component exports from @k2b/ui. Kept honest by check-ui-catalog.ts. */
-export const portableUiComponentCount = 105;
+export const portableUiComponentCount = 107;
 
 export const uiCatalogSections: UiCatalogSection[] = [
   ...portableSections.map((section) => ({

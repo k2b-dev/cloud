@@ -46,6 +46,8 @@ clearing reports the complete next value through both `onValueChange` and
 
 Use `dateConfig` to define the application time zone and first day of the week. Without a supplied week start, the calendar starts on Monday.
 
+An explicit `dateConfig.locale` wins; without one the pickers inherit the render locale from `LocaleProvider` or the browser's `<html lang>` (see the Locale and formatting page). The timezone never comes from the locale context.
+
 ## Accessibility
 
 Provide a visible `label` or a specific placeholder. The trigger exposes dialog

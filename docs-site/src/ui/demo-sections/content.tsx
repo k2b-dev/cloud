@@ -14,7 +14,9 @@ import {
   FileBrowserPanel,
   type FileSource,
   FilterChip,
+  Format,
   Lightbox,
+  LocaleProvider,
   LogEntriesTable,
   MarkdownEditor,
   MarkdownView,
@@ -27,6 +29,7 @@ import {
   TemplatePreview,
   TemplateSampleData,
   TextInput,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, Show } from "solid-js";
 import { DemoCard } from "../DemoCard";
@@ -193,10 +196,7 @@ const ProfessionalTableDemo = () => {
     );
   });
   const totals = createMemo(() =>
-    filteredRows().reduce(
-      (result, row) => ({ items: result.items + row.items, total: result.total + row.total }),
-      { items: 0, total: 0 },
-    ),
+    filteredRows().reduce((result, row) => ({ items: result.items + row.items, total: result.total + row.total }), { items: 0, total: 0 }),
   );
 
   return (
@@ -365,11 +365,7 @@ const StructuredDemo = () => (
     description="Formatted and raw disclosure for unknown JSON-like values with bounded rows and copy."
     code={`<StructuredDataPreview title="Response" data={payload} maxRows={8} />`}
   >
-    <StructuredDataPreview
-      title="Response"
-      data={{ status: "ready", counts: { pages: 52, sections: 9 }, portable: true }}
-      maxRows={8}
-    />
+    <StructuredDataPreview title="Response" data={{ status: "ready", counts: { pages: 52, sections: 9 }, portable: true }} maxRows={8} />
   </DemoCard>
 );
 
@@ -472,9 +468,7 @@ const FilesDemo = () => {
     },
     remove: async (path) => {
       setFiles((current) =>
-        Object.fromEntries(
-          Object.entries(current).filter(([candidate]) => candidate !== path && !candidate.startsWith(`${path}/`)),
-        ),
+        Object.fromEntries(Object.entries(current).filter(([candidate]) => candidate !== path && !candidate.startsWith(`${path}/`))),
       );
     },
     rename: async (from, to) => {
@@ -567,13 +561,7 @@ const TemplateDemo = () => {
       <div class="ui-template-demo">
         <section class="ui-showcase-frame">
           <span>TemplateEditor</span>
-          <TemplateEditor
-            aria-label="Template source"
-            value={value()}
-            onValueChange={setValue}
-            variables={variables}
-            lines={8}
-          />
+          <TemplateEditor aria-label="Template source" value={value()} onValueChange={setValue} variables={variables} lines={8} />
         </section>
         <section class="ui-showcase-frame">
           <span>TemplatePreview</span>
@@ -658,6 +646,43 @@ const MarkdownDemo = (props: { html: string }) => {
   );
 };
 
+const IntlValues = () => {
+  const locale = useLocale();
+  return (
+    <div style="display:grid;gap:6px">
+      <p style="margin:0">
+        Effective locale: <output>{locale()}</output>
+      </p>
+      <p style="margin:0">
+        <Format.Number value={1234567.89} decimals={2} /> · <Format.Currency value={1999.5} currency="EUR" /> ·{" "}
+        <Format.Percent value={0.421} /> · <Format.Bytes value={1536} />
+      </p>
+      <p style="margin:0">
+        <Format.DateTime value="2026-07-28T09:00:00Z" timeZone="Europe/Berlin" /> ·{" "}
+        <Format.RelativeTime value="2026-07-28T09:00:00Z" base="2026-07-28T11:00:00Z" /> · <Format.DurationMs value={90_000} />
+      </p>
+    </div>
+  );
+};
+
+const IntlDemo = () => (
+  <DemoCard
+    id="intl"
+    chip={{ kind: "component", name: "Format", from: "@k2b/ui" }}
+    description="One inherited render locale for unstyled semantic formatters. The German block wraps the same values in a LocaleProvider; date and time components take an explicit timezone and default to UTC."
+    code={`<LocaleProvider locale="de">
+  <Format.Currency value={1999.5} currency="EUR" />
+  <Format.DateTime value={order.createdAt} timeZone="Europe/Berlin" />
+  <Format.RelativeTime value={order.updatedAt} />
+</LocaleProvider>`}
+  >
+    <IntlValues />
+    <LocaleProvider locale="de">
+      <IntlValues />
+    </LocaleProvider>
+  </DemoCard>
+);
+
 const demos: DemoSection = {
   charts: () => (
     <DemoGrid columns="one">
@@ -670,8 +695,16 @@ const demos: DemoSection = {
       <ProfessionalTableDemo />
     </DemoGrid>
   ),
-  calendar: () => <DemoGrid columns="one"><CalendarDemo /></DemoGrid>,
-  pagination: () => <DemoGrid columns="one"><PaginationDemo /></DemoGrid>,
+  calendar: () => (
+    <DemoGrid columns="one">
+      <CalendarDemo />
+    </DemoGrid>
+  ),
+  pagination: () => (
+    <DemoGrid columns="one">
+      <PaginationDemo />
+    </DemoGrid>
+  ),
   code: () => (
     <DemoGrid columns="one">
       <CodeDemo />
@@ -710,6 +743,11 @@ const demos: DemoSection = {
   markdown: (props) => (
     <DemoGrid columns="one">
       <MarkdownDemo html={props.markdownHtml} />
+    </DemoGrid>
+  ),
+  intl: () => (
+    <DemoGrid columns="one">
+      <IntlDemo />
     </DemoGrid>
   ),
 };

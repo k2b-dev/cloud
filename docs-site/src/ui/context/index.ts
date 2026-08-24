@@ -15,6 +15,7 @@ import contentCharts from "./content/charts.md" with { type: "text" };
 import contentCode from "./content/code.md" with { type: "text" };
 import contentDocs from "./content/docs.md" with { type: "text" };
 import contentFiles from "./content/files.md" with { type: "text" };
+import contentIntl from "./content/intl.md" with { type: "text" };
 import contentLogs from "./content/logs.md" with { type: "text" };
 import contentMarkdown from "./content/markdown.md" with { type: "text" };
 import contentMedia from "./content/media.md" with { type: "text" };
@@ -128,6 +129,7 @@ const catalogContextSources = {
   "content/structured-data": { file: "content/structured-data.md", content: contentStructuredData },
   "content/media": { file: "content/media.md", content: contentMedia },
   "content/files": { file: "content/files.md", content: contentFiles },
+  "content/intl": { file: "content/intl.md", content: contentIntl },
   "content/template-editor": { file: "content/template-editor.md", content: contentTemplateEditor },
   "content/docs": { file: "content/docs.md", content: contentDocs },
   "content/markdown": { file: "content/markdown.md", content: contentMarkdown },

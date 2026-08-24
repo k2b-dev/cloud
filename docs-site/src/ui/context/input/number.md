@@ -30,7 +30,8 @@ The component keeps the raw text while focused, so intermediate input is not los
 ## Numeric rules
 
 - `decimalPlaces` defaults to `0`. Set it explicitly for decimal values.
-- A comma is normalized to a decimal point.
+- The visible decimal separator follows the effective locale (`locale` prop, then `LocaleProvider`, then `<html lang>`, then `"en"`); both comma and dot are accepted while typing. The controlled value stays a canonical JavaScript number and `aria-valuenow` stays numeric.
+- Editable text never shows grouping separators.
 - `allowNegative` defaults to `true`.
 - `min` and `max` clamp committed values.
 - `step` defaults to `1` and snaps committed values to its grid.
@@ -45,7 +46,7 @@ The component keeps the raw text while focused, so intermediate input is not los
 
 Prefer a visible `label`. Without one, the placeholder becomes the accessible name, with **Enter number** as the final fallback.
 
-The input exposes spinbutton semantics and finite minimum, maximum, and current values. The stepper and clear controls have accessible names. Descriptions and reactive errors are connected to the field.
+The input exposes spinbutton semantics and finite minimum, maximum, and current values. The stepper and clear controls have accessible names; override them per instance with `increaseLabel`, `decreaseLabel`, and `clearLabel` when the surrounding product is not English. Descriptions and reactive errors are connected to the field.
 
 ## Runtime
 

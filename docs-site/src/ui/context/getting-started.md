@@ -100,6 +100,22 @@ export function ProjectSections() {
 }
 ```
 
+## Set the render locale
+
+Components format numbers and dates in one inherited locale. Wrap the SSR page in `LocaleProvider` and emit the same locale as `<html lang>`:
+
+```tsx
+<html lang={locale}>
+  <body>
+    <main class="k2b-ui">
+      <LocaleProvider locale={locale}>{children}</LocaleProvider>
+    </main>
+  </body>
+</html>
+```
+
+The provider controls the server pass. Browser islands are independent Solid roots and fall back to `document.documentElement.lang`, so a matching `<html lang>` keeps both passes identical. Without either source the locale is `"en"`. Timezone stays separate: pass it explicitly to date and time components. See the Locale and formatting page for the `Format` components and the exact resolution order.
+
 ## Package boundary
 
 Every component in the portable catalog comes from `@k2b/ui`. Product-specific integrations live in a separate section when they depend on authenticated APIs, permissions, sessions, or other host contracts.

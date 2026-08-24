@@ -101,6 +101,9 @@ standalone SSR, behavior, styling, and migration checks:
   views, and structured-data previews
 - Widgets: `Widget`, `WidgetHero`, `WidgetList`, `WidgetPills`,
   `WidgetStat`, and `WidgetStatus`
+- Intl: `LocaleProvider`, `useLocale`, and the unstyled `Format` namespace
+  (`Number`, `Percent`, `Currency`, `Bytes`, `Date`, `Time`, `DateTime`,
+  `RelativeTime`, `Duration`, `DurationMs`)
 
 `MarkdownView` renders escaped Markdown by default. Pre-rendered HTML requires
 the explicit `trustedHtml` prop and stays an application-owned trust boundary.
@@ -169,6 +172,45 @@ Portable presentation components use shared semantic vocabularies:
 `AccentColor` (`zinc`, `blue`, `emerald`, `amber`, `red`). Specialized state
 components such as `StatusBadge` keep a smaller domain-specific vocabulary
 where the states carry meaning beyond color.
+
+## Locale and formatting
+
+Locale-aware components resolve their locale in one order: an explicit
+component `locale` prop, the nearest `LocaleProvider`, the browser's
+`document.documentElement.lang`, then `"en"`. The package never reads
+`navigator.language` and holds no global locale state, so one server can
+render different locales concurrently.
+
+```tsx
+import { Format, LocaleProvider } from "@k2b/ui";
+
+<html lang={locale}>
+  {/* ... */}
+  <LocaleProvider locale={locale}>
+    <Format.Currency value={1999.5} currency="EUR" />
+    <Format.DateTime value={order.createdAt} timeZone="Europe/Berlin" />
+  </LocaleProvider>
+</html>;
+```
+
+The server-side provider controls SSR output. A browser island rendered with
+`@k2b/ssr` is an independent Solid root: an outer server provider does not
+survive the island's browser re-render, which falls back to `<html lang>`.
+Emit `<html lang>` equal to the provider locale to keep both passes identical.
+Changing the language without a reload is out of scope.
+
+`Format` components are unstyled and semantic: numeric components render a
+`<span>`, temporal components render `<time>` with a canonical `datetime`
+attribute. `Format.Percent` takes a ratio (`0.12` → `12%`), `Format.Currency`
+requires an ISO 4217 code, and `Format.Date`/`Time`/`DateTime` format in UTC
+unless an explicit `timeZone` is passed, so server and browser text cannot
+drift with the runtime timezone. Null and invalid input renders a `"—"`
+fallback (override with `fallback`).
+
+`NumberInput` derives its decimal separator from the effective locale while
+keeping the controlled value a canonical number; `DatePicker` and `Calendar`
+prefer an explicit `dateConfig.locale` and inherit the render locale
+otherwise. Timezone is never part of the locale context.
 
 ## Catalog groups
 
