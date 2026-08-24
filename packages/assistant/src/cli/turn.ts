@@ -11,7 +11,7 @@ import {
   guessAiMediaType,
   isAiImageMediaType,
 } from "@valentinkolb/cloud/ai";
-import type { CloudCliContext } from "@valentinkolb/cloud/cli";
+import { type CloudCliContext, printStructured } from "@valentinkolb/cloud/cli";
 import { AI_API, jsonRequest, printValue, readApi } from "./shared";
 import { type AssistantTurnStreamResult, streamAssistantTurn } from "./stream";
 
@@ -176,7 +176,7 @@ export const submitAndMaybeWatch = async (input: {
     printValue(input.ctx, submitted, submitted.turn.id);
     return 0;
   }
-  if (input.ctx.options.output === "json") input.ctx.json(result);
+  printStructured(input.ctx, result);
   if (result.status === "failed") throw new Error(result.error || "Assistant turn failed.");
   if (result.status === "needs_attention") {
     if (input.ctx.options.output === "text") {
