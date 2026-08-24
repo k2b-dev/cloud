@@ -44,6 +44,7 @@
     "./services/ipa/service-account": null,
     "./services/*": "./src/services/*",
     "./ai": "./src/ai/index.ts",
+    "./ai/admin": "./src/ai/admin.ts",
     "./ai/browser": "./src/ai/browser.ts",
     "./ai/live": "./src/ai/live.ts",
     "./ai/live-events": "./src/ai/live-events.ts",

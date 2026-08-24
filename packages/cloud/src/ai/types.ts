@@ -154,7 +154,26 @@ export type AiConversation = {
   /** Mutable pending user message. It is not part of model context until a turn consumes it. */
   draft: AiConversationDraft;
   createdByUserId: string | null;
+  /** Application that explicitly launched this chat through `launchAssistant`; null for direct Assistant chats. */
+  launchedByAppId?: string | null;
   createdAt: string;
+  updatedAt: string;
+};
+
+export const AI_MESSAGE_FEEDBACK_REASONS = [
+  "incorrect",
+  "did_not_follow_request",
+  "incomplete",
+  "poor_tool_choice",
+  "too_slow",
+  "other",
+] as const;
+export type AiMessageFeedbackReason = (typeof AI_MESSAGE_FEEDBACK_REASONS)[number];
+
+export type AiMessageFeedback = {
+  rating: "up" | "down";
+  reasons: AiMessageFeedbackReason[];
+  comment: string | null;
   updatedAt: string;
 };
 
@@ -266,6 +285,8 @@ export type AiStoredMessage = {
     toolPresentations?: Record<string, AiToolPresentation>;
     toolOutcomes?: Record<string, "rejected">;
   } | null;
+  /** Private owner feedback for this rendered assistant response. Never enters model context. */
+  feedback?: AiMessageFeedback | null;
   createdAt: string;
 };
 
@@ -567,6 +588,7 @@ export type AiConversationService = {
     projectId?: string;
     draft?: AiDraftContentPart[];
     preloadTools?: string[];
+    launchedByAppId?: string;
   }): Promise<AiConversation>;
   forkConversation(input: {
     sourceConversationId: string;
@@ -758,6 +780,12 @@ export type AiConversationService = {
     modelProfileId?: string | null;
   }): Promise<void>;
   listTurnMessages(input: { conversationId: string; loopId: string; includeCompacted?: boolean }): Promise<AiStoredMessage[]>;
+  setMessageFeedback(input: {
+    conversationId: string;
+    messageShortId: string;
+    feedback: Omit<AiMessageFeedback, "updatedAt">;
+  }): Promise<AiMessageFeedback | null>;
+  clearMessageFeedback(input: { conversationId: string; messageShortId: string }): Promise<boolean>;
   /** Create a queued compaction turn. Chat turns must use submitChatTurn. */
   createCompactionTurn(input: { conversationId: string; modelProfileId: string; runConfig: AiCompactionTurnRunConfig }): Promise<AiTurn>;
   /** Persist the user message and create its turn in one transaction. */

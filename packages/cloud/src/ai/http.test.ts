@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { AiCreateConversationInputSchema, AiSteerInputSchema, AiTurnInputSchema, aiTurnInputToContent } from "./http";
+import {
+  AiCreateConversationInputSchema,
+  AiMessageFeedbackInputSchema,
+  AiSteerInputSchema,
+  AiTurnInputSchema,
+  aiTurnInputToContent,
+} from "./http";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
 
 describe("AI HTTP input helpers", () => {
@@ -119,6 +125,21 @@ describe("AI HTTP input helpers", () => {
         },
       }).draft?.content,
     ).toHaveLength(AI_TURN_ATTACHMENT_MAX_ITEMS);
+  });
+
+  test("validates launch attribution and message feedback details", () => {
+    expect(AiCreateConversationInputSchema.parse({ launchedByAppId: "mail" }).launchedByAppId).toBe("mail");
+    expect(() => AiCreateConversationInputSchema.parse({ launchedByAppId: "Mail App" })).toThrow();
+    expect(AiMessageFeedbackInputSchema.parse({ rating: "up" })).toEqual({ rating: "up", reasons: [] });
+    expect(AiMessageFeedbackInputSchema.parse({ rating: "down", reasons: ["incorrect"], comment: "Wrong date" })).toEqual({
+      rating: "down",
+      reasons: ["incorrect"],
+      comment: "Wrong date",
+    });
+    expect(() => AiMessageFeedbackInputSchema.parse({ rating: "down" })).toThrow("Choose a reason or describe the problem");
+    expect(() => AiMessageFeedbackInputSchema.parse({ rating: "up", reasons: ["incorrect"] })).toThrow(
+      "Positive feedback cannot include problem details",
+    );
   });
 
   test("accepts only the predefined optional local client tool", () => {

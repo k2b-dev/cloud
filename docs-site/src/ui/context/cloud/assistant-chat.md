@@ -22,7 +22,7 @@ import { Chat } from "@k2b/ui";
 ## Cloud ownership
 
 - `createAiChatTimeline` reactively maps persisted messages and the active turn to `ChatTimelineItem[]`.
-- `AiChatActionsProvider` binds approval, frontend-tool, retry, fork, and file behavior to rich Cloud blocks.
+- `AiChatActionsProvider` binds approval, frontend-tool, retry, fork, message-feedback, and file behavior to rich Cloud blocks.
 - `aiChatModelOptions` and `aiChatAttachments` map Cloud records into portable values.
 - `aiComposerSendInput` maps `ChatSubmitInput` back to the Cloud controller input.
 
@@ -34,7 +34,7 @@ The application still owns the current controller and mutation callbacks. Cloud 
 
 ## Runtime
 
-The generic shell can render bounded fixtures without Cloud. Persisted messages, live turns, attachments, retries, tools, and mutations require the Cloud AI controller and authenticated platform routes.
+The generic shell can render bounded fixtures without Cloud. Persisted messages, live turns, attachments, retries, tools, feedback, and mutations require the Cloud AI controller and authenticated platform routes. Message feedback belongs to the private conversation owner and never enters model context.
 
 ## Example
 

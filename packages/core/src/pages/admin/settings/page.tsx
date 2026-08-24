@@ -9,12 +9,14 @@ import {
   aiSkills,
   listAiCredentialProfileIds,
 } from "@valentinkolb/cloud/ai";
+import { AI_USAGE_RANGES, type AiUsageRange, type AiUsageReport, aiUsage } from "@valentinkolb/cloud/ai/admin";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { settingsService } from "@valentinkolb/cloud/services";
 import { AdminLayout, getRuntimeContext, hasDedicatedRuntimeRoute } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../../config";
 import AiProjectsAdminPanel from "./_components/AiProjectsAdminPanel";
 import AiSkillsAdminPanel from "./_components/AiSkillsAdminPanel";
+import AiUsageAdminPanel from "./_components/AiUsageAdminPanel";
 import CoreSettingsForm, { type SettingFieldDef } from "./_components/CoreSettingsForm.island";
 import LegalSettingsForm, { type LegalInitial } from "./_components/LegalSettingsForm.island";
 
@@ -55,6 +57,13 @@ const TABS = [
     description: "Model profiles, provider credentials, and capabilities.",
     icon: "ti ti-sparkles",
     group: "ai" as const,
+  },
+  {
+    id: "ai-usage",
+    title: "AI Usage",
+    description: "Usage, cost signals, model performance, quality feedback, and background failures.",
+    icon: "ti ti-chart-histogram",
+    group: null,
   },
   {
     id: "ai-jobs",
@@ -186,8 +195,11 @@ export default ssr<AuthContext>(async (c) => {
   let aiSkillTotal = 0;
   let aiSkillPage = 1;
   let aiSkillPerPage = 100;
+  let aiUsageReport: AiUsageReport | null = null;
   const search = (c.req.query("search") ?? "").trim();
   const requestedPage = Number.parseInt(c.req.query("page") ?? "1", 10);
+  const requestedRange = c.req.query("range");
+  const aiUsageRange: AiUsageRange = AI_USAGE_RANGES.some((range) => range === requestedRange) ? (requestedRange as AiUsageRange) : "30d";
 
   if (tab.group) {
     entries = await buildEntries(tab.group);
@@ -208,6 +220,8 @@ export default ssr<AuthContext>(async (c) => {
     aiSkillTotal = skills.total;
     aiSkillPage = skills.page;
     aiSkillPerPage = skills.perPage;
+  } else if (tab.id === "ai-usage") {
+    aiUsageReport = await aiUsage.report(aiUsageRange);
   } else if (tab.id === "ai-projects") {
     const [projects, summary] = await Promise.all([
       aiProjects.admin.list({ search: search || undefined, page: Number.isFinite(requestedPage) ? requestedPage : 1, perPage: 100 }),
@@ -265,6 +279,8 @@ export default ssr<AuthContext>(async (c) => {
             search={search}
           />
         ) : null}
+
+        {tab.id === "ai-usage" && aiUsageReport ? <AiUsageAdminPanel report={aiUsageReport} /> : null}
       </div>
     </AdminLayout>
   );

@@ -1075,6 +1075,12 @@ export default function AssistantWorkspace(props: Props) {
                                   });
                                   if (!retried) throw new Error(chat.error() ?? "Could not retry message.");
                                 },
+                                onMessageFeedback: async (entry, feedback) => {
+                                  const saved = feedback
+                                    ? await chat.setMessageFeedback(entry.id, feedback)
+                                    : await chat.clearMessageFeedback(entry.id);
+                                  if (!saved) throw new Error(chat.error() ?? "Could not save message feedback.");
+                                },
                                 onRetrySteer: async (block) => {
                                   if (!(await chat.retrySteer(block))) throw new Error(chat.error() ?? "Could not retry steer message.");
                                 },

@@ -10,6 +10,8 @@ type ChatActionBase = {
   icon?: string;
   variant?: "danger";
   disabled?: boolean;
+  /** Toggle state for persistent message actions such as feedback. */
+  pressed?: boolean;
 };
 
 /** Exactly one executable behavior for every chat action. */

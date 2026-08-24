@@ -70,6 +70,7 @@ describe("Mail Assistant launch", () => {
       input: { emails: ["ada@example.test"], limit: 50 },
     });
     expect(JSON.parse(String(calls[1]?.[1]?.body))).toEqual({
+      launchedByAppId: "mail",
       title: "Quarterly update",
       draft: {
         content: [

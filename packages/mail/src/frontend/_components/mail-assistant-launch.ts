@@ -100,6 +100,7 @@ export const launchMailDraftAssistant = async (input: {
 
   const title = input.draft.subject.trim();
   return launchAssistant({
+    launchedByAppId: "mail",
     title: title || "Write email",
     draft: {
       content: [

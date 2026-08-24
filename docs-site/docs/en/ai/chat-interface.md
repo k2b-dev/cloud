@@ -242,9 +242,15 @@ not a substitute for consequence-critical review content in the card itself.
 
 ## Handle frontend tools
 
-Pass approval, frontend-tool, retry, fork, and file handlers through
+Pass approval, frontend-tool, retry, fork, message-feedback, and file handlers through
 `AiChatActionsProvider`. Rich Cloud blocks remain Cloud-owned JSX inside the
 generic timeline.
+
+Assistant messages may expose helpful and needs-improvement actions. Positive
+feedback saves immediately. Negative feedback collects one or more stable
+reason codes or an optional short comment in a shared prompt. The rating is
+private owner metadata: it is not sent back to the model and does not alter the
+conversation transcript.
 
 The controller claims each call once, runs the handler, and sends the result
 back to the turn. Show interaction tools only when the relevant application

@@ -18,6 +18,7 @@ describe("launchAssistant", () => {
     );
 
     const input = {
+      launchedByAppId: "mail",
       draft: {
         content: [
           {

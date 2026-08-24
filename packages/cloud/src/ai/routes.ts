@@ -23,6 +23,7 @@ import { AI_FILES_MAX_FILE_BYTES_DEFAULT, aiFileStore, decodeAiFileContent, gues
 import {
   AiCompactionInputSchema,
   AiCreateConversationInputSchema,
+  AiMessageFeedbackInputSchema,
   AiMessageForkInputSchema,
   AiMessageRetryInputSchema,
   AiSaveConversationDraftInputSchema,
@@ -34,8 +35,8 @@ import {
   toAiErrorResponse,
 } from "./http";
 import { aiMaintenanceJobs } from "./maintenance";
-import { aiMemoryLearningRuns } from "./memory-learning-runs";
 import { AI_MEMORY_CONTENT_MAX_CHARS, aiMemories } from "./memories";
+import { aiMemoryLearningRuns } from "./memory-learning-runs";
 import { createCloudAiMemoryTool } from "./memory-tool";
 import { personalAiModelPolicy } from "./personal-agent";
 import { aiActorUser, aiPrefsUserId, aiUserPrefs } from "./prefs";
@@ -52,10 +53,10 @@ import {
   submitAiTurnAction,
 } from "./runtime";
 import { listAiModels, readAiSettingsState, selectAiModelProfile, toPublicAiSettingsState } from "./settings";
+import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { selectAiSkillCatalog } from "./skill-catalog";
 import { createCloudAiLoadSkillTool, createCloudAiSearchSkillsTool } from "./skill-tool";
 import { aiSkills } from "./skills";
-import { AI_SHORT_ID_PATTERN } from "./short-id";
 import { aiConversations } from "./store";
 import { createAiConversationStreamResponse, loadAiStreamState } from "./stream";
 import { composeAiSystemPrompt } from "./system-prompt";
@@ -477,6 +478,7 @@ export const aiRoutes = (() => {
                 projectId: project?.id,
                 draft: body.draft?.content,
                 preloadTools: preloadTools.map((name) => name!),
+                launchedByAppId: body.launchedByAppId,
               }),
               project?.shortId ?? null,
             ),
@@ -517,6 +519,39 @@ export const aiRoutes = (() => {
           limit: query.limit ?? 50,
         });
         return respond(c, ok({ ...page, messages: await publicAiStoredMessages(page.messages, conversation) }));
+      })
+      .put("/conversations/:conversationId/messages/:messageId/feedback", v("json", AiMessageFeedbackInputSchema), async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        const conversation = await loadConversation(c, ctx);
+        if (!conversation) return notFound(c);
+        const messageId = c.req.param("messageId");
+        if (!messageId) return respond(c, fail(err.badInput("Invalid message id.")));
+        const input = c.req.valid("json");
+        const feedback = await aiConversations.setMessageFeedback({
+          conversationId: conversation.id,
+          messageShortId: messageId,
+          feedback: {
+            rating: input.rating,
+            reasons: input.reasons,
+            comment: input.comment ?? null,
+          },
+        });
+        return feedback ? respond(c, ok({ feedback })) : respond(c, fail(err.notFound("Assistant message")));
+      })
+      .delete("/conversations/:conversationId/messages/:messageId/feedback", async (c) => {
+        const ctx = await resolveContext(c);
+        if (ctx instanceof Response) return ctx;
+        const conversation = await loadConversation(c, ctx);
+        if (!conversation) return notFound(c);
+        const messageId = c.req.param("messageId");
+        if (!messageId) return respond(c, fail(err.badInput("Invalid message id.")));
+        return (await aiConversations.clearMessageFeedback({
+          conversationId: conversation.id,
+          messageShortId: messageId,
+        }))
+          ? respond(c, ok({ deleted: true }))
+          : respond(c, fail(err.notFound("Assistant message")));
       })
       .get("/conversations/:conversationId/resources", v("query", ConversationResourcesQuerySchema), async (c) => {
         const ctx = await resolveContext(c);

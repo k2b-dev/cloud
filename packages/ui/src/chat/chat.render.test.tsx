@@ -192,7 +192,10 @@ describe("@k2b/ui portable chat family", () => {
         status: "streaming",
         createdAt: "2026-07-28T12:00:00.000Z",
         children: "Working on it",
-        actions: [{ id: "retry", label: "Retry", icon: "ti ti-refresh", onSelect: () => undefined }],
+        actions: [
+          { id: "helpful", label: "Helpful", icon: "ti ti-thumb-up", pressed: true, onSelect: () => undefined },
+          { id: "retry", label: "Retry", icon: "ti ti-refresh", onSelect: () => undefined },
+        ],
       }),
     );
     const activity = renderToString(() =>
@@ -223,6 +226,8 @@ describe("@k2b/ui portable chat family", () => {
     expect(message).not.toContain(">Generating<");
     expect(message).not.toContain("ti ti-loader-2");
     expect(message).toContain("Retry");
+    expect(message).toContain('aria-label="Helpful"');
+    expect(message).toContain('aria-pressed="true"');
     expect(activity).toContain("<details");
     expect(activity).toContain("open");
     expect(activity).toContain("Source details");

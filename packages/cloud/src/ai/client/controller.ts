@@ -7,6 +7,7 @@ import type {
   AiConversation,
   AiConversationTimelineEntry,
   AiDraftContentPart,
+  AiMessageFeedback,
   AiStoredMessage,
   AiTurn,
   AiTurnSteer,
@@ -1008,6 +1009,60 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     }
   };
 
+  const updateMessageFeedback = (conversationId: string, messageId: string, feedback: AiMessageFeedback | null) => {
+    if (!isActiveConversation(conversationId)) {
+      const projection = cache.get(conversationId);
+      if (projection)
+        cache.set(conversationId, {
+          ...projection,
+          messages: projection.messages.map((message) =>
+            message.id === messageId || message.shortId === messageId ? { ...message, feedback } : message,
+          ),
+        });
+      return;
+    }
+    const index = state.messages.findIndex((message) => message.id === messageId || message.shortId === messageId);
+    if (index < 0) return;
+    setState("messages", index, "feedback", feedback);
+    cache.set(conversationId, { conversation: state.conversation, messages: state.messages, activeTurn: state.activeTurn });
+  };
+
+  const setMessageFeedback = async (messageId: string, feedback: Omit<AiMessageFeedback, "updatedAt">) => {
+    const conversationId = activeConversationId();
+    if (!conversationId) return false;
+    clearErrors();
+    try {
+      const result = await request<{ feedback: AiMessageFeedback }>(
+        `/conversations/${conversationId}/messages/${messageId}/feedback`,
+        { method: "PUT", body: JSON.stringify(feedback) },
+        "Could not save message feedback",
+      );
+      updateMessageFeedback(conversationId, messageId, result.feedback);
+      return true;
+    } catch (feedbackError) {
+      setConversationError(conversationId, feedbackError instanceof Error ? feedbackError.message : "Could not save message feedback");
+      return false;
+    }
+  };
+
+  const clearMessageFeedback = async (messageId: string) => {
+    const conversationId = activeConversationId();
+    if (!conversationId) return false;
+    clearErrors();
+    try {
+      await request(
+        `/conversations/${conversationId}/messages/${messageId}/feedback`,
+        { method: "DELETE" },
+        "Could not remove message feedback",
+      );
+      updateMessageFeedback(conversationId, messageId, null);
+      return true;
+    } catch (feedbackError) {
+      setConversationError(conversationId, feedbackError instanceof Error ? feedbackError.message : "Could not remove message feedback");
+      return false;
+    }
+  };
+
   const submitTurnActionForConversation = async (
     conversationId: string,
     turnId: string,
@@ -1127,6 +1182,8 @@ export const createAiChatController = (options: CreateAiChatControllerOptions) =
     compactConversation,
     retryUserMessage,
     forkMessage,
+    setMessageFeedback,
+    clearMessageFeedback,
     submitTurnAction,
     respondToApproval,
     submitFrontendToolResult,

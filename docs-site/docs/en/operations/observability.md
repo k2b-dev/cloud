@@ -5,7 +5,7 @@ section: Operations
 order: 1160
 description: Use logs, traces, metrics, and health data to operate Cloud applications.
 tags: [observability, health, logs]
-updated: 2026-07-27
+updated: 2026-08-23
 ---
 
 # Observability
@@ -79,6 +79,19 @@ Use the dedicated pages for:
 - [notifications](/en/docs/platform/notifications).
 
 ## Operate AI workloads
+
+Use **Admin > AI > AI Usage** for bounded 24-hour, 7-day, 30-day, or 90-day
+product and cost analysis. This is an AI administration surface rather than a
+general observability page. It reports interactive turns, token and configured
+credit usage, pricing coverage, model use, generation speed, per-user usage,
+application capability calls and failures, mid-chat model switches,
+application-launched chats, message ratings, and background AI failures.
+
+The report queries durable AI facts for the selected range. It does not use
+rolling counters, materialized views, prompts, model output, or private message
+content. Background structured runs keep only task, application, model, usage,
+duration, repair, and bounded error metadata; workflow task records are merged
+when the owning application has installed them.
 
 Monitor:
 

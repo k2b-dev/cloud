@@ -14,6 +14,8 @@ export {
 export type LaunchAssistantInput = {
   title?: string;
   projectId?: string;
+  /** Stable application id when another Cloud application explicitly launches this chat. */
+  launchedByAppId?: string;
   draft?: { content: Array<Extract<AiDraftContentPart, { type: "text" | "resource" }>> };
   files?: File[];
   preloadTools?: Array<{ name: string } | { appId: string; kind: "query" | "action"; id: string }>;

@@ -5,7 +5,7 @@ section: AI
 order: 1060
 description: Run validated model tasks outside an interactive chat request.
 tags: [ai, structured-output, background]
-updated: 2026-08-10
+updated: 2026-08-23
 ---
 
 # Structured and background AI
@@ -211,6 +211,13 @@ For important background work, call `runAiStructured()` from a
 signal and a parent trace.
 
 Keep retries around the whole task. Do not retry a schema failure forever.
+
+Every `runAiStructured()` attempt writes one metadata-only terminal accounting
+record for **Admin > AI > AI Usage**. The record contains the task and optional
+application id, resolved model, duration, usage, structured-output mode and
+repair state, attempts, and a bounded error. It never stores the input, prompt,
+or output. Domain-owned run tables and traces remain the detailed operational
+source.
 
 Use [Chat runtime and streaming](/en/docs/ai/chat-runtime-and-streaming) when
 the user needs an interactive, stored conversation.

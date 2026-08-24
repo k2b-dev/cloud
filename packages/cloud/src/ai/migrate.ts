@@ -24,6 +24,7 @@ export const migrateCloudAi = async (): Promise<void> => {
       draft_revision BIGINT NOT NULL DEFAULT 0,
       draft_updated_at TIMESTAMPTZ,
       created_by_user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+      launched_by_app_id TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       archived_at TIMESTAMPTZ
@@ -127,6 +128,7 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS draft_content JSONB NOT NULL DEFAULT '[]'::jsonb`.simple();
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS draft_revision BIGINT NOT NULL DEFAULT 0`.simple();
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS draft_updated_at TIMESTAMPTZ`.simple();
+  await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS launched_by_app_id TEXT`.simple();
   // Enrichment (description/keywords/title upkeep) — dirty = updated_at > enriched_at.
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS keywords TEXT[] NOT NULL DEFAULT '{}'`.simple();
   await sql`ALTER TABLE ai.conversations ADD COLUMN IF NOT EXISTS search_summary TEXT NOT NULL DEFAULT ''`.simple();
@@ -222,6 +224,39 @@ export const migrateCloudAi = async (): Promise<void> => {
     ON ai.enrichment_runs(conversation_id, created_at DESC)
   `.simple();
 
+  // Durable, metadata-only accounting for every runAiStructured call. Traces
+  // remain the operational drill-down; this ledger survives trace retention
+  // without storing prompts, inputs, or model output.
+  await sql`
+    CREATE TABLE IF NOT EXISTS ai.structured_runs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      task TEXT NOT NULL CHECK (char_length(task) BETWEEN 1 AND 120),
+      app_id TEXT,
+      model_profile_id TEXT,
+      provider_model TEXT,
+      status TEXT NOT NULL CHECK (status IN ('ok', 'failed')),
+      duration_ms INTEGER NOT NULL CHECK (duration_ms >= 0),
+      input_tokens INTEGER CHECK (input_tokens >= 0),
+      output_tokens INTEGER CHECK (output_tokens >= 0),
+      total_tokens INTEGER CHECK (total_tokens >= 0),
+      credits_used DOUBLE PRECISION CHECK (credits_used >= 0),
+      mode TEXT,
+      repaired BOOLEAN,
+      attempts INTEGER CHECK (attempts IS NULL OR attempts >= 1),
+      error_code TEXT,
+      error TEXT CHECK (error IS NULL OR char_length(error) <= 2000),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_structured_runs_created
+    ON ai.structured_runs(created_at DESC)
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_structured_runs_model_created
+    ON ai.structured_runs(model_profile_id, created_at DESC)
+  `.simple();
+
   await sql`
     CREATE INDEX IF NOT EXISTS idx_ai_conversations_owner_updated
     ON ai.conversations(created_by_user_id, updated_at DESC)
@@ -271,6 +306,35 @@ export const migrateCloudAi = async (): Promise<void> => {
   await sql`ALTER TABLE ai.messages ADD COLUMN IF NOT EXISTS loop_aggregate JSONB`.simple();
   await sql`ALTER TABLE ai.messages ADD COLUMN IF NOT EXISTS loop_done_reason TEXT`.simple();
   await sql`ALTER TABLE ai.messages ADD COLUMN IF NOT EXISTS meta JSONB`.simple();
+  await sql`ALTER TABLE ai.messages ADD COLUMN IF NOT EXISTS feedback_rating SMALLINT`.simple();
+  await sql`ALTER TABLE ai.messages ADD COLUMN IF NOT EXISTS feedback_reasons TEXT[] NOT NULL DEFAULT '{}'`.simple();
+  await sql`ALTER TABLE ai.messages ADD COLUMN IF NOT EXISTS feedback_comment TEXT`.simple();
+  await sql`ALTER TABLE ai.messages ADD COLUMN IF NOT EXISTS feedback_updated_at TIMESTAMPTZ`.simple();
+  await sql`
+    ALTER TABLE ai.messages DROP CONSTRAINT IF EXISTS ai_messages_feedback_check;
+    ALTER TABLE ai.messages ADD CONSTRAINT ai_messages_feedback_check CHECK (
+      (feedback_rating IS NULL AND cardinality(feedback_reasons) = 0 AND feedback_comment IS NULL AND feedback_updated_at IS NULL)
+      OR (feedback_rating = 1 AND cardinality(feedback_reasons) = 0 AND feedback_comment IS NULL AND feedback_updated_at IS NOT NULL)
+      OR (
+        feedback_rating = -1
+        AND feedback_updated_at IS NOT NULL
+        AND (cardinality(feedback_reasons) > 0 OR feedback_comment IS NOT NULL)
+        AND feedback_reasons <@ ARRAY[
+          'incorrect', 'did_not_follow_request', 'incomplete', 'poor_tool_choice', 'too_slow', 'other'
+        ]::text[]
+      )
+    )
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_messages_assistant_created
+    ON ai.messages(created_at DESC)
+    WHERE role = 'assistant' AND kind = 'message'
+  `.simple();
+  await sql`
+    CREATE INDEX IF NOT EXISTS idx_ai_messages_feedback_updated
+    ON ai.messages(feedback_updated_at DESC)
+    WHERE feedback_rating IS NOT NULL
+  `.simple();
   await sql`ALTER TABLE ai.messages ADD COLUMN IF NOT EXISTS search_text TEXT NOT NULL DEFAULT ''`.simple();
   await sql`
     ALTER TABLE ai.messages

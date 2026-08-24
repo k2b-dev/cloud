@@ -95,6 +95,7 @@ export {
   type AiCompactionInput,
   AiCompactionInputSchema,
   AiCreateConversationInputSchema,
+  AiMessageFeedbackInputSchema,
   type AiMessageForkInput,
   AiMessageForkInputSchema,
   type AiMessageRetryInput,
@@ -300,6 +301,8 @@ export type {
   AiEnrichmentTrigger,
   AiFrontendToolMode,
   AiInterChatMessage,
+  AiMessageFeedback,
+  AiMessageFeedbackReason,
   AiModelCapability,
   AiModelPolicy,
   AiModelProfile,
@@ -323,7 +326,7 @@ export type {
   AiTurnToolSource,
   AiUserContentPart,
 } from "./types";
-export { isAiImageMediaType } from "./types";
+export { AI_MESSAGE_FEEDBACK_REASONS, isAiImageMediaType } from "./types";
 export { isAiSettingsError } from "./validate";
 export {
   type CloudAiViewImageInput,

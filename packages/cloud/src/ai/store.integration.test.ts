@@ -92,8 +92,9 @@ suite("AI conversation store integration", () => {
     const conversationIds: string[] = [];
 
     try {
-      const conversation = await aiConversations.createConversation({ ownerUserId: userId });
+      const conversation = await aiConversations.createConversation({ ownerUserId: userId, launchedByAppId: "mail" });
       conversationIds.push(conversation.id);
+      expect(conversation.launchedByAppId).toBe("mail");
 
       expect(await aiConversations.getLoadedTools({ conversationId: conversation.id })).toEqual([]);
       expect(
@@ -324,6 +325,24 @@ suite("AI conversation store integration", () => {
       });
       expect(finalAssistant?.usage).toEqual(turnUsage);
       expect(finalAssistant?.loopAggregate?.usage).toEqual(loopUsage);
+      expect(
+        await aiConversations.setMessageFeedback({
+          conversationId: conversation.id,
+          messageShortId: finalAssistant!.shortId,
+          feedback: { rating: "down", reasons: ["incorrect"], comment: "Wrong date" },
+        }),
+      ).toMatchObject({ rating: "down", reasons: ["incorrect"], comment: "Wrong date" });
+      expect(
+        (await aiConversations.listMessages({ conversationId: conversation.id })).find((entry) => entry.shortId === finalAssistant!.shortId)
+          ?.feedback,
+      ).toMatchObject({ rating: "down", reasons: ["incorrect"] });
+      expect(await aiConversations.clearMessageFeedback({ conversationId: conversation.id, messageShortId: finalAssistant!.shortId })).toBe(
+        true,
+      );
+      expect(
+        (await aiConversations.listMessages({ conversationId: conversation.id })).find((entry) => entry.shortId === finalAssistant!.shortId)
+          ?.feedback,
+      ).toBeNull();
     } finally {
       await cleanupFixture({ userId, conversationIds });
     }

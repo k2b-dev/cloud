@@ -5,7 +5,7 @@ section: AI
 order: 1030
 description: Create personal conversations, save composer drafts, and stream agent work.
 tags: [ai, chat, streaming]
-updated: 2026-08-22
+updated: 2026-08-23
 ---
 
 # Chat runtime and streaming
@@ -21,6 +21,7 @@ the user there.
 import { launchAssistant } from "@valentinkolb/cloud/ai/browser";
 
 const launch = await launchAssistant({
+  launchedByAppId: "mail",
   draft: {
     content: [
       { type: "text", text: "Help me finish this email." },
@@ -43,6 +44,11 @@ Core validates both and stores their exact resolved names so the first turn can
 use them without discovery. Preloading is a prompt-budget optimization, not
 authorization. Every app invocation still runs as the current user against the
 owning application.
+
+Set `launchedByAppId` to the launching application's stable id when another
+application explicitly opens Assistant. Core stores that attribution on the
+new conversation for AI usage accounting. Omit it for chats created directly
+inside Assistant.
 
 The structured composer draft contains text, exact stored-file versions, and
 zero or more Cloud resource refs. Save it with `PUT
@@ -110,6 +116,7 @@ language-dependent automatic retries.
 | `/conversations/:id/draft` | Optimistically save text, files, and Cloud resources |
 | `/conversations/:id/project` | Choose, change, or clear the current Project between turns |
 | `/conversations/:id/messages/search` | Search visible text inside one owned conversation |
+| `/conversations/:id/messages/:messageId/feedback` | Set or remove private owner feedback for one Assistant message |
 | `/conversations/:id/resources` | List or filter structured Cloud refs observed in one conversation |
 | `/resources` | List or filter structured Cloud refs across the user's active conversations |
 | `/conversations/:id/turns` | Start, steer, or stop work |

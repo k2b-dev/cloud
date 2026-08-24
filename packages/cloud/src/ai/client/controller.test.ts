@@ -363,6 +363,77 @@ describe("AI controller conversation transitions", () => {
   });
 });
 
+describe("AI controller message feedback", () => {
+  test("persists and clears feedback while updating the active transcript", async () => {
+    const requests: Array<{ method: string; path: string; body: unknown }> = [];
+    globalThis.fetch = Object.assign(
+      async (request: RequestInfo | URL, init?: RequestInit) => {
+        const path = String(request);
+        if (init?.headers && new Headers(init.headers).get("Accept") === "text/event-stream") {
+          return new Response(new ReadableStream());
+        }
+        requests.push({ method: init?.method ?? "GET", path, body: init?.body ? JSON.parse(String(init.body)) : null });
+        if (init?.method === "PUT") {
+          return Response.json({
+            feedback: { rating: "down", reasons: ["incorrect"], comment: "Wrong date", updatedAt: "2026-08-23T10:00:00.000Z" },
+          });
+        }
+        return Response.json({ deleted: true });
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    const current = conversation("feedback-chat");
+    let dispose!: () => void;
+    const controller = createRoot((rootDispose) => {
+      dispose = rootDispose;
+      return createAiChatController({
+        baseUrl: "/api/ai",
+        initialConversationId: current.id,
+        initialDetail: {
+          conversation: current,
+          activeTurn: null,
+          messages: [
+            {
+              id: "mSg234",
+              shortId: "mSg234",
+              conversationId: current.id,
+              seq: 1,
+              kind: "message",
+              message: { role: "assistant", content: [{ type: "text", text: "It happened on Tuesday." }] },
+              loopId: "turn-1",
+              modelProfileId: "fast",
+              providerModel: "model-fast",
+              usage: null,
+              stopReason: "stop",
+              loopAggregate: null,
+              loopDoneReason: "stop",
+              compactedAt: null,
+              meta: null,
+              feedback: null,
+              createdAt: "2026-08-23T09:00:00.000Z",
+            },
+          ],
+        },
+      });
+    });
+
+    expect(await controller.setMessageFeedback("mSg234", { rating: "down", reasons: ["incorrect"], comment: "Wrong date" })).toBe(true);
+    expect(controller.messages()[0]?.feedback?.rating).toBe("down");
+    expect(await controller.clearMessageFeedback("mSg234")).toBe(true);
+    expect(controller.messages()[0]?.feedback).toBeNull();
+    expect(requests).toEqual([
+      {
+        method: "PUT",
+        path: "/api/ai/conversations/feedback-chat/messages/mSg234/feedback",
+        body: { rating: "down", reasons: ["incorrect"], comment: "Wrong date" },
+      },
+      { method: "DELETE", path: "/api/ai/conversations/feedback-chat/messages/mSg234/feedback", body: null },
+    ]);
+    dispose();
+  });
+});
+
 describe("AI controller stream sessions", () => {
   test("uses an injected stream transport and closes it with the controller owner", () => {
     const calls: string[] = [];

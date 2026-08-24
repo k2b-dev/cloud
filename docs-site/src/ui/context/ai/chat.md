@@ -34,7 +34,9 @@ Use `state="running"` to show Stop when the draft is empty. Once the user types,
 
 Every structured chat action declares exactly one behavior: `onSelect` for an
 application callback or `copyText` for clipboard content. The same contract is
-used by message, menu, and context actions.
+used by message, menu, and context actions. Set `pressed` for persistent toggle
+state such as a saved helpful rating; inline actions expose it through
+`aria-pressed`.
 
 Pasted files use the same `fileSelection.onSelect` callback as the file picker
 and drag-and-drop. Use the generic `onPaste` seam only for non-file content;

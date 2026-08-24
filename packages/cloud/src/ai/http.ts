@@ -1,12 +1,19 @@
 import type { Input, Message } from "@k2b/nessi";
 import type { Context } from "hono";
 import { z } from "zod";
+import { CapabilityAppIdSchema } from "../contracts/capabilities";
 import { type AuthContext, err, fail, respond } from "../server";
 import { aiAttachmentMarker } from "./attachments";
 import { AI_TURN_ATTACHMENT_MAX_ITEMS } from "./limits";
 import { AiResourceMarkerSchema } from "./resource-markers";
 import { AI_SHORT_ID_PATTERN } from "./short-id";
-import type { AiClientToolId, AiDraftContentPart, AiSettingsError, AiUserContentPart } from "./types";
+import {
+  AI_MESSAGE_FEEDBACK_REASONS,
+  type AiClientToolId,
+  type AiDraftContentPart,
+  type AiSettingsError,
+  type AiUserContentPart,
+} from "./types";
 import { isAiSettingsError } from "./validate";
 
 export const AiDraftContentPartSchema = z.discriminatedUnion("type", [
@@ -57,7 +64,24 @@ export const AiCreateConversationInputSchema = z.object({
   projectId: z.string().regex(AI_SHORT_ID_PATTERN).optional(),
   draft: AiInitialConversationDraftInputSchema.optional(),
   preloadTools: z.array(AiToolPreloadSchema).max(8).optional(),
+  launchedByAppId: CapabilityAppIdSchema.optional(),
 });
+
+export const AiMessageFeedbackInputSchema = z
+  .object({
+    rating: z.enum(["up", "down"]),
+    reasons: z.array(z.enum(AI_MESSAGE_FEEDBACK_REASONS)).max(AI_MESSAGE_FEEDBACK_REASONS.length).default([]),
+    comment: z.string().trim().max(1000).optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.rating === "up" && (value.reasons.length > 0 || value.comment)) {
+      context.addIssue({ code: "custom", path: ["reasons"], message: "Positive feedback cannot include problem details." });
+    }
+    if (value.rating === "down" && value.reasons.length === 0 && !value.comment) {
+      context.addIssue({ code: "custom", path: ["reasons"], message: "Choose a reason or describe the problem." });
+    }
+  });
 
 export const AiSaveConversationDraftInputSchema = AiConversationDraftInputSchema.extend({
   expectedRevision: z.number().int().min(0),

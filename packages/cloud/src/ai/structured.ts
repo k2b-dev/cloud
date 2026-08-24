@@ -3,8 +3,9 @@ import { nessi, StructuredOutputError } from "@k2b/nessi";
 import type { z } from "zod";
 import { coreSettings } from "../services";
 import type { TraceContext } from "../services/logging";
-import { trace } from "../services/logging";
+import { logger, trace } from "../services/logging";
 import { resolveAiModel } from "./settings";
+import { recordAiStructuredRun } from "./structured-runs";
 import type { AiResolvedModel } from "./types";
 
 export const AI_BACKGROUND_MODEL_SETTING_KEY = "ai.background_model_id";
@@ -84,53 +85,98 @@ export const runAiStructured = async <TOutput extends z.ZodType>(
       parent: input.traceParent,
     },
     async (span) => {
-      const resolved = await (input.resolveModel ?? resolveAiBackgroundModel)(input.requestedModelId);
-      await trace.record({
-        context: span,
-        event: "model.resolved",
-        attributes: { model: resolved.profile.id, providerModel: resolved.profile.model, provider: resolved.profile.provider },
-      });
-
       const startedAt = Date.now();
-      const result = await nessi.structured({
-        agentId: "cloud-bg",
-        provider: resolved.provider,
-        systemPrompt: input.systemPrompt,
-        input: input.input,
-        output: input.output,
-        outputName: input.outputName,
-        temperature: input.temperature ?? 0,
-        maxOutputTokens: input.maxOutputTokens ?? resolved.profile.maxOutputTokens,
-        disableReasoning: true,
-        signal: input.signal,
-      });
+      let resolved: AiResolvedModel | undefined;
+      try {
+        resolved = await (input.resolveModel ?? resolveAiBackgroundModel)(input.requestedModelId);
+        await trace.record({
+          context: span,
+          event: "model.resolved",
+          attributes: { model: resolved.profile.id, providerModel: resolved.profile.model, provider: resolved.profile.provider },
+        });
 
-      await trace.record({
-        context: span,
-        event: "llm.completed",
-        attributes: {
-          model: resolved.profile.id,
-          durationMs: Date.now() - startedAt,
+        const result = await nessi.structured({
+          agentId: "cloud-bg",
+          provider: resolved.provider,
+          systemPrompt: input.systemPrompt,
+          input: input.input,
+          output: input.output,
+          outputName: input.outputName,
+          temperature: input.temperature ?? 0,
+          maxOutputTokens: input.maxOutputTokens ?? resolved.profile.maxOutputTokens,
+          disableReasoning: true,
+          signal: input.signal,
+        });
+        const durationMs = Date.now() - startedAt;
+
+        await trace.record({
+          context: span,
+          event: "llm.completed",
+          attributes: {
+            model: resolved.profile.id,
+            durationMs,
+            mode: result.structuredMeta.mode,
+            repaired: result.structuredMeta.repaired,
+            attempts: result.structuredMeta.attempts,
+            inputTokens: result.usage?.input,
+            outputTokens: result.usage?.output,
+          },
+        });
+        await safelyRecordStructuredRun({
+          task: input.task,
+          appId: input.appId,
+          modelProfileId: resolved.profile.id,
+          providerModel: resolved.profile.model,
+          status: "ok",
+          durationMs,
+          usage: result.usage,
           mode: result.structuredMeta.mode,
           repaired: result.structuredMeta.repaired,
           attempts: result.structuredMeta.attempts,
-          inputTokens: result.usage?.input,
-          outputTokens: result.usage?.output,
-        },
-      });
+        });
 
-      return {
-        output: result.output,
-        modelProfileId: resolved.profile.id,
-        usage: result.usage,
-        structuredMeta: result.structuredMeta,
-      };
+        return {
+          output: result.output,
+          modelProfileId: resolved.profile.id,
+          usage: result.usage,
+          structuredMeta: result.structuredMeta,
+        };
+      } catch (error) {
+        const details =
+          error instanceof StructuredOutputError
+            ? (error.details as { attempts?: number; aggregate?: LoopAggregate } | undefined)
+            : undefined;
+        await safelyRecordStructuredRun({
+          task: input.task,
+          appId: input.appId,
+          modelProfileId: resolved?.profile.id,
+          providerModel: resolved?.profile.model,
+          status: "failed",
+          durationMs: Date.now() - startedAt,
+          usage: details?.aggregate?.usage,
+          attempts: details?.attempts,
+          errorCode: error instanceof StructuredOutputError ? error.code : error instanceof Error ? error.name : "unknown",
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
     },
     {
       summarize: (result) => ({ model: result.modelProfileId, mode: result.structuredMeta.mode, repaired: result.structuredMeta.repaired }),
       onError: (error) => (error instanceof StructuredOutputError ? structuredFailureSummary(error) : undefined),
     },
   );
+};
+
+const safelyRecordStructuredRun = async (record: Parameters<typeof recordAiStructuredRun>[0]): Promise<void> => {
+  try {
+    await recordAiStructuredRun(record);
+  } catch (error) {
+    logger("ai.structured").error("Could not persist AI structured-run usage", {
+      task: record.task,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 };
 
 /** Metadata-only failure diagnostics: error code, attempts, and per-attempt stop reasons (catches max_tokens truncation). */

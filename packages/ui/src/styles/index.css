@@ -6232,6 +6232,11 @@
   background: var(--k2b-hover);
 }
 
+.k2b-ui .k2b-chat-message__actions button[aria-pressed="true"] {
+  color: var(--k2b-accent, var(--k2b-text));
+  background: var(--k2b-hover);
+}
+
 .k2b-ui .k2b-chat-context {
   display: inline-flex;
   min-height: 1.75rem;

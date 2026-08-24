@@ -250,6 +250,7 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
                   <button
                     type="button"
                     aria-label={action.label}
+                    aria-pressed={action.pressed}
                     title={action.label}
                     data-danger={action.variant === "danger" ? "true" : undefined}
                     disabled={action.disabled || Boolean(busyActionId())}

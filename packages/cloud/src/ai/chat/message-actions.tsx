@@ -1,8 +1,19 @@
 import type { Message, Usage } from "@k2b/nessi";
-import { type ChatAction, dialogCore, PanelDialog, panelDialogFixedOptions, prompts, StatCell, StatGrid } from "@k2b/ui";
-import { createContext, For, type JSX, Show, useContext } from "solid-js";
+import {
+  Button,
+  type ChatAction,
+  CheckboxCard,
+  dialogCore,
+  PanelDialog,
+  panelDialogFixedOptions,
+  prompts,
+  StatCell,
+  StatGrid,
+  TextInput,
+} from "@k2b/ui";
+import { createContext, createSignal, For, type JSX, Show, useContext } from "solid-js";
 import type { AiTurnBlock } from "../protocol";
-import type { AiStoredMessage } from "../types";
+import type { AiMessageFeedback, AiMessageFeedbackReason, AiStoredMessage } from "../types";
 import { type AiForkMessageInput, type AiRetryMessageInput, aiToolIcon, displayToolName, formatWorkedDuration } from "./message-utils";
 
 /** The active-turn coordinates an approval/tool action needs to resolve on the server. */
@@ -22,6 +33,7 @@ export type AiChatActions = {
   onForkMessage?: ForkMessageHandler;
   onRetryMessage?: RetryMessageHandler;
   onRetrySteer?: RetrySteerHandler;
+  onMessageFeedback?: (entry: AiStoredMessage, feedback: Omit<AiMessageFeedback, "updatedAt"> | null) => void | Promise<void>;
   /** Open a conversation VFS file in the host application's artifact surface. */
   onOpenFile?: (path: string) => void;
   /** Download URL for a conversation VFS file (present blocks, attachment chips). */
@@ -230,6 +242,66 @@ const openForkMessageDialog = async (
   if (title) await onForkMessage(entry, { title });
 };
 
+const feedbackReasons: readonly { id: AiMessageFeedbackReason; label: string; description: string }[] = [
+  { id: "incorrect", label: "Incorrect", description: "Facts or conclusions were wrong." },
+  { id: "did_not_follow_request", label: "Did not follow request", description: "The response missed important instructions." },
+  { id: "incomplete", label: "Incomplete", description: "Important information or work was missing." },
+  { id: "poor_tool_choice", label: "Poor tool choice", description: "A capability was missing, unnecessary, or used badly." },
+  { id: "too_slow", label: "Too slow", description: "The response took too long for the result." },
+  { id: "other", label: "Other", description: "Something else should be improved." },
+];
+
+const openNegativeFeedbackDialog = () =>
+  prompts.dialog<{ reasons: AiMessageFeedbackReason[]; comment: string | null } | undefined>(
+    (close) => {
+      const [selected, setSelected] = createSignal<AiMessageFeedbackReason[]>([]);
+      const [comment, setComment] = createSignal("");
+      const toggle = (reason: AiMessageFeedbackReason, enabled: boolean) =>
+        setSelected((current) => (enabled ? [...current, reason] : current.filter((candidate) => candidate !== reason)));
+      const valid = () => selected().length > 0 || comment().trim().length > 0;
+      return (
+        <div class="flex min-h-0 flex-col gap-4">
+          <p class="text-sm text-secondary">What should be improved? Choose all that apply or leave a short note.</p>
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <For each={feedbackReasons}>
+              {(reason) => (
+                <CheckboxCard
+                  label={reason.label}
+                  description={reason.description}
+                  value={() => selected().includes(reason.id)}
+                  onValueChange={(enabled) => toggle(reason.id, enabled)}
+                />
+              )}
+            </For>
+          </div>
+          <TextInput
+            label="Additional details"
+            description="Optional. Do not include sensitive information."
+            multiline
+            lines={3}
+            maxLength={1_000}
+            value={comment}
+            onValueChange={setComment}
+          />
+          <div class="flex justify-end gap-2">
+            <Button variant="secondary" size="sm" type="button" onClick={() => close(undefined)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              type="button"
+              disabled={!valid()}
+              onClick={() => close({ reasons: selected(), comment: comment().trim() || null })}
+            >
+              Send feedback
+            </Button>
+          </div>
+        </div>
+      );
+    },
+    { title: "Help improve this response", icon: "ti ti-message-report", size: "large" },
+  );
+
 export function createAssistantMessageActions(props: {
   entry: AiStoredMessage;
   entries: AiStoredMessage[];
@@ -238,6 +310,32 @@ export function createAssistantMessageActions(props: {
 }): ChatAction[] {
   const actions = props.actions;
   const result: ChatAction[] = [
+    ...(actions.onMessageFeedback
+      ? [
+          {
+            id: "feedback-up",
+            label: props.entry.feedback?.rating === "up" ? "Remove positive feedback" : "Helpful",
+            icon: "ti ti-thumb-up",
+            pressed: props.entry.feedback?.rating === "up",
+            onSelect: () =>
+              actions.onMessageFeedback!(
+                props.entry,
+                props.entry.feedback?.rating === "up" ? null : { rating: "up", reasons: [], comment: null },
+              ),
+          },
+          {
+            id: "feedback-down",
+            label: props.entry.feedback?.rating === "down" ? "Remove negative feedback" : "Needs improvement",
+            icon: "ti ti-thumb-down",
+            pressed: props.entry.feedback?.rating === "down",
+            onSelect: async () => {
+              if (props.entry.feedback?.rating === "down") return actions.onMessageFeedback!(props.entry, null);
+              const feedback = await openNegativeFeedbackDialog();
+              if (feedback) await actions.onMessageFeedback!(props.entry, { rating: "down", ...feedback });
+            },
+          },
+        ]
+      : []),
     {
       id: "info",
       label: "Message info",

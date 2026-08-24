@@ -108,6 +108,7 @@ type ConversationRow = {
   draft_revision: number | string;
   draft_updated_at: Date | string | null;
   created_by_user_id: string | null;
+  launched_by_app_id: string | null;
   created_at: Date | string;
   updated_at: Date | string;
 };
@@ -147,6 +148,10 @@ type MessageRow = {
   loop_done_reason: DoneReason | null;
   compacted_at: Date | string | null;
   meta: unknown;
+  feedback_rating: number | string | null;
+  feedback_reasons: string[] | null;
+  feedback_comment: string | null;
+  feedback_updated_at: Date | string | null;
   created_at: Date | string;
 };
 
@@ -495,6 +500,7 @@ const rowToConversation = (row: ConversationRow): AiConversation => ({
     updatedAt: row.draft_updated_at ? iso(row.draft_updated_at) : null,
   },
   createdByUserId: row.created_by_user_id,
+  launchedByAppId: row.launched_by_app_id,
   createdAt: iso(row.created_at),
   updatedAt: iso(row.updated_at),
 });
@@ -544,6 +550,15 @@ const rowToMessage = (row: MessageRow): AiStoredMessage => {
     loopDoneReason: row.loop_done_reason,
     compactedAt: row.compacted_at ? iso(row.compacted_at) : null,
     meta: row.meta ? parseJsonValue<AiStoredMessage["meta"]>(row.meta) : null,
+    feedback:
+      Number(row.feedback_rating) === 1 || Number(row.feedback_rating) === -1
+        ? {
+            rating: Number(row.feedback_rating) === 1 ? "up" : "down",
+            reasons: (row.feedback_reasons ?? []) as NonNullable<AiStoredMessage["feedback"]>["reasons"],
+            comment: row.feedback_comment,
+            updatedAt: iso(row.feedback_updated_at!),
+          }
+        : null,
     createdAt: iso(row.created_at),
   };
 };
@@ -854,7 +869,8 @@ export const aiConversations: AiConversationService = {
         draft_revision,
         loaded_tools,
         draft_updated_at,
-        created_by_user_id
+        created_by_user_id,
+        launched_by_app_id
       )
       SELECT
         ${shortId},
@@ -865,7 +881,8 @@ export const aiConversations: AiConversationService = {
         ${input.draft?.length ? 1 : 0},
         ${toPgTextArray(input.preloadTools ?? [])}::text[],
         ${input.draft?.length ? new Date() : null},
-        ${input.ownerUserId}
+        ${input.ownerUserId},
+        ${input.launchedByAppId?.trim() || null}
       WHERE ${input.projectId ?? null}::uuid IS NULL
          OR EXISTS (SELECT 1 FROM ai.projects project WHERE project.id = ${input.projectId ?? null}::uuid)
       RETURNING *
@@ -2061,6 +2078,40 @@ export const aiConversations: AiConversationService = {
       ORDER BY seq ASC
     `;
     return rows.map(rowToMessage);
+  },
+
+  setMessageFeedback: async (input) => {
+    const reasons = input.feedback.rating === "down" ? input.feedback.reasons : [];
+    const comment = input.feedback.comment?.trim() || null;
+    const rows = await sql<MessageRow[]>`
+      UPDATE ai.messages
+      SET feedback_rating = ${input.feedback.rating === "up" ? 1 : -1},
+          feedback_reasons = ${toPgTextArray(reasons)}::text[],
+          feedback_comment = ${comment},
+          feedback_updated_at = now()
+      WHERE conversation_id = ${input.conversationId}::uuid
+        AND short_id = ${input.messageShortId}
+        AND kind = 'message'
+        AND role = 'assistant'
+      RETURNING *
+    `;
+    return rows[0] ? (rowToMessage(rows[0]).feedback ?? null) : null;
+  },
+
+  clearMessageFeedback: async (input) => {
+    const rows = await sql<{ id: string }[]>`
+      UPDATE ai.messages
+      SET feedback_rating = NULL,
+          feedback_reasons = '{}'::text[],
+          feedback_comment = NULL,
+          feedback_updated_at = NULL
+      WHERE conversation_id = ${input.conversationId}::uuid
+        AND short_id = ${input.messageShortId}
+        AND kind = 'message'
+        AND role = 'assistant'
+      RETURNING id
+    `;
+    return Boolean(rows[0]);
   },
 
   copyMessages: async (input) => {
