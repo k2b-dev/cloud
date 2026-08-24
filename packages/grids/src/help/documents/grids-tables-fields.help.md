@@ -94,7 +94,7 @@ Moving a record to trash is reversible. Restoring it creates a new history event
 
 Files have a separate lifecycle from their current field placement. **Replace** swaps the current attachment atomically. **Remove from record** detaches it and records the actor, time, field, and immutable file metadata in history. A protected revision or generated artifact can retain the exact bytes after detachment; an unprotected file can be cleaned up. Removing an attachment is therefore not a promise of physical erasure or permanent retention, and Grids does not claim that file history alone establishes legal compliance.
 
-### Keep durable record versions {icon="history"}
+### Keep durable record versions
 
 A Base admin can open **Table settings → History and protection** and enable **Durable history** for a stored table. Enabling is permanent. It creates a baseline of the records that exist at that moment, then keeps every later create, update, trash, restore, Relation, and File state as an append-only version.
 
@@ -102,7 +102,7 @@ The baseline is the earliest state Grids can prove. It does not reconstruct chan
 
 Readers of a current Record can open **Versions** in its detail panel. A version shows the field meanings that applied then and can download the exact files retained by that version. Durable history increases storage use, has no disable action, and is not by itself a claim of legal or regulatory compliance. It is not exposed through normal Record lists or Custom Apps.
 
-### Finalize records {icon="lock"}
+### Finalize records
 
 After Durable History has finished its baseline, a Base admin can enable **Record finalization** in the same **History and protection** section. Existing and new records remain Draft until someone explicitly finalizes one. The setting belongs to one stored Table and offers two modes:
 
