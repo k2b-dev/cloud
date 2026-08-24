@@ -3,7 +3,7 @@ import {
   assertCapabilityManifestEvolution,
   compileCapabilityManifest,
 } from "../packages/cloud/src/capabilities/testing";
-import { buildAiCapabilityCatalog, searchAiCapabilities } from "../packages/cloud/src/ai/capabilities";
+import { buildAiCapabilityCatalog, buildAiToolCatalog, searchAiTools } from "../packages/cloud/src/ai/capabilities";
 import {
   type CapabilityDefinitions,
   type CapabilityManifest,
@@ -128,10 +128,12 @@ describe("Capability v1 provider conformance", () => {
     expect(required).toEqual([
       "contacts.contact.create",
       "contacts.note.create",
+      "grids.record.upsert-external",
       "mail.conversation.mark",
       "mail.conversation.move",
       "mail.draft.create",
       "mail.draft.send",
+      "spaces.event.create-once",
       "spaces.event.invitation.prepare",
     ]);
   });
@@ -148,39 +150,40 @@ describe("Capability v1 Assistant discovery", () => {
       manifest: compileCapabilityManifest(appId, definitions),
     })),
   );
+  const toolCatalog = buildAiToolCatalog([], catalog);
 
   test.each([
-    ["find contact by name", "contacts", "contacts__query__contact_dot_search"],
-    ["list address books", "contacts", "contacts__query__book_dot_list"],
-    ["create a contact", "contacts", "contacts__action__contact_dot_create"],
-    ["read email body", undefined, "mail__query__message_dot_get"],
-    ["mark email unread", "mail", "mail__action__conversation_dot_mark"],
-    ["send draft email", "mail", "mail__action__draft_dot_send"],
-    ["search messages", "mail", "mail__query__search"],
-    ["inspect grid schema fields", "grids", "grids__query__gql_dot_context"],
-    ["run GQL query", "grids", "grids__query__gql_dot_execute"],
-    ["create a grid record", "grids", "grids__action__record_dot_create"],
-    ["browse note tree", "notebooks", "notebooks__query__note_dot_tree"],
-    ["read note markdown", "notebooks", "notebooks__query__note_dot_get"],
-    ["find backlinks to note", "notebooks", "notebooks__query__note_dot_links"],
-    ["edit note content", "notebooks", "notebooks__action__note_dot_edit"],
-    ["find telemetry base", "pulse", "pulse__query__base_dot_search"],
-    ["search telemetry resources", "pulse", "pulse__query__resource_dot_search"],
-    ["execute telemetry query", "pulse", "pulse__query__query_dot_execute"],
-    ["run saved telemetry query", "pulse", "pulse__query__saved__query_dot_execute"],
-    ["read comments", "spaces", "spaces__query__comment_dot_list"],
-    ["create a task", "spaces", "spaces__action__task_dot_create"],
-    ["create calendar event", "spaces", "spaces__action__event_dot_create"],
-    ["list people assignable to task", "spaces", "spaces__query__space_dot_assignee_dot_list"],
-    ["find shifts", "venue", "venue__query__shift_dot_list"],
-    ["list my assignments", "venue", "venue__query__assignment_dot_mine"],
-    ["sign up for shift", "venue", "venue__action__assignment_dot_signup"],
-    ["search city", "weather", "weather__query__city_dot_search"],
-    ["get current weather", "weather", "weather__query__forecast_dot_current"],
-    ["list saved weather locations", "weather", "weather__query__location_dot_list"],
-    ["save a weather location", "weather", "weather__action__location_dot_create"],
+    ["find contact by name", "contacts", "contacts.contact.search"],
+    ["list address books", "contacts", "contacts.book.list"],
+    ["create a contact", "contacts", "contacts.contact.create"],
+    ["read message plain text", undefined, "mail.message.read"],
+    ["mark email unread", "mail", "mail.conversation.mark"],
+    ["send draft email", "mail", "mail.draft.send"],
+    ["search messages", "mail", "mail.search"],
+    ["inspect grid schema fields", "grids", "grids.gql.context"],
+    ["execute gql", "grids", "grids.gql.execute"],
+    ["create a grid record", "grids", "grids.record.create"],
+    ["browse note tree", "notebooks", "notebooks.note.tree"],
+    ["read note markdown", "notebooks", "notebooks.note.read"],
+    ["find backlinks to note", "notebooks", "notebooks.note.links"],
+    ["edit note content", "notebooks", "notebooks.note.edit"],
+    ["search bases", "pulse", "pulse.base.search"],
+    ["search telemetry resources", "pulse", "pulse.resource.search"],
+    ["execute telemetry query", "pulse", "pulse.query.execute"],
+    ["run saved telemetry query", "pulse", "pulse.saved_query.execute"],
+    ["list comments", "spaces", "spaces.comment.list"],
+    ["create a task", "spaces", "spaces.task.create"],
+    ["create calendar event", "spaces", "spaces.event.create"],
+    ["list people assignable to task", "spaces", "spaces.space.assignee.list"],
+    ["list shifts", "venue", "venue.shift.list"],
+    ["list my assignments", "venue", "venue.assignment.mine"],
+    ["sign up for shift", "venue", "venue.assignment.signup"],
+    ["search city", "weather", "weather.city.search"],
+    ["get current weather", "weather", "weather.forecast.current"],
+    ["list saved weather locations", "weather", "weather.location.list"],
+    ["save a weather location", "weather", "weather.location.create"],
   ] as const)("ranks %s to its expected capability", (query, appId, expectedName) => {
-    expect(searchAiCapabilities(catalog, { query, appId, limit: 5 }).capabilities[0]?.name).toBe(expectedName);
+    expect(searchAiTools(toolCatalog, { query, appId }).tools[0]?.name).toBe(expectedName);
   });
 });
 

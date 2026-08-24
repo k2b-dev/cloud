@@ -1,38 +1,42 @@
 {
   "protocolVersion": 1,
   "appId": "contacts",
-  "manifestHash": "263ed075242dfbc1128f8ecea409046eab4e08554efd5b934e5124a0a2fc489a",
+  "manifestHash": "b36cc8f17392ce1e1fc620de67bb7da4be462551931deefe9c07f9e85fcb48bb",
   "types": [
     {
       "localId": "book",
       "title": "Address book",
       "description": "A permission-scoped collection of contacts.",
-      "icon": "ti ti-book"
+      "icon": "ti ti-book",
+      "reader": "book.read"
     },
     {
       "localId": "contact",
       "title": "Contact",
       "description": "A person or organization in an address book.",
-      "icon": "ti ti-address-book"
+      "icon": "ti ti-address-book",
+      "reader": "contact.read"
     },
     {
       "localId": "note",
       "title": "Contact note",
       "description": "A user-authored note attached to a contact.",
-      "icon": "ti ti-note"
+      "icon": "ti ti-note",
+      "reader": "note.read"
     },
     {
       "localId": "tag",
       "title": "Contact tag",
       "description": "A book-scoped label assigned to contacts.",
-      "icon": "ti ti-tag"
+      "icon": "ti ti-tag",
+      "reader": "tag.read"
     }
   ],
   "queries": [
     {
       "localId": "book.list",
-      "title": "List manual address books",
-      "description": "List manual address books the current actor may read, including effective permissions for choosing action targets.",
+      "title": "List address books",
+      "description": "Normal entry for book-scoped Contacts work. List readable address books with effective permissions; use returned contacts.book refs or IDs with contact.list, tag.list, or contact.create.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -77,8 +81,7 @@
           "properties": {
             "id": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "name": {
               "type": "string",
@@ -102,15 +105,86 @@
                 "admin"
               ]
             },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              }
+            },
             "createdAt": {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "updatedAt": {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "contacts.book"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -119,31 +193,31 @@
             "description",
             "permission",
             "createdAt",
-            "updatedAt"
+            "updatedAt",
+            "ref"
           ],
           "additionalProperties": false
         }
       },
-      "schemaHash": "06341563d2f9c66fd9e84dd39804a180398e6e6771c770a0be2710ef912b4e49",
+      "schemaHash": "13e504c0f089788f55e524f50d5ceeac3de8d145dee43287001735ab0dd645aa",
       "openWorld": false
     },
     {
-      "localId": "contact.get",
-      "title": "Get contact",
-      "description": "Read one contact by stable UUID after resolving and checking its owning address book.",
+      "localId": "book.read",
+      "title": "Read address book",
+      "description": "Read one contacts.book ref or address-book ID returned by book.list.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "contactId": {
+          "id": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable contact UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Address-book ID returned by List address books or a contacts.book ref."
           }
         },
         "required": [
-          "contactId"
+          "id"
         ],
         "additionalProperties": false
       },
@@ -153,12 +227,349 @@
         "properties": {
           "id": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "permission": {
+            "type": "string",
+            "enum": [
+              "read",
+              "write",
+              "admin"
+            ]
+          },
+          "links": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rel": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "edit",
+                    "status",
+                    "preview",
+                    "download"
+                  ],
+                  "description": "Semantic relationship; clients decide how to present it."
+                },
+                "href": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                  "description": "Root-relative Cloud URL."
+                },
+                "title": {
+                  "description": "Optional human-readable link label.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "required": [
+                "rel",
+                "href"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "permission",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "7668041b15c618c6bd98f35cb012e503601e4cfb1079bed14fff70cfd9a3c5cc",
+      "openWorld": false
+    },
+    {
+      "localId": "contact.list",
+      "title": "List contacts",
+      "description": "Browse and filter contacts inside one known address book. Get bookId from book.list; use returned contacts.contact refs with contact.read. Use contact.search instead when no book is known.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "bookId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Address-book ID returned by List address books or a contacts.book resource ref."
+          },
+          "query": {
+            "description": "Optional text matched against contact fields.",
+            "type": "string",
+            "maxLength": 500
+          },
+          "tagIds": {
+            "description": "Contact-tag IDs returned by List contact tags for this address book; matches contacts having at least one.",
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z]{6}$"
+            }
+          },
+          "sort": {
+            "default": "name",
+            "description": "Contact sort order.",
+            "type": "string",
+            "enum": [
+              "name",
+              "updated",
+              "created",
+              "company"
+            ]
+          },
+          "email": {
+            "default": "all",
+            "description": "Filter by email-address presence.",
+            "type": "string",
+            "enum": [
+              "all",
+              "yes",
+              "no"
+            ]
+          },
+          "phone": {
+            "default": "all",
+            "description": "Filter by phone-number presence.",
+            "type": "string",
+            "enum": [
+              "all",
+              "yes",
+              "no"
+            ]
+          },
+          "favoritesOnly": {
+            "default": false,
+            "description": "Only contacts favorited by the current user.",
+            "type": "boolean"
+          },
+          "cursor": {
+            "description": "Opaque cursor returned by the previous page.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "limit": {
+            "default": 25,
+            "description": "Maximum number of results to return.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "bookId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 180,
+                  "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                  "description": "Namespaced resource type declared by the owning app."
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "Stable app-owned resource identifier."
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false,
+              "description": "Stable identity of the result."
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Primary result label."
+            },
+            "preview": {
+              "description": "Short plain-text result preview.",
+              "type": "string",
+              "maxLength": 2000
+            },
+            "icon": {
+              "description": "Optional presentation icon.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "priority": {
+              "description": "App-local relevance hint from zero to nine.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            },
+            "metadata": {
+              "description": "Small structured metadata shown with the result.",
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "value": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "label",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              },
+              "description": "Semantic links for the resource."
+            }
+          },
+          "required": [
+            "ref",
+            "title",
+            "links"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "schemaHash": "704c4a689464b780174c85e226fb828f8dc1625095b483221ef8e6d8ffc23fb0",
+      "openWorld": false
+    },
+    {
+      "localId": "contact.read",
+      "title": "Read contact",
+      "description": "Read one contacts.contact ref returned by contact.search, contact.list, contact.suggest, or contact.resolve after checking its owning address book.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Contact ID returned by contact search, suggest, resolve, list, or a contacts.contact ref."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "bookId": {
             "type": "string",
-            "minLength": 1
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "displayName": {
             "type": "string",
@@ -214,13 +625,11 @@
               "properties": {
                 "id": {
                   "type": "string",
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  "pattern": "^[0-9A-Za-z]{6}$"
                 },
                 "bookId": {
                   "type": "string",
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  "pattern": "^[0-9A-Za-z]{6}$"
                 },
                 "name": {
                   "type": "string",
@@ -229,6 +638,45 @@
                 "color": {
                   "type": "string",
                   "pattern": "^#[0-9a-f]{6}$"
+                },
+                "links": {
+                  "minItems": 1,
+                  "maxItems": 10,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "rel": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "edit",
+                          "status",
+                          "preview",
+                          "download"
+                        ],
+                        "description": "Semantic relationship; clients decide how to present it."
+                      },
+                      "href": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                        "description": "Root-relative Cloud URL."
+                      },
+                      "title": {
+                        "description": "Optional human-readable link label.",
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      }
+                    },
+                    "required": [
+                      "rel",
+                      "href"
+                    ],
+                    "additionalProperties": false
+                  }
                 },
                 "createdAt": {
                   "type": "string",
@@ -351,8 +799,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                "pattern": "^[0-9A-Za-z]{6}$"
               },
               {
                 "type": "null"
@@ -647,235 +1094,13 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "4898c44fbc7386659440d1a6eae16c3e44aef5fb25e1baf62da090e6b6ef684d",
-      "openWorld": false
-    },
-    {
-      "localId": "contact.list",
-      "title": "List contacts",
-      "description": "List contacts in one already selected readable address book with bounded filters, opaque pagination, and navigable contact cards.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "bookId": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-              },
-              {
-                "type": "string",
-                "const": "system"
-              }
-            ],
-            "description": "Address-book UUID, or \"system\" for the read-only system address book."
-          },
-          "query": {
-            "description": "Optional text matched against contact fields.",
-            "type": "string",
-            "maxLength": 500
-          },
-          "tagIds": {
-            "description": "Only contacts having at least one of these book-scoped tags.",
-            "maxItems": 100,
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-            }
-          },
-          "sort": {
-            "default": "name",
-            "description": "Contact sort order.",
-            "type": "string",
-            "enum": [
-              "name",
-              "updated",
-              "created",
-              "company"
-            ]
-          },
-          "email": {
-            "default": "all",
-            "description": "Filter by email-address presence.",
-            "type": "string",
-            "enum": [
-              "all",
-              "yes",
-              "no"
-            ]
-          },
-          "phone": {
-            "default": "all",
-            "description": "Filter by phone-number presence.",
-            "type": "string",
-            "enum": [
-              "all",
-              "yes",
-              "no"
-            ]
-          },
-          "favoritesOnly": {
-            "default": false,
-            "description": "Only contacts favorited by the current user.",
-            "type": "boolean"
-          },
-          "cursor": {
-            "description": "Opaque cursor returned by the previous page.",
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256
-          },
-          "limit": {
-            "default": 25,
-            "description": "Maximum number of results to return.",
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          }
-        },
-        "required": [
-          "bookId"
-        ],
-        "additionalProperties": false
-      },
-      "dataSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "maxItems": 100,
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "ref": {
-              "type": "object",
-              "properties": {
-                "type": {
-                  "type": "string",
-                  "minLength": 3,
-                  "maxLength": 180,
-                  "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
-                  "description": "Namespaced resource type declared by the owning app."
-                },
-                "id": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 512,
-                  "description": "Stable app-owned resource identifier."
-                }
-              },
-              "required": [
-                "type",
-                "id"
-              ],
-              "additionalProperties": false,
-              "description": "Stable identity of the result."
-            },
-            "title": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 500,
-              "description": "Primary result label."
-            },
-            "preview": {
-              "description": "Short plain-text result preview.",
-              "type": "string",
-              "maxLength": 2000
-            },
-            "icon": {
-              "description": "Optional presentation icon.",
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 120
-            },
-            "priority": {
-              "description": "App-local relevance hint from zero to nine.",
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 9
-            },
-            "metadata": {
-              "description": "Small structured metadata shown with the result.",
-              "maxItems": 20,
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "label": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 120
-                  },
-                  "value": {
-                    "type": "string",
-                    "maxLength": 1000
-                  }
-                },
-                "required": [
-                  "label",
-                  "value"
-                ],
-                "additionalProperties": false
-              }
-            },
-            "links": {
-              "minItems": 1,
-              "maxItems": 10,
-              "type": "array",
-              "items": {
-                "type": "object",
-                "properties": {
-                  "rel": {
-                    "type": "string",
-                    "enum": [
-                      "open",
-                      "edit",
-                      "status",
-                      "preview",
-                      "download"
-                    ],
-                    "description": "Semantic relationship; clients decide how to present it."
-                  },
-                  "href": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 2048,
-                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
-                    "description": "Root-relative Cloud URL."
-                  },
-                  "title": {
-                    "description": "Optional human-readable link label.",
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 120
-                  }
-                },
-                "required": [
-                  "rel",
-                  "href"
-                ],
-                "additionalProperties": false
-              },
-              "description": "Semantic links for the resource."
-            }
-          },
-          "required": [
-            "ref",
-            "title",
-            "links"
-          ],
-          "additionalProperties": false
-        }
-      },
-      "schemaHash": "6a6811fe89da556bd3087610fd27de1d5f8f16e572296c38363ef50b950dcdb9",
+      "schemaHash": "8ee0c7a37ca8295147afb16141866ed183570a1025e483ef638ad6c5ced90159",
       "openWorld": false
     },
     {
       "localId": "contact.resolve",
       "title": "Resolve contacts by email",
-      "description": "Resolve up to 100 known exact email addresses to every readable matching contact with bounded contact details.",
+      "description": "Specialized lookup for known exact email addresses or contact IDs. Returns canonical contacts.contact refs; use contact.search when the contact is not known and contact.suggest for recipient suggestions.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -893,13 +1118,12 @@
             "description": "Normalized email addresses to resolve to every readable matching contact."
           },
           "contactIds": {
-            "description": "Optional contact UUIDs that further restrict the matches.",
+            "description": "Optional public contact IDs that further restrict the matches.",
             "maxItems": 20,
             "type": "array",
             "items": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             }
           },
           "cursor": {
@@ -931,14 +1155,31 @@
             "items": {
               "type": "object",
               "properties": {
+                "ref": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "contacts.contact"
+                    },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[0-9A-Za-z]{6}$"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "additionalProperties": false
+                },
                 "contactId": {
                   "type": "string",
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  "pattern": "^[0-9A-Za-z]{6}$"
                 },
                 "bookId": {
                   "type": "string",
-                  "minLength": 1
+                  "pattern": "^[0-9A-Za-z]{6}$"
                 },
                 "bookName": {
                   "type": "string",
@@ -1043,6 +1284,45 @@
                   "type": "string",
                   "pattern": "^\\/app\\/contacts\\/.*"
                 },
+                "links": {
+                  "minItems": 1,
+                  "maxItems": 10,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "rel": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "edit",
+                          "status",
+                          "preview",
+                          "download"
+                        ],
+                        "description": "Semantic relationship; clients decide how to present it."
+                      },
+                      "href": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                        "description": "Root-relative Cloud URL."
+                      },
+                      "title": {
+                        "description": "Optional human-readable link label.",
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      }
+                    },
+                    "required": [
+                      "rel",
+                      "href"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
                 "updatedAt": {
                   "type": "string",
                   "format": "date-time",
@@ -1050,6 +1330,7 @@
                 }
               },
               "required": [
+                "ref",
                 "contactId",
                 "bookId",
                 "bookName",
@@ -1083,13 +1364,13 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "29cc82e467b51642274d85f63b70a8c39fdd85421bd568050d008cefea46c779",
+      "schemaHash": "ba548f9b656a96edbe0fa06691e931a4d64739a8fd1b485c4854ebe4c13b606c",
       "openWorld": false
     },
     {
       "localId": "contact.search",
       "title": "Search contacts",
-      "description": "Find, show, or open permission-filtered contacts by name, email, phone, or address-book facet. Returns navigable contact cards.",
+      "description": "Normal cross-book discovery entry when no address book is known. Find contacts by name, email, phone, or book facet and use returned contacts.contact refs with contact.read.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1278,7 +1559,7 @@
     {
       "localId": "contact.suggest",
       "title": "Suggest contacts",
-      "description": "Autocomplete readable email recipients while composing mail by matching names, organizations, email addresses, phone numbers, and addresses.",
+      "description": "Specialized recipient picker for composing mail. Returns email-capable contacts and contacts.contact refs; use contact.search for general discovery or contact.resolve when exact email addresses are already known.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1315,14 +1596,31 @@
         "items": {
           "type": "object",
           "properties": {
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "contacts.contact"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
+            },
             "contactId": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "bookId": {
               "type": "string",
-              "minLength": 1
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "displayName": {
               "type": "string",
@@ -1413,6 +1711,45 @@
               "type": "string",
               "pattern": "^\\/app\\/contacts\\/.*"
             },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              }
+            },
             "updatedAt": {
               "type": "string",
               "format": "date-time",
@@ -1420,6 +1757,7 @@
             }
           },
           "required": [
+            "ref",
             "contactId",
             "bookId",
             "displayName",
@@ -1434,22 +1772,21 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "60cb2c16c98a0d8a0a00a18cffa8ee5bb0f53bc3a570bfa7d04f02e4cd24d204",
+      "schemaHash": "aec876a3ff6b2c92cde97398e4631d27259b5972186e5fc00eb305fcc9753519",
       "openWorld": false
     },
     {
       "localId": "note.list",
       "title": "List contact notes",
-      "description": "List notes for one readable contact, newest first.",
+      "description": "List notes for one known contact, newest first. Get contactId from a contacts.contact ref; use returned contacts.note refs with note.read.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "contactId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Contact whose notes should be listed."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Contact ID returned by contact search, suggest, resolve, list, or a contacts.contact ref."
           },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
@@ -1479,13 +1816,11 @@
           "properties": {
             "id": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "contactId": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "authorUserId": {
               "anyOf": [
@@ -1516,6 +1851,24 @@
               "type": "string",
               "format": "date-time",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "contacts.note"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -1525,27 +1878,103 @@
             "authorDisplayName",
             "content",
             "createdAt",
-            "updatedAt"
+            "updatedAt",
+            "ref"
           ],
           "additionalProperties": false
         }
       },
-      "schemaHash": "20d748a7a0479cd70213197cfb3d86700c85985d96028c01250859bdc87703f7",
+      "schemaHash": "517140c4a2f7ce4e73a800a9d02915b167e88ad004627aed84aafd40eeaec46d",
+      "openWorld": false
+    },
+    {
+      "localId": "note.read",
+      "title": "Read contact note",
+      "description": "Read one contacts.note ref returned by note.list after checking its parent contact and address book.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Contact-note ID returned by List contact notes or a contacts.note ref."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "contactId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "authorUserId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "authorDisplayName": {
+            "type": "string",
+            "minLength": 1
+          },
+          "content": {
+            "type": "string",
+            "minLength": 1
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          }
+        },
+        "required": [
+          "id",
+          "contactId",
+          "authorUserId",
+          "authorDisplayName",
+          "content",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "acb67b01c908d6b9047b6ba354358dff69815c4e9b0e5b4bd527471852458100",
       "openWorld": false
     },
     {
       "localId": "tag.list",
       "title": "List contact tags",
-      "description": "List the bounded tag vocabulary for one readable address book.",
+      "description": "List tags in one known address book. Get bookId from book.list; use returned contacts.tag refs with tag.read or their IDs with contact.list and tag.change.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "bookId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Address-book UUID whose tags should be listed."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Address-book ID returned by List address books or a contacts.book ref."
           },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
@@ -1575,13 +2004,11 @@
           "properties": {
             "id": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "bookId": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "name": {
               "type": "string",
@@ -1590,6 +2017,45 @@
             "color": {
               "type": "string",
               "pattern": "^#[0-9a-f]{6}$"
+            },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              }
             },
             "createdAt": {
               "type": "string",
@@ -1600,6 +2066,24 @@
               "type": "string",
               "format": "date-time",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "contacts.tag"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -1608,12 +2092,115 @@
             "name",
             "color",
             "createdAt",
-            "updatedAt"
+            "updatedAt",
+            "ref"
           ],
           "additionalProperties": false
         }
       },
-      "schemaHash": "ad9aa62a342d66d9922b7fbe717eaa4a4633f292b7594566462e3b892b9bbd5f",
+      "schemaHash": "d8a09e8bcb41dc5282357381de9c40bf9bf13683d0573a4c9dcdd99ef8560bdb",
+      "openWorld": false
+    },
+    {
+      "localId": "tag.read",
+      "title": "Read contact tag",
+      "description": "Read one contacts.tag ref returned by tag.list after checking its owning address book.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Contact-tag ID returned by List contact tags or a contacts.tag ref."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "bookId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "color": {
+            "type": "string",
+            "pattern": "^#[0-9a-f]{6}$"
+          },
+          "links": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rel": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "edit",
+                    "status",
+                    "preview",
+                    "download"
+                  ],
+                  "description": "Semantic relationship; clients decide how to present it."
+                },
+                "href": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                  "description": "Root-relative Cloud URL."
+                },
+                "title": {
+                  "description": "Optional human-readable link label.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "required": [
+                "rel",
+                "href"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          }
+        },
+        "required": [
+          "id",
+          "bookId",
+          "name",
+          "color",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "ce2e93c561e234586874393dec09688451adb5c7e159174760d88549b4716c43",
       "openWorld": false
     }
   ],
@@ -1628,9 +2215,8 @@
         "properties": {
           "bookId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Address-book UUID that will own the contact."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Public address-book ID that will own the contact."
           },
           "label": {
             "description": "Optional explicit display label.",
@@ -1766,12 +2352,11 @@
             ]
           },
           "parentContactId": {
-            "description": "Optional parent contact in the same book.",
+            "description": "Optional public parent contact ID in the same book.",
             "anyOf": [
               {
                 "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                "pattern": "^[0-9A-Za-z]{6}$"
               },
               {
                 "type": "null"
@@ -1779,13 +2364,12 @@
             ]
           },
           "tagIds": {
-            "description": "Complete replacement set of book-scoped tag UUIDs.",
+            "description": "Complete replacement set of public book-scoped tag IDs.",
             "maxItems": 100,
             "type": "array",
             "items": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             }
           },
           "emails": {
@@ -2074,12 +2658,11 @@
             "properties": {
               "id": {
                 "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                "pattern": "^[0-9A-Za-z]{6}$"
               },
               "bookId": {
                 "type": "string",
-                "minLength": 1
+                "pattern": "^[0-9A-Za-z]{6}$"
               },
               "displayName": {
                 "type": "string",
@@ -2135,13 +2718,11 @@
                   "properties": {
                     "id": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[0-9A-Za-z]{6}$"
                     },
                     "bookId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[0-9A-Za-z]{6}$"
                     },
                     "name": {
                       "type": "string",
@@ -2150,6 +2731,45 @@
                     "color": {
                       "type": "string",
                       "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "links": {
+                      "minItems": 1,
+                      "maxItems": 10,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rel": {
+                            "type": "string",
+                            "enum": [
+                              "open",
+                              "edit",
+                              "status",
+                              "preview",
+                              "download"
+                            ],
+                            "description": "Semantic relationship; clients decide how to present it."
+                          },
+                          "href": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048,
+                            "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                            "description": "Root-relative Cloud URL."
+                          },
+                          "title": {
+                            "description": "Optional human-readable link label.",
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          }
+                        },
+                        "required": [
+                          "rel",
+                          "href"
+                        ],
+                        "additionalProperties": false
+                      }
                     },
                     "createdAt": {
                       "type": "string",
@@ -2272,8 +2892,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    "pattern": "^[0-9A-Za-z]{6}$"
                   },
                   {
                     "type": "null"
@@ -2574,24 +3193,25 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "ea77dfb2d55b8826b7a98f124afd542879b05403f51bbcc88cf73c3229c4f4d3",
+      "schemaHash": "509f012b8866676b64bfb4a6ec8829b6154c304606c76298c79cbe9e29a4b7a9",
       "destructive": false,
       "openWorld": false,
-      "idempotency": "required"
+      "idempotency": "required",
+      "approval": "rememberable",
+      "review": true
     },
     {
       "localId": "contact.delete",
       "title": "Delete contact",
-      "description": "Permanently delete one manual contact after an optimistic version check.",
+      "description": "Permanently delete one contact after an optimistic version check.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "contactId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable contact UUID to delete."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Stable public contact ID to delete."
           },
           "expectedUpdatedAt": {
             "type": "string",
@@ -2612,8 +3232,7 @@
         "properties": {
           "contactId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "deleted": {
             "type": "boolean",
@@ -2626,7 +3245,7 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "330309ae96069981237fc847f1fea3407f698fc87d251431050d561faf201ce1",
+      "schemaHash": "94b37bba4040d50f4a18c39148c41347361be13d163e8310cf0a53b985167035",
       "destructive": true,
       "openWorld": false,
       "idempotency": "none",
@@ -2642,15 +3261,13 @@
         "properties": {
           "contactId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable contact UUID to move."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Stable public contact ID to move."
           },
           "targetBookId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Writable destination address-book UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Public writable destination address-book ID."
           },
           "expectedUpdatedAt": {
             "type": "string",
@@ -2675,12 +3292,11 @@
             "properties": {
               "id": {
                 "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                "pattern": "^[0-9A-Za-z]{6}$"
               },
               "bookId": {
                 "type": "string",
-                "minLength": 1
+                "pattern": "^[0-9A-Za-z]{6}$"
               },
               "displayName": {
                 "type": "string",
@@ -2736,13 +3352,11 @@
                   "properties": {
                     "id": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[0-9A-Za-z]{6}$"
                     },
                     "bookId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[0-9A-Za-z]{6}$"
                     },
                     "name": {
                       "type": "string",
@@ -2751,6 +3365,45 @@
                     "color": {
                       "type": "string",
                       "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "links": {
+                      "minItems": 1,
+                      "maxItems": 10,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rel": {
+                            "type": "string",
+                            "enum": [
+                              "open",
+                              "edit",
+                              "status",
+                              "preview",
+                              "download"
+                            ],
+                            "description": "Semantic relationship; clients decide how to present it."
+                          },
+                          "href": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048,
+                            "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                            "description": "Root-relative Cloud URL."
+                          },
+                          "title": {
+                            "description": "Optional human-readable link label.",
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          }
+                        },
+                        "required": [
+                          "rel",
+                          "href"
+                        ],
+                        "additionalProperties": false
+                      }
                     },
                     "createdAt": {
                       "type": "string",
@@ -2873,8 +3526,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    "pattern": "^[0-9A-Za-z]{6}$"
                   },
                   {
                     "type": "null"
@@ -3175,7 +3827,7 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "4c1d2cc8f14dbfb2a015f57c4689c9c690d74fdb5d29a705fa5fde8940edda5a",
+      "schemaHash": "a416fc610954919bec1dceda1c56a3669f25406d6e998c63d0c728e423004057",
       "destructive": true,
       "openWorld": false,
       "idempotency": "none",
@@ -3191,9 +3843,8 @@
         "properties": {
           "contactId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable contact UUID to update."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Stable public contact ID to update."
           },
           "expectedUpdatedAt": {
             "type": "string",
@@ -3335,12 +3986,11 @@
             ]
           },
           "parentContactId": {
-            "description": "Optional parent contact in the same book.",
+            "description": "Optional public parent contact ID in the same book.",
             "anyOf": [
               {
                 "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                "pattern": "^[0-9A-Za-z]{6}$"
               },
               {
                 "type": "null"
@@ -3348,13 +3998,12 @@
             ]
           },
           "tagIds": {
-            "description": "Complete replacement set of book-scoped tag UUIDs.",
+            "description": "Complete replacement set of public book-scoped tag IDs.",
             "maxItems": 100,
             "type": "array",
             "items": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             }
           },
           "emails": {
@@ -3644,12 +4293,11 @@
             "properties": {
               "id": {
                 "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                "pattern": "^[0-9A-Za-z]{6}$"
               },
               "bookId": {
                 "type": "string",
-                "minLength": 1
+                "pattern": "^[0-9A-Za-z]{6}$"
               },
               "displayName": {
                 "type": "string",
@@ -3705,13 +4353,11 @@
                   "properties": {
                     "id": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[0-9A-Za-z]{6}$"
                     },
                     "bookId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[0-9A-Za-z]{6}$"
                     },
                     "name": {
                       "type": "string",
@@ -3720,6 +4366,45 @@
                     "color": {
                       "type": "string",
                       "pattern": "^#[0-9a-f]{6}$"
+                    },
+                    "links": {
+                      "minItems": 1,
+                      "maxItems": 10,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rel": {
+                            "type": "string",
+                            "enum": [
+                              "open",
+                              "edit",
+                              "status",
+                              "preview",
+                              "download"
+                            ],
+                            "description": "Semantic relationship; clients decide how to present it."
+                          },
+                          "href": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048,
+                            "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                            "description": "Root-relative Cloud URL."
+                          },
+                          "title": {
+                            "description": "Optional human-readable link label.",
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          }
+                        },
+                        "required": [
+                          "rel",
+                          "href"
+                        ],
+                        "additionalProperties": false
+                      }
                     },
                     "createdAt": {
                       "type": "string",
@@ -3842,8 +4527,7 @@
                 "anyOf": [
                   {
                     "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    "pattern": "^[0-9A-Za-z]{6}$"
                   },
                   {
                     "type": "null"
@@ -4144,10 +4828,11 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "9a479ba23cb62c038c7e52b64d32650a63975fa25303c6b807388fd4184a0d39",
+      "schemaHash": "0677885cd775d312a5fba22fe6431e7f8021dbb07e3588011fcfc1c3e532d56d",
       "destructive": true,
       "openWorld": false,
       "idempotency": "none",
+      "approval": "rememberable",
       "review": true
     },
     {
@@ -4160,9 +4845,8 @@
         "properties": {
           "contactId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable contact UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Stable public contact ID."
           },
           "favorite": {
             "type": "boolean",
@@ -4181,8 +4865,7 @@
         "properties": {
           "contactId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "favorite": {
             "type": "boolean"
@@ -4194,10 +4877,11 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "460073f0b4a796ca40ccf7be84578345477eb3b4afc71d2a826b1c5ef6ac9bb3",
+      "schemaHash": "83ee1f90fc8a99f132cdbc30accb439034d793af0010866b12d7aed22a413525",
       "destructive": true,
       "openWorld": false,
       "idempotency": "none",
+      "approval": "rememberable",
       "review": true
     },
     {
@@ -4210,9 +4894,8 @@
         "properties": {
           "contactId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable contact UUID that will own the note."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Stable public contact ID that will own the note."
           },
           "content": {
             "type": "string",
@@ -4236,13 +4919,11 @@
             "properties": {
               "id": {
                 "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                "pattern": "^[0-9A-Za-z]{6}$"
               },
               "contactId": {
                 "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                "pattern": "^[0-9A-Za-z]{6}$"
               },
               "authorUserId": {
                 "anyOf": [
@@ -4292,10 +4973,12 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "260ccbe755bb18166c353f6deb9d86069de201bc833353ac0c64038cbba0adae",
+      "schemaHash": "60e124ebaf52b03b2e4701baaef1ecbebe2acb9c1d9afeeafd4c4a0f5ebf32d2",
       "destructive": false,
       "openWorld": false,
-      "idempotency": "required"
+      "idempotency": "required",
+      "approval": "rememberable",
+      "review": true
     },
     {
       "localId": "tag.change",
@@ -4307,30 +4990,27 @@
         "properties": {
           "contactId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable contact UUID whose tags should change."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Stable public contact ID whose tags should change."
           },
           "addTagIds": {
             "default": [],
-            "description": "Book-scoped tag UUIDs to add.",
+            "description": "Public book-scoped tag IDs to add.",
             "maxItems": 100,
             "type": "array",
             "items": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             }
           },
           "removeTagIds": {
             "default": [],
-            "description": "Book-scoped tag UUIDs to remove.",
+            "description": "Public book-scoped tag IDs to remove.",
             "maxItems": 100,
             "type": "array",
             "items": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             }
           }
         },
@@ -4345,8 +5025,7 @@
         "properties": {
           "contactId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "tags": {
             "maxItems": 100,
@@ -4356,13 +5035,11 @@
               "properties": {
                 "id": {
                   "type": "string",
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  "pattern": "^[0-9A-Za-z]{6}$"
                 },
                 "bookId": {
                   "type": "string",
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  "pattern": "^[0-9A-Za-z]{6}$"
                 },
                 "name": {
                   "type": "string",
@@ -4371,6 +5048,45 @@
                 "color": {
                   "type": "string",
                   "pattern": "^#[0-9a-f]{6}$"
+                },
+                "links": {
+                  "minItems": 1,
+                  "maxItems": 10,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "rel": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "edit",
+                          "status",
+                          "preview",
+                          "download"
+                        ],
+                        "description": "Semantic relationship; clients decide how to present it."
+                      },
+                      "href": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                        "description": "Root-relative Cloud URL."
+                      },
+                      "title": {
+                        "description": "Optional human-readable link label.",
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      }
+                    },
+                    "required": [
+                      "rel",
+                      "href"
+                    ],
+                    "additionalProperties": false
+                  }
                 },
                 "createdAt": {
                   "type": "string",
@@ -4405,10 +5121,11 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "1e7dea3beb10f48c2e88ae6d3f0744b850289df48eb0d61563d5f4baecc9b0ec",
+      "schemaHash": "2ae2908db80f6562154faa5f67690a0d3732c9a87610e184cd52e0ddbcb2ee24",
       "destructive": true,
       "openWorld": false,
       "idempotency": "none",
+      "approval": "rememberable",
       "review": true
     }
   ]

@@ -1,38 +1,42 @@
 {
   "protocolVersion": 1,
   "appId": "pulse",
-  "manifestHash": "af9044f2ba4acebddcbeb48133a6ae8c6ba0b6e5c077fc751e8b3814be489c65",
+  "manifestHash": "bfbe379afd168ee367d1cd4f54c2002027bcfbdebdd71cc635068e7b4d61b649",
   "types": [
     {
       "localId": "base",
       "title": "Pulse Base",
       "description": "A permission-scoped Pulse telemetry workspace.",
-      "icon": "ti ti-activity-heartbeat"
+      "icon": "ti ti-activity-heartbeat",
+      "reader": "base.read"
     },
     {
       "localId": "resource",
       "title": "Pulse Resource",
       "description": "An observed resource with metrics, events, or states.",
-      "icon": "ti ti-box"
+      "icon": "ti ti-box",
+      "reader": "resource.read"
     },
     {
       "localId": "saved_query",
       "title": "Pulse Saved Query",
       "description": "A named, validated Pulse query stored in a Base.",
-      "icon": "ti ti-code"
+      "icon": "ti ti-code",
+      "reader": "saved_query.read"
     },
     {
       "localId": "source",
       "title": "Pulse Source",
       "description": "A telemetry source and its current ingest or scrape health.",
-      "icon": "ti ti-plug"
+      "icon": "ti ti-plug",
+      "reader": "source.read"
     }
   ],
   "queries": [
     {
       "localId": "base.list",
       "title": "List Pulse Bases",
-      "description": "Start here to list accessible Pulse Bases and obtain a baseId for catalog or query calls.",
+      "description": "Normal entry for Base-scoped telemetry work. List accessible Pulse Bases and use returned pulse.base refs or IDs with readers, source and signal discovery, or query calls.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -67,8 +71,7 @@
           "properties": {
             "id": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "name": {
               "type": "string",
@@ -95,6 +98,63 @@
               "type": "string",
               "format": "date-time",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "pulse.base"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -102,18 +162,124 @@
             "name",
             "description",
             "createdAt",
-            "updatedAt"
+            "updatedAt",
+            "ref"
           ],
           "additionalProperties": false
         }
       },
-      "schemaHash": "93f72f8bcfbf1bd06f02398ea203323550b14d50945374e75f995f552910bf64",
+      "schemaHash": "24e7e4201ec423adf407e696df8331cb18aa59b73a989ca58b1a851baa94e31d",
+      "openWorld": false
+    },
+    {
+      "localId": "base.read",
+      "title": "Read Pulse Base",
+      "description": "Read one pulse.base ref returned by base.list or base.search.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "links": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rel": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "edit",
+                    "status",
+                    "preview",
+                    "download"
+                  ],
+                  "description": "Semantic relationship; clients decide how to present it."
+                },
+                "href": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                  "description": "Root-relative Cloud URL."
+                },
+                "title": {
+                  "description": "Optional human-readable link label.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "required": [
+                "rel",
+                "href"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "26fddbfbc9111d4bbbdf2d5fe82a082fe639625c3b703942da252f9987d0c8f6",
       "openWorld": false
     },
     {
       "localId": "base.search",
       "title": "Search Pulse Bases",
-      "description": "Find accessible Pulse Bases by name or description.",
+      "description": "Find an accessible Pulse Base by name or description when its ID is unknown. Use returned pulse.base refs with base.read or their IDs with source.list, metric.search, field.search, and query tools.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -292,16 +458,15 @@
     {
       "localId": "field.search",
       "title": "Search Pulse Fields",
-      "description": "Discover dimension or attribute keys for metrics, events, and states without exposing sensitive values.",
+      "description": "Discover dimension or attribute keys for metrics, events, and states in one known Base without exposing values. Use metric.search for metric names, then query.compile before query.execute.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "baseId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Readable Pulse Base UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."
           },
           "query": {
             "description": "Optional text search.",
@@ -354,8 +519,7 @@
           "properties": {
             "sourceId": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "scope": {
               "type": "string",
@@ -408,6 +572,45 @@
               "type": "string",
               "format": "date-time",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
@@ -424,22 +627,21 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "c717840bcd4f4377d6d3f17e24c53317a510d8313439fc9c242d07b8d1d40f5a",
+      "schemaHash": "de7f19368b8f16477e51563ed88d00217a83faf51b8d770fe6b82c4f5f27414e",
       "openWorld": false
     },
     {
       "localId": "metric.search",
       "title": "Search Pulse Metrics",
-      "description": "Discover metric names and types in one readable Base before authoring a query.",
+      "description": "Discover metric names and types before authoring a query in one known Base. Get baseId from base.list or base.search; validate the resulting DSL with query.compile before query.execute.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "baseId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Readable Pulse Base UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."
           },
           "query": {
             "description": "Optional text search.",
@@ -523,6 +725,45 @@
                   "type": "null"
                 }
               ]
+            },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
@@ -535,22 +776,21 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "04d6b5175c068d58c4029b6855522b704479206bcb246f2c73ce86eef2d3b091",
+      "schemaHash": "6b438ce8094a83dc3fa9302bcce329e1dbe1efc8b36195a266afc5a0ee1865ee",
       "openWorld": false
     },
     {
       "localId": "query.compile",
       "title": "Compile Pulse Query",
-      "description": "Validate Pulse query DSL and return its kind and actionable diagnostics without reading telemetry rows.",
+      "description": "Validate Pulse query DSL for a baseId from base.list or base.search without reading telemetry rows. Use metric.search and field.search to discover valid names; execute valid DSL with query.execute.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "baseId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Readable Pulse Base UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."
           },
           "query": {
             "type": "string",
@@ -621,22 +861,21 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "263c0ab144744b5c7d9506722031fdc7c112182391eb3782dfb13114ed994b89",
+      "schemaHash": "d01d2fcea4ae27bda242a091bc6bc7c4ea8833f7592fb580bfdd530472c680cb",
       "openWorld": false
     },
     {
       "localId": "query.execute",
       "title": "Execute telemetry query",
-      "description": "Run validated Pulse telemetry query DSL with byte-bounded prefixes of at most 500 points or 100 compact rows; raw event payloads are omitted and truncated indicates omitted results.",
+      "description": "Execute Pulse query DSL for a baseId from base.list or base.search, normally after query.compile. Returns at most 500 points or 100 compact rows; raw event payloads are omitted and truncated reports omitted results.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "baseId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Readable Pulse Base UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."
           },
           "query": {
             "type": "string",
@@ -744,8 +983,7 @@
                   "anyOf": [
                     {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[0-9A-Za-z]{6}$"
                     },
                     {
                       "type": "null"
@@ -832,8 +1070,7 @@
                   "anyOf": [
                     {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[0-9A-Za-z]{6}$"
                     },
                     {
                       "type": "null"
@@ -905,13 +1142,144 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "f539b6a86d62827d8829b09ba1efc81fecbaf7a746aa01f51d7cae0258d06d73",
+      "schemaHash": "d69d45b95563cb10e45b65091b4f196b59cb9ee24e54cf63b10c36b8c1c4614e",
+      "openWorld": false
+    },
+    {
+      "localId": "resource.read",
+      "title": "Read Pulse Resource",
+      "description": "Read one observed Pulse Resource by passing the composite ID from a resource.search pulse.resource ref unchanged.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 512,
+            "pattern": "^[0-9A-Za-z]{6}\\/[\\s\\S]+$",
+            "description": "Composite Base-ID/resource-key value returned by Search Pulse Resources in a pulse.resource ref; pass the ref id unchanged."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 512,
+            "pattern": "^[0-9A-Za-z]{6}\\/[\\s\\S]+$"
+          },
+          "baseId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "baseName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 505
+          },
+          "resourceId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastSeenAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "links": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rel": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "edit",
+                    "status",
+                    "preview",
+                    "download"
+                  ],
+                  "description": "Semantic relationship; clients decide how to present it."
+                },
+                "href": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                  "description": "Root-relative Cloud URL."
+                },
+                "title": {
+                  "description": "Optional human-readable link label.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "required": [
+                "rel",
+                "href"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "baseId",
+          "baseName",
+          "key",
+          "resourceId",
+          "label",
+          "type",
+          "lastSeenAt"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "f1e2860e1eb4116ecc1e83709fd1bc9bbf1d8c67125dd2fad766e9a866e64e3b",
       "openWorld": false
     },
     {
       "localId": "resource.search",
       "title": "Search Pulse Resources",
-      "description": "Find observed resources across accessible Pulse Bases.",
+      "description": "Direct cross-Base entry for finding observed resources. Use the returned composite pulse.resource ref unchanged with resource.read; use metric.search or field.search when authoring a query in one known Base.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1090,22 +1458,20 @@
     {
       "localId": "saved_query.execute",
       "title": "Execute saved telemetry query",
-      "description": "Run the exact stored Pulse telemetry query with the same byte-bounded compact limits and truncated signal as query.execute.",
+      "description": "Execute one stored query using baseId and queryId from saved_query.list. This skips query.compile because the stored DSL is already validated and returns the same bounded result as query.execute.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "baseId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Readable Pulse Base UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."
           },
           "queryId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable saved-query UUID returned by saved_query.list."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Saved-query ID returned by List saved Pulse Queries or a pulse.saved_query ref."
           }
         },
         "required": [
@@ -1207,8 +1573,7 @@
                   "anyOf": [
                     {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[0-9A-Za-z]{6}$"
                     },
                     {
                       "type": "null"
@@ -1295,8 +1660,7 @@
                   "anyOf": [
                     {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[0-9A-Za-z]{6}$"
                     },
                     {
                       "type": "null"
@@ -1368,22 +1732,21 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "bc6fde7c4a13421640da4ab476b70dd17c24c2c4a8261b8e151f4dff5a980443",
+      "schemaHash": "cc2772b6644eb0bc505b4dba4ad302656be10da7a0ca8b1d2b68a43fa1a2948c",
       "openWorld": false
     },
     {
       "localId": "saved_query.list",
       "title": "List saved Pulse Queries",
-      "description": "List bounded named queries in one readable Base.",
+      "description": "List named queries in one known Base. Get baseId from base.list or base.search; use returned pulse.saved_query refs with saved_query.read or their IDs with saved_query.execute.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "baseId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Readable Pulse Base UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."
           },
           "query": {
             "description": "Optional text search.",
@@ -1418,13 +1781,11 @@
           "properties": {
             "id": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "baseId": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "name": {
               "type": "string",
@@ -1456,6 +1817,24 @@
               "type": "string",
               "format": "date-time",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "pulse.saved_query"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -1465,27 +1844,104 @@
             "description",
             "query",
             "createdAt",
-            "updatedAt"
+            "updatedAt",
+            "ref"
           ],
           "additionalProperties": false
         }
       },
-      "schemaHash": "5d62cce144fd68c6108a6aa7495f6d1a869884540decbc2c2309b51fa2a3ca41",
+      "schemaHash": "4d2094086b030b3e7a95ad7546597b4b87ce069a92313fb69d5db1dec1589d37",
+      "openWorld": false
+    },
+    {
+      "localId": "saved_query.read",
+      "title": "Read saved Pulse Query",
+      "description": "Read one pulse.saved_query ref returned by saved_query.list, including its stored DSL and Base ID.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Saved-query ID returned by List saved Pulse Queries or a pulse.saved_query ref."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "baseId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          }
+        },
+        "required": [
+          "id",
+          "baseId",
+          "name",
+          "description",
+          "query",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "4a32696e6ae0d982eed2b1952bac1f1c98b6f187a6002f8496c675f0a2185464",
       "openWorld": false
     },
     {
       "localId": "source.list",
       "title": "List Pulse Sources",
-      "description": "List bounded source health for one readable Base without exposing credentials.",
+      "description": "List source health in one known Base without exposing credentials. Get baseId from base.list or base.search; use returned pulse.source refs with source.read.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "baseId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Readable Pulse Base UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Pulse Base ID returned by Search/List Pulse Bases or a pulse.base ref."
           },
           "query": {
             "description": "Optional text search.",
@@ -1520,13 +1976,11 @@
           "properties": {
             "id": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "baseId": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "kind": {
               "type": "string",
@@ -1583,6 +2037,63 @@
               "type": "string",
               "format": "date-time",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "pulse.source"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -1594,12 +2105,156 @@
             "lastSeenAt",
             "lastError",
             "lastErrorAt",
-            "updatedAt"
+            "updatedAt",
+            "ref"
           ],
           "additionalProperties": false
         }
       },
-      "schemaHash": "ad0ff9b1fdf71163d89e95a686b40c565fed4ded9f4b44bc95956b01d3686539",
+      "schemaHash": "7d33cc1732439b562abe9fc3013957ec5fc656837a94e9c50cb468b4df4d02af",
+      "openWorld": false
+    },
+    {
+      "localId": "source.read",
+      "title": "Read Pulse Source",
+      "description": "Read one pulse.source ref returned by source.list, including its current ingest or scrape health.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Pulse Source ID returned by List Pulse Sources or a pulse.source ref."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "baseId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "metrics",
+              "http_ingest",
+              "internal"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "lastSeenAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastErrorAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "links": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rel": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "edit",
+                    "status",
+                    "preview",
+                    "download"
+                  ],
+                  "description": "Semantic relationship; clients decide how to present it."
+                },
+                "href": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                  "description": "Root-relative Cloud URL."
+                },
+                "title": {
+                  "description": "Optional human-readable link label.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "required": [
+                "rel",
+                "href"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "baseId",
+          "kind",
+          "name",
+          "enabled",
+          "lastSeenAt",
+          "lastError",
+          "lastErrorAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "0ce190fb303cd9d27f3d4a17035da4cd78662ebb48ca9f015a9b493e1087bf70",
       "openWorld": false
     }
   ],

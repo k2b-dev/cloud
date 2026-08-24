@@ -1,7 +1,7 @@
 {
   "protocolVersion": 1,
   "appId": "venue",
-  "manifestHash": "8c20f17ac322dd989605cc3ee99039bb3d842b301c581574da7b5a6479927d05",
+  "manifestHash": "09ad41a33298e66df4f4f62868172fa9957b40f6db6aea2a39ffb1c3ad18ace8",
   "types": [
     {
       "localId": "assignment",
@@ -22,7 +22,7 @@
     {
       "localId": "assignment.mine",
       "title": "List my assignments",
-      "description": "List the current user-backed actor's own assignments in a bounded date range.",
+      "description": "List the current user's assignments, optionally for a venueId from venue.list or venue.search. Use returned venue.assignment refs with assignment.read or assignment.cancel.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -76,7 +76,7 @@
             "venueId": {
               "type": "string",
               "pattern": "^[0-9A-Za-z]{6}$",
-              "description": "Stable Venue ID."
+              "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
             },
             "venueName": {
               "type": "string",
@@ -130,19 +130,50 @@
               "type": "string",
               "format": "date-time",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "venue.assignment"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$",
+                  "description": "Stable 6-character resource ID."
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
             }
           },
-          "required": ["id", "venueId", "venueName", "venueTimezone", "templateId", "startsAt", "endsAt", "note", "createdAt", "updatedAt"],
+          "required": [
+            "id",
+            "venueId",
+            "venueName",
+            "venueTimezone",
+            "templateId",
+            "startsAt",
+            "endsAt",
+            "note",
+            "createdAt",
+            "updatedAt",
+            "ref"
+          ],
           "additionalProperties": false
         }
       },
-      "schemaHash": "81674364813352e26b5a8c04ec314e27990bdbb127d1fac5698bb15aa8cf576a",
+      "schemaHash": "48ba2433a50578d27a0aaa529812289b67677de1f14331a242e9a4a58233e965",
       "openWorld": false
     },
     {
       "localId": "assignment.read",
       "title": "Read my assignment",
-      "description": "Read one assignment owned by the current user-backed actor.",
+      "description": "Read one owned venue.assignment ref returned by assignment.mine or an assignment signup Action.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -150,10 +181,12 @@
           "id": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Stable personal assignment ID."
+            "description": "Personal assignment ID returned by List my assignments or a venue.assignment ref."
           }
         },
-        "required": ["id"],
+        "required": [
+          "id"
+        ],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -168,7 +201,7 @@
           "venueId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Stable Venue ID."
+            "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
           },
           "venueName": {
             "type": "string",
@@ -224,16 +257,27 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": ["id", "venueId", "venueName", "venueTimezone", "templateId", "startsAt", "endsAt", "note", "createdAt", "updatedAt"],
+        "required": [
+          "id",
+          "venueId",
+          "venueName",
+          "venueTimezone",
+          "templateId",
+          "startsAt",
+          "endsAt",
+          "note",
+          "createdAt",
+          "updatedAt"
+        ],
         "additionalProperties": false
       },
-      "schemaHash": "049bcfcc94353954dc757d481fc1342a485b6ebe31cc996e3761c6af8400e5d2",
+      "schemaHash": "e760c415a56240dd4d05bb3f9da8b4e6a3b9dbfa44692972bee536e89a862873",
       "openWorld": false
     },
     {
       "localId": "feedback.summary",
       "title": "Get Venue feedback summary",
-      "description": "Read bounded rating aggregates without loading anonymous feedback comments.",
+      "description": "Read 30-day rating aggregates for a known Venue without loading anonymous comments. Get venueId from venue.list or venue.search.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -241,10 +285,12 @@
           "venueId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Stable Venue ID."
+            "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
           }
         },
-        "required": ["venueId"],
+        "required": [
+          "venueId"
+        ],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -254,7 +300,7 @@
           "venueId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Stable Venue ID."
+            "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
           },
           "count": {
             "type": "integer",
@@ -302,21 +348,30 @@
                   ]
                 }
               },
-              "required": ["date", "count", "averageRating"],
+              "required": [
+                "date",
+                "count",
+                "averageRating"
+              ],
               "additionalProperties": false
             }
           }
         },
-        "required": ["venueId", "count", "averageRating", "buckets"],
+        "required": [
+          "venueId",
+          "count",
+          "averageRating",
+          "buckets"
+        ],
         "additionalProperties": false
       },
-      "schemaHash": "f1baeff16f39e4a512967acaf29f478d93907acc8e1b25eff9b80ae22a7ccc72",
+      "schemaHash": "00c4a02229e72e704324a0806e2f101fa4e19fba3f5a228eff0962b273c6a5af",
       "openWorld": false
     },
     {
       "localId": "shift.list",
       "title": "List Venue shifts",
-      "description": "Find and list dated Venue shifts for up to 31 days without exposing participant identities.",
+      "description": "List dated shifts for a known Venue without participant identities. Get venueId from venue.list or venue.search; use each returned venueId, templateId, and date with shift.read or assignment.signup.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -324,7 +379,7 @@
           "venueId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Stable Venue ID."
+            "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
           },
           "startDate": {
             "description": "First date in the Venue timezone; defaults to today.",
@@ -353,7 +408,9 @@
             "maximum": 100
           }
         },
-        "required": ["venueId"],
+        "required": [
+          "venueId"
+        ],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -366,7 +423,7 @@
             "venueId": {
               "type": "string",
               "pattern": "^[0-9A-Za-z]{6}$",
-              "description": "Stable Venue ID."
+              "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
             },
             "templateId": {
               "type": "string",
@@ -453,13 +510,13 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "8a06d7d7c24aa849323c32a05d74e0a144d1d883565ba8cf8175279f75dc0ce6",
+      "schemaHash": "0376f3d967430ead09902fef12aa9f81b7451cc5658f24a7ab157e58de596ae4",
       "openWorld": false
     },
     {
       "localId": "shift.read",
       "title": "Read Venue shift",
-      "description": "Read one dated Venue shift by its stable ID.",
+      "description": "Specialized occurrence lookup: read one dated Venue shift using the venueId, templateId, and date returned together by List Venue shifts.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -467,7 +524,7 @@
           "venueId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Stable Venue ID."
+            "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
           },
           "templateId": {
             "type": "string",
@@ -481,7 +538,11 @@
             "description": "Venue-local occurrence date returned by shift.list."
           }
         },
-        "required": ["venueId", "templateId", "date"],
+        "required": [
+          "venueId",
+          "templateId",
+          "date"
+        ],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -491,7 +552,7 @@
           "venueId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Stable Venue ID."
+            "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
           },
           "templateId": {
             "type": "string",
@@ -577,13 +638,13 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "ae4263dc7f3b38d06e7e84cefe54f53432bf545e50cd38562826e0f995b8317f",
+      "schemaHash": "7952e145d8291e7184839207a6529e251c5bcbc09ccb476c5045bd6558a8d6b6",
       "openWorld": false
     },
     {
       "localId": "venue.list",
       "title": "List accessible Venues",
-      "description": "Start here to list permission-scoped Venues and obtain stable venueId values.",
+      "description": "Normal entry for permission-scoped Venue work. List accessible Venues and use returned venue.venue refs or IDs with venue.read, venue.status, shift.list, assignment.mine, or feedback.summary.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -654,11 +715,19 @@
             },
             "openMode": {
               "type": "string",
-              "enum": ["regular", "staffed", "combined"]
+              "enum": [
+                "regular",
+                "staffed",
+                "combined"
+              ]
             },
             "signupMode": {
               "type": "string",
-              "enum": ["templates", "free", "both"]
+              "enum": [
+                "templates",
+                "free",
+                "both"
+              ]
             },
             "publicEnabled": {
               "type": "boolean"
@@ -670,7 +739,11 @@
               "anyOf": [
                 {
                   "type": "string",
-                  "enum": ["read", "write", "admin"]
+                  "enum": [
+                    "read",
+                    "write",
+                    "admin"
+                  ]
                 },
                 {
                   "type": "null"
@@ -687,6 +760,25 @@
               "format": "date-time",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
             },
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "venue.venue"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$",
+                  "description": "Stable 6-character resource ID."
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
+            },
             "links": {
               "minItems": 1,
               "maxItems": 10,
@@ -696,7 +788,13 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": ["open", "edit", "status", "preview", "download"],
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -713,7 +811,10 @@
                     "maxLength": 120
                   }
                 },
-                "required": ["rel", "href"],
+                "required": [
+                  "rel",
+                  "href"
+                ],
                 "additionalProperties": false
               }
             }
@@ -731,18 +832,19 @@
             "feedbackEnabled",
             "permission",
             "createdAt",
-            "updatedAt"
+            "updatedAt",
+            "ref"
           ],
           "additionalProperties": false
         }
       },
-      "schemaHash": "8fcb5f28e14084890e1351786f65da5cbb931cbd673b44f4d4da0268f3e8d4b3",
+      "schemaHash": "37ccf03cbcb8a895c9b1d77de5cee47dbbc8cf5c003a469d4f773767608900ad",
       "openWorld": false
     },
     {
       "localId": "venue.read",
       "title": "Read Venue",
-      "description": "Read compact metadata for one public or accessible Venue without media or secret calendar tokens.",
+      "description": "Read one venue.venue ref returned by venue.list or venue.search, without media or secret calendar tokens.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -750,10 +852,12 @@
           "id": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Stable Venue ID."
+            "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
           }
         },
-        "required": ["id"],
+        "required": [
+          "id"
+        ],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -798,11 +902,19 @@
           },
           "openMode": {
             "type": "string",
-            "enum": ["regular", "staffed", "combined"]
+            "enum": [
+              "regular",
+              "staffed",
+              "combined"
+            ]
           },
           "signupMode": {
             "type": "string",
-            "enum": ["templates", "free", "both"]
+            "enum": [
+              "templates",
+              "free",
+              "both"
+            ]
           },
           "publicEnabled": {
             "type": "boolean"
@@ -814,7 +926,11 @@
             "anyOf": [
               {
                 "type": "string",
-                "enum": ["read", "write", "admin"]
+                "enum": [
+                  "read",
+                  "write",
+                  "admin"
+                ]
               },
               {
                 "type": "null"
@@ -849,13 +965,13 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "e446f0e6fdae26122c7748e90cd5e4a56908562836859697cb0098124d0c8a81",
+      "schemaHash": "cb8ecf4b8b04b83059abd895ec1d8ffce3bcddda572515af176432e6e501ecc1",
       "openWorld": false
     },
     {
       "localId": "venue.search",
       "title": "Search Venues",
-      "description": "Find public or accessible Venues by name, slug, or description.",
+      "description": "Find a public or accessible Venue by name, slug, or description when its ID is unknown. Use returned venue.venue refs with venue.read, venue.status, shift.list, or feedback.summary.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -882,7 +998,11 @@
             "description": "Maximum number of results to return."
           }
         },
-        "required": ["query", "tags", "limit"],
+        "required": [
+          "query",
+          "tags",
+          "limit"
+        ],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -909,7 +1029,10 @@
                   "description": "Stable app-owned resource identifier."
                 }
               },
-              "required": ["type", "id"],
+              "required": [
+                "type",
+                "id"
+              ],
               "additionalProperties": false,
               "description": "Stable identity of the result."
             },
@@ -953,7 +1076,10 @@
                     "maxLength": 1000
                   }
                 },
-                "required": ["label", "value"],
+                "required": [
+                  "label",
+                  "value"
+                ],
                 "additionalProperties": false
               }
             },
@@ -966,7 +1092,13 @@
                 "properties": {
                   "rel": {
                     "type": "string",
-                    "enum": ["open", "edit", "status", "preview", "download"],
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
                     "description": "Semantic relationship; clients decide how to present it."
                   },
                   "href": {
@@ -983,13 +1115,20 @@
                     "maxLength": 120
                   }
                 },
-                "required": ["rel", "href"],
+                "required": [
+                  "rel",
+                  "href"
+                ],
                 "additionalProperties": false
               },
               "description": "Semantic links for the resource."
             }
           },
-          "required": ["ref", "title", "links"],
+          "required": [
+            "ref",
+            "title",
+            "links"
+          ],
           "additionalProperties": false
         }
       },
@@ -1001,7 +1140,10 @@
             "tag": "venue",
             "title": "Venues",
             "description": "Show Venues only.",
-            "aliases": ["venues", "place"]
+            "aliases": [
+              "venues",
+              "place"
+            ]
           }
         ]
       }
@@ -1009,7 +1151,7 @@
     {
       "localId": "venue.status",
       "title": "Get Venue status",
-      "description": "Get current opening status, today's hours, and the next confirmed openings in the Venue timezone.",
+      "description": "Get current opening status, today's hours, and upcoming openings for a known Venue. Get venueId from venue.list or venue.search.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1017,10 +1159,12 @@
           "venueId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Stable Venue ID."
+            "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
           }
         },
-        "required": ["venueId"],
+        "required": [
+          "venueId"
+        ],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1030,7 +1174,7 @@
           "venueId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Stable Venue ID."
+            "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
           },
           "timezone": {
             "type": "string",
@@ -1083,7 +1227,11 @@
               "properties": {
                 "kind": {
                   "type": "string",
-                  "enum": ["regular", "shift", "free"]
+                  "enum": [
+                    "regular",
+                    "shift",
+                    "free"
+                  ]
                 },
                 "title": {
                   "type": "string",
@@ -1101,7 +1249,12 @@
                   "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
                 }
               },
-              "required": ["kind", "title", "startsAt", "endsAt"],
+              "required": [
+                "kind",
+                "title",
+                "startsAt",
+                "endsAt"
+              ],
               "additionalProperties": false
             }
           }
@@ -1119,7 +1272,7 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "473b0a0c56ea6c6fd3a3ec5aa6b2a9d936dec855ff50d2aac1d01d412029fd1b",
+      "schemaHash": "17bc522c9706fbe647a0a32408e0388edd6ab6f3b67eb630f8dc052cfc73ab54",
       "openWorld": false
     }
   ],
@@ -1135,15 +1288,18 @@
           "venueId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Stable Venue ID."
+            "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
           },
           "assignmentId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Own assignment ID returned by assignment.mine."
+            "description": "Own assignment ID returned by List my assignments or a venue.assignment ref."
           }
         },
-        "required": ["venueId", "assignmentId"],
+        "required": [
+          "venueId",
+          "assignmentId"
+        ],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1160,10 +1316,13 @@
             "const": true
           }
         },
-        "required": ["assignmentId", "cancelled"],
+        "required": [
+          "assignmentId",
+          "cancelled"
+        ],
         "additionalProperties": false
       },
-      "schemaHash": "02cadd35a7e12dbd086ab094791a39922dd9c12ecd1556512f39a016a517cbfa",
+      "schemaHash": "c59dafb852b195e7b7c4806e7c277a5bb4daa9c1690000b7718851e3b2843224",
       "destructive": true,
       "openWorld": false,
       "idempotency": "none",
@@ -1180,7 +1339,7 @@
           "venueId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Stable Venue ID."
+            "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
           },
           "templateId": {
             "type": "string",
@@ -1194,7 +1353,11 @@
             "description": "Venue-local occurrence date returned by shift.list."
           }
         },
-        "required": ["venueId", "templateId", "date"],
+        "required": [
+          "venueId",
+          "templateId",
+          "date"
+        ],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1209,7 +1372,7 @@
           "venueId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Stable Venue ID."
+            "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
           },
           "venueName": {
             "type": "string",
@@ -1265,10 +1428,21 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": ["id", "venueId", "venueName", "venueTimezone", "templateId", "startsAt", "endsAt", "note", "createdAt", "updatedAt"],
+        "required": [
+          "id",
+          "venueId",
+          "venueName",
+          "venueTimezone",
+          "templateId",
+          "startsAt",
+          "endsAt",
+          "note",
+          "createdAt",
+          "updatedAt"
+        ],
         "additionalProperties": false
       },
-      "schemaHash": "59c4814879d80a590540ab81a3417d7a232f20e5cd9312bf2786462cd3ec1505",
+      "schemaHash": "f12ed478f8a8cfcc2f45e3fb4560a059da35f9a5ad4ef1c96469d8d0da6c853e",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",
@@ -1285,7 +1459,7 @@
           "venueId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Stable Venue ID."
+            "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
           },
           "startsAt": {
             "type": "string",
@@ -1312,7 +1486,11 @@
             ]
           }
         },
-        "required": ["venueId", "startsAt", "endsAt"],
+        "required": [
+          "venueId",
+          "startsAt",
+          "endsAt"
+        ],
         "additionalProperties": false
       },
       "dataSchema": {
@@ -1327,7 +1505,7 @@
           "venueId": {
             "type": "string",
             "pattern": "^[0-9A-Za-z]{6}$",
-            "description": "Stable Venue ID."
+            "description": "Venue ID returned by Search/List Venues or a venue.venue ref."
           },
           "venueName": {
             "type": "string",
@@ -1383,10 +1561,21 @@
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           }
         },
-        "required": ["id", "venueId", "venueName", "venueTimezone", "templateId", "startsAt", "endsAt", "note", "createdAt", "updatedAt"],
+        "required": [
+          "id",
+          "venueId",
+          "venueName",
+          "venueTimezone",
+          "templateId",
+          "startsAt",
+          "endsAt",
+          "note",
+          "createdAt",
+          "updatedAt"
+        ],
         "additionalProperties": false
       },
-      "schemaHash": "6cef71dd3c40685409ef6737485dba50889503a585a61415d4c8c993559d3143",
+      "schemaHash": "9ad10ba29e701536a4e92639594f6b5eab8585ea7325e6ac37b604a8a4b5016b",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none",

@@ -1,112 +1,42 @@
 {
   "protocolVersion": 1,
   "appId": "grids",
-  "manifestHash": "fc0904846ce323bb70b154624ec15391a5a99f5517c3e5a4b058510d66e4f45a",
+  "manifestHash": "b55336f4d84e66bdb91e7689af7e3d421c8fe2fb019925093bcb0ab39c9dc216",
   "types": [
     {
       "localId": "base",
       "title": "Grids Base",
       "description": "A permission-scoped Grids workspace.",
-      "icon": "ti ti-table"
+      "icon": "ti ti-table",
+      "reader": "base.read"
     },
     {
       "localId": "record",
       "title": "Grids Record",
       "description": "One stable record in a Grids Table.",
-      "icon": "ti ti-row-insert-bottom"
+      "icon": "ti ti-row-insert-bottom",
+      "reader": "record.read"
     },
     {
       "localId": "table",
       "title": "Grids Table",
       "description": "A readable stored or Combined table in a Base.",
-      "icon": "ti ti-table-column"
+      "icon": "ti ti-table-column",
+      "reader": "table.read"
     },
     {
       "localId": "view",
       "title": "Grids View",
       "description": "A permission-scoped saved GQL data view.",
-      "icon": "ti ti-layout-list"
+      "icon": "ti ti-layout-list",
+      "reader": "view.read"
     }
   ],
   "queries": [
     {
-      "localId": "base.get",
-      "title": "Get Grids Base",
-      "description": "Read one accessible Grids Base by stable ID.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "baseId": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable readable Base UUID."
-          }
-        },
-        "required": [
-          "baseId"
-        ],
-        "additionalProperties": false
-      },
-      "dataSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-          },
-          "shortId": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 6
-          },
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 1000
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-          }
-        },
-        "required": [
-          "id",
-          "shortId",
-          "name",
-          "description",
-          "createdAt",
-          "updatedAt"
-        ],
-        "additionalProperties": false
-      },
-      "schemaHash": "95e2dbf1e9a46967f72b9ea451db3bfa3d2382be107f9631edf285cbc1a7cb24",
-      "openWorld": false
-    },
-    {
       "localId": "base.list",
       "title": "List Grids Bases",
-      "description": "Start here to list accessible Grids Bases and obtain a baseId for schema or GQL calls.",
+      "description": "Normal entry for Base-scoped Grids work. List accessible Bases and use returned grids.base refs or IDs with base.read, gql.context, gql.preview, gql.execute, or gql.view.execute.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -141,13 +71,7 @@
           "properties": {
             "id": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-            },
-            "shortId": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 6
+              "pattern": "^[A-Za-z0-9]{6}$"
             },
             "name": {
               "type": "string",
@@ -174,11 +98,49 @@
               "type": "string",
               "format": "date-time",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
             "id",
-            "shortId",
             "name",
             "description",
             "createdAt",
@@ -187,13 +149,118 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "86ca583c58cd3c74c0606e24754a242a83c3c6829eafacc5da6f901999388e9c",
+      "schemaHash": "7b89baf4de70fb0d175d70cdd545f3b4cfd2f6387a4c0f0c66fee229c6f04972",
+      "openWorld": false
+    },
+    {
+      "localId": "base.read",
+      "title": "Read Grids Base",
+      "description": "Read one grids.base ref returned by base.list or base.search.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Stable public Base ID."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "links": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rel": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "edit",
+                    "status",
+                    "preview",
+                    "download"
+                  ],
+                  "description": "Semantic relationship; clients decide how to present it."
+                },
+                "href": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                  "description": "Root-relative Cloud URL."
+                },
+                "title": {
+                  "description": "Optional human-readable link label.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "required": [
+                "rel",
+                "href"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "createdAt",
+          "updatedAt"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "39165357c40fb88ca0bee49f5462fbd184a7f2e80c63669af0b719626a6c0991",
       "openWorld": false
     },
     {
       "localId": "base.search",
       "title": "Search Grids Bases",
-      "description": "Find accessible Grids Bases by name, description, or short ID.",
+      "description": "Find an accessible Grids Base by name, description, or short ID when its ID is unknown. Use returned grids.base refs with base.read or their IDs with gql.context and GQL queries.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -372,16 +439,15 @@
     {
       "localId": "gql.context",
       "title": "Load Grids GQL context",
-      "description": "Inspect a Grids Base schema in steps: list Tables, then Fields and paginated select option IDs, or saved Views. Field results include effective write and audit requirements.",
+      "description": "Load the schema before authoring GQL or record writes. Get baseId from base.list or base.search; request tables first, then fields or select options with returned IDs, or views for gql.view.execute. Field results include write and audit requirements.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "baseId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Readable Base whose permission-shaped GQL context should be loaded."
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Public Base ID whose permission-shaped GQL context should be loaded."
           },
           "kind": {
             "default": "tables",
@@ -395,16 +461,14 @@
             ]
           },
           "tableId": {
-            "description": "Readable Table UUID; required for fields and options, optional for views.",
+            "description": "Public Table ID; required for fields and options, optional for views.",
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[A-Za-z0-9]{6}$"
           },
           "fieldId": {
-            "description": "Readable Select Field UUID; required when kind is options.",
+            "description": "Public Select Field ID; required when kind is options.",
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[A-Za-z0-9]{6}$"
           },
           "cursor": {
             "description": "Opaque cursor returned by the previous page.",
@@ -434,13 +498,7 @@
             "properties": {
               "id": {
                 "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-              },
-              "shortId": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 6
+                "pattern": "^[A-Za-z0-9]{6}$"
               },
               "name": {
                 "type": "string",
@@ -467,11 +525,49 @@
                 "type": "string",
                 "format": "date-time",
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "links": {
+                "minItems": 1,
+                "maxItems": 10,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "rel": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "edit",
+                        "status",
+                        "preview",
+                        "download"
+                      ],
+                      "description": "Semantic relationship; clients decide how to present it."
+                    },
+                    "href": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 2048,
+                      "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                      "description": "Root-relative Cloud URL."
+                    },
+                    "title": {
+                      "description": "Optional human-readable link label.",
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    }
+                  },
+                  "required": [
+                    "rel",
+                    "href"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
               "id",
-              "shortId",
               "name",
               "description",
               "createdAt",
@@ -502,18 +598,11 @@
                     },
                     "id": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                    },
-                    "shortId": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 6
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "baseId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "tableKind": {
                       "type": "string",
@@ -562,12 +651,50 @@
                     },
                     "canUpdateRecords": {
                       "type": "boolean"
+                    },
+                    "links": {
+                      "minItems": 1,
+                      "maxItems": 10,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rel": {
+                            "type": "string",
+                            "enum": [
+                              "open",
+                              "edit",
+                              "status",
+                              "preview",
+                              "download"
+                            ],
+                            "description": "Semantic relationship; clients decide how to present it."
+                          },
+                          "href": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048,
+                            "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                            "description": "Root-relative Cloud URL."
+                          },
+                          "title": {
+                            "description": "Optional human-readable link label.",
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          }
+                        },
+                        "required": [
+                          "rel",
+                          "href"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
                     "kind",
                     "id",
-                    "shortId",
                     "baseId",
                     "tableKind",
                     "name",
@@ -588,18 +715,11 @@
                     },
                     "id": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                    },
-                    "shortId": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 6
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "tableId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "name": {
                       "type": "string",
@@ -627,12 +747,50 @@
                           "type": "null"
                         }
                       ]
+                    },
+                    "links": {
+                      "minItems": 1,
+                      "maxItems": 10,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rel": {
+                            "type": "string",
+                            "enum": [
+                              "open",
+                              "edit",
+                              "status",
+                              "preview",
+                              "download"
+                            ],
+                            "description": "Semantic relationship; clients decide how to present it."
+                          },
+                          "href": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048,
+                            "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                            "description": "Root-relative Cloud URL."
+                          },
+                          "title": {
+                            "description": "Optional human-readable link label.",
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          }
+                        },
+                        "required": [
+                          "rel",
+                          "href"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
                     "kind",
                     "id",
-                    "shortId",
                     "tableId",
                     "name",
                     "description",
@@ -649,18 +807,11 @@
                     },
                     "id": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                    },
-                    "shortId": {
-                      "type": "string",
-                      "minLength": 1,
-                      "maxLength": 6
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "tableId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "name": {
                       "type": "string",
@@ -710,8 +861,7 @@
                       "anyOf": [
                         {
                           "type": "string",
-                          "format": "uuid",
-                          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                          "pattern": "^[A-Za-z0-9]{6}$"
                         },
                         {
                           "type": "null"
@@ -736,7 +886,6 @@
                   "required": [
                     "kind",
                     "id",
-                    "shortId",
                     "tableId",
                     "name",
                     "description",
@@ -764,8 +913,7 @@
                     },
                     "fieldId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "label": {
                       "type": "string",
@@ -803,8 +951,7 @@
                 "properties": {
                   "tableId": {
                     "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    "pattern": "^[A-Za-z0-9]{6}$"
                   },
                   "canCreateRecords": {
                     "type": "boolean"
@@ -829,8 +976,7 @@
                             "type": "array",
                             "items": {
                               "type": "string",
-                              "format": "uuid",
-                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                              "pattern": "^[A-Za-z0-9]{6}$"
                             }
                           },
                           "questions": {
@@ -1025,22 +1171,21 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "c4700217b744191e55e996f0fce7e0dad7db4b0a93e80a9ddca071332d177745",
+      "schemaHash": "535a8f120d201bb12d16b13ef6bb853d20258a09d635e49c85e2ca9236040b5f",
       "openWorld": false
     },
     {
       "localId": "gql.execute",
       "title": "Execute Grids GQL",
-      "description": "Run a permission-safe Grids data query after gql.context. Select only needed fields; follow nextCursor for byte-bounded pages up to a 1,000-row logical ceiling.",
+      "description": "Execute permission-safe GQL after gql.context and normally gql.preview. Select only needed fields; returned grids.record refs can be opened with record.read, and nextCursor continues byte-bounded pages.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "baseId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Readable Base in which the GQL source is resolved."
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Public Base ID in which the GQL source is resolved."
           },
           "query": {
             "type": "string",
@@ -1049,10 +1194,9 @@
             "description": "Grids Query Language source to execute."
           },
           "currentTableId": {
-            "description": "Optional readable Table used when the source omits an explicit from clause.",
+            "description": "Optional public Table ID used when the source omits an explicit from clause.",
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[A-Za-z0-9]{6}$"
           },
           "currentSource": {
             "description": "Optional current Table or View source used when GQL omits from.",
@@ -1067,9 +1211,8 @@
                   },
                   "tableId": {
                     "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-                    "description": "Readable current Table UUID."
+                    "pattern": "^[A-Za-z0-9]{6}$",
+                    "description": "Public current Table ID."
                   }
                 },
                 "required": [
@@ -1088,9 +1231,8 @@
                   },
                   "viewId": {
                     "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-                    "description": "Readable current View UUID."
+                    "pattern": "^[A-Za-z0-9]{6}$",
+                    "description": "Public current View ID."
                   }
                 },
                 "required": [
@@ -1161,13 +1303,11 @@
                     },
                     "tableId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "fieldId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "joinAlias": {
                       "type": "string",
@@ -1203,13 +1343,11 @@
                   "properties": {
                     "recordId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "tableId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "recordMeta": {
                       "type": "object",
@@ -1218,6 +1356,30 @@
                           "type": "integer",
                           "exclusiveMinimum": 0,
                           "maximum": 9007199254740991
+                        },
+                        "finalizedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "finalizedBy": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "deletedAt": {
                           "anyOf": [
@@ -1268,6 +1430,8 @@
                       },
                       "required": [
                         "version",
+                        "finalizedAt",
+                        "finalizedBy",
                         "deletedAt",
                         "createdBy",
                         "updatedBy",
@@ -1282,6 +1446,45 @@
                         "type": "string"
                       },
                       "additionalProperties": {}
+                    },
+                    "links": {
+                      "minItems": 1,
+                      "maxItems": 10,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rel": {
+                            "type": "string",
+                            "enum": [
+                              "open",
+                              "edit",
+                              "status",
+                              "preview",
+                              "download"
+                            ],
+                            "description": "Semantic relationship; clients decide how to present it."
+                          },
+                          "href": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048,
+                            "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                            "description": "Root-relative Cloud URL."
+                          },
+                          "title": {
+                            "description": "Optional human-readable link label.",
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          }
+                        },
+                        "required": [
+                          "rel",
+                          "href"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -1361,22 +1564,21 @@
           }
         ]
       },
-      "schemaHash": "b7e8e1af30680eb68c7994d7de42a6766524d3fbda4af93ac1f3743a59411f0d",
+      "schemaHash": "13d63a3cbe5e59da71658fd5ccb67cee308c1a7085100d4280537d505483d737",
       "openWorld": false
     },
     {
       "localId": "gql.preview",
       "title": "Preview Grids GQL",
-      "description": "Validate permission-safe GQL before execution and return actionable parser or resolver diagnostics without mutating data.",
+      "description": "Validate permission-safe GQL after loading IDs with gql.context. Returns a small sample or actionable diagnostics without mutation; pass valid GQL unchanged to gql.execute.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "baseId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Readable Base in which the GQL source is resolved."
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Public Base ID in which the GQL source is resolved."
           },
           "query": {
             "type": "string",
@@ -1385,10 +1587,9 @@
             "description": "Grids Query Language source to execute."
           },
           "currentTableId": {
-            "description": "Optional readable Table used when the source omits an explicit from clause.",
+            "description": "Optional public Table ID used when the source omits an explicit from clause.",
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[A-Za-z0-9]{6}$"
           },
           "currentSource": {
             "description": "Optional current Table or View source used when GQL omits from.",
@@ -1403,9 +1604,8 @@
                   },
                   "tableId": {
                     "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-                    "description": "Readable current Table UUID."
+                    "pattern": "^[A-Za-z0-9]{6}$",
+                    "description": "Public current Table ID."
                   }
                 },
                 "required": [
@@ -1424,9 +1624,8 @@
                   },
                   "viewId": {
                     "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-                    "description": "Readable current View UUID."
+                    "pattern": "^[A-Za-z0-9]{6}$",
+                    "description": "Public current View ID."
                   }
                 },
                 "required": [
@@ -1491,13 +1690,11 @@
                     },
                     "tableId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "fieldId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "joinAlias": {
                       "type": "string",
@@ -1533,13 +1730,11 @@
                   "properties": {
                     "recordId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "tableId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "recordMeta": {
                       "type": "object",
@@ -1548,6 +1743,30 @@
                           "type": "integer",
                           "exclusiveMinimum": 0,
                           "maximum": 9007199254740991
+                        },
+                        "finalizedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "finalizedBy": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "deletedAt": {
                           "anyOf": [
@@ -1598,6 +1817,8 @@
                       },
                       "required": [
                         "version",
+                        "finalizedAt",
+                        "finalizedBy",
                         "deletedAt",
                         "createdBy",
                         "updatedBy",
@@ -1612,6 +1833,45 @@
                         "type": "string"
                       },
                       "additionalProperties": {}
+                    },
+                    "links": {
+                      "minItems": 1,
+                      "maxItems": 10,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rel": {
+                            "type": "string",
+                            "enum": [
+                              "open",
+                              "edit",
+                              "status",
+                              "preview",
+                              "download"
+                            ],
+                            "description": "Semantic relationship; clients decide how to present it."
+                          },
+                          "href": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048,
+                            "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                            "description": "Root-relative Cloud URL."
+                          },
+                          "title": {
+                            "description": "Optional human-readable link label.",
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          }
+                        },
+                        "required": [
+                          "rel",
+                          "href"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -1691,28 +1951,26 @@
           }
         ]
       },
-      "schemaHash": "52a4a210d507962ea3cda562a4ceb476ebfdec3a3d4ffb59f8ad3e69b4610bdd",
+      "schemaHash": "c2edf3aeed4a582c089d84544e6db062521e1450d71fd10d5616a718528dd7f1",
       "openWorld": false
     },
     {
       "localId": "gql.view.execute",
       "title": "Execute saved Grids View",
-      "description": "Run the exact saved Grids data query for a viewId from gql.context kind views; follow nextCursor for byte-bounded pages.",
+      "description": "Execute the exact saved query for a baseId and viewId returned by gql.context kind views. This is the direct saved-view path; use gql.execute for ad-hoc GQL and nextCursor for further pages.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "baseId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Base containing the saved View."
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Public Base ID containing the saved View."
           },
           "viewId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Readable saved View whose exact stored GQL should execute."
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Public saved View ID whose exact stored GQL should execute."
           },
           "pageSize": {
             "default": 100,
@@ -1768,13 +2026,11 @@
                     },
                     "tableId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "fieldId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "joinAlias": {
                       "type": "string",
@@ -1810,13 +2066,11 @@
                   "properties": {
                     "recordId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "tableId": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[A-Za-z0-9]{6}$"
                     },
                     "recordMeta": {
                       "type": "object",
@@ -1825,6 +2079,30 @@
                           "type": "integer",
                           "exclusiveMinimum": 0,
                           "maximum": 9007199254740991
+                        },
+                        "finalizedAt": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "date-time",
+                              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "finalizedBy": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "format": "uuid",
+                              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
                         },
                         "deletedAt": {
                           "anyOf": [
@@ -1875,6 +2153,8 @@
                       },
                       "required": [
                         "version",
+                        "finalizedAt",
+                        "finalizedBy",
                         "deletedAt",
                         "createdBy",
                         "updatedBy",
@@ -1889,6 +2169,45 @@
                         "type": "string"
                       },
                       "additionalProperties": {}
+                    },
+                    "links": {
+                      "minItems": 1,
+                      "maxItems": 10,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rel": {
+                            "type": "string",
+                            "enum": [
+                              "open",
+                              "edit",
+                              "status",
+                              "preview",
+                              "download"
+                            ],
+                            "description": "Semantic relationship; clients decide how to present it."
+                          },
+                          "href": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048,
+                            "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                            "description": "Root-relative Cloud URL."
+                          },
+                          "title": {
+                            "description": "Optional human-readable link label.",
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          }
+                        },
+                        "required": [
+                          "rel",
+                          "href"
+                        ],
+                        "additionalProperties": false
+                      }
                     }
                   },
                   "required": [
@@ -1968,33 +2287,25 @@
           }
         ]
       },
-      "schemaHash": "f3d7c7b9dae5ec0a9805217f41ca78081dc58770580f07a1a9a73536adbb0719",
+      "schemaHash": "723f8093a99adff536bef4ed458c7a1f2f8e5acaf9fb80a8837ed9535296610a",
       "openWorld": false
     },
     {
-      "localId": "record.get",
-      "title": "Get Grids Record",
-      "description": "Read bounded record metadata and its current version for conflict-safe record.update. Use targeted gql.execute selects to read field values.",
+      "localId": "record.read",
+      "title": "Read Grids Record",
+      "description": "Read one grids.record ref returned by gql.execute, gql.preview, or a record Action. Returns metadata, finalization state, and the current version for record.update; use targeted gql.execute to read field values.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "tableId": {
+          "id": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Readable Table containing the record."
-          },
-          "recordId": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable live record UUID."
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Stable public live Record ID."
           }
         },
         "required": [
-          "tableId",
-          "recordId"
+          "id"
         ],
         "additionalProperties": false
       },
@@ -2004,18 +2315,40 @@
         "properties": {
           "id": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[A-Za-z0-9]{6}$"
           },
           "tableId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[A-Za-z0-9]{6}$"
           },
           "version": {
             "type": "integer",
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991
+          },
+          "finalizedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finalizedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "deletedAt": {
             "anyOf": [
@@ -2076,7 +2409,262 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "7c4e88a5eca37b7b5607014d5c40aa0f7d67923a19d852cc1970664d68148fa0",
+      "schemaHash": "c8c57716e3679cea8a9a66c74dcd69e37bf88f0245f810b96e4c7e093ef8c57d",
+      "openWorld": false
+    },
+    {
+      "localId": "table.read",
+      "title": "Read Grids Table",
+      "description": "Read one grids.table ref returned by gql.context kind tables, including its Base context and effective permission.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Stable public Table ID."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "table"
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$"
+          },
+          "baseId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$"
+          },
+          "tableKind": {
+            "type": "string",
+            "enum": [
+              "stored",
+              "federated"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "permission": {
+            "type": "string",
+            "enum": [
+              "read",
+              "write",
+              "admin"
+            ]
+          },
+          "canCreateRecords": {
+            "type": "boolean"
+          },
+          "canUpdateRecords": {
+            "type": "boolean"
+          },
+          "links": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rel": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "edit",
+                    "status",
+                    "preview",
+                    "download"
+                  ],
+                  "description": "Semantic relationship; clients decide how to present it."
+                },
+                "href": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                  "description": "Root-relative Cloud URL."
+                },
+                "title": {
+                  "description": "Optional human-readable link label.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "required": [
+                "rel",
+                "href"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "baseId",
+          "tableKind",
+          "name",
+          "description",
+          "icon",
+          "permission",
+          "canCreateRecords",
+          "canUpdateRecords"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "fe64e0ff80e68aa55bb2d5cf5a5d796c25911a242f1834b80b5824f4da4c5644",
+      "openWorld": false
+    },
+    {
+      "localId": "view.read",
+      "title": "Read Grids View",
+      "description": "Read one grids.view ref returned by gql.context kind views; execute it with gql.view.execute using the same baseId.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Stable public View ID."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "view"
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$"
+          },
+          "tableId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "icon": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "links": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rel": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "edit",
+                    "status",
+                    "preview",
+                    "download"
+                  ],
+                  "description": "Semantic relationship; clients decide how to present it."
+                },
+                "href": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                  "description": "Root-relative Cloud URL."
+                },
+                "title": {
+                  "description": "Optional human-readable link label.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "required": [
+                "rel",
+                "href"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "tableId",
+          "name",
+          "description",
+          "icon"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "3f3990fb6cf0abffff71079e9a71de95669819050266e3f74f8c8f3bf25dfb3f",
       "openWorld": false
     }
   ],
@@ -2084,26 +2672,24 @@
     {
       "localId": "record.create",
       "title": "Create Grids Record",
-      "description": "Call gql.context kind fields first, then create once with values keyed by writable Field UUID. Select values use option IDs. Returns bounded metadata; read values with targeted GQL. This action is not idempotent.",
+      "description": "Call gql.context kind fields first, then create once with values keyed by writable Field public ID. Select values use option IDs. Returns bounded metadata; read values with targeted GQL. This action is not idempotent.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "tableId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Writable stored Table that should receive the record."
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Public ID of the writable stored Table that should receive the record."
           },
           "values": {
             "type": "object",
             "propertyNames": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[A-Za-z0-9]{6}$"
             },
             "additionalProperties": {},
-            "description": "Field UUIDs mapped to explicitly supplied values."
+            "description": "Public Field IDs mapped to explicitly supplied values."
           }
         },
         "required": [
@@ -2118,18 +2704,40 @@
         "properties": {
           "id": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[A-Za-z0-9]{6}$"
           },
           "tableId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[A-Za-z0-9]{6}$"
           },
           "version": {
             "type": "integer",
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991
+          },
+          "finalizedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finalizedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "deletedAt": {
             "anyOf": [
@@ -2190,7 +2798,7 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "458efbcea841180a6d9001642ff17af9dcbf60753bfc7e9a567730d26fbfafd1",
+      "schemaHash": "d8a6dace63e0f6facb3435a4666bd6c72e6fafc082c913d255b3d0c60787610b",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none"
@@ -2198,38 +2806,35 @@
     {
       "localId": "record.update",
       "title": "Update Grids Record",
-      "description": "Load fields for value and audit requirements, then record.get for ifVersion. Only supplied Field UUIDs change; stale versions are rejected. Returns bounded metadata; read values with targeted GQL.",
+      "description": "Load fields for value and audit requirements, then record.read for ifVersion. Only supplied Field public IDs change; stale versions are rejected. Returns bounded metadata; read values with targeted GQL.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "tableId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Writable stored Table containing the record."
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Public ID of the writable stored Table containing the record."
           },
           "recordId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable live record UUID to update."
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Stable public live Record ID to update."
           },
           "values": {
             "type": "object",
             "propertyNames": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[A-Za-z0-9]{6}$"
             },
             "additionalProperties": {},
-            "description": "Field UUIDs mapped to explicitly supplied replacement values."
+            "description": "Public Field IDs mapped to explicitly supplied replacement values."
           },
           "ifVersion": {
             "type": "integer",
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991,
-            "description": "Record version returned by record.get; stale versions are rejected."
+            "description": "Record version returned by record.read; stale versions are rejected."
           },
           "audit": {
             "description": "Answers required by the Table audit policy, when configured.",
@@ -2267,18 +2872,40 @@
         "properties": {
           "id": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[A-Za-z0-9]{6}$"
           },
           "tableId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[A-Za-z0-9]{6}$"
           },
           "version": {
             "type": "integer",
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991
+          },
+          "finalizedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "finalizedBy": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid",
+                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "deletedAt": {
             "anyOf": [
@@ -2339,10 +2966,149 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "0a49f41fb7e8197bf234b8d592221fb88d89833f8b1b2e198f747fd6ad7e4a79",
+      "schemaHash": "5a88415f137411284759af1a185e557809b1f56204a81409a357ef9da4fa0c5a",
       "destructive": true,
       "openWorld": false,
       "idempotency": "none",
+      "approval": "rememberable",
+      "review": true
+    },
+    {
+      "localId": "record.upsert-external",
+      "title": "Upsert external Grids Record",
+      "description": "Retry-safely bind provider + providerAccount + resourceKind + externalId to one Record. The first request creates it; later updates require ifVersion and patch only supplied Field IDs.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "tableId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$",
+            "description": "Public ID of the writable stored Table that owns the Record."
+          },
+          "externalRef": {
+            "type": "object",
+            "properties": {
+              "provider": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100,
+                "description": "External system or connector name."
+              },
+              "providerAccount": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200,
+                "description": "Stable provider account or tenant identity."
+              },
+              "resourceKind": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100,
+                "description": "External resource kind."
+              },
+              "externalId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500,
+                "description": "Stable id within the external system."
+              }
+            },
+            "required": [
+              "provider",
+              "providerAccount",
+              "resourceKind",
+              "externalId"
+            ],
+            "additionalProperties": false,
+            "description": "Case-sensitive durable identity of the source record outside Grids."
+          },
+          "values": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9]{6}$"
+            },
+            "additionalProperties": {},
+            "description": "Public Field IDs mapped to explicitly supplied values."
+          },
+          "ifVersion": {
+            "description": "Required current Record version when the external identity already exists.",
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "audit": {
+            "description": "Answers required by the Table audit policy for an existing Record update.",
+            "type": "object",
+            "properties": {
+              "answers": {
+                "default": {},
+                "description": "Audit question UUIDs mapped to their answers.",
+                "type": "object",
+                "propertyNames": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "maxLength": 10000
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "tableId",
+          "externalRef",
+          "values"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "recordId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$"
+          },
+          "tableId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6}$"
+          },
+          "version": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "created": {
+            "type": "boolean"
+          },
+          "changed": {
+            "type": "boolean"
+          },
+          "replayed": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "recordId",
+          "tableId",
+          "version",
+          "created",
+          "changed",
+          "replayed"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "05ae5319997d24a8030110a3068b79f65e8c78f11ee11d94e622b67e54f67d66",
+      "destructive": true,
+      "openWorld": false,
+      "idempotency": "required",
+      "approval": "rememberable",
       "review": true
     }
   ]

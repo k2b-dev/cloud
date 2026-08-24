@@ -1,32 +1,35 @@
 {
   "protocolVersion": 1,
   "appId": "spaces",
-  "manifestHash": "b639e89a716fee0c363e7de2ac7c1a0cd5c5123e29ff96d46ed8c0dd9dc13cf5",
+  "manifestHash": "591f564fec4cedd32c61291e41fda4ff987d5b908fcf5755375b5658a13b1fb0",
   "types": [
     {
       "localId": "comment",
       "title": "Space comment",
       "description": "A user-authored comment attached to a Space item.",
-      "icon": "ti ti-message"
+      "icon": "ti ti-message",
+      "reader": "comment.read"
     },
     {
       "localId": "item",
       "title": "Space item",
       "description": "A task or event inside a space.",
-      "icon": "ti ti-checkbox"
+      "icon": "ti ti-checkbox",
+      "reader": "item.read"
     },
     {
       "localId": "space",
       "title": "Space",
       "description": "A permission-scoped collaboration space.",
-      "icon": "ti ti-layout-kanban"
+      "icon": "ti ti-layout-kanban",
+      "reader": "space.read"
     }
   ],
   "queries": [
     {
       "localId": "calendar-destination.list",
       "title": "List calendar destinations",
-      "description": "List up to 100 writable Spaces that can receive a calendar invitation.",
+      "description": "List writable destination Spaces after calendar-invitation.preview finds no linked event. Pass a returned spaceId to calendar-invitation.import.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -42,8 +45,7 @@
           "properties": {
             "id": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "name": {
               "type": "string",
@@ -53,38 +55,94 @@
             "color": {
               "type": "string",
               "pattern": "^#[0-9a-fA-F]{6}$"
+            },
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "spaces.space"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              }
             }
           },
           "required": [
             "id",
             "name",
-            "color"
+            "color",
+            "ref"
           ],
           "additionalProperties": false
         }
       },
-      "schemaHash": "a7c6ed87fecac1e54e9e6f8a5dc185f17f19cc957ad6c33687a1d0691fa78b66",
+      "schemaHash": "270ac26787275e69149c2b149b8ffa684d508723dc379f4961368089f1e81039",
       "openWorld": false
     },
     {
       "localId": "calendar-invitation.preview",
       "title": "Preview calendar invitation",
-      "description": "Parse a bounded iCalendar invitation and show any linked Space event visible to the actor.",
+      "description": "Start a Mail-to-Spaces invitation flow by parsing bounded iCalendar content with its Mail mailboxId and messageId. Shows a visible linked event; otherwise use calendar-destination.list before calendar-invitation.import.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "mailboxId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Source Mail mailbox UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Source Mail mailbox ID."
           },
           "messageId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Source Mail message UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Source Mail message ID."
           },
           "calendar": {
             "type": "string",
@@ -332,8 +390,7 @@
                   },
                   "draftId": {
                     "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    "pattern": "^[0-9A-Za-z]{6}$"
                   },
                   "updatedAt": {
                     "type": "string",
@@ -361,17 +418,14 @@
                 "properties": {
                   "itemId": {
                     "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    "pattern": "^[0-9A-Za-z]{6}$"
                   },
                   "spaceId": {
                     "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    "pattern": "^[0-9A-Za-z]{6}$"
                   },
                   "href": {
-                    "type": "string",
-                    "pattern": "^\\/app\\/spaces\\/.*"
+                    "type": "string"
                   },
                   "sequence": {
                     "type": "integer",
@@ -411,28 +465,26 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "2b514a06add83419c240030121a254b2bd571d0ca0a658985c13adc20900b441",
+      "schemaHash": "b499471bc58f79fc2acb1dc6c0c23330a5c86276faf169e5223973b93f73cf80",
       "openWorld": false
     },
     {
       "localId": "calendar-invitation.response.prepare",
       "title": "Prepare calendar response",
-      "description": "Prepare a standards-based response for an invitation already imported into a writable Space. Create the draft with mail.draft.create, then commit it.",
+      "description": "Prepare a standards-based response after calendar-invitation.preview finds an imported writable Space event. Create the returned payload with mail.draft.create, then call calendar-invitation.response.commit; Mail IDs are correlation values, not Space authorization.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "mailboxId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Source Mail mailbox UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Source Mail mailbox ID."
           },
           "messageId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Source Mail message UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Source Mail message ID."
           },
           "calendar": {
             "type": "string",
@@ -545,26 +597,180 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "0cd5a2007ac18d7db0b6c8e490186b9f25e762d12e0416a9d26276d1bb1494e4",
+      "schemaHash": "6f4591f904c10ef102da71aed888dcb2fff7a2d1230e7e5b6cca704ff7231a33",
       "openWorld": false
     },
     {
-      "localId": "comment.get",
-      "title": "Get comment",
-      "description": "Read one comment by stable UUID after checking its parent item and Space.",
+      "localId": "comment.list",
+      "title": "List comments",
+      "description": "List comments on one known item or recurring occurrence after checking Space access. Get itemId from a spaces.item ref; use returned spaces.comment refs with comment.read.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "commentId": {
+          "itemId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable comment UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
+          },
+          "recurrenceId": {
+            "description": "Optional recurring occurrence timestamp; omit for the item or whole series.",
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "query": {
+            "description": "Optional text search.",
+            "type": "string",
+            "maxLength": 500
+          },
+          "cursor": {
+            "description": "Opaque cursor returned by the previous page.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "limit": {
+            "default": 25,
+            "description": "Maximum number of results to return.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
           }
         },
         "required": [
-          "commentId"
+          "itemId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z]{6}$"
+            },
+            "itemId": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z]{6}$"
+            },
+            "recurrenceId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "userId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "userName": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "updatedAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "canEdit": {
+              "type": "boolean"
+            },
+            "canDelete": {
+              "type": "boolean"
+            },
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "spaces.comment"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
+            },
+            "content": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1000
+            },
+            "contentTruncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "id",
+            "itemId",
+            "recurrenceId",
+            "userId",
+            "userName",
+            "createdAt",
+            "updatedAt",
+            "canEdit",
+            "canDelete",
+            "ref",
+            "content",
+            "contentTruncated"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "schemaHash": "ba0f52b9e1ada51f30fd35e3b071290fb77c5b0a86ccc418c3c9038358e3dfd2",
+      "openWorld": false
+    },
+    {
+      "localId": "comment.read",
+      "title": "Read comment",
+      "description": "Read one spaces.comment ref returned by comment.list after checking its parent item and Space.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Comment ID returned by List comments or a spaces.comment ref."
+          }
+        },
+        "required": [
+          "id"
         ],
         "additionalProperties": false
       },
@@ -574,13 +780,11 @@
         "properties": {
           "id": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "itemId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "recurrenceId": {
             "anyOf": [
@@ -631,6 +835,9 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           },
+          "canEdit": {
+            "type": "boolean"
+          },
           "canDelete": {
             "type": "boolean"
           }
@@ -644,161 +851,26 @@
           "content",
           "createdAt",
           "updatedAt",
+          "canEdit",
           "canDelete"
         ],
         "additionalProperties": false
       },
-      "schemaHash": "80f881bb782437480e087949bdd65b688a96a5f7eed4c574057ba430afa0b9fc",
-      "openWorld": false
-    },
-    {
-      "localId": "comment.list",
-      "title": "List comments",
-      "description": "Read comments in one bounded item or recurring-occurrence discussion after checking parent Space access.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "itemId": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Item whose discussion should be listed."
-          },
-          "recurrenceId": {
-            "description": "Optional recurring occurrence timestamp; omit for the item or whole series.",
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-          },
-          "query": {
-            "description": "Optional text search.",
-            "type": "string",
-            "maxLength": 500
-          },
-          "cursor": {
-            "description": "Opaque cursor returned by the previous page.",
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 256
-          },
-          "limit": {
-            "default": 25,
-            "description": "Maximum number of results to return.",
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 100
-          }
-        },
-        "required": [
-          "itemId"
-        ],
-        "additionalProperties": false
-      },
-      "dataSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "maxItems": 100,
-        "type": "array",
-        "items": {
-          "type": "object",
-          "properties": {
-            "id": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-            },
-            "itemId": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-            },
-            "recurrenceId": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "date-time",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "userId": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "userName": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "createdAt": {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-            },
-            "updatedAt": {
-              "type": "string",
-              "format": "date-time",
-              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-            },
-            "canDelete": {
-              "type": "boolean"
-            },
-            "content": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 1000
-            },
-            "contentTruncated": {
-              "type": "boolean"
-            }
-          },
-          "required": [
-            "id",
-            "itemId",
-            "recurrenceId",
-            "userId",
-            "userName",
-            "createdAt",
-            "updatedAt",
-            "canDelete",
-            "content",
-            "contentTruncated"
-          ],
-          "additionalProperties": false
-        }
-      },
-      "schemaHash": "ddf98eab45091043aa18ac2b84b9085e159bdfddd3dcc010df20b346257f3933",
+      "schemaHash": "48da02ea0a2001c7c6ba4ff9c47b48f460e2bbc161dc1aae848f7cd9702d4011",
       "openWorld": false
     },
     {
       "localId": "event.list",
       "title": "List events",
-      "description": "List event-shaped items in one readable Space with bounded filters and pagination.",
+      "description": "Browse calendar events in one known Space. Get spaceId, columnIds, and tagIds from space.read; use returned spaces.item refs with item.read, comments, or event Actions.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "spaceId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Space whose items should be listed."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Space ID returned by Space search/list/read or a spaces.space ref."
           },
           "query": {
             "description": "Optional text search.",
@@ -830,27 +902,25 @@
             }
           },
           "columnIds": {
-            "description": "Optional Space column UUID filter.",
+            "description": "Optional column IDs returned by Read space.",
             "maxItems": 100,
             "type": "array",
             "items": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             }
           },
           "tagIds": {
-            "description": "Optional Space tag UUID filter.",
+            "description": "Optional tag IDs returned by Read space.",
             "maxItems": 100,
             "type": "array",
             "items": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             }
           },
           "assigneeIds": {
-            "description": "Optional assignee user UUID filter.",
+            "description": "Optional user UUIDs returned by List assignable Space members.",
             "maxItems": 100,
             "type": "array",
             "items": {
@@ -920,18 +990,33 @@
             },
             "id": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
+            },
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "spaces.item"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
             },
             "spaceId": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "columnId": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "title": {
               "type": "string",
@@ -996,8 +1081,7 @@
                 "properties": {
                   "id": {
                     "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    "pattern": "^[0-9A-Za-z]{6}$"
                   },
                   "name": {
                     "type": "string",
@@ -1030,6 +1114,45 @@
               "type": "string",
               "format": "date-time",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              }
             },
             "location": {
               "anyOf": [
@@ -1079,6 +1202,7 @@
           "required": [
             "kind",
             "id",
+            "ref",
             "spaceId",
             "columnId",
             "title",
@@ -1102,26 +1226,179 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "9b346c8a28a3e07ea61219a73da5dea2fe760497c31e2f5e6eb8e622f1f74a9d",
+      "schemaHash": "fa1aa77923f2bc4827487d887716f6c072ad2f805e45bfd1251a8d6680fc4e5a",
       "openWorld": false
     },
     {
-      "localId": "item.get",
-      "title": "Get Space item",
-      "description": "Read one task or event by stable item UUID with an explicit kind discriminator.",
+      "localId": "item.link-candidate.search",
+      "title": "Search writable Space items",
+      "description": "Specialized cross-Space search for writable tasks or events before item.reference.add. Use item.search for normal reading; pass a returned spaces.item ref as the Action target.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
-          "itemId": {
+          "query": {
+            "default": "",
+            "description": "Optional item title or content search.",
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable Space item UUID."
+            "maxLength": 500
+          },
+          "limit": {
+            "default": 50,
+            "description": "Maximum number of writable items.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 180,
+                  "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                  "description": "Namespaced resource type declared by the owning app."
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "Stable app-owned resource identifier."
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false,
+              "description": "Stable identity of the result."
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Primary result label."
+            },
+            "preview": {
+              "description": "Short plain-text result preview.",
+              "type": "string",
+              "maxLength": 2000
+            },
+            "icon": {
+              "description": "Optional presentation icon.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "priority": {
+              "description": "App-local relevance hint from zero to nine.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9
+            },
+            "metadata": {
+              "description": "Small structured metadata shown with the result.",
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  },
+                  "value": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "label",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              },
+              "description": "Semantic links for the resource."
+            }
+          },
+          "required": [
+            "ref",
+            "title",
+            "links"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "schemaHash": "c5a77207edccf591c44e7e8946902f89c2e3d9ede163831f20cd63465e2c7e32",
+      "openWorld": false
+    },
+    {
+      "localId": "item.read",
+      "title": "Read Space item",
+      "description": "Read one spaces.item ref returned by item.search, task.list, event.list, or a reference query. The kind field distinguishes tasks from events for subsequent Actions.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
           }
         },
         "required": [
-          "itemId"
+          "id"
         ],
         "additionalProperties": false
       },
@@ -1137,18 +1414,15 @@
               },
               "id": {
                 "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                "pattern": "^[0-9A-Za-z]{6}$"
               },
               "spaceId": {
                 "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                "pattern": "^[0-9A-Za-z]{6}$"
               },
               "columnId": {
                 "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                "pattern": "^[0-9A-Za-z]{6}$"
               },
               "title": {
                 "type": "string",
@@ -1216,8 +1490,7 @@
                   "properties": {
                     "id": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[0-9A-Za-z]{6}$"
                     },
                     "name": {
                       "type": "string",
@@ -1263,6 +1536,23 @@
                   }
                 ]
               },
+              "estimatedDurationMinutes": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "activeBlockerCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
               "priority": {
                 "anyOf": [
                   {
@@ -1278,6 +1568,102 @@
                     "type": "null"
                   }
                 ]
+              },
+              "attachments": {
+                "description": "Bounded attachment metadata and authenticated links included by item.read.",
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[0-9A-Za-z]{6}$",
+                      "description": "Attachment ID"
+                    },
+                    "filename": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255,
+                      "description": "Original attachment filename"
+                    },
+                    "mimeType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255,
+                      "description": "Attachment media type"
+                    },
+                    "sizeBytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 10485760,
+                      "description": "Attachment size in bytes"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "image",
+                        "file"
+                      ],
+                      "description": "Preview category"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "description": "Upload timestamp (ISO)"
+                    },
+                    "links": {
+                      "minItems": 1,
+                      "maxItems": 2,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rel": {
+                            "type": "string",
+                            "enum": [
+                              "open",
+                              "edit",
+                              "status",
+                              "preview",
+                              "download"
+                            ],
+                            "description": "Semantic relationship; clients decide how to present it."
+                          },
+                          "href": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048,
+                            "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                            "description": "Root-relative Cloud URL."
+                          },
+                          "title": {
+                            "description": "Optional human-readable link label.",
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          }
+                        },
+                        "required": [
+                          "rel",
+                          "href"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "filename",
+                    "mimeType",
+                    "sizeBytes",
+                    "kind",
+                    "createdAt",
+                    "links"
+                  ],
+                  "additionalProperties": false
+                }
               }
             },
             "required": [
@@ -1296,6 +1682,8 @@
               "createdAt",
               "updatedAt",
               "deadline",
+              "estimatedDurationMinutes",
+              "activeBlockerCount",
               "priority"
             ],
             "additionalProperties": false
@@ -1309,18 +1697,15 @@
               },
               "id": {
                 "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                "pattern": "^[0-9A-Za-z]{6}$"
               },
               "spaceId": {
                 "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                "pattern": "^[0-9A-Za-z]{6}$"
               },
               "columnId": {
                 "type": "string",
-                "format": "uuid",
-                "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                "pattern": "^[0-9A-Za-z]{6}$"
               },
               "title": {
                 "type": "string",
@@ -1388,8 +1773,7 @@
                   "properties": {
                     "id": {
                       "type": "string",
-                      "format": "uuid",
-                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                      "pattern": "^[0-9A-Za-z]{6}$"
                     },
                     "name": {
                       "type": "string",
@@ -1548,13 +1932,275 @@
           }
         ]
       },
-      "schemaHash": "88d9a3d22f33c825cf48f9b04fae39220b690ce217ee319708712022eface6a8",
+      "schemaHash": "4bcf5e0f35c7d22d859017d7d7983d7f3f6f92944293463d7fd589d185cc6d4f",
+      "openWorld": false
+    },
+    {
+      "localId": "item.reference.find",
+      "title": "Find items linked to a resource",
+      "description": "Find readable Space items linked to one known Cloud resource ref. Use returned spaces.item refs with item.read; use item.search for title or workflow discovery instead.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 180,
+                "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                "description": "Namespaced resource type declared by the owning app."
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "Stable app-owned resource identifier."
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "additionalProperties": false,
+            "description": "Cloud resource whose linked Space items should be found."
+          },
+          "limit": {
+            "default": 50,
+            "description": "Maximum number of linked items.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "items": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "minLength": 3,
+                      "maxLength": 180,
+                      "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                      "description": "Namespaced resource type declared by the owning app."
+                    },
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "description": "Stable app-owned resource identifier."
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Stable identity of the result."
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500,
+                  "description": "Primary result label."
+                },
+                "preview": {
+                  "description": "Short plain-text result preview.",
+                  "type": "string",
+                  "maxLength": 2000
+                },
+                "icon": {
+                  "description": "Optional presentation icon.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                },
+                "priority": {
+                  "description": "App-local relevance hint from zero to nine.",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9
+                },
+                "metadata": {
+                  "description": "Small structured metadata shown with the result.",
+                  "maxItems": 20,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "label": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      },
+                      "value": {
+                        "type": "string",
+                        "maxLength": 1000
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "links": {
+                  "minItems": 1,
+                  "maxItems": 10,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "rel": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "edit",
+                          "status",
+                          "preview",
+                          "download"
+                        ],
+                        "description": "Semantic relationship; clients decide how to present it."
+                      },
+                      "href": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                        "description": "Root-relative Cloud URL."
+                      },
+                      "title": {
+                        "description": "Optional human-readable link label.",
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      }
+                    },
+                    "required": [
+                      "rel",
+                      "href"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "description": "Semantic links for the resource."
+                }
+              },
+              "required": [
+                "ref",
+                "title",
+                "links"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "items",
+          "truncated"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "e4ac2beb13afe0dc8d1927597fd6490e33968f2de311f782612bcf1fcc4f89ee",
+      "openWorld": false
+    },
+    {
+      "localId": "item.reference.list",
+      "title": "List item resource links",
+      "description": "List Cloud resource refs attached to one known spaces.item ref. Returned refs can be passed directly to their owning app readers; use item.reference.find for the reverse lookup.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
+          }
+        },
+        "required": [
+          "itemId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 180,
+                  "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                  "description": "Namespaced resource type declared by the owning app."
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "Stable app-owned resource identifier."
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false,
+              "description": "Stable Cloud resource reference"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500,
+              "description": "Space-owned display label snapshot"
+            },
+            "createdAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+              "description": "Link creation timestamp (ISO)"
+            }
+          },
+          "required": [
+            "ref",
+            "label",
+            "createdAt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "schemaHash": "400a11c38f838893bfe24fc85db35fefe1c664b74aa9a70b31b0ef8891e3629b",
       "openWorld": false
     },
     {
       "localId": "item.search",
       "title": "Search Space items",
-      "description": "Find accessible tasks and events with optional workflow facets.",
+      "description": "Direct cross-Space entry for finding readable tasks and events by text or workflow facets. Use returned spaces.item refs with item.read; use task.list or event.list to browse one known Space.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1753,16 +2399,15 @@
     {
       "localId": "space.assignee.list",
       "title": "List assignable Space members",
-      "description": "Find people who can be assigned to a task or calendar event in one writable Space.",
+      "description": "List people eligible for task or event assignment in one writable Space. Get spaceId from space.list or space.search and pass a returned user ID to an item Action.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "spaceId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Writable Space whose assignable members should be listed."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Space ID returned by Space search/list/read or a spaces.space ref."
           },
           "query": {
             "description": "Optional text search.",
@@ -1812,176 +2457,13 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "6578eed5d6f92b65d4bb8b31c9382537aa26de98147e3f19eba50adf0fef4d69",
-      "openWorld": false
-    },
-    {
-      "localId": "space.get",
-      "title": "Get space",
-      "description": "Read one accessible Space plus its bounded column and tag vocabulary.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "spaceId": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable Space UUID."
-          }
-        },
-        "required": [
-          "spaceId"
-        ],
-        "additionalProperties": false
-      },
-      "dataSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-          },
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
-          },
-          "description": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 500
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "color": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 100
-          },
-          "permission": {
-            "type": "string",
-            "enum": [
-              "read",
-              "write",
-              "admin"
-            ]
-          },
-          "createdAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-          },
-          "updatedAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
-          },
-          "columns": {
-            "maxItems": 100,
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                },
-                "name": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 50
-                },
-                "color": {
-                  "anyOf": [
-                    {
-                      "type": "string",
-                      "maxLength": 100
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "isDone": {
-                  "type": "boolean"
-                }
-              },
-              "required": [
-                "id",
-                "name",
-                "color",
-                "isDone"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "columnsTruncated": {
-            "type": "boolean"
-          },
-          "tags": {
-            "maxItems": 100,
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "id": {
-                  "type": "string",
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                },
-                "name": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 30
-                },
-                "color": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 100
-                }
-              },
-              "required": [
-                "id",
-                "name",
-                "color"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "tagsTruncated": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "description",
-          "color",
-          "permission",
-          "createdAt",
-          "updatedAt",
-          "columns",
-          "columnsTruncated",
-          "tags",
-          "tagsTruncated"
-        ],
-        "additionalProperties": false
-      },
-      "schemaHash": "c74b009ffc11f19e4b03a3540e49ed8869db760ed4056010e253ad2f881f2d50",
+      "schemaHash": "de539e3e5c393566e397eb5dd941b4bf230a854d72e4e477f890edce44d465be",
       "openWorld": false
     },
     {
       "localId": "space.list",
       "title": "List spaces",
-      "description": "List accessible Spaces with effective permission and bounded SQL pagination.",
+      "description": "Normal entry for Space-scoped work. List accessible Spaces with effective permission; use returned spaces.space refs or IDs with space.read, task.list, event.list, and item creation Actions.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -2026,8 +2508,7 @@
           "properties": {
             "id": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "name": {
               "type": "string",
@@ -2058,6 +2539,45 @@
                 "admin"
               ]
             },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              }
+            },
             "createdAt": {
               "type": "string",
               "format": "date-time",
@@ -2067,6 +2587,24 @@
               "type": "string",
               "format": "date-time",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+            },
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "spaces.space"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -2076,18 +2614,217 @@
             "color",
             "permission",
             "createdAt",
-            "updatedAt"
+            "updatedAt",
+            "ref"
           ],
           "additionalProperties": false
         }
       },
-      "schemaHash": "70db23ab2b9d98174f74f03a0965cbc4fc0390034f5b987f5ffc3c74a8d1f8d1",
+      "schemaHash": "217ac2b6a1bccb4dc539903aafcc12be27b1ed1fabe0a616eeb70ca70cbceb24",
+      "openWorld": false
+    },
+    {
+      "localId": "space.read",
+      "title": "Read space",
+      "description": "Read one spaces.space ref returned by space.list or space.search, including column and tag IDs required by filtered lists and item Actions.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Space ID returned by Space search/list/read or a spaces.space ref."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "color": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "permission": {
+            "type": "string",
+            "enum": [
+              "read",
+              "write",
+              "admin"
+            ]
+          },
+          "links": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rel": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "edit",
+                    "status",
+                    "preview",
+                    "download"
+                  ],
+                  "description": "Semantic relationship; clients decide how to present it."
+                },
+                "href": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                  "description": "Root-relative Cloud URL."
+                },
+                "title": {
+                  "description": "Optional human-readable link label.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "required": [
+                "rel",
+                "href"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "columns": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 50
+                },
+                "color": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "maxLength": 100
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "isDone": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "color",
+                "isDone"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "columnsTruncated": {
+            "type": "boolean"
+          },
+          "tags": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 30
+                },
+                "color": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "color"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "tagsTruncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "color",
+          "permission",
+          "createdAt",
+          "updatedAt",
+          "columns",
+          "columnsTruncated",
+          "tags",
+          "tagsTruncated"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "fc9f31797a902eee40b94b1b5367434944a3d5df687260c795c69cab88447ac1",
       "openWorld": false
     },
     {
       "localId": "space.search",
       "title": "Search spaces",
-      "description": "Find accessible Spaces by name or description.",
+      "description": "Find an accessible Space by name or description when its ID is unknown. Use returned spaces.space refs with space.read or their IDs with task.list, event.list, and item Actions.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -2264,18 +3001,211 @@
       }
     },
     {
+      "localId": "task.blocker.list",
+      "title": "List task blockers",
+      "description": "List tasks that block one known task. Get itemId from task.list, item.search, or item.read; returned spaces.item refs can be opened with item.read.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
+          }
+        },
+        "required": [
+          "itemId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "blocker": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$",
+                  "description": "Blocker task ID"
+                },
+                "spaceId": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$",
+                  "description": "Parent Space ID"
+                },
+                "title": {
+                  "type": "string",
+                  "description": "Blocker task title"
+                },
+                "completedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Completion timestamp (ISO)"
+                },
+                "ref": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "spaces.item"
+                    },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[0-9A-Za-z]{6}$"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "spaceId",
+                "title",
+                "completedAt",
+                "ref"
+              ],
+              "additionalProperties": false
+            },
+            "createdAt": {
+              "type": "string",
+              "description": "Dependency creation timestamp (ISO)"
+            }
+          },
+          "required": [
+            "blocker",
+            "createdAt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "schemaHash": "30649de5aca788c0f924435edfbb0be73c8003fc4c542866ccb16a85e1a0ad4d",
+      "openWorld": false
+    },
+    {
+      "localId": "task.blocks.list",
+      "title": "List tasks blocked by a task",
+      "description": "List tasks currently blocked by one known task. Get itemId from task.list, item.search, or item.read; use task.blocker.list for the opposite direction.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
+          }
+        },
+        "required": [
+          "itemId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "maxItems": 100,
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "dependent": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$",
+                  "description": "Blocker task ID"
+                },
+                "spaceId": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$",
+                  "description": "Parent Space ID"
+                },
+                "title": {
+                  "type": "string",
+                  "description": "Blocker task title"
+                },
+                "completedAt": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Completion timestamp (ISO)"
+                },
+                "ref": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "const": "spaces.item"
+                    },
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[0-9A-Za-z]{6}$"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "id",
+                "spaceId",
+                "title",
+                "completedAt",
+                "ref"
+              ],
+              "additionalProperties": false
+            },
+            "createdAt": {
+              "type": "string",
+              "description": "Dependency creation timestamp (ISO)"
+            }
+          },
+          "required": [
+            "dependent",
+            "createdAt"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "schemaHash": "0cb3679ea68f090247b1072b73d773e27054a0d8176c9fbc66698d526321dc00",
+      "openWorld": false
+    },
+    {
       "localId": "task.list",
       "title": "List tasks",
-      "description": "List task-shaped items in one readable Space with bounded filters and pagination.",
+      "description": "Browse tasks in one known Space. Get spaceId, columnIds, and tagIds from space.read; use returned spaces.item refs with item.read, dependency queries, comments, or task Actions.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "spaceId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Space whose items should be listed."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Space ID returned by Space search/list/read or a spaces.space ref."
           },
           "query": {
             "description": "Optional text search.",
@@ -2307,27 +3237,25 @@
             }
           },
           "columnIds": {
-            "description": "Optional Space column UUID filter.",
+            "description": "Optional column IDs returned by Read space.",
             "maxItems": 100,
             "type": "array",
             "items": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             }
           },
           "tagIds": {
-            "description": "Optional Space tag UUID filter.",
+            "description": "Optional tag IDs returned by Read space.",
             "maxItems": 100,
             "type": "array",
             "items": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             }
           },
           "assigneeIds": {
-            "description": "Optional assignee user UUID filter.",
+            "description": "Optional user UUIDs returned by List assignable Space members.",
             "maxItems": 100,
             "type": "array",
             "items": {
@@ -2397,18 +3325,33 @@
             },
             "id": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
+            },
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "spaces.item"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
             },
             "spaceId": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "columnId": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "title": {
               "type": "string",
@@ -2473,8 +3416,7 @@
                 "properties": {
                   "id": {
                     "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    "pattern": "^[0-9A-Za-z]{6}$"
                   },
                   "name": {
                     "type": "string",
@@ -2508,6 +3450,45 @@
               "format": "date-time",
               "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
             },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              }
+            },
             "deadline": {
               "anyOf": [
                 {
@@ -2519,6 +3500,23 @@
                   "type": "null"
                 }
               ]
+            },
+            "estimatedDurationMinutes": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 2147483647
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "activeBlockerCount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
             },
             "priority": {
               "anyOf": [
@@ -2540,6 +3538,7 @@
           "required": [
             "kind",
             "id",
+            "ref",
             "spaceId",
             "columnId",
             "title",
@@ -2552,12 +3551,14 @@
             "createdAt",
             "updatedAt",
             "deadline",
+            "estimatedDurationMinutes",
+            "activeBlockerCount",
             "priority"
           ],
           "additionalProperties": false
         }
       },
-      "schemaHash": "e1ff6e965c627e368bb8ab2bed3f754c2cbc56a43f9d07358291604312ff6f8a",
+      "schemaHash": "62ea8f704b1e9ebb8ca6b5272e00c8e41c7f95fcdab8a091b8718f03546f2c19",
       "openWorld": false
     }
   ],
@@ -2565,22 +3566,20 @@
     {
       "localId": "calendar-invitation.import",
       "title": "Import calendar invitation",
-      "description": "Idempotently create, update, or cancel the matching event in an explicitly selected writable Space.",
+      "description": "Idempotently create, update, or cancel the matching event in an explicitly selected writable Space. Mail identifiers are opaque correlation values and grant no Space access.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "mailboxId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Source Mail mailbox UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Source Mail mailbox ID."
           },
           "messageId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Source Mail message UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Source Mail message ID."
           },
           "calendar": {
             "type": "string",
@@ -2590,16 +3589,57 @@
           },
           "spaceId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Writable destination Space UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Writable destination Space ID."
+          },
+          "conversation": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 180,
+                    "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                    "description": "Namespaced resource type declared by the owning app."
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "description": "Stable app-owned resource identifier."
+                  }
+                },
+                "required": [
+                  "type",
+                  "id"
+                ],
+                "additionalProperties": false,
+                "description": "Stable Cloud resource reference"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500,
+                "description": "Space-owned display label snapshot"
+              }
+            },
+            "required": [
+              "ref",
+              "label"
+            ],
+            "additionalProperties": false,
+            "description": "Source Mail conversation linked to the imported event."
           }
         },
         "required": [
           "mailboxId",
           "messageId",
           "calendar",
-          "spaceId"
+          "spaceId",
+          "conversation"
         ],
         "additionalProperties": false
       },
@@ -2609,17 +3649,14 @@
         "properties": {
           "itemId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "spaceId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "href": {
-            "type": "string",
-            "pattern": "^\\/app\\/spaces\\/.*"
+            "type": "string"
           },
           "outcome": {
             "type": "string",
@@ -2639,7 +3676,7 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "afd056b7bea74b75ea0b7c4b75c6976e638d33af7d9bac5e327e601cd62a59cf",
+      "schemaHash": "8565564ac4ff5d2af3db1bd46bd6725efad1edb63c2a752e996bcb1a5d1c01c9",
       "destructive": true,
       "openWorld": false,
       "idempotency": "none",
@@ -2648,22 +3685,20 @@
     {
       "localId": "calendar-invitation.response.commit",
       "title": "Commit calendar response draft",
-      "description": "Record the mail draft created from calendar-invitation.response.prepare after mail.draft.create succeeds.",
+      "description": "Record the correlated Mail draft after mail.draft.create succeeds and recheck access to the linked Space event.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "mailboxId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Source Mail mailbox UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Source Mail mailbox ID."
           },
           "messageId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Source Mail message UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Source Mail message ID."
           },
           "participationStatus": {
             "type": "string",
@@ -2676,9 +3711,8 @@
           },
           "draftId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Mail draft UUID created from the prepared response."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Mail draft ID created from the prepared response."
           }
         },
         "required": [
@@ -2707,8 +3741,7 @@
           },
           "draftId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "updatedAt": {
             "type": "string",
@@ -2724,10 +3757,11 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "4003c5c0b8831e71d5001bbaeb22f0feb3590b57027cfd5f7b7701a31098ae94",
+      "schemaHash": "f0b98c34f73353be07795546b8f1c8721f6ad143daa5c8f8b16f3a233f78394e",
       "destructive": true,
       "openWorld": false,
       "idempotency": "none",
+      "approval": "rememberable",
       "review": true
     },
     {
@@ -2740,9 +3774,8 @@
         "properties": {
           "itemId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Writable parent item UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
           },
           "recurrenceId": {
             "description": "Optional recurring occurrence timestamp.",
@@ -2769,13 +3802,11 @@
         "properties": {
           "id": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "itemId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "recurrenceId": {
             "anyOf": [
@@ -2826,6 +3857,9 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           },
+          "canEdit": {
+            "type": "boolean"
+          },
           "canDelete": {
             "type": "boolean"
           }
@@ -2839,14 +3873,17 @@
           "content",
           "createdAt",
           "updatedAt",
+          "canEdit",
           "canDelete"
         ],
         "additionalProperties": false
       },
-      "schemaHash": "5581110eb5dca56e14dfb2e7ea5780219e423cd17bd6d1aa40ade54ca93a860b",
+      "schemaHash": "486c66debf53f5271ed2fa008add7324eedb2d088c7af2088e6cfd18de409cc2",
       "destructive": false,
       "openWorld": false,
-      "idempotency": "none"
+      "idempotency": "none",
+      "approval": "rememberable",
+      "review": true
     },
     {
       "localId": "comment.delete",
@@ -2858,9 +3895,8 @@
         "properties": {
           "commentId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable UUID of the current user's recent comment."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Stable public ID of the current user's recent comment."
           }
         },
         "required": [
@@ -2874,8 +3910,7 @@
         "properties": {
           "commentId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "deleted": {
             "type": "boolean",
@@ -2888,7 +3923,7 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "1b8e3e837e6f1d99f957897af7534a04a4d78b728e37acbdce5e7c4ad5adbeaf",
+      "schemaHash": "d01fb3d0841a823723592d4cbab0dc701ffa3304ef3aec8764d843108ba742ac",
       "destructive": true,
       "openWorld": false,
       "idempotency": "none",
@@ -2897,16 +3932,15 @@
     {
       "localId": "comment.update",
       "title": "Update comment",
-      "description": "Update the current user's own comment in a writable Space.",
+      "description": "Update the current user's own comment within 10 minutes in a writable Space.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "commentId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable UUID of the current user's comment."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Stable public ID of the current user's comment."
           },
           "content": {
             "type": "string",
@@ -2927,13 +3961,11 @@
         "properties": {
           "id": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "itemId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "recurrenceId": {
             "anyOf": [
@@ -2984,6 +4016,9 @@
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
           },
+          "canEdit": {
+            "type": "boolean"
+          },
           "canDelete": {
             "type": "boolean"
           }
@@ -2997,14 +4032,16 @@
           "content",
           "createdAt",
           "updatedAt",
+          "canEdit",
           "canDelete"
         ],
         "additionalProperties": false
       },
-      "schemaHash": "1b044eaeb0572eaa73dfc3472db5f9990d6dd12fbac9074212d987000946da3e",
+      "schemaHash": "cb1d7a0f1018389568a969f4dd7151033411fe2a86d8588f701e852729eeb200",
       "destructive": true,
       "openWorld": false,
       "idempotency": "none",
+      "approval": "rememberable",
       "review": true
     },
     {
@@ -3017,15 +4054,13 @@
         "properties": {
           "spaceId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Writable Space UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Space ID returned by Space search/list/read or a spaces.space ref."
           },
           "columnId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Target column UUID in the selected Space."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Target column ID returned by Read space for the selected Space."
           },
           "title": {
             "type": "string",
@@ -3116,13 +4151,57 @@
             }
           },
           "tagIds": {
-            "description": "Optional tag UUIDs from this Space.",
+            "description": "Optional tag IDs from this Space.",
             "maxItems": 100,
             "type": "array",
             "items": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
+            }
+          },
+          "references": {
+            "description": "Cloud resources linked to the new event.",
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "minLength": 3,
+                      "maxLength": 180,
+                      "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                      "description": "Namespaced resource type declared by the owning app."
+                    },
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "description": "Stable app-owned resource identifier."
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Stable Cloud resource reference"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500,
+                  "description": "Space-owned display label snapshot"
+                }
+              },
+              "required": [
+                "ref",
+                "label"
+              ],
+              "additionalProperties": false
             }
           }
         },
@@ -3145,18 +4224,15 @@
           },
           "id": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "spaceId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "columnId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "title": {
             "type": "string",
@@ -3224,8 +4300,7 @@
               "properties": {
                 "id": {
                   "type": "string",
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  "pattern": "^[0-9A-Za-z]{6}$"
                 },
                 "name": {
                   "type": "string",
@@ -3382,15 +4457,433 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "aac3a46cd22b10e10c829e12ea0002cad60e4faa0c8b3a92d6cb675e20ab14d9",
+      "schemaHash": "2eff2173996d3b2cb055c29627e04882449795927692cb6b2148b017e8eaa6de",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none"
     },
     {
+      "localId": "event.create-once",
+      "title": "Create calendar event once",
+      "description": "Create one calendar event with retry-safe idempotency for durable workflows.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "spaceId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Space ID returned by Space search/list/read or a spaces.space ref."
+          },
+          "columnId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Target column ID returned by Read space for the selected Space."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Event title."
+          },
+          "description": {
+            "description": "Optional event description.",
+            "type": "string",
+            "maxLength": 5000
+          },
+          "location": {
+            "description": "Optional event location.",
+            "type": "string",
+            "maxLength": 500
+          },
+          "url": {
+            "description": "Optional event URL.",
+            "type": "string",
+            "maxLength": 2000,
+            "format": "uri"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "Event start timestamp."
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "description": "Event end timestamp after startsAt."
+          },
+          "allDay": {
+            "description": "Whether the event uses all-day presentation.",
+            "type": "boolean"
+          },
+          "recurrence": {
+            "description": "Optional recurrence series.",
+            "type": "object",
+            "properties": {
+              "rrule": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000,
+                "description": "RFC 5545 recurrence rule without the RRULE prefix."
+              },
+              "dtstart": {
+                "description": "Optional recurrence anchor timestamp.",
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "exdate": {
+                "default": [],
+                "description": "Excluded recurrence timestamps.",
+                "maxItems": 1000,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                }
+              }
+            },
+            "required": [
+              "rrule"
+            ],
+            "additionalProperties": false
+          },
+          "assigneeIds": {
+            "description": "Optional assignee user UUIDs from this Space.",
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            }
+          },
+          "tagIds": {
+            "description": "Optional tag IDs from this Space.",
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z]{6}$"
+            }
+          },
+          "references": {
+            "description": "Cloud resources linked to the new event.",
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "minLength": 3,
+                      "maxLength": 180,
+                      "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                      "description": "Namespaced resource type declared by the owning app."
+                    },
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "description": "Stable app-owned resource identifier."
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Stable Cloud resource reference"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500,
+                  "description": "Space-owned display label snapshot"
+                }
+              },
+              "required": [
+                "ref",
+                "label"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "spaceId",
+          "columnId",
+          "title",
+          "startsAt",
+          "endsAt"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "event"
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "spaceId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "columnId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "titleTruncated": {
+            "type": "boolean"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 5000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "descriptionTruncated": {
+            "type": "boolean"
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "assignees": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid",
+                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                },
+                "displayName": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              },
+              "required": [
+                "id",
+                "displayName"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "tags": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "color": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                }
+              },
+              "required": [
+                "id",
+                "name",
+                "color"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "relationsTruncated": {
+            "type": "boolean"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "locationTruncated": {
+            "type": "boolean"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "urlTruncated": {
+            "type": "boolean"
+          },
+          "startsAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "endsAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "allDay": {
+            "type": "boolean"
+          },
+          "recurrence": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "rrule": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2000,
+                    "description": "RFC 5545 recurrence rule without the RRULE prefix."
+                  },
+                  "dtstart": {
+                    "description": "Optional recurrence anchor timestamp.",
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "format": "date-time",
+                        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "exdate": {
+                    "default": [],
+                    "description": "Excluded recurrence timestamps.",
+                    "maxItems": 1000,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                    }
+                  }
+                },
+                "required": [
+                  "rrule",
+                  "exdate"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "recurrenceTruncated": {
+            "type": "boolean"
+          },
+          "recurrenceExceptionsTruncated": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "spaceId",
+          "columnId",
+          "title",
+          "titleTruncated",
+          "description",
+          "descriptionTruncated",
+          "completedAt",
+          "assignees",
+          "tags",
+          "relationsTruncated",
+          "createdAt",
+          "updatedAt",
+          "location",
+          "locationTruncated",
+          "url",
+          "urlTruncated",
+          "startsAt",
+          "endsAt",
+          "allDay",
+          "recurrence",
+          "recurrenceTruncated",
+          "recurrenceExceptionsTruncated"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "2eff2173996d3b2cb055c29627e04882449795927692cb6b2148b017e8eaa6de",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "required"
+    },
+    {
       "localId": "event.invitation.commit",
       "title": "Commit event invitation",
-      "description": "Record that a prepared event invitation was attached to its authorized Mail draft.",
+      "description": "Record that a prepared event invitation was attached to its correlated Mail draft after rechecking Space event access.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -3418,13 +4911,11 @@
           },
           "itemId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "draftId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "state": {
             "type": "string",
@@ -3439,42 +4930,39 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "98d1ceda4844f700d5c52856a1df6b01a87a0f82481f2bec368a12f04bb2dac1",
+      "schemaHash": "f944f09f90494fe06ac7290ccdf6afdcad0abd41be8b6d1e1e0ce1c49dd6b929",
       "destructive": true,
       "openWorld": false,
       "idempotency": "none",
+      "approval": "rememberable",
       "review": true
     },
     {
       "localId": "event.invitation.prepare",
       "title": "Prepare event invitation",
-      "description": "Prepare an idempotent iCalendar invitation for an existing Mail draft without sending it.",
+      "description": "Prepare an idempotent iCalendar invitation for a writable Space event. Mail identifiers are opaque correlation values and grant no Space access.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "itemId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Writable event item UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Writable event item ID."
           },
           "mailboxId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "pattern": "^[0-9A-Za-z]{6}$",
             "description": "Mail mailbox owning the target draft."
           },
           "draftId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "pattern": "^[0-9A-Za-z]{6}$",
             "description": "Existing Mail draft that will receive the invitation."
           },
           "senderIdentityId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+            "pattern": "^[0-9A-Za-z]{6}$",
             "description": "Verified Mail sender identity used as organizer."
           },
           "organizer": {
@@ -3564,18 +5052,15 @@
           },
           "itemId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "mailboxId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "draftId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "sequence": {
             "type": "integer",
@@ -3610,7 +5095,7 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "6d4193659daa6e7a9cf804c4aabe579d71bc75d311bfdc4a900a4c39aceeb204",
+      "schemaHash": "6837f197e4acdbfcb2aed43dabb6f477679f44c8cf7d2b993b4523bcaabde89d",
       "destructive": false,
       "openWorld": false,
       "idempotency": "required"
@@ -3625,12 +5110,11 @@
         "properties": {
           "itemId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable event item UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
           },
           "assigneeIds": {
-            "description": "Complete replacement set of assignee user UUIDs from this Space.",
+            "description": "Complete replacement set of user UUIDs returned by List assignable Space members.",
             "maxItems": 100,
             "type": "array",
             "items": {
@@ -3640,13 +5124,12 @@
             }
           },
           "tagIds": {
-            "description": "Complete replacement set of tag UUIDs from this Space.",
+            "description": "Complete replacement set of tag IDs returned by Read space.",
             "maxItems": 100,
             "type": "array",
             "items": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             }
           },
           "title": {
@@ -3771,18 +5254,15 @@
           },
           "id": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "spaceId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "columnId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "title": {
             "type": "string",
@@ -3850,8 +5330,7 @@
               "properties": {
                 "id": {
                   "type": "string",
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  "pattern": "^[0-9A-Za-z]{6}$"
                 },
                 "name": {
                   "type": "string",
@@ -4008,10 +5487,11 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "ee4d6ec9fc46bf28808f329999a03dfb86fcba77b6f3187d592dbd7ec4adc105",
+      "schemaHash": "891916a3c35f210dc6be2af0b1d81c52f479662a6f5a92bd4081c883cd7d2104",
       "destructive": true,
       "openWorld": false,
       "idempotency": "none",
+      "approval": "rememberable",
       "review": true
     },
     {
@@ -4024,9 +5504,8 @@
         "properties": {
           "itemId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable task or event item UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
           }
         },
         "required": [
@@ -4040,8 +5519,7 @@
         "properties": {
           "itemId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "deleted": {
             "type": "boolean",
@@ -4054,10 +5532,944 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "7abe58d7b0455562103a39cce447bce1b20dab735dc8173e093b9c953aa47acf",
+      "schemaHash": "c3269b8859a22b5429b630120d2bc16e2684379bbe0ec10ef7cada2ba95a0865",
       "destructive": true,
       "openWorld": false,
       "idempotency": "none",
+      "review": true
+    },
+    {
+      "localId": "item.reference.add",
+      "title": "Link a Cloud resource",
+      "description": "Link one stable Cloud resource reference to a writable Space item.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
+          },
+          "reference": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "minLength": 3,
+                    "maxLength": 180,
+                    "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                    "description": "Namespaced resource type declared by the owning app."
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "description": "Stable app-owned resource identifier."
+                  }
+                },
+                "required": [
+                  "type",
+                  "id"
+                ],
+                "additionalProperties": false,
+                "description": "Stable Cloud resource reference"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500,
+                "description": "Space-owned display label snapshot"
+              }
+            },
+            "required": [
+              "ref",
+              "label"
+            ],
+            "additionalProperties": false,
+            "description": "Cloud resource to link."
+          }
+        },
+        "required": [
+          "itemId",
+          "reference"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "ref": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 180,
+                "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                "description": "Namespaced resource type declared by the owning app."
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "Stable app-owned resource identifier."
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "additionalProperties": false,
+            "description": "Stable Cloud resource reference"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "Space-owned display label snapshot"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+            "description": "Link creation timestamp (ISO)"
+          }
+        },
+        "required": [
+          "ref",
+          "label",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "e6f684fddef0c13c25bd442060332dc3b8fd2d7950cdb4665b60f99364c295a1",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "none",
+      "approval": "rememberable",
+      "review": true
+    },
+    {
+      "localId": "item.reference.remove",
+      "title": "Unlink a Cloud resource",
+      "description": "Remove one Cloud resource reference from a writable Space item, including dangling references.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
+          },
+          "ref": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 180,
+                "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                "description": "Namespaced resource type declared by the owning app."
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "Stable app-owned resource identifier."
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "additionalProperties": false,
+            "description": "Cloud resource to unlink."
+          }
+        },
+        "required": [
+          "itemId",
+          "ref"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "ref": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 180,
+                "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                "description": "Namespaced resource type declared by the owning app."
+              },
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "description": "Stable app-owned resource identifier."
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          "deleted": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "itemId",
+          "ref",
+          "deleted"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "4ead936932c726735141e7640d6ccc43a228de87008857a39578ffae88f4b9d0",
+      "destructive": true,
+      "openWorld": false,
+      "idempotency": "none",
+      "approval": "rememberable",
+      "review": true
+    },
+    {
+      "localId": "item.tags.set",
+      "title": "Set item tags",
+      "description": "Replace the tags on one writable task or event without changing its other fields.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
+          },
+          "tagIds": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9A-Za-z]{6}$"
+            },
+            "description": "Complete replacement set of tag IDs returned by Read space."
+          }
+        },
+        "required": [
+          "itemId",
+          "tagIds"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "task"
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[0-9A-Za-z]{6}$"
+              },
+              "spaceId": {
+                "type": "string",
+                "pattern": "^[0-9A-Za-z]{6}$"
+              },
+              "columnId": {
+                "type": "string",
+                "pattern": "^[0-9A-Za-z]{6}$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "titleTruncated": {
+                "type": "boolean"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 5000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "descriptionTruncated": {
+                "type": "boolean"
+              },
+              "completedAt": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "assignees": {
+                "maxItems": 100,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "displayName"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "tags": {
+                "maxItems": 100,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[0-9A-Za-z]{6}$"
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "color": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "color"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "relationsTruncated": {
+                "type": "boolean"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "updatedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "deadline": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "estimatedDurationMinutes": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2147483647
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "activeBlockerCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "priority": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "urgent"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "attachments": {
+                "description": "Bounded attachment metadata and authenticated links included by item.read.",
+                "maxItems": 20,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[0-9A-Za-z]{6}$",
+                      "description": "Attachment ID"
+                    },
+                    "filename": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255,
+                      "description": "Original attachment filename"
+                    },
+                    "mimeType": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 255,
+                      "description": "Attachment media type"
+                    },
+                    "sizeBytes": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 10485760,
+                      "description": "Attachment size in bytes"
+                    },
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "image",
+                        "file"
+                      ],
+                      "description": "Preview category"
+                    },
+                    "createdAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                      "description": "Upload timestamp (ISO)"
+                    },
+                    "links": {
+                      "minItems": 1,
+                      "maxItems": 2,
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "rel": {
+                            "type": "string",
+                            "enum": [
+                              "open",
+                              "edit",
+                              "status",
+                              "preview",
+                              "download"
+                            ],
+                            "description": "Semantic relationship; clients decide how to present it."
+                          },
+                          "href": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 2048,
+                            "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                            "description": "Root-relative Cloud URL."
+                          },
+                          "title": {
+                            "description": "Optional human-readable link label.",
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          }
+                        },
+                        "required": [
+                          "rel",
+                          "href"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "filename",
+                    "mimeType",
+                    "sizeBytes",
+                    "kind",
+                    "createdAt",
+                    "links"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "spaceId",
+              "columnId",
+              "title",
+              "titleTruncated",
+              "description",
+              "descriptionTruncated",
+              "completedAt",
+              "assignees",
+              "tags",
+              "relationsTruncated",
+              "createdAt",
+              "updatedAt",
+              "deadline",
+              "estimatedDurationMinutes",
+              "activeBlockerCount",
+              "priority"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "event"
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^[0-9A-Za-z]{6}$"
+              },
+              "spaceId": {
+                "type": "string",
+                "pattern": "^[0-9A-Za-z]{6}$"
+              },
+              "columnId": {
+                "type": "string",
+                "pattern": "^[0-9A-Za-z]{6}$"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "titleTruncated": {
+                "type": "boolean"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 5000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "descriptionTruncated": {
+                "type": "boolean"
+              },
+              "completedAt": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "assignees": {
+                "maxItems": 100,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    },
+                    "displayName": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "displayName"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "tags": {
+                "maxItems": 100,
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "pattern": "^[0-9A-Za-z]{6}$"
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    },
+                    "color": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 100
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "color"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "relationsTruncated": {
+                "type": "boolean"
+              },
+              "createdAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "updatedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "location": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "locationTruncated": {
+                "type": "boolean"
+              },
+              "url": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 2000
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "urlTruncated": {
+                "type": "boolean"
+              },
+              "startsAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "endsAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              "allDay": {
+                "type": "boolean"
+              },
+              "recurrence": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "rrule": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2000,
+                        "description": "RFC 5545 recurrence rule without the RRULE prefix."
+                      },
+                      "dtstart": {
+                        "description": "Optional recurrence anchor timestamp.",
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "format": "date-time",
+                            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "exdate": {
+                        "default": [],
+                        "description": "Excluded recurrence timestamps.",
+                        "maxItems": 1000,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "format": "date-time",
+                          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+                        }
+                      }
+                    },
+                    "required": [
+                      "rrule",
+                      "exdate"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "recurrenceTruncated": {
+                "type": "boolean"
+              },
+              "recurrenceExceptionsTruncated": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "spaceId",
+              "columnId",
+              "title",
+              "titleTruncated",
+              "description",
+              "descriptionTruncated",
+              "completedAt",
+              "assignees",
+              "tags",
+              "relationsTruncated",
+              "createdAt",
+              "updatedAt",
+              "location",
+              "locationTruncated",
+              "url",
+              "urlTruncated",
+              "startsAt",
+              "endsAt",
+              "allDay",
+              "recurrence",
+              "recurrenceTruncated",
+              "recurrenceExceptionsTruncated"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "schemaHash": "aee28dfb1fc054d430e72cae8965aa07fb532a5bc8032be0e96056079bcfe58b",
+      "destructive": true,
+      "openWorld": false,
+      "idempotency": "none",
+      "approval": "rememberable",
+      "review": true
+    },
+    {
+      "localId": "task.blocker.add",
+      "title": "Add task blocker",
+      "description": "Mark one task in the same Space as a blocker of another task.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Writable task ID."
+          },
+          "blockerItemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Same-Space task that blocks itemId."
+          }
+        },
+        "required": [
+          "itemId",
+          "blockerItemId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "blocker": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[0-9A-Za-z]{6}$",
+                "description": "Blocker task ID"
+              },
+              "spaceId": {
+                "type": "string",
+                "pattern": "^[0-9A-Za-z]{6}$",
+                "description": "Parent Space ID"
+              },
+              "title": {
+                "type": "string",
+                "description": "Blocker task title"
+              },
+              "completedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Completion timestamp (ISO)"
+              },
+              "ref": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "const": "spaces.item"
+                  },
+                  "id": {
+                    "type": "string",
+                    "pattern": "^[0-9A-Za-z]{6}$"
+                  }
+                },
+                "required": [
+                  "type",
+                  "id"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "id",
+              "spaceId",
+              "title",
+              "completedAt",
+              "ref"
+            ],
+            "additionalProperties": false
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "Dependency creation timestamp (ISO)"
+          }
+        },
+        "required": [
+          "blocker",
+          "createdAt"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "35d5902261abf629be191a809a1076c62990bcf334141a32c037d6929487e9e6",
+      "destructive": false,
+      "openWorld": false,
+      "idempotency": "none",
+      "approval": "rememberable",
+      "review": true
+    },
+    {
+      "localId": "task.blocker.remove",
+      "title": "Remove task blocker",
+      "description": "Remove one blocker relationship between two tasks.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Writable task ID."
+          },
+          "blockerItemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Same-Space task that blocks itemId."
+          }
+        },
+        "required": [
+          "itemId",
+          "blockerItemId"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "blockerItemId": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "removed": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "itemId",
+          "blockerItemId",
+          "removed"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "e3a03f4a278aac97fe788e5c3f3847c8ff7dcd07943fe6d1c921e90bf921299d",
+      "destructive": true,
+      "openWorld": false,
+      "idempotency": "none",
+      "approval": "rememberable",
       "review": true
     },
     {
@@ -4070,15 +6482,13 @@
         "properties": {
           "spaceId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Writable Space UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Space ID returned by Space search/list/read or a spaces.space ref."
           },
           "columnId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Target column UUID in the selected Space."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Target column ID returned by Read space for the selected Space."
           },
           "title": {
             "type": "string",
@@ -4096,6 +6506,12 @@
             "type": "string",
             "format": "date-time",
             "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+          },
+          "estimatedDurationMinutes": {
+            "description": "Optional estimate in minutes.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 2147483647
           },
           "priority": {
             "description": "Optional task priority.",
@@ -4118,13 +6534,57 @@
             }
           },
           "tagIds": {
-            "description": "Optional tag UUIDs from this Space.",
+            "description": "Optional tag IDs from this Space.",
             "maxItems": 100,
             "type": "array",
             "items": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
+            }
+          },
+          "references": {
+            "description": "Cloud resources linked to the new task.",
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "ref": {
+                  "type": "object",
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "minLength": 3,
+                      "maxLength": 180,
+                      "pattern": "^[a-z][a-z0-9-]*\\.[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                      "description": "Namespaced resource type declared by the owning app."
+                    },
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "description": "Stable app-owned resource identifier."
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "id"
+                  ],
+                  "additionalProperties": false,
+                  "description": "Stable Cloud resource reference"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500,
+                  "description": "Space-owned display label snapshot"
+                }
+              },
+              "required": [
+                "ref",
+                "label"
+              ],
+              "additionalProperties": false
             }
           }
         },
@@ -4145,18 +6605,15 @@
           },
           "id": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "spaceId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "columnId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "title": {
             "type": "string",
@@ -4224,8 +6681,7 @@
               "properties": {
                 "id": {
                   "type": "string",
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  "pattern": "^[0-9A-Za-z]{6}$"
                 },
                 "name": {
                   "type": "string",
@@ -4271,6 +6727,23 @@
               }
             ]
           },
+          "estimatedDurationMinutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activeBlockerCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
           "priority": {
             "anyOf": [
               {
@@ -4286,6 +6759,102 @@
                 "type": "null"
               }
             ]
+          },
+          "attachments": {
+            "description": "Bounded attachment metadata and authenticated links included by item.read.",
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$",
+                  "description": "Attachment ID"
+                },
+                "filename": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "description": "Original attachment filename"
+                },
+                "mimeType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "description": "Attachment media type"
+                },
+                "sizeBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10485760,
+                  "description": "Attachment size in bytes"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "image",
+                    "file"
+                  ],
+                  "description": "Preview category"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "description": "Upload timestamp (ISO)"
+                },
+                "links": {
+                  "minItems": 1,
+                  "maxItems": 2,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "rel": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "edit",
+                          "status",
+                          "preview",
+                          "download"
+                        ],
+                        "description": "Semantic relationship; clients decide how to present it."
+                      },
+                      "href": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                        "description": "Root-relative Cloud URL."
+                      },
+                      "title": {
+                        "description": "Optional human-readable link label.",
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      }
+                    },
+                    "required": [
+                      "rel",
+                      "href"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "filename",
+                "mimeType",
+                "sizeBytes",
+                "kind",
+                "createdAt",
+                "links"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -4304,11 +6873,13 @@
           "createdAt",
           "updatedAt",
           "deadline",
+          "estimatedDurationMinutes",
+          "activeBlockerCount",
           "priority"
         ],
         "additionalProperties": false
       },
-      "schemaHash": "74b5cf15367352382190ea197363a7e66269f476349472ef8f8fc017f89b5a71",
+      "schemaHash": "563a396f76cb7483683a0ff0382da9d592ea7c5902fb9e5ac33e996605dbb89a",
       "destructive": false,
       "openWorld": false,
       "idempotency": "none"
@@ -4316,16 +6887,15 @@
     {
       "localId": "task.set-completed",
       "title": "Set task completion",
-      "description": "Complete or reopen one task using the Space workflow columns.",
+      "description": "Complete an unblocked task or reopen one task using the Space workflow columns.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
         "properties": {
           "itemId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable task item UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
           },
           "completed": {
             "type": "boolean",
@@ -4348,18 +6918,15 @@
           },
           "id": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "spaceId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "columnId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "title": {
             "type": "string",
@@ -4427,8 +6994,7 @@
               "properties": {
                 "id": {
                   "type": "string",
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  "pattern": "^[0-9A-Za-z]{6}$"
                 },
                 "name": {
                   "type": "string",
@@ -4474,6 +7040,23 @@
               }
             ]
           },
+          "estimatedDurationMinutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activeBlockerCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
           "priority": {
             "anyOf": [
               {
@@ -4489,6 +7072,102 @@
                 "type": "null"
               }
             ]
+          },
+          "attachments": {
+            "description": "Bounded attachment metadata and authenticated links included by item.read.",
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$",
+                  "description": "Attachment ID"
+                },
+                "filename": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "description": "Original attachment filename"
+                },
+                "mimeType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "description": "Attachment media type"
+                },
+                "sizeBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10485760,
+                  "description": "Attachment size in bytes"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "image",
+                    "file"
+                  ],
+                  "description": "Preview category"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "description": "Upload timestamp (ISO)"
+                },
+                "links": {
+                  "minItems": 1,
+                  "maxItems": 2,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "rel": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "edit",
+                          "status",
+                          "preview",
+                          "download"
+                        ],
+                        "description": "Semantic relationship; clients decide how to present it."
+                      },
+                      "href": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                        "description": "Root-relative Cloud URL."
+                      },
+                      "title": {
+                        "description": "Optional human-readable link label.",
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      }
+                    },
+                    "required": [
+                      "rel",
+                      "href"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "filename",
+                "mimeType",
+                "sizeBytes",
+                "kind",
+                "createdAt",
+                "links"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -4507,14 +7186,17 @@
           "createdAt",
           "updatedAt",
           "deadline",
+          "estimatedDurationMinutes",
+          "activeBlockerCount",
           "priority"
         ],
         "additionalProperties": false
       },
-      "schemaHash": "6b212d5f3e913f08ec54b371271b594787e06dce584f7b9923b9014cc0e87143",
+      "schemaHash": "66011ffc43b192b7bdc8a906a0c4f288ee18fed3c712769614b08005d396a4f2",
       "destructive": true,
       "openWorld": false,
       "idempotency": "none",
+      "approval": "rememberable",
       "review": true
     },
     {
@@ -4527,12 +7209,11 @@
         "properties": {
           "itemId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable task item UUID."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Task or event ID returned by item search/list/read or a spaces.item ref."
           },
           "assigneeIds": {
-            "description": "Complete replacement set of assignee user UUIDs from this Space.",
+            "description": "Complete replacement set of user UUIDs returned by List assignable Space members.",
             "maxItems": 100,
             "type": "array",
             "items": {
@@ -4542,13 +7223,12 @@
             }
           },
           "tagIds": {
-            "description": "Complete replacement set of tag UUIDs from this Space.",
+            "description": "Complete replacement set of tag IDs returned by Read space.",
             "maxItems": 100,
             "type": "array",
             "items": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             }
           },
           "title": {
@@ -4576,6 +7256,19 @@
                 "type": "string",
                 "format": "date-time",
                 "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "estimatedDurationMinutes": {
+            "description": "Optional estimate in minutes; null clears it.",
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
               },
               {
                 "type": "null"
@@ -4615,18 +7308,15 @@
           },
           "id": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "spaceId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "columnId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "title": {
             "type": "string",
@@ -4694,8 +7384,7 @@
               "properties": {
                 "id": {
                   "type": "string",
-                  "format": "uuid",
-                  "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  "pattern": "^[0-9A-Za-z]{6}$"
                 },
                 "name": {
                   "type": "string",
@@ -4741,6 +7430,23 @@
               }
             ]
           },
+          "estimatedDurationMinutes": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 2147483647
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "activeBlockerCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
           "priority": {
             "anyOf": [
               {
@@ -4756,6 +7462,102 @@
                 "type": "null"
               }
             ]
+          },
+          "attachments": {
+            "description": "Bounded attachment metadata and authenticated links included by item.read.",
+            "maxItems": 20,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$",
+                  "description": "Attachment ID"
+                },
+                "filename": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "description": "Original attachment filename"
+                },
+                "mimeType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 255,
+                  "description": "Attachment media type"
+                },
+                "sizeBytes": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 10485760,
+                  "description": "Attachment size in bytes"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "image",
+                    "file"
+                  ],
+                  "description": "Preview category"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$",
+                  "description": "Upload timestamp (ISO)"
+                },
+                "links": {
+                  "minItems": 1,
+                  "maxItems": 2,
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "rel": {
+                        "type": "string",
+                        "enum": [
+                          "open",
+                          "edit",
+                          "status",
+                          "preview",
+                          "download"
+                        ],
+                        "description": "Semantic relationship; clients decide how to present it."
+                      },
+                      "href": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 2048,
+                        "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                        "description": "Root-relative Cloud URL."
+                      },
+                      "title": {
+                        "description": "Optional human-readable link label.",
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 120
+                      }
+                    },
+                    "required": [
+                      "rel",
+                      "href"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "filename",
+                "mimeType",
+                "sizeBytes",
+                "kind",
+                "createdAt",
+                "links"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -4774,14 +7576,17 @@
           "createdAt",
           "updatedAt",
           "deadline",
+          "estimatedDurationMinutes",
+          "activeBlockerCount",
           "priority"
         ],
         "additionalProperties": false
       },
-      "schemaHash": "a00717b9d86ac85a92cf4b1bb0d9c2d2f5147dc737d9147f3ef9b48393df32a6",
+      "schemaHash": "43ad2d6535548a2129494f93c057cd376ba64ed1ece481079b56f17e40e0b18e",
       "destructive": true,
       "openWorld": false,
       "idempotency": "none",
+      "approval": "rememberable",
       "review": true
     }
   ]

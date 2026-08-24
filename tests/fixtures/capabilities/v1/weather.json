@@ -1,20 +1,21 @@
 {
   "protocolVersion": 1,
   "appId": "weather",
-  "manifestHash": "ed96b3e5c2dc8ec6ba97f2516e305b655dfa03f0657e2f3c25177dcbfb7d9b62",
+  "manifestHash": "1c206b45523d1446f15328310da92a2679915bd883e578dc774c5e8e94df92f3",
   "types": [
     {
       "localId": "location",
       "title": "Saved location",
       "description": "A saved weather location owned by the current user.",
-      "icon": "ti ti-map-pin"
+      "icon": "ti ti-map-pin",
+      "reader": "location.read"
     }
   ],
   "queries": [
     {
       "localId": "city.search",
       "title": "Search German cities",
-      "description": "Find bounded German city candidates and coordinates for forecasts or saved locations.",
+      "description": "Specialized geocoding path: find German city candidates and coordinates. To save one, copy the chosen name, optional state, lat, and lon into Save weather location; city results are not weather.location refs.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -23,7 +24,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 120,
-            "description": "German city name to search for."
+            "description": "German city name to geocode; this searches city candidates, not saved locations."
           },
           "limit": {
             "default": 10,
@@ -79,13 +80,13 @@
           "additionalProperties": false
         }
       },
-      "schemaHash": "c75107e5ea456618e73914a1c67a845b8b7d91941be02e1e43f0bb2c32982314",
+      "schemaHash": "85746af15d349aa4f482b965fed72dcf34bd3864268a79ed630856c79a377d9a",
       "openWorld": true
     },
     {
       "localId": "forecast.current",
       "title": "Get current weather",
-      "description": "Get current weather for one owned saved location or explicit coordinates. Temperatures use degrees Celsius, wind uses km/h, precipitation uses mm, pressure uses hPa, and visibility uses metres.",
+      "description": "Get current conditions for a saved location ID from location.list/search or explicit coordinates from city.search. Use forecast.get when hourly or daily outlooks are needed. Units are °C, km/h, mm, hPa, and metres.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -102,9 +103,8 @@
                   },
                   "locationId": {
                     "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-                    "description": "Stable UUID of the saved weather location."
+                    "pattern": "^[0-9A-Za-z]{6}$",
+                    "description": "Saved-location ID returned by saved-location search/list or a weather.location ref."
                   }
                 },
                 "required": [
@@ -315,13 +315,13 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "98869b6101be7ca4c470cf8cffaf609af6a7eaceee134e407782ca642cebfb83",
+      "schemaHash": "4cda8c8c645bf5d25dc18c05205b278b0f4ec8368769babb19cf969d55bb216d",
       "openWorld": true
     },
     {
       "localId": "forecast.get",
       "title": "Get weather forecast",
-      "description": "Get current conditions plus up to 12 hourly and 7 daily forecasts for one owned saved location or explicit coordinates. Temperatures use degrees Celsius, wind uses km/h, precipitation uses mm, and sunshine uses minutes.",
+      "description": "Get current conditions plus hourly and daily outlooks for a saved location ID from location.list/search or explicit coordinates from city.search. Use forecast.current for current conditions only. Units are °C, km/h, mm, and sunshine minutes.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -338,9 +338,8 @@
                   },
                   "locationId": {
                     "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-                    "description": "Stable UUID of the saved weather location."
+                    "pattern": "^[0-9A-Za-z]{6}$",
+                    "description": "Saved-location ID returned by saved-location search/list or a weather.location ref."
                   }
                 },
                 "required": [
@@ -708,82 +707,13 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "a010b24cfe88f0f2f61c0358304adb0885c6e68886446fd82ca58f0c56ee6897",
+      "schemaHash": "422debb48982918ee9f96b6f39beb554390e4689ac579ef5912cc9dfb16fefaa",
       "openWorld": true
-    },
-    {
-      "localId": "location.get",
-      "title": "Get saved weather location",
-      "description": "Read one saved weather location owned by the current user by stable UUID.",
-      "inputSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "locationId": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable UUID of the saved weather location."
-          }
-        },
-        "required": [
-          "locationId"
-        ],
-        "additionalProperties": false
-      },
-      "dataSchema": {
-        "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-          },
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 120
-          },
-          "state": {
-            "anyOf": [
-              {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 120
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "lat": {
-            "type": "number",
-            "minimum": -90,
-            "maximum": 90
-          },
-          "lon": {
-            "type": "number",
-            "minimum": -180,
-            "maximum": 180
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "state",
-          "lat",
-          "lon"
-        ],
-        "additionalProperties": false
-      },
-      "schemaHash": "bc7808c48c393b63c0152aacd9fb13a60ce6003904524cc21668a3f7656b4f36",
-      "openWorld": false
     },
     {
       "localId": "location.list",
       "title": "List my saved weather locations",
-      "description": "List the current user's saved weather locations with bounded pagination.",
+      "description": "Normal entry for browsing all saved locations. Use returned weather.location refs or IDs with location.read, forecast.current, or forecast.get; use location.search to filter by name or state.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -813,8 +743,7 @@
           "properties": {
             "id": {
               "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+              "pattern": "^[0-9A-Za-z]{6}$"
             },
             "name": {
               "type": "string",
@@ -842,6 +771,63 @@
               "type": "number",
               "minimum": -180,
               "maximum": 180
+            },
+            "links": {
+              "minItems": 1,
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "rel": {
+                    "type": "string",
+                    "enum": [
+                      "open",
+                      "edit",
+                      "status",
+                      "preview",
+                      "download"
+                    ],
+                    "description": "Semantic relationship; clients decide how to present it."
+                  },
+                  "href": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                    "description": "Root-relative Cloud URL."
+                  },
+                  "title": {
+                    "description": "Optional human-readable link label.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 120
+                  }
+                },
+                "required": [
+                  "rel",
+                  "href"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "ref": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "weather.location"
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^[0-9A-Za-z]{6}$"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "additionalProperties": false
             }
           },
           "required": [
@@ -849,18 +835,125 @@
             "name",
             "state",
             "lat",
-            "lon"
+            "lon",
+            "ref"
           ],
           "additionalProperties": false
         }
       },
-      "schemaHash": "a02ba41df40a0ad95162a719a0e62400bcb0fb462908a870024afc204729fc89",
+      "schemaHash": "00ba8fa325f055c9f72373b041ebf70acfb9f84dd56906a4dfc6580eedc47f46",
+      "openWorld": false
+    },
+    {
+      "localId": "location.read",
+      "title": "Read saved weather location",
+      "description": "Read one weather.location ref returned by location.list, location.search, or location.create.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Saved-location ID returned by saved-location search/list or a weather.location ref."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      },
+      "dataSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{6}$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "state": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 120
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "lon": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "links": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rel": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "edit",
+                    "status",
+                    "preview",
+                    "download"
+                  ],
+                  "description": "Semantic relationship; clients decide how to present it."
+                },
+                "href": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                  "description": "Root-relative Cloud URL."
+                },
+                "title": {
+                  "description": "Optional human-readable link label.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "required": [
+                "rel",
+                "href"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "state",
+          "lat",
+          "lon"
+        ],
+        "additionalProperties": false
+      },
+      "schemaHash": "e1d3baa94ce93e4b4409a650c4faa161acedd93428741ffcb0400ffcc73c8292",
       "openWorld": false
     },
     {
       "localId": "location.search",
       "title": "Search saved weather locations",
-      "description": "Find saved weather locations owned by the current user by name or state.",
+      "description": "Find an owned saved location by name or state when its ID is unknown. Use returned weather.location refs with location.read, forecast.current, or forecast.get; use city.search for unsaved places.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1043,7 +1136,7 @@
     {
       "localId": "location.create",
       "title": "Save weather location",
-      "description": "Save one weather location for the current user.",
+      "description": "Save one weather location for the current user from explicit coordinates, commonly copied from Search German cities.",
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "object",
@@ -1052,10 +1145,10 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 120,
-            "description": "Display name for the saved location."
+            "description": "Display name; normally copy name from the chosen Search German cities result."
           },
           "state": {
-            "description": "Optional state or region used to distinguish the location.",
+            "description": "Optional state or region; normally copy state from the chosen city result when present.",
             "type": "string",
             "minLength": 1,
             "maxLength": 120
@@ -1064,13 +1157,13 @@
             "type": "number",
             "minimum": -90,
             "maximum": 90,
-            "description": "Latitude in decimal degrees from -90 to 90."
+            "description": "Latitude copied from the chosen city result, or another trusted coordinate source."
           },
           "lon": {
             "type": "number",
             "minimum": -180,
             "maximum": 180,
-            "description": "Longitude in decimal degrees from -180 to 180."
+            "description": "Longitude copied from the chosen city result, or another trusted coordinate source."
           }
         },
         "required": [
@@ -1086,8 +1179,7 @@
         "properties": {
           "id": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "name": {
             "type": "string",
@@ -1115,6 +1207,45 @@
             "type": "number",
             "minimum": -180,
             "maximum": 180
+          },
+          "links": {
+            "minItems": 1,
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rel": {
+                  "type": "string",
+                  "enum": [
+                    "open",
+                    "edit",
+                    "status",
+                    "preview",
+                    "download"
+                  ],
+                  "description": "Semantic relationship; clients decide how to present it."
+                },
+                "href": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 2048,
+                  "pattern": "^\\/(?![\\\\/])[^\\\\\\u0000-\\u001f\\u007f]*$",
+                  "description": "Root-relative Cloud URL."
+                },
+                "title": {
+                  "description": "Optional human-readable link label.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              },
+              "required": [
+                "rel",
+                "href"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [
@@ -1126,10 +1257,12 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "e71dceb9f1ccc15089f1c6fad11ed9edcb8dbc297ea4a4ba156f7b04bef07349",
+      "schemaHash": "d69b72b97af65cfdf243d35447ab79165c4732cf0c75f21eaf561c64a96c0bc9",
       "destructive": false,
       "openWorld": false,
-      "idempotency": "none"
+      "idempotency": "none",
+      "approval": "rememberable",
+      "review": true
     },
     {
       "localId": "location.delete",
@@ -1141,9 +1274,8 @@
         "properties": {
           "locationId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
-            "description": "Stable UUID of the saved weather location."
+            "pattern": "^[0-9A-Za-z]{6}$",
+            "description": "Saved-location ID returned by saved-location search/list or a weather.location ref."
           }
         },
         "required": [
@@ -1157,8 +1289,7 @@
         "properties": {
           "locationId": {
             "type": "string",
-            "format": "uuid",
-            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+            "pattern": "^[0-9A-Za-z]{6}$"
           },
           "deleted": {
             "type": "boolean",
@@ -1171,7 +1302,7 @@
         ],
         "additionalProperties": false
       },
-      "schemaHash": "a5864b48a225c03529e56ae6f2dfe7d038052dd790ab2af33db9ad619dabdf47",
+      "schemaHash": "9bdc3b312c1b0ec001b4360509a08c5194ec7f790a97f30b4c764cbebdfae361",
       "destructive": true,
       "openWorld": false,
       "idempotency": "none",
