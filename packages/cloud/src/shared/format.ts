@@ -69,7 +69,9 @@ export const formatDurationMs = (ms: number | null | undefined, options: FormatO
 
 /** Byte size. Defaults to SI because storage tooling reports GB, not GiB. */
 export const formatBytes = (bytes: number | null | undefined, options: FormatOptions & { mode?: "iec" | "si" } = {}): string =>
-  typeof bytes === "number" && Number.isFinite(bytes) ? text.pprintBytes(bytes, options.mode ?? "si") : (options.fallback ?? EMPTY_VALUE);
+  typeof bytes === "number" && Number.isFinite(bytes)
+    ? text.pprintBytes(bytes, { mode: options.mode ?? "si", locale: options.locale })
+    : (options.fallback ?? EMPTY_VALUE);
 
 /**
  * Absolute date and time in the viewer's locale and timezone.

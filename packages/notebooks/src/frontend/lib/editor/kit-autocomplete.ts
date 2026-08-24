@@ -550,7 +550,7 @@ const datesCompletions: Completion[] = [
     label: "formatDateTimeRelative",
     type: "method",
     detail: "(date) → string",
-    info: '"3 mins ago".',
+    info: '"3 minutes ago".',
   }),
   snippetCompletion("formatDuration(${1:5400000})", { label: "formatDuration", type: "method", detail: "(ms) → string" }),
   snippetCompletion("getMonthGrid(${1:new Date()})", {
@@ -792,7 +792,7 @@ const NAMESPACE_OPTIONS: Record<string, Completion[]> = {
       "dates",
       "ti-calendar",
       "Date / time formatting",
-      'formatDate, formatDateTime, formatDateTimeRelative ("3 mins ago"), formatDuration.',
+      'formatDate, formatDateTime, formatDateTimeRelative ("3 minutes ago"), formatDuration.',
     ),
     ns("fuzzy", "ti-search", "Fuzzy search", "match / filter / segments / closest / distance."),
     ns("crypto", "ti-shield-lock", "Hashing + crypto", "Hashing, ids, asymmetric/symmetric crypto, TOTP."),

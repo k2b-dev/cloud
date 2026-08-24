@@ -29,8 +29,8 @@ snakeCase(content): string
 kebabCase(content): string
 truncate(content, limit, mode?: "end" | "middle"): string
 summarize(content, limit, mode?: "end" | "middle"): string
-pprintBytes(bytes, mode?: "iec" | "si"): string
-pprintBytesParts(bytes, mode?: "iec" | "si"): { value: string; unit: string }
+pprintBytes(bytes, options?: { mode?: "iec" | "si"; locale?: string }): string
+pprintBytesParts(bytes, options?: { mode?: "iec" | "si"; locale?: string }): { value: string; unit: string }
 ```
 
 ## `std.dates`
@@ -51,13 +51,13 @@ formatDate(input, context?): string
 formatDateTime(input, context?): string
 formatDateTimeRelative(input, context?: RelativeDateContext): string
 formatDateRelative(input, context?: RelativeDateContext): string
-formatTimeSpan(input, baseOrContext?, context?): string
-formatDuration(from, to): string
-formatMonthYear(date, localeOrContext?): string
+formatTimeSpan(input, context?: RelativeDateContext): string
+formatDuration(from, to, context?: DateContext): string
+formatMonthYear(date, context?: DateContext): string
 formatDayNumber(date, context?): string
-formatWeekdayShort(date, localeOrContext?): string
-formatWeekdayLong(date, localeOrContext?): string
-formatFullDate(date, localeOrContext?): string
+formatWeekdayShort(date, context?: DateContext): string
+formatWeekdayLong(date, context?: DateContext): string
+formatFullDate(date, context?: DateContext): string
 formatDateShort(date, context?): string
 formatDateKey(input, context?): string
 formatTime(input, context?): string
@@ -79,8 +79,8 @@ getWeekDays(date, context?): Date[]
 getDateRange("month" | "week", date, context?): { from: Date; to: Date }
 itemOnDate(item, date, context?): boolean
 getDayItems(items, date, context?): item[]
-weekdays(localeOrContext?): string[]
-months(localeOrContext?): string[]
+weekdays(context?: DateContext): string[]
+months(context?: DateContext): string[]
 getYearOptions(context?): number[]
 buildCalendarUrl(baseUrl, { view?, date?, item? }, context?): string
 parseCalendarDate(value, context?): Date

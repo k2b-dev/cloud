@@ -34,5 +34,5 @@ export const compactDay = (value: string, context?: DateContext) => {
 
 export const compactDateWithDelta = (value: string, context?: PulseDateContext) => {
   const resolved = dateContext(context);
-  return `${compactDate(value, resolved)} (${dates.formatTimeSpan(value, context?.now ?? new Date(), resolved)})`;
+  return `${compactDate(value, resolved)} (${dates.formatTimeSpan(value, { ...resolved, base: context?.now ?? new Date() })})`;
 };
