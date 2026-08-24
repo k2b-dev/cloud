@@ -4,13 +4,14 @@ import { createSSRHandler, routes } from "@k2b/ssr/hono";
 
 type PageOptions = {
   title?: string;
+  lang?: string;
 };
 
 const fixture = createConfig<PageOptions>({
   dev: process.env.NODE_ENV === "development",
   rootDir: resolve(import.meta.dir, ".."),
-  template: ({ body, scripts, title }) => `<!doctype html>
-<html lang="en">
+  template: ({ body, scripts, title, lang }) => `<!doctype html>
+<html lang="${lang ?? "en"}">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">

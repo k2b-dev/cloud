@@ -1,9 +1,10 @@
 import { Link, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { dates as calendar, type DateContext } from "@k2b/stdlib";
 import type { JSX, ParentProps } from "solid-js";
-import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, mergeProps, onCleanup, onMount, Show } from "solid-js";
 import { Button } from "../actions/Button";
 import SegmentedControl from "../actions/SegmentedControl";
+import { useDateConfigLocale } from "../intl/locale";
 import { layoutCalendarIntervals } from "./calendar-event-layout";
 import { calendarDayIndexAtPoint, calendarMinuteAtPoint, startCalendarPointerSession } from "./calendar-pointer";
 
@@ -1587,8 +1588,16 @@ const MobileMonthView = (props: {
 const CalendarBody = (props: { children: JSX.Element }): JSX.Element => <div class="k2b-calendar-body">{props.children}</div>;
 
 const Calendar = (props: CalendarProps): JSX.Element => {
+  // Subviews derive their date config from the owner props, so the inherited
+  // render locale is merged here once; an explicit dateConfig.locale wins.
+  const localizedConfig = useDateConfigLocale(() => props.dateConfig);
+  const owner = mergeProps(props, {
+    get dateConfig(): DateContext {
+      return localizedConfig();
+    },
+  });
   const view = () => props.view ?? "month";
-  const dateConfig = createMemo(() => ownerDateConfig(props));
+  const dateConfig = createMemo(() => ownerDateConfig(owner));
   const safeDate = (value: Date | string) => {
     const parsed = parseDate(value, dateConfig());
     return validDate(parsed) ? parsed : calendar.today(dateConfig());
@@ -1614,13 +1623,13 @@ const Calendar = (props: CalendarProps): JSX.Element => {
 
   return (
     <section class={`k2b-content-calendar ${props.class ?? ""}`} aria-busy={props.navigationPending ? "true" : undefined}>
-      <CalendarHeader date={date()} view={view()} labels={mergedLabels()} owner={props} />
+      <CalendarHeader date={date()} view={view()} labels={mergedLabels()} owner={owner} />
       {props.toolbarContent}
       <Show
         when={view() !== "month"}
         fallback={
           <CalendarBody>
-            <MonthView owner={props} date={date()} now={now()} events={normalizedEvents()} labels={mergedLabels()} />
+            <MonthView owner={owner} date={date()} now={now()} events={normalizedEvents()} labels={mergedLabels()} />
           </CalendarBody>
         }
       >
@@ -1628,7 +1637,7 @@ const Calendar = (props: CalendarProps): JSX.Element => {
           when={view() !== "year"}
           fallback={
             <CalendarBody>
-              <YearView owner={props} date={date()} now={now()} events={normalizedEvents()} />
+              <YearView owner={owner} date={date()} now={now()} events={normalizedEvents()} />
             </CalendarBody>
           }
         >
@@ -1637,7 +1646,7 @@ const Calendar = (props: CalendarProps): JSX.Element => {
             fallback={
               <CalendarBody>
                 <MobileMonthView
-                  owner={props}
+                  owner={owner}
                   date={date()}
                   now={now()}
                   selectedDate={selectedDate()}
@@ -1647,7 +1656,7 @@ const Calendar = (props: CalendarProps): JSX.Element => {
               </CalendarBody>
             }
           >
-            <TimeGridView owner={props} date={date()} now={now()} events={normalizedEvents()} labels={mergedLabels()} days={days()} />
+            <TimeGridView owner={owner} date={date()} now={now()} events={normalizedEvents()} labels={mergedLabels()} days={days()} />
           </Show>
         </Show>
       </Show>

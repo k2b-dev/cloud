@@ -3,6 +3,7 @@ import { dirname, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Hono } from "hono";
 import { config, routes } from "./config";
+import intlPage from "./intl-page";
 import page from "./page";
 
 const stylesPath = fileURLToPath(import.meta.resolve("@k2b/ui/styles.css"));
@@ -33,6 +34,7 @@ export const app = new Hono()
   })
   .route("/_ssr", routes(config))
   .get("/styles.css", (context) => context.body(styles, 200, { "Content-Type": "text/css; charset=utf-8" }))
+  .get("/intl", ...intlPage)
   .get("/:asset", (context) => {
     const asset = fontAssets.get(context.req.param("asset"));
     if (!asset) return context.notFound();

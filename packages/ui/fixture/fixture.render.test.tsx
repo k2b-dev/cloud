@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { createConfig } from "@k2b/ssr";
 import { createComponent } from "solid-js";
 import { renderToString } from "solid-js/web";
@@ -12,6 +12,8 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(pluginRoot, { recursive: true, force: true }));
 
 const { default: StandaloneUi } = await import("./src/StandaloneUi");
+const { default: IntlSection, intlFixtureExpected } = await import("./src/IntlSection");
+const { LocaleProvider } = await import("@k2b/ui");
 
 const packageRoot = resolve(import.meta.dir, "..");
 const stylesPath = resolve(packageRoot, "dist/styles.css");
@@ -71,5 +73,27 @@ describe("@k2b/ui standalone fixture", () => {
     const unstyled = renderedClasses(html).filter((token) => !externalClass(token) && !hookClass.has(token) && !hasRule(token));
 
     expect(unstyled).toEqual([]);
+  });
+
+  test("renders the intl section coherently for the server locale provider", () => {
+    const html = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de",
+        get children() {
+          // Two instances mirror the two independent island roots on /intl.
+          return [createComponent(IntlSection, {}), createComponent(IntlSection, {})];
+        },
+      }),
+    );
+    const expected = intlFixtureExpected("de");
+    const english = intlFixtureExpected("en");
+
+    for (const value of Object.values(expected)) {
+      expect(html).toContain(value);
+    }
+    // The German expectation is meaningful only if it differs from English.
+    expect(expected.number).not.toBe(english.number);
+    expect(html).toContain(`value="${expected.numberInputValue}"`);
+    expect(html.match(/data-testid="intl-locale">de</g)?.length).toBe(2);
   });
 });

@@ -1,5 +1,6 @@
-import { createEffect, createSignal, type JSX, Show, splitProps } from "solid-js";
+import { createEffect, createMemo, createSignal, type JSX, Show, splitProps } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { decimalSeparator, useLocale } from "../intl/locale";
 import type { ValueFieldProps } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
 
@@ -16,6 +17,10 @@ export type NumberInputProps = Omit<
     clearable?: boolean;
     onClear?: () => void;
     clearLabel?: string;
+    increaseLabel?: string;
+    decreaseLabel?: string;
+    /** Explicit locale for the decimal separator; defaults to the inherited render locale. */
+    locale?: string;
     showSteppers?: boolean;
     disableSteppers?: boolean;
     icon?: string;
@@ -34,12 +39,15 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
     "clearLabel",
     "clearable",
     "decimalPlaces",
+    "decreaseLabel",
     "description",
     "disableSteppers",
     "error",
     "icon",
     "id",
+    "increaseLabel",
     "label",
+    "locale",
     "max",
     "min",
     "onClear",
@@ -56,32 +64,38 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
   const [focused, setFocused] = createSignal(false);
   const value = () => resolveMaybeAccessor(local.value);
   const error = () => resolveMaybeAccessor(local.error);
-  const [raw, setRaw] = createSignal(value() == null ? "" : String(value()));
+  const contextLocale = useLocale();
+  const separator = createMemo(() => decimalSeparator(local.locale ?? contextLocale()));
+  // The visible text keeps the canonical number, only the decimal separator
+  // follows the effective locale; grouping is never rendered while editing.
+  const display = (value: number | null | undefined) => (value == null ? "" : String(value).replace(".", separator()));
+  const [raw, setRaw] = createSignal(display(value()));
   const places = () => Math.max(0, local.decimalPlaces ?? 0);
   const min = () => local.min ?? -Infinity;
   const max = () => local.max ?? Infinity;
   const step = () => local.step ?? 1;
 
-  const filter = (value: string) => {
+  const filter = (input: string) => {
     let output = "";
     let decimal = false;
-    for (const character of value.replace(/,/g, ".")) {
+    for (const character of input) {
       if (/\d/.test(character)) output += character;
       else if (character === "-" && output === "" && (local.allowNegative ?? true)) output += character;
-      else if (character === "." && !decimal && places() > 0) {
-        output += character;
+      else if ((character === "." || character === "," || character === separator()) && !decimal && places() > 0) {
+        output += separator();
         decimal = true;
       }
     }
     if (decimal) {
-      const [integer = "", fraction = ""] = output.split(".");
-      return `${integer}.${fraction.slice(0, places())}`;
+      const [integer = "", fraction = ""] = output.split(separator());
+      return `${integer}${separator()}${fraction.slice(0, places())}`;
     }
     return output;
   };
-  const parse = (value: string) => {
-    if (!value || value === "-" || value === ".") return null;
-    const number = places() === 0 ? Number.parseInt(value, 10) : Number(value);
+  const parse = (input: string) => {
+    const canonical = input.replace(separator(), ".");
+    if (!canonical || canonical === "-" || canonical === ".") return null;
+    const number = places() === 0 ? Number.parseInt(canonical, 10) : Number(canonical);
     return Number.isFinite(number) ? number : null;
   };
   const normalize = (value: number | null) => {
@@ -95,7 +109,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
   const emit = (value: number | null) => local.onValueChange?.(value);
   const commit = (value: number | null, changeAlreadyEmitted = false) => {
     const next = normalize(value);
-    setRaw(next === null ? "" : String(next));
+    setRaw(display(next));
     if (!changeAlreadyEmitted || !Object.is(next, value)) emit(next);
     local.onValueCommit?.(next);
   };
@@ -107,8 +121,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
 
   createEffect(() => {
     if (focused()) return;
-    const next = value() == null ? "" : String(value());
-    if (parse(raw()) !== value()) setRaw(next);
+    if (parse(raw()) !== value()) setRaw(display(value()));
   });
 
   return (
@@ -130,7 +143,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
           <button
             type="button"
             class="k2b-number-input__step"
-            aria-label="Decrease value"
+            aria-label={local.decreaseLabel ?? "Decrease value"}
             disabled={rest.disabled || local.disableSteppers || (value() !== null && value() !== undefined && value()! <= min())}
             onClick={() => stepBy(-1)}
           >
@@ -193,7 +206,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
           <button
             type="button"
             class="k2b-number-input__step"
-            aria-label="Increase value"
+            aria-label={local.increaseLabel ?? "Increase value"}
             disabled={rest.disabled || local.disableSteppers || (value() !== null && value() !== undefined && value()! >= max())}
             onClick={() => stepBy(1)}
           >

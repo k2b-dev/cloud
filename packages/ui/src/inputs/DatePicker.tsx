@@ -1,6 +1,7 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { useDateConfigLocale } from "../intl/locale";
 import {
   type DateRangeValue,
   dateKey,
@@ -464,8 +465,9 @@ function TimeInput(props: { time: string; onChange: (time: string) => void; labe
 
 export function DatePicker(props: DatePickerProps): JSX.Element {
   const value = () => resolveMaybeAccessor(props.value);
-  const [visibleMonth, setVisibleMonth] = createSignal(parseDateValue(value(), props.dateConfig));
-  const valueLabel = () => displayDate(value(), props.dateConfig);
+  const dateConfig = useDateConfigLocale(() => props.dateConfig);
+  const [visibleMonth, setVisibleMonth] = createSignal(parseDateValue(value(), dateConfig()));
+  const valueLabel = () => displayDate(value(), dateConfig());
 
   return (
     <PickerShell
@@ -473,7 +475,7 @@ export function DatePicker(props: DatePickerProps): JSX.Element {
       icon="ti ti-calendar"
       valueLabel={valueLabel}
       clearValue={null}
-      onOpen={() => setVisibleMonth(parseDateValue(value(), props.dateConfig))}
+      onOpen={() => setVisibleMonth(parseDateValue(value(), dateConfig()))}
       wide={Boolean(props.presets?.length)}
     >
       {(close) => (
@@ -494,7 +496,7 @@ export function DatePicker(props: DatePickerProps): JSX.Element {
               close();
               commitFieldValue(props, value);
             }}
-            dateConfig={props.dateConfig}
+            dateConfig={dateConfig()}
           />
         </div>
       )}
@@ -504,17 +506,18 @@ export function DatePicker(props: DatePickerProps): JSX.Element {
 
 export function DateTimePicker(props: DateTimePickerProps): JSX.Element {
   const value = () => resolveMaybeAccessor(props.value);
-  const parts = () => splitDateTime(value(), props.dateConfig);
-  const [visibleMonth, setVisibleMonth] = createSignal(parseDateValue(parts().date, props.dateConfig));
+  const dateConfig = useDateConfigLocale(() => props.dateConfig);
+  const parts = () => splitDateTime(value(), dateConfig());
+  const [visibleMonth, setVisibleMonth] = createSignal(parseDateValue(parts().date, dateConfig()));
   const [draftDate, setDraftDate] = createSignal(parts().date);
   const [draftTime, setDraftTime] = createSignal(parts().time || "09:00");
-  const valueLabel = () => formatDateTimeValue(value(), props.dateConfig);
+  const valueLabel = () => formatDateTimeValue(value(), dateConfig());
 
   const syncDraft = () => {
     const next = parts();
     setDraftDate(next.date);
     setDraftTime(next.time || "09:00");
-    setVisibleMonth(parseDateValue(next.date, props.dateConfig));
+    setVisibleMonth(parseDateValue(next.date, dateConfig()));
   };
 
   return (
@@ -523,7 +526,7 @@ export function DateTimePicker(props: DateTimePickerProps): JSX.Element {
       icon="ti ti-calendar-time"
       valueLabel={valueLabel}
       clearValue={null}
-      timezone={props.dateConfig?.timeZone}
+      timezone={dateConfig().timeZone}
       onOpen={syncDraft}
       wide={Boolean(props.presets?.length)}
     >
@@ -544,9 +547,9 @@ export function DateTimePicker(props: DateTimePickerProps): JSX.Element {
               focusDate={draftDate}
               onSelect={(value) => {
                 setDraftDate(value);
-                setVisibleMonth(parseDateValue(value, props.dateConfig));
+                setVisibleMonth(parseDateValue(value, dateConfig()));
               }}
-              dateConfig={props.dateConfig}
+              dateConfig={dateConfig()}
             />
           </div>
           <div class="k2b-date-actions">
@@ -557,7 +560,7 @@ export function DateTimePicker(props: DateTimePickerProps): JSX.Element {
               disabled={!draftDate() || !isCompleteTime(draftTime())}
               onClick={() => {
                 if (!draftDate() || !isCompleteTime(draftTime())) return;
-                const value = toDateTimeValue(draftDate(), draftTime(), props.dateConfig);
+                const value = toDateTimeValue(draftDate(), draftTime(), dateConfig());
                 close();
                 commitFieldValue(props, value);
               }}
@@ -574,11 +577,12 @@ export function DateTimePicker(props: DateTimePickerProps): JSX.Element {
 export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
   const withTime = () => props.withTime ?? false;
   const value = () => resolveMaybeAccessor(props.value);
+  const dateConfig = useDateConfigLocale(() => props.dateConfig);
   const parts = () => ({
-    start: withTime() ? splitDateTime(value().start, props.dateConfig) : { date: value().start ?? "", time: "09:00" },
-    end: withTime() ? splitDateTime(value().end, props.dateConfig) : { date: value().end ?? "", time: "10:00" },
+    start: withTime() ? splitDateTime(value().start, dateConfig()) : { date: value().start ?? "", time: "09:00" },
+    end: withTime() ? splitDateTime(value().end, dateConfig()) : { date: value().end ?? "", time: "10:00" },
   });
-  const [visibleMonth, setVisibleMonth] = createSignal(parseDateValue(parts().start.date || parts().end.date, props.dateConfig));
+  const [visibleMonth, setVisibleMonth] = createSignal(parseDateValue(parts().start.date || parts().end.date, dateConfig()));
   const [draftRange, setDraftRange] = createSignal<DateRangeValue>({
     start: parts().start.date || null,
     end: parts().end.date || null,
@@ -594,24 +598,22 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
     setPreviewDate(null);
     setStartTime(next.start.time || "09:00");
     setEndTime(next.end.time || "10:00");
-    setVisibleMonth(parseDateValue(next.start.date || next.end.date, props.dateConfig));
+    setVisibleMonth(parseDateValue(next.start.date || next.end.date, dateConfig()));
   };
 
   const valueLabel = () => {
     if (!value().start && !value().end) return "";
     const format = withTime() ? formatDateTimeValue : displayDate;
-    return `${value().start ? format(value().start, props.dateConfig) : "Start"} to ${
-      value().end ? format(value().end, props.dateConfig) : "End"
-    }`;
+    return `${value().start ? format(value().start, dateConfig()) : "Start"} to ${value().end ? format(value().end, dateConfig()) : "End"}`;
   };
 
   const valueContent = () => {
     const format = withTime() ? formatDateTimeValue : displayDate;
     return (
       <span class="k2b-date-range-value">
-        <span>{value().start ? format(value().start, props.dateConfig) : "Start"}</span>
+        <span>{value().start ? format(value().start, dateConfig()) : "Start"}</span>
         <i class="ti ti-arrow-narrow-right" aria-hidden="true" />
-        <span>{value().end ? format(value().end, props.dateConfig) : "End"}</span>
+        <span>{value().end ? format(value().end, dateConfig()) : "End"}</span>
       </span>
     );
   };
@@ -629,10 +631,10 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
   const applyDuration = (minutes: number) => {
     const current = draftRange();
     if (!current.start || !isCompleteTime(startTime())) return;
-    const start = toDateTimeValue(current.start, startTime(), props.dateConfig);
+    const start = toDateTimeValue(current.start, startTime(), dateConfig());
     if (!start) return;
     const end = new Date(new Date(start).getTime() + minutes * 60_000).toISOString();
-    const next = splitDateTime(end, props.dateConfig);
+    const next = splitDateTime(end, dateConfig());
     setDraftRange({ start: current.start, end: next.date || current.end || current.start });
     setEndTime(next.time || endTime());
   };
@@ -640,8 +642,8 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
   const durationMinutes = createMemo(() => {
     const current = displayRange();
     if (!current.start || !current.end || !isCompleteTime(startTime()) || !isCompleteTime(endTime())) return null;
-    const start = toDateTimeValue(current.start, startTime(), props.dateConfig);
-    const end = toDateTimeValue(current.end, endTime(), props.dateConfig);
+    const start = toDateTimeValue(current.start, startTime(), dateConfig());
+    const end = toDateTimeValue(current.end, endTime(), dateConfig());
     if (!start || !end) return null;
     return Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60_000);
   });
@@ -649,10 +651,10 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
   const durationLabel = () => {
     const current = displayRange();
     if (!current.start || !current.end) return "";
-    if (!withTime()) return formatDateOnlyRangeDuration(current, props.dateConfig);
+    if (!withTime()) return formatDateOnlyRangeDuration(current, dateConfig());
     if (!isCompleteTime(startTime()) || !isCompleteTime(endTime())) return "";
-    const start = toDateTimeValue(current.start, startTime(), props.dateConfig);
-    const end = toDateTimeValue(current.end, endTime(), props.dateConfig);
+    const start = toDateTimeValue(current.start, startTime(), dateConfig());
+    const end = toDateTimeValue(current.end, endTime(), dateConfig());
     return start && end ? dates.formatDuration(start, end) : "";
   };
 
@@ -665,8 +667,8 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
     }
     if ((current.start || current.end) && (!isCompleteTime(startTime()) || !isCompleteTime(endTime()))) return;
     const value = {
-      start: current.start ? toDateTimeValue(current.start, startTime(), props.dateConfig) : null,
-      end: current.end ? toDateTimeValue(current.end, endTime(), props.dateConfig) : null,
+      start: current.start ? toDateTimeValue(current.start, startTime(), dateConfig()) : null,
+      end: current.end ? toDateTimeValue(current.end, endTime(), dateConfig()) : null,
     };
     close();
     commitFieldValue(props, value);
@@ -679,7 +681,7 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
       valueLabel={valueLabel}
       valueContent={valueContent}
       clearValue={{ start: null, end: null }}
-      timezone={withTime() ? props.dateConfig?.timeZone : undefined}
+      timezone={withTime() ? dateConfig().timeZone : undefined}
       footerMeta={() => (
         <Show when={durationLabel()}>
           <span class="k2b-date-duration">
@@ -710,7 +712,7 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
                 presets={props.datePresets}
                 onSelect={(value) => {
                   setDraftRange(value ? { start: value, end: value } : { start: null, end: null });
-                  if (value) setVisibleMonth(parseDateValue(value, props.dateConfig));
+                  if (value) setVisibleMonth(parseDateValue(value, dateConfig()));
                 }}
               />
             </Show>
@@ -724,7 +726,7 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
                 const current = draftRange();
                 setPreviewDate(current.start && !current.end ? value : null);
               }}
-              dateConfig={props.dateConfig}
+              dateConfig={dateConfig()}
             />
           </div>
 

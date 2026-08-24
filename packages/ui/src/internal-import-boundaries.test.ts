@@ -7,7 +7,7 @@ test("production modules import sibling families directly instead of through bar
   for await (const path of glob.scan({ cwd: import.meta.dir })) {
     if (/\.(?:test|typecheck)\.[cm]?[jt]sx?$/.test(path) || path === "index.ts") continue;
     const source = await Bun.file(`${import.meta.dir}/${path}`).text();
-    if (/from\s+["']\.\.\/(?:actions|chat|content|feedback|inputs|layout|surfaces|widgets)["']/.test(source)) {
+    if (/from\s+["']\.\.\/(?:actions|chat|content|feedback|inputs|intl|layout|surfaces|widgets)["']/.test(source)) {
       violations.push(path);
     }
   }
