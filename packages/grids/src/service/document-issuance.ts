@@ -4,7 +4,7 @@ import type { RenderHtmlToPdfResult } from "@valentinkolb/cloud/services";
 import { sql as defaultSql, type SQL } from "bun";
 import { z } from "zod";
 import { type Document, type DocumentArtifact, type DocumentTemplate, DocumentTemplateSchema } from "../contracts";
-import type { DocumentProfileSummary, DocumentSource, DocumentSourceRevision } from "../document-profile-contracts";
+import type { DocumentProfileSummary } from "../document-profile-contracts";
 import { type DocumentArtifactDraft, type DocumentProfile, documentProfiles, profileKey, profileRegistry } from "../document-profiles";
 import { logAudit } from "./audit";
 import { documentNumberFor } from "./document-liquid";
@@ -53,8 +53,6 @@ type FrozenDocumentRequest = {
   documentNumber: string;
   filename: string | null;
   allocationId: string | null;
-  source: DocumentSource;
-  sourceRevision: DocumentSourceRevision;
   profileInput: Record<string, unknown> | null;
 };
 
@@ -83,8 +81,6 @@ const FrozenDocumentRequestSchema = z
     documentNumber: z.string().min(1).max(200),
     filename: z.string().min(1).max(255).nullable(),
     allocationId: z.uuid().nullable(),
-    source: z.object({ appId: z.string().min(1), resourceType: z.string().min(1), resourceId: z.string().min(1) }).strict(),
-    sourceRevision: z.object({ id: z.string().min(1), observedAt: z.iso.datetime(), evidence: JsonObjectSchema }).strict(),
     profileInput: JsonObjectSchema.nullable(),
   })
   .strict()
@@ -260,7 +256,7 @@ const requestHashFor = (input: IssueDocumentInput): Result<string> => {
   }
 };
 
-const recordRevision = (input: IssueDocumentInput): Result<DocumentSourceRevision> => {
+const validateRecordRevision = (input: IssueDocumentInput): Result<void> => {
   const record = input.renderData.record;
   if (!record || typeof record !== "object" || Array.isArray(record))
     return fail(err.badInput("Document render data has no record revision."));
@@ -303,11 +299,7 @@ const recordRevision = (input: IssueDocumentInput): Result<DocumentSourceRevisio
   if (typeof snapshotVersion !== "number" || snapshotVersion !== value.version || graphVersion !== snapshotVersion) {
     return fail(err.conflict("Record changed while the Document input was being frozen. Retry generation."));
   }
-  return ok({
-    id: `${value.id}@${value.version}`,
-    observedAt: new Date(value.updatedAt).toISOString(),
-    evidence: { templateId: input.template.shortId, recordId: value.id, recordVersion: value.version },
-  });
+  return ok();
 };
 
 const templateSnapshot = (template: DocumentTemplate): Record<string, unknown> => ({
@@ -405,8 +397,6 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       const rendered = await profile.issue(parsed.data, {
         number: "PREVIEW",
         issuedAt: input.issuedAt ?? new Date(),
-        relationship: "original",
-        predecessor: null,
       });
       const artifacts = validateArtifactDrafts(rendered.artifacts, 1);
       return artifacts.ok ? ok(artifacts.data) : artifacts;
@@ -434,26 +424,12 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
       return fail(err.badInput("Document template does not belong to the snapshot table."));
     if ((input.workflowRunId == null) !== (input.workflowStepKey == null))
       return fail(err.badInput("Document workflow binding is incomplete."));
-    const revision = recordRevision(input);
+    const revision = validateRecordRevision(input);
     if (!revision.ok) return revision;
-    const profileInput = await profileInputFor(input.template, input.renderData);
-    if (!profileInput.ok) return profileInput;
     const renderer = input.template.renderer;
     const profile = renderer.kind === "profile" ? profiles.get(profileKey(renderer.id, renderer.version)) : null;
     if (renderer.kind === "profile" && !profile) {
       return fail(err.badInput(`Unknown Document profile ${renderer.id}@${renderer.version}.`));
-    }
-    if (profile && profileInput.data) {
-      const parsed = profile.input.safeParse(profileInput.data);
-      if (!parsed.success)
-        return fail(
-          err.badInput(
-            parsed.error.issues
-              .slice(0, 10)
-              .map((issue) => `${issue.path.join(".") || "$"}: ${issue.message}`)
-              .join("; "),
-          ),
-        );
     }
     const requestHash = requestHashFor(input);
     if (!requestHash.ok) return requestHash;
@@ -569,6 +545,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           let filename: string | null = null;
           let allocationId: string | null = null;
           let frozenRenderData = input.renderData;
+          let profileInput: Record<string, unknown> | null = null;
           if (renderer.kind === "html") {
             const allocation = await allocateNumberInTransaction({
               client: attempt,
@@ -606,12 +583,12 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             frozenRenderData = built.data.data;
           } else {
             await attempt`
-            INSERT INTO grids.document_profile_counters (base_id, profile_id, profile_version)
-            VALUES (${input.snapshot.baseId}::uuid, ${profile!.id}, ${profile!.version}) ON CONFLICT DO NOTHING
+            INSERT INTO grids.document_profile_counters (base_id, profile_id)
+            VALUES (${input.snapshot.baseId}::uuid, ${profile!.id}) ON CONFLICT DO NOTHING
           `;
             const [counter] = await attempt<Array<{ next_value: number | string | bigint }>>`
             SELECT next_value FROM grids.document_profile_counters
-            WHERE base_id = ${input.snapshot.baseId}::uuid AND profile_id = ${profile!.id} AND profile_version = ${profile!.version}
+            WHERE base_id = ${input.snapshot.baseId}::uuid AND profile_id = ${profile!.id}
             FOR UPDATE
           `;
             const value = Number(counter?.next_value);
@@ -619,8 +596,33 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             documentNumber = profile!.formatNumber({ value, issuedAt });
             await attempt`
             UPDATE grids.document_profile_counters SET next_value = ${value + 1}
-            WHERE base_id = ${input.snapshot.baseId}::uuid AND profile_id = ${profile!.id} AND profile_version = ${profile!.version}
+            WHERE base_id = ${input.snapshot.baseId}::uuid AND profile_id = ${profile!.id}
           `;
+            const built = await buildDocumentRenderData({
+              template: input.template,
+              renderData: input.renderData,
+              documentShortId,
+              createdAt: issuedAt,
+              dateConfig: input.dateConfig,
+              tags: input.tags,
+              documentNumber,
+            });
+            if (!built.ok) throw built.error;
+            filename = built.data.filename;
+            frozenRenderData = built.data.data;
+            const renderedProfileInput = await profileInputFor(input.template, frozenRenderData);
+            if (!renderedProfileInput.ok) throw renderedProfileInput.error;
+            if (!renderedProfileInput.data) throw err.internal("Document profile input was not rendered.");
+            const parsed = profile!.input.safeParse(renderedProfileInput.data);
+            if (!parsed.success) {
+              throw err.badInput(
+                parsed.error.issues
+                  .slice(0, 10)
+                  .map((issue) => `${issue.path.join(".") || "$"}: ${issue.message}`)
+                  .join("; "),
+              );
+            }
+            profileInput = renderedProfileInput.data;
           }
           const frozen: FrozenDocumentRequest = {
             template: input.template,
@@ -634,9 +636,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             documentNumber,
             filename,
             allocationId,
-            source: { appId: "grids", resourceType: "document_template", resourceId: input.template.shortId },
-            sourceRevision: revision.data,
-            profileInput: profileInput.data,
+            profileInput,
           };
           const [created] = await attempt<IssuanceRow[]>`
           INSERT INTO grids.document_issuances (base_id, operation_key_hash, request_hash, document_short_id, frozen_request)
@@ -668,8 +668,6 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
         const output = await selected.issue(parsed.data, {
           number: frozen.documentNumber,
           issuedAt: new Date(frozen.issuedAt),
-          relationship: "original",
-          predecessor: null,
         });
         rendered = { artifacts: output.artifacts, validationStatus: output.validationStatus, validationReport: output.validationReport };
       } else {
@@ -743,7 +741,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
           INSERT INTO grids.documents (
             id, short_id, template_id, workflow_run_id, workflow_step_key, snapshot_id, base_id, table_id, record_id,
             document_number, filename, tags, template_snapshot, render_data, renderer_kind, renderer_version, template_revision,
-            profile_id, profile_version, source, source_revision, profile_snapshot, snapshot_sha256, relationship_kind,
+            profile_id, profile_version, profile_snapshot, snapshot_sha256,
             validator_version, validation_status, validation_report, issued_actor, created_by, created_at
           ) VALUES (
             ${documentId}::uuid, ${receipt.document_short_id}, ${frozen.template.id}::uuid, ${frozen.workflowRunId}::uuid, ${frozen.workflowStepKey},
@@ -752,8 +750,7 @@ export const createDocumentIssuanceService = (options: { profiles?: readonly Doc
             ${frozen.renderData}::jsonb, ${frozen.template.renderer.kind},
             ${selectedProfile?.rendererVersion ?? DOCUMENT_HTML_RENDERER_VERSION}, ${templateRevision},
             ${selectedProfile?.id ?? null}, ${selectedProfile?.version ?? null},
-            ${selectedProfile ? frozen.source : null}::jsonb, ${selectedProfile ? frozen.sourceRevision : null}::jsonb,
-            ${frozen.profileInput}::jsonb, ${snapshotHash}, ${selectedProfile ? "original" : null},
+            ${frozen.profileInput}::jsonb, ${snapshotHash},
             ${selectedProfile?.validatorVersion ?? null}, ${rendered.validationStatus}, ${rendered.validationReport}::jsonb,
             ${frozen.actor}::jsonb, ${actorUserId(frozen.actor)}::uuid, ${frozen.issuedAt}
           ) RETURNING *

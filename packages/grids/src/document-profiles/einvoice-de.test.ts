@@ -5,8 +5,16 @@ const snapshot = {
   invoiceDate: "2026-08-22",
   dueDate: "2026-09-05",
   currency: "EUR" as const,
-  seller: { name: "Example Seller GmbH", vatId: "DE123456789", address: { line1: "Hauptstrasse 1", city: "Ulm", postalCode: "89073", countryCode: "DE" as const } },
-  buyer: { name: "Example Buyer GmbH", vatId: "DE987654321", address: { line1: "Markt 2", city: "Berlin", postalCode: "10115", countryCode: "DE" as const } },
+  seller: {
+    name: "Example Seller GmbH",
+    vatId: "DE123456789",
+    address: { line1: "Hauptstrasse 1", city: "Ulm", postalCode: "89073", countryCode: "DE" as const },
+  },
+  buyer: {
+    name: "Example Buyer GmbH",
+    vatId: "DE987654321",
+    address: { line1: "Markt 2", city: "Berlin", postalCode: "10115", countryCode: "DE" as const },
+  },
   buyerReference: "PUR-42",
   payment: { iban: "DE89370400440532013000", accountName: "Example Seller GmbH" },
   lines: [
@@ -15,7 +23,7 @@ const snapshot = {
   ],
 };
 
-const context = { number: "RE-2026-000001", issuedAt: new Date("2026-08-22T10:00:00Z"), relationship: "original" as const, predecessor: null };
+const context = { number: "RE-2026-000001", issuedAt: new Date("2026-08-22T10:00:00Z") };
 
 describe("German E-Invoice profile", () => {
   test("generates exact-decimal EN 16931 XML accepted by the pinned input rules and XSD", async () => {
@@ -51,11 +59,15 @@ describe("German E-Invoice profile", () => {
   });
 
   test("rejects floating-point amounts and unsupported invoice shapes at the public profile boundary", () => {
-    expect(germanEInvoiceSnapshotSchema.safeParse({ ...snapshot, lines: [{ ...snapshot.lines[0], unitPrice: 12.34 }] }).success).toBe(false);
+    expect(germanEInvoiceSnapshotSchema.safeParse({ ...snapshot, lines: [{ ...snapshot.lines[0], unitPrice: 12.34 }] }).success).toBe(
+      false,
+    );
     expect(germanEInvoiceSnapshotSchema.safeParse({ ...snapshot, currency: "USD" }).success).toBe(false);
     expect(germanEInvoiceSnapshotSchema.safeParse({ ...snapshot, dueDate: "2026-08-21" }).success).toBe(false);
     expect(germanEInvoiceSnapshotSchema.safeParse({ ...snapshot, invoiceDate: "2026-02-31" }).success).toBe(false);
-    expect(germanEInvoiceSnapshotSchema.safeParse({ ...snapshot, payment: { ...snapshot.payment, iban: "DE00370400440532013000" } }).success).toBe(false);
+    expect(
+      germanEInvoiceSnapshotSchema.safeParse({ ...snapshot, payment: { ...snapshot.payment, iban: "DE00370400440532013000" } }).success,
+    ).toBe(false);
     expect(germanEInvoiceSnapshotSchema.safeParse({ ...snapshot, lines: [{ ...snapshot.lines[0], taxRate: "0.00" }] }).success).toBe(false);
   });
 

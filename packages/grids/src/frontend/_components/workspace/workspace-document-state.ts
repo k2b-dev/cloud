@@ -1,3 +1,4 @@
+import { PUBLIC_DOCUMENT_PAGE_LIMIT } from "../../../api/document-public-contracts";
 import type { DocumentTemplate } from "../../../contracts";
 import type { Table } from "../../../service";
 import { gridsService } from "../../../service";
@@ -22,7 +23,7 @@ export const loadDocumentTemplateState = async (
     q: "",
     tags: [],
     path: [],
-    limit: 200,
+    limit: PUBLIC_DOCUMENT_PAGE_LIMIT,
     cursor: null,
     timeZone: common.params.dateConfig?.timeZone,
     mode: initialDocumentViewMode,

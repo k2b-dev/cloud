@@ -375,6 +375,17 @@ describe("document routes", () => {
       expect(listTemplateInput).toBeUndefined();
     });
 
+    test("bounds every public Document page to the shared limit", async () => {
+      const accepted = await app().request(path(`/by-template/${templatePublicId}?limit=100`));
+      expect(accepted.status).toBe(200);
+      expect(listTemplateInput).toMatchObject({ limit: 100 });
+
+      listTemplateInput = undefined;
+      const rejected = await app().request(path(`/by-template/${templatePublicId}?limit=101`));
+      expect(rejected.status).toBe(400);
+      expect(listTemplateInput).toBeUndefined();
+    });
+
     test("forwards stable list defaults", async () => {
       const response = await app().request(path(`/by-template/${templatePublicId}`));
 

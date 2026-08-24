@@ -735,7 +735,7 @@ const addDocuments = async (ctx: BuildContext): Promise<number> => {
              snapshot.short_id AS snapshot_public_id, record.short_id AS record_public_id, table_info.short_id AS table_public_id,
              doc.document_number, doc.filename, doc.tags, doc.template_snapshot, doc.render_data,
              doc.renderer_kind, doc.renderer_version, doc.template_revision, doc.profile_id, doc.profile_version,
-             doc.source, doc.source_revision, doc.profile_snapshot, doc.snapshot_sha256, doc.relationship_kind,
+             doc.profile_snapshot, doc.snapshot_sha256,
              doc.validator_version, doc.validation_status, doc.validation_report, doc.issued_actor,
              doc.created_at, snapshot.root AS record_snapshot_root, snapshot.graph AS record_snapshot_graph, snapshot.created_at AS snapshot_created_at
       FROM grids.documents doc

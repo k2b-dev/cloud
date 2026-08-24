@@ -123,7 +123,7 @@ describe("loadGridsWorkspaceState — document templates use Base access", () =>
           folders: [],
           items: [document],
           total: 1,
-          limit: 200,
+          limit: 100,
           hasMore: false,
           nextCursor: null,
         }) as never,

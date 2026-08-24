@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DocumentProfileSummarySchema, DocumentSourceRevisionSchema, DocumentSourceSchema } from "./document-profile-contracts";
+import { DocumentProfileSummarySchema } from "./document-profile-contracts";
 import { exactDecimalSchema } from "./document-profiles";
 import { canonicalDocumentJson, MAX_DOCUMENT_PROFILE_INPUT_BYTES } from "./service/document-issuance";
 
@@ -9,7 +9,7 @@ describe("Document renderer contracts", () => {
     expect(() => canonicalDocumentJson({ value: "x".repeat(MAX_DOCUMENT_PROFILE_INPUT_BYTES) })).toThrow("byte limit");
   });
 
-  test("keeps renderer registry metadata and stored evidence bounded and strict", () => {
+  test("keeps renderer registry metadata bounded and strict", () => {
     expect(
       DocumentProfileSummarySchema.safeParse({
         id: "de.zugferd.en16931",
@@ -20,9 +20,16 @@ describe("Document renderer contracts", () => {
         validatorVersion: "1",
       }).success,
     ).toBe(true);
-    expect(DocumentSourceSchema.safeParse({ appId: "orders\0hidden", resourceType: "order", resourceId: "42" }).success).toBe(false);
-    expect(DocumentSourceSchema.safeParse({ appId: "grids", resourceType: "record", resourceId: "abc", legacy: true }).success).toBe(false);
-    expect(DocumentSourceRevisionSchema.safeParse({ id: "1", observedAt: "2026-08-22T10:00:00.000Z", evidence: {} }).success).toBe(true);
+    expect(
+      DocumentProfileSummarySchema.safeParse({
+        id: "invalid\0id",
+        version: 1,
+        title: "ZUGFeRD",
+        description: "EN 16931 invoice renderer",
+        rendererVersion: "1",
+        validatorVersion: "1",
+      }).success,
+    ).toBe(false);
   });
 
   test("keeps decimal scale lexical and bounded instead of coercing binary numbers", () => {

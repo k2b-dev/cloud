@@ -2351,7 +2351,7 @@ describe("grids CLI", () => {
       expect(calls.map((call) => call.path)).toEqual([
         `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
         `/api/grids/tables/by-base/${baseId}`,
-        `/api/grids/documents/templates/by-table/${tableId}/full`,
+        `/api/grids/documents/templates/by-table/${tableId}?min=read`,
         `/api/grids/documents/templates/${documentTemplateId}/generate`,
       ]);
       expect(calls[3]?.init?.method).toBe("POST");
@@ -2373,11 +2373,10 @@ describe("grids CLI", () => {
     expect(renderers.calls.map((call) => call.path)).toEqual(["/api/grids/documents/renderers"]);
     expect(renderers.tables[0]?.[0]).toMatchObject({ id: renderer.id, version: 1 });
 
-    const documents = createContext(
-      ["documents", "list", baseId],
-      { limit: "25" },
-      [jsonResponse(basePage), jsonResponse({ items: [document], cursor: "next", hasMore: true })],
-    );
+    const documents = createContext(["documents", "list", baseId], { limit: "25" }, [
+      jsonResponse(basePage),
+      jsonResponse({ items: [document], cursor: "next", hasMore: true }),
+    ]);
     await gridsCli.run(documents.ctx);
     expect(documents.calls.map((call) => call.path)).toEqual([
       `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
@@ -2396,15 +2395,9 @@ describe("grids CLI", () => {
     const dir = await mkdtemp(join(tmpdir(), "grids-cli-document-artifact-"));
     const out = join(dir, "factur-x.xml");
     try {
-      const download = createContext(
-        ["documents", "download-artifact", documentId, "structured"],
-        { out },
-        [new Response("<xml />")],
-      );
+      const download = createContext(["documents", "download-artifact", documentId, "structured"], { out }, [new Response("<xml />")]);
       await gridsCli.run(download.ctx);
-      expect(download.calls.map((call) => call.path)).toEqual([
-        `/api/grids/documents/${documentId}/artifacts/structured`,
-      ]);
+      expect(download.calls.map((call) => call.path)).toEqual([`/api/grids/documents/${documentId}/artifacts/structured`]);
       expect(await readFile(out, "utf8")).toBe("<xml />");
     } finally {
       await rm(dir, { recursive: true, force: true });
@@ -2412,11 +2405,11 @@ describe("grids CLI", () => {
   });
 
   test("requires an explicit stable retry key before generating a Document", async () => {
-    const { ctx, calls } = createContext(
-      ["documents", "generate", baseId, "Authors", "Invoice"],
-      { record: recordId },
-      [jsonResponse(basePage), jsonResponse([table]), jsonResponse([documentTemplate])],
-    );
+    const { ctx, calls } = createContext(["documents", "generate", baseId, "Authors", "Invoice"], { record: recordId }, [
+      jsonResponse(basePage),
+      jsonResponse([table]),
+      jsonResponse([documentTemplate]),
+    ]);
     await expect(gridsCli.run(ctx)).rejects.toThrow("Missing stable retry key");
     expect(calls).toHaveLength(3);
   });
@@ -2506,7 +2499,7 @@ describe("grids CLI", () => {
     expect(listCalls.map((call) => call.path)).toEqual([
       `/api/grids/bases?q=${baseId}&limit=500&offset=0`,
       `/api/grids/tables/by-base/${baseId}`,
-      `/api/grids/documents/templates/by-table/${tableId}/full`,
+      `/api/grids/documents/templates/by-table/${tableId}?min=read`,
       `/api/grids/documents/by-template/${documentTemplateId}?tags=invoice&limit=25`,
     ]);
     expect(tables[0]?.[0]).toMatchObject({ id: "run01A", filename: "invoice.pdf" });

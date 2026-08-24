@@ -16,20 +16,17 @@ export type DocumentProfileResult = {
   validationReport: Record<string, unknown>;
 };
 
-export type DocumentProfile<TSnapshot extends Record<string, unknown> = Record<string, unknown>> =
-  DocumentProfileSummary & {
-    input: z.ZodType<TSnapshot>;
-    formatNumber: (context: { value: number; issuedAt: Date }) => string;
-    issue(
-      snapshot: TSnapshot,
-      context: {
-        number: string;
-        issuedAt: Date;
-        relationship: "original" | "correction" | "replacement";
-        predecessor: { id: string; number: string } | null;
-      },
-    ): Promise<DocumentProfileResult> | DocumentProfileResult;
-  };
+export type DocumentProfile<TSnapshot extends Record<string, unknown> = Record<string, unknown>> = DocumentProfileSummary & {
+  input: z.ZodType<TSnapshot>;
+  formatNumber: (context: { value: number; issuedAt: Date }) => string;
+  issue(
+    snapshot: TSnapshot,
+    context: {
+      number: string;
+      issuedAt: Date;
+    },
+  ): Promise<DocumentProfileResult> | DocumentProfileResult;
+};
 
 export const exactDecimalSchema = (options: { scale?: number; nonnegative?: boolean } = {}) =>
   z

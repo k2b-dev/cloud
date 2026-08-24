@@ -29,7 +29,7 @@ const DOCUMENT_TEMPLATE_VARIABLES: TemplateVariable[] = [
   { name: "record", kind: "object" },
   { name: "table", kind: "object" },
   { name: "template", kind: "object" },
-  { name: "run", kind: "object" },
+  { name: "document", kind: "object" },
   { name: "date", kind: "object" },
   { name: "rows", kind: "array" },
   { name: "columns", kind: "array" },

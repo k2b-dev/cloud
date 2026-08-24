@@ -152,14 +152,14 @@ describe("Document issuance", () => {
 
   postgresTest("rejects reuse with changed actor or binding and stores profile artifacts through Files", async () => {
     const scope = await createScope();
-    const profile: DocumentProfile<{ title: string }> = {
+    const profile: DocumentProfile<{ title: string; issuedAt: string }> = {
       id: "test.statement",
       version: 1,
       title: "Statement",
       description: "Test profile",
       rendererVersion: "test-renderer-v1",
       validatorVersion: "test-validator-v1",
-      input: z.object({ title: z.string() }).strict(),
+      input: z.object({ title: z.string(), issuedAt: z.iso.datetime() }).strict(),
       formatNumber: ({ value }) => `STAT-${value}`,
       issue: (value, context) => ({
         artifacts: [
@@ -179,7 +179,7 @@ describe("Document issuance", () => {
       kind: "profile",
       id: profile.id,
       version: profile.version,
-      inputTemplate: '{"title":"Hello"}',
+      inputTemplate: '{"title":"Hello","issuedAt":"{{ date.iso }}"}',
     });
     const service = createDocumentIssuanceService({ profiles: [profile] });
     const idempotencyKey = `profile-${testUuid()}`;
@@ -187,6 +187,22 @@ describe("Document issuance", () => {
     const issued = await service.issueDocument(input);
     if (!issued.ok) throw issued.error;
     expect(issued.data.document.artifacts.map((artifact) => artifact.key)).toEqual(["pdf", "structured"]);
+    const structured = await service.getDocumentArtifact(issued.data.document.id, "structured");
+    if (!structured.ok) throw structured.error;
+    expect(JSON.parse(new TextDecoder().decode(structured.data.bytes)).issuedAt).toBe(issued.data.document.createdAt);
+
+    const profileV2: DocumentProfile<{ title: string; issuedAt: string }> = { ...profile, version: 2 };
+    const templateV2 = await insertProfileTemplate(scope.tableId, {
+      kind: "profile",
+      id: profileV2.id,
+      version: profileV2.version,
+      inputTemplate: '{"title":"Version 2","issuedAt":"{{ date.iso }}"}',
+    });
+    const versioned = await createDocumentIssuanceService({ profiles: [profile, profileV2] }).issueDocument(
+      inputFor(templateV2, scope, { idempotencyKey: `profile-v2-${testUuid()}` }),
+    );
+    if (!versioned.ok) throw versioned.error;
+    expect(versioned.data.document.documentNumber).toBe("STAT-2");
 
     const changedActor = await service.issueDocument({ ...input, actor: { kind: "user", userId: testUuid() } });
     expect(changedActor.ok).toBe(false);

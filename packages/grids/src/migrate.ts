@@ -1494,9 +1494,8 @@ const migrateDocumentIssuance = async (sql: SQL): Promise<void> => {
     CREATE TABLE IF NOT EXISTS grids.document_profile_counters (
       base_id UUID NOT NULL REFERENCES grids.bases(id) ON DELETE RESTRICT,
       profile_id TEXT NOT NULL,
-      profile_version INTEGER NOT NULL CHECK (profile_version > 0),
       next_value BIGINT NOT NULL DEFAULT 1 CHECK (next_value > 0),
-      PRIMARY KEY (base_id, profile_id, profile_version),
+      PRIMARY KEY (base_id, profile_id),
       CONSTRAINT document_profile_counters_profile_id_chk
         CHECK (profile_id ~ '^[a-z][a-z0-9.-]{2,99}$')
     )
@@ -1619,12 +1618,8 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
       template_revision TEXT NOT NULL,
       profile_id TEXT,
       profile_version INTEGER,
-      source JSONB,
-      source_revision JSONB,
       profile_snapshot JSONB,
       snapshot_sha256 TEXT,
-      relationship_kind TEXT,
-      predecessor_id UUID REFERENCES grids.documents(id) ON DELETE RESTRICT,
       validator_version TEXT,
       validation_status TEXT,
       validation_report JSONB,
@@ -1640,22 +1635,13 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
       CONSTRAINT documents_render_data_object_chk CHECK (jsonb_typeof(render_data) = 'object'),
       CONSTRAINT documents_issued_actor_object_chk CHECK (jsonb_typeof(issued_actor) = 'object'),
       CONSTRAINT documents_workflow_pair_chk CHECK ((workflow_run_id IS NULL) = (workflow_step_key IS NULL)),
-      CONSTRAINT documents_relationship_chk CHECK (
-        (relationship_kind = 'original' AND predecessor_id IS NULL)
-        OR (relationship_kind IN ('correction', 'replacement') AND predecessor_id IS NOT NULL)
-        OR (relationship_kind IS NULL AND predecessor_id IS NULL)
-      ),
       CONSTRAINT documents_renderer_chk CHECK (
         (
           renderer_kind = 'html'
           AND profile_id IS NULL
           AND profile_version IS NULL
-          AND source IS NULL
-          AND source_revision IS NULL
           AND profile_snapshot IS NULL
           AND snapshot_sha256 IS NULL
-          AND relationship_kind IS NULL
-          AND predecessor_id IS NULL
           AND validator_version IS NULL
           AND validation_status IS NULL
           AND validation_report IS NULL
@@ -1665,11 +1651,8 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
           renderer_kind = 'profile'
           AND profile_id IS NOT NULL
           AND profile_version > 0
-          AND jsonb_typeof(source) = 'object'
-          AND jsonb_typeof(source_revision) = 'object'
           AND jsonb_typeof(profile_snapshot) = 'object'
           AND snapshot_sha256 ~ '^[a-f0-9]{64}$'
-          AND relationship_kind IS NOT NULL
           AND validator_version IS NOT NULL
           AND validation_status IN ('valid', 'warning')
           AND jsonb_typeof(validation_report) = 'object'
@@ -1681,8 +1664,6 @@ const migrateDocumentArtifacts = async (sql: SQL): Promise<void> => {
       CONSTRAINT documents_snapshot_binding_fkey
         FOREIGN KEY (snapshot_id, base_id, table_id, record_id)
         REFERENCES grids.record_snapshots(id, base_id, table_id, record_id) ON DELETE RESTRICT,
-      CONSTRAINT documents_predecessor_base_fkey
-        FOREIGN KEY (predecessor_id, base_id) REFERENCES grids.documents(id, base_id) ON DELETE RESTRICT,
       UNIQUE (id, base_id),
       UNIQUE (id, base_id, short_id),
       UNIQUE (id, base_id, table_id, record_id),

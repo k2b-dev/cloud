@@ -86,16 +86,14 @@ describe("evidence export integration", () => {
       await sql`
         INSERT INTO grids.documents (
           id, short_id, template_id, snapshot_id, base_id, table_id, record_id, renderer_kind, profile_id, profile_version,
-          source, source_revision, profile_snapshot, snapshot_sha256, document_number, filename, tags,
-          template_snapshot, render_data, relationship_kind,
+          profile_snapshot, snapshot_sha256, document_number, filename, tags,
+          template_snapshot, render_data,
           renderer_version, template_revision, validator_version, validation_status, validation_report, issued_actor, created_at
         ) VALUES (
           ${documentId}::uuid, ${documentShortId}, ${templateId}::uuid, ${snapshotId}::uuid,
           ${baseId}::uuid, ${tableId}::uuid, ${recordId}::uuid, 'profile', 'test.statement', 1,
-          ${{ appId: "orders", resourceType: "order", resourceId: "42" }}::jsonb,
-          ${{ id: "v7", observedAt: "2026-08-22T10:00:00.000Z", evidence: { version: 7 } }}::jsonb,
           ${{ number: "STAT-0001", total: "119.00" }}::jsonb, ${"c".repeat(64)}, 'STAT-0001', 'statement.pdf', '{}',
-          ${{ renderer: { kind: "profile", id: "test.statement", version: 1, inputTemplate: "{}" } }}::jsonb, '{}'::jsonb, 'original',
+          ${{ renderer: { kind: "profile", id: "test.statement", version: 1, inputTemplate: "{}" } }}::jsonb, '{}'::jsonb,
           'renderer-v1', ${"d".repeat(64)}, 'validator-v1', 'valid', ${{ arithmetic: "exact-decimal" }}::jsonb,
           ${{ kind: "service_account", serviceAccountId, delegatedUserId: null, credentialId: null }}::jsonb,
           '2026-08-22T10:00:00.000Z'

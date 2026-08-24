@@ -4,15 +4,16 @@ import { mutation as mutations, timed as timing } from "@k2b/stdlib/solid";
 import { Button, prompts } from "@k2b/ui";
 import { createEffect, createSignal, Show } from "solid-js";
 import { apiClient } from "../../../api/client";
+import { PUBLIC_DOCUMENT_PAGE_LIMIT } from "../../../api/document-public-contracts";
 import type { PublicTable as Table } from "../../../api/public-dto";
 import { openDocumentTemplateEditorDialog } from "../dialogs/TableAdminDialogs";
 import { type GridsDocumentViewMode, setDocumentViewMode } from "../sidebar/GridsSettingsStore";
 import { errorMessage } from "../utils/api-helpers";
 import DocumentBrowser, { type DocumentBreadcrumb } from "./DocumentBrowser";
 import DocumentBrowserToolbar from "./DocumentBrowserToolbar";
+import { openDocumentDetailsDialog } from "./DocumentDetailsDialog";
 import { openDocumentGenerateDialog } from "./DocumentGenerateDialog";
 import { openDocumentLinkDialog } from "./DocumentLinkDialog";
-import { openDocumentDetailsDialog } from "./DocumentDetailsDialog";
 import {
   activeDocumentViewMode,
   appendDocumentBrowserPage,
@@ -27,9 +28,9 @@ import { downloadPdfResponse } from "./document-download";
 import { requestDocumentDownload } from "./document-transfer-client";
 import { formatDocumentMonth } from "./document-workspace-utils";
 import type {
+  PublicDocument,
   PublicDocumentBrowseResponse,
   PublicDocumentFolder,
-  PublicDocument,
   PublicDocumentTemplate,
   PublicDocumentTemplateSummary,
 } from "./public-document-types";
@@ -48,8 +49,6 @@ type Props = {
   dateConfig?: DateContext;
 };
 
-const PAGE_SIZE = 200;
-
 const fetchBrowserPage = async (
   args: ReturnType<typeof documentBrowserKey> & { cursor?: string | null; signal?: AbortSignal },
 ): Promise<PublicDocumentBrowseResponse> => {
@@ -58,7 +57,7 @@ const fetchBrowserPage = async (
       param: { templateId: args.templateId },
       query: {
         q: args.search,
-        limit: String(PAGE_SIZE),
+        limit: String(PUBLIC_DOCUMENT_PAGE_LIMIT),
         cursor: args.cursor ?? "",
         mode: args.mode,
         path: args.path.join("/"),

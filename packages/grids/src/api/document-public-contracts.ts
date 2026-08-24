@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { ShortIdSchema } from "../contracts";
 
+export const PUBLIC_DOCUMENT_PAGE_LIMIT = 100;
+
 export const PublicDocumentArtifactSchema = z
   .object({
     key: z.string().regex(/^[a-z][a-z0-9._-]{0,63}$/),

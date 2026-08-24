@@ -78,10 +78,26 @@ export const listDocumentTemplates = (
         `/documents/templates/by-table/${encodeURIComponent(tableId)}${queryString({ min: options.min ?? "read" })}`,
       );
 
-export const resolveDocumentTemplate = async (ctx: CloudCliContext, table: Table | null, ref: string): Promise<PublicDocumentTemplate> => {
+export const resolveDocumentTemplate = async (
+  ctx: CloudCliContext,
+  table: Table | null,
+  ref: string,
+): Promise<PublicDocumentTemplateSummary> => {
   if (!table) throw new Error("Resolving a document template requires --table because names and ids are table-scoped.");
-  const summary = resolveNamedResource(await listDocumentTemplates(ctx, table.id, { full: true }), ref, "document template");
-  return summary as PublicDocumentTemplate;
+  return resolveNamedResource((await listDocumentTemplates(ctx, table.id)) as PublicDocumentTemplateSummary[], ref, "document template");
+};
+
+export const resolveFullDocumentTemplate = async (
+  ctx: CloudCliContext,
+  table: Table | null,
+  ref: string,
+): Promise<PublicDocumentTemplate> => {
+  if (!table) throw new Error("Resolving a document template requires --table because names and ids are table-scoped.");
+  return resolveNamedResource(
+    (await listDocumentTemplates(ctx, table.id, { full: true })) as PublicDocumentTemplate[],
+    ref,
+    "document template",
+  );
 };
 
 export const documentTemplateRows = (items: Array<PublicDocumentTemplate | PublicDocumentTemplateSummary>) =>
@@ -139,7 +155,11 @@ export const readDraftTemplateBody = async (
   const footerHtml = await readTextInput(flags.footerHtml, "draft footer HTML", false);
   const pageCss = await readTextInput(flags.pageCss, "draft page CSS", false);
   applyDefined(body, { source, recordId: flags.record });
-  applyHtmlRendererFlags(body, { html, headerHtml, footerHtml, pageCss, numberTemplate: flags.numberTemplate, filenameTemplate: flags.filenameTemplate }, template);
+  applyHtmlRendererFlags(
+    body,
+    { html, headerHtml, footerHtml, pageCss, numberTemplate: flags.numberTemplate, filenameTemplate: flags.filenameTemplate },
+    template,
+  );
   if (template) {
     applyDefined(body, {
       source: body.source ?? template.source,
@@ -183,7 +203,7 @@ export const resolveDocumentTemplateFromCommand = async (
   ctx: CloudCliContext,
   args: string[],
   refs: { table?: string; template?: string },
-): Promise<{ base: Base; table: Table | null; template: PublicDocumentTemplate }> => {
+): Promise<{ base: Base; table: Table | null; template: PublicDocumentTemplateSummary }> => {
   const { base, rest } = await resolveBaseFromCommand(ctx, args, refs.table || refs.template ? 0 : 2);
   const table = refs.table
     ? await resolveTable(ctx, base.id, refs.table)
@@ -193,4 +213,20 @@ export const resolveDocumentTemplateFromCommand = async (
   const templateRef = refs.template ?? (table ? rest[1] : rest[0]);
   if (!templateRef) throw new Error("Missing document template.");
   return { base, table, template: await resolveDocumentTemplate(ctx, table, templateRef) };
+};
+
+export const resolveFullDocumentTemplateFromCommand = async (
+  ctx: CloudCliContext,
+  args: string[],
+  refs: { table?: string; template?: string },
+): Promise<{ base: Base; table: Table | null; template: PublicDocumentTemplate }> => {
+  const { base, rest } = await resolveBaseFromCommand(ctx, args, refs.table || refs.template ? 0 : 2);
+  const table = refs.table
+    ? await resolveTable(ctx, base.id, refs.table)
+    : rest.length >= 2
+      ? await resolveTable(ctx, base.id, rest[0]!)
+      : null;
+  const templateRef = refs.template ?? (table ? rest[1] : rest[0]);
+  if (!templateRef) throw new Error("Missing document template.");
+  return { base, table, template: await resolveFullDocumentTemplate(ctx, table, templateRef) };
 };

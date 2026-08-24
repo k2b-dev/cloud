@@ -45,7 +45,7 @@ export const createDocumentTemplateRoutes = () =>
         const tableGate = await gateAt(c, { baseId: table.baseId }, c.req.valid("query").min);
         if (!tableGate.ok) return respond(c, () => Promise.resolve(tableGate));
         const templates = await gridsService.document.listTemplatesForTable(tableId);
-        return c.json(await projectDocumentTemplateSummaries(templates.filter((template) => template.enabled)));
+        return c.json(await projectDocumentTemplateSummaries(templates));
       },
     )
 

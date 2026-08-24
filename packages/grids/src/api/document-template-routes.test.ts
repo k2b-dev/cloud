@@ -342,13 +342,13 @@ describe("document template routes", () => {
     });
   }
 
-  test("lists enabled template summaries through base read access", async () => {
+  test("lists every template summary through base read access", async () => {
     baseLevel = "read";
 
     const response = await app().request(path(`/templates/by-table/${tablePublicId}`));
 
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual([summary(template)]);
+    expect(await response.json()).toEqual([summary(template), summary(disabledTemplate)]);
     expect(tableGetInputs).toEqual([tableId]);
     expect(listInputs).toEqual([tableId]);
   });

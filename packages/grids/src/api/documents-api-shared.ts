@@ -12,12 +12,17 @@ import { decodeDocumentCursor } from "../service/document-values";
 import { loadDocumentNumberSeries } from "../service/number-series";
 import { projectPublicIds, resolvePublicIds } from "../service/public-resources";
 import { ALL_RECORD_ACCESS } from "../service/record-access";
-import { PublicDocumentSchema } from "./document-public-contracts";
+import { PUBLIC_DOCUMENT_PAGE_LIMIT, PublicDocumentSchema } from "./document-public-contracts";
 import { pdfResponse } from "./download-response";
 import { PublicNumberSeriesSummarySchema, toPublicNumberSeries } from "./number-series-dto";
 import { currentActorViewer, gateAt } from "./permissions";
 
-export { PublicDocumentArtifactSchema, PublicDocumentRendererSchema, PublicDocumentSchema } from "./document-public-contracts";
+export {
+  PUBLIC_DOCUMENT_PAGE_LIMIT,
+  PublicDocumentArtifactSchema,
+  PublicDocumentRendererSchema,
+  PublicDocumentSchema,
+} from "./document-public-contracts";
 
 export const documentActor = (actor: RequestActor | undefined) => {
   if (!actor) return { kind: "system" as const };
@@ -685,7 +690,7 @@ export const RecordLookupQuerySchema = z.object({
 });
 
 export const PublicDocumentPageQuerySchema = z.object({
-  limit: z.coerce.number().int().min(1).max(100).optional().default(50),
+  limit: z.coerce.number().int().min(1).max(PUBLIC_DOCUMENT_PAGE_LIMIT).optional().default(50),
   cursor: z
     .string()
     .optional()

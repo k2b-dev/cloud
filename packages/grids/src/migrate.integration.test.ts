@@ -332,11 +332,7 @@ describe("grids schema migration", () => {
           )
           ORDER BY event_object_table
         `;
-        expect(immutableTriggers.map((item) => item.tableName)).toEqual([
-          "document_artifacts",
-          "document_issuances",
-          "documents",
-        ]);
+        expect(immutableTriggers.map((item) => item.tableName)).toEqual(["document_artifacts", "document_issuances", "documents"]);
         const constraints = await database<Array<{ name: string }>>`
           SELECT conname AS name
           FROM pg_constraint
@@ -463,12 +459,7 @@ describe("grids schema migration", () => {
           WHERE table_schema = 'grids' AND table_name = 'document_artifacts'
           ORDER BY column_name
         `;
-        expect(artifactColumns.map((column) => column.name)).toEqual([
-          "artifact_key",
-          "created_at",
-          "document_id",
-          "file_id",
-        ]);
+        expect(artifactColumns.map((column) => column.name)).toEqual(["artifact_key", "created_at", "document_id", "file_id"]);
         const documentColumns = await database<Array<{ name: string }>>`
           SELECT column_name AS name
           FROM information_schema.columns
@@ -517,6 +508,20 @@ describe("grids schema migration", () => {
           "idx_grids_documents_short_id",
           "idx_grids_record_snapshots_short_id",
         ]);
+        const profileCounterColumns = await database<Array<{ name: string }>>`
+          SELECT column_name AS name
+          FROM information_schema.columns
+          WHERE table_schema = 'grids' AND table_name = 'document_profile_counters'
+          ORDER BY ordinal_position
+        `;
+        expect(profileCounterColumns.map((column) => column.name)).toEqual(["base_id", "profile_id", "next_value"]);
+        const removedDocumentColumns = await database<Array<{ name: string }>>`
+          SELECT column_name AS name
+          FROM information_schema.columns
+          WHERE table_schema = 'grids' AND table_name = 'documents'
+            AND column_name IN ('source', 'source_revision', 'relationship_kind', 'predecessor_id')
+        `;
+        expect(removedDocumentColumns).toEqual([]);
 
         const baseA = uuid();
         const baseB = uuid();
@@ -807,9 +812,7 @@ describe("grids schema migration", () => {
               profile_input_template = '{}'
           WHERE id = ${templateA}::uuid
         `;
-        const [unchangedDocument] = await database<
-          Array<{ rendererKind: string; templateSnapshot: Record<string, unknown> }>
-        >`
+        const [unchangedDocument] = await database<Array<{ rendererKind: string; templateSnapshot: Record<string, unknown> }>>`
           SELECT renderer_kind AS "rendererKind", template_snapshot AS "templateSnapshot"
           FROM grids.documents
           WHERE id = ${documentA}::uuid

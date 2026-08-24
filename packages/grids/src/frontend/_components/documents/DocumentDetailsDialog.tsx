@@ -23,8 +23,8 @@ type DocumentDetailsDialogArgs = {
   document: PublicDocument;
   canWrite: boolean;
   dateConfig?: DateContext;
-  onDownload: (run: PublicDocument) => void | Promise<void>;
-  onGenerateAgain?: (run: PublicDocument) => void | Promise<void>;
+  onDownload: (document: PublicDocument) => void | Promise<void>;
+  onGenerateAgain?: (document: PublicDocument) => void | Promise<void>;
 };
 
 const linkStatus = (link: PublicDocumentLink): { label: string; tone: "ok" | "neutral"; active: boolean } => {
@@ -98,7 +98,9 @@ function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; close: 
               {(status) => (
                 <>
                   <dt class="text-dimmed">Validation</dt>
-                  <dd><StatusBadge tone={status() === "valid" ? "ok" : "warning"} label={status()} /></dd>
+                  <dd>
+                    <StatusBadge tone={status() === "valid" ? "ok" : "warning"} label={status()} />
+                  </dd>
                 </>
               )}
             </Show>
@@ -110,7 +112,9 @@ function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; close: 
                 <div class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-[var(--ui-radius-control)] border border-subtle px-3 py-2">
                   <div class="min-w-0">
                     <p class="truncate text-sm font-medium text-primary">{artifact.filename}</p>
-                    <p class="text-xs text-dimmed">{artifact.mimeType} · {text.pprintBytes(artifact.sizeBytes)}</p>
+                    <p class="text-xs text-dimmed">
+                      {artifact.mimeType} · {text.pprintBytes(artifact.sizeBytes)}
+                    </p>
                     <p class="mt-1 break-all font-mono text-[10px] text-dimmed">SHA-256 {artifact.sha256}</p>
                   </div>
                   <ButtonLink
@@ -195,12 +199,7 @@ function DocumentDetailsDialog(props: { args: DocumentDetailsDialogArgs; close: 
         </Show>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <Button
-          variant="secondary"
-          size="sm"
-          type="button"
-          onClick={() => void props.args.onDownload(props.args.document)}
-        >
+        <Button variant="secondary" size="sm" type="button" onClick={() => void props.args.onDownload(props.args.document)}>
           <i class="ti ti-download" />
           Download
         </Button>
