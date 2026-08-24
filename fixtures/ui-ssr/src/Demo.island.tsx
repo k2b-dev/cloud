@@ -159,7 +159,7 @@ export default function Demo() {
             <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px">
               <CodeDisplay title="Query" language="text" code={"select service, latency\nfrom telemetry\nwhere healthy = true;"} />
               <StructuredDataPreview title="Payload" data={{ service: "gateway", healthy: true, latency: { p95: 84, unit: "ms" } }} />
-              <MarkdownView trustedHtml="<h3>Trusted Markdown</h3><p>Rendered HTML stays a deliberate consumer boundary.</p>" smallHeadings />
+              <MarkdownView trustedHtml="<h3>Trusted Markdown</h3><p>Rendered HTML stays a deliberate consumer boundary.</p>" headingScale="compact" />
               <div style="display:grid;gap:12px;align-content:start">
                 <RangePicker
                   value="24h"
