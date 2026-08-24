@@ -19,7 +19,7 @@ import {
   capabilityResultSchema,
   type User,
 } from "@valentinkolb/cloud/contracts";
-import { aiCapabilities } from "./ai-capabilities";
+import { aiCapabilities } from "./capabilities";
 import * as taskRuntime from "./ai-chat-tasks-runtime";
 
 const user: User = {

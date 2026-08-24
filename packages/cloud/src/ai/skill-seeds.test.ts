@@ -37,7 +37,7 @@ describe("Cloud AI Skill seeds", () => {
     ]) {
       expect(assistant?.instructions).toContain(text);
     }
-    const coreSource = await Bun.file(new URL("../../../core/src/ai-capabilities.ts", import.meta.url)).text();
+    const coreSource = await Bun.file(new URL("../../../core/src/capabilities.ts", import.meta.url)).text();
     const declaredCoreCapabilities = new Set([...coreSource.matchAll(/^    "([a-z0-9.-]+)": \{/gm)].map((match) => `core.${match[1]!}`));
     for (const match of assistant?.instructions.matchAll(/`(core\.[a-z0-9.-]+)`/g) ?? []) {
       expect(declaredCoreCapabilities.has(match[1]!)).toBeTrue();

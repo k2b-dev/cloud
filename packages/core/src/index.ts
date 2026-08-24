@@ -16,7 +16,7 @@ import { createCoreNotificationSender } from "./notifications";
 import notificationWebSocketRoutes from "./notifications-ws";
 import { createPagesRouter } from "./pages/create";
 import { runCoreSetup, startCoreServices, stopCoreServices } from "./runtime-helpers";
-import { aiCapabilities } from "./ai-capabilities";
+import { aiCapabilities } from "./capabilities";
 import { aiChatTaskRoutes } from "./ai-chat-task-routes";
 import { createAiNotificationService } from "./ai-notifications";
 
