@@ -148,6 +148,7 @@ documents all process variables; that larger list is not the shape of `env`.
 | `@valentinkolb/cloud/ai/live` | Supported, server-only | AI Realtime UI route and SSR cursor | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@valentinkolb/cloud/ai/live-events` | Supported, browser and server | AI Realtime UI wire contracts and parser | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
 | `@valentinkolb/cloud/ai/runtime` | Platform-owned, server-only | Core-owned conversation runtime and turn submission | [Chat and streaming](/en/docs/ai/chat-runtime-and-streaming) |
+| `@valentinkolb/cloud/ai/admin` | Platform-owned, server-only | AI usage accounting behind the Admin AI Usage report | [Observability](/en/docs/operations/observability) |
 | `@valentinkolb/cloud/account/ui` | Supported, SolidJS | Cloud account selectors and avatars | [Building blocks](/en/docs/building-blocks) |
 | `@valentinkolb/cloud/access/ui` | Supported, SolidJS | Cloud permission and resource-key controls | [Resource API keys](/en/docs/identity/resource-api-keys) |
 | `@valentinkolb/cloud/browser/live` | Supported, browser | Live WebSocket transport with typed channel sends | [Realtime UI](/en/docs/frontend/realtime-ui) |
