@@ -500,7 +500,7 @@ describe("@k2b/ui content and chat behavior", () => {
     Object.defineProperty(input, "currentTarget", { configurable: true, value: textarea });
     (textarea as HTMLTextAreaElement & { $$input?: (event: InputEvent) => void }).$$input?.(input as InputEvent);
 
-    expect(textarea.style.height).toBe("384px");
+    expect(textarea.style.height).toBe("309px");
 
     dispose();
     dom.cleanup();

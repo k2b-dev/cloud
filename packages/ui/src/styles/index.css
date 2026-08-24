@@ -5697,7 +5697,8 @@
   scrollbar-color: var(--k2b-scrollbar-thumb) transparent;
 }
 
-.k2b-ui:is([data-theme="dark"], .k2b-dark),
+.k2b-ui[data-theme="dark"],
+.k2b-ui.k2b-dark,
 .dark .k2b-ui {
   --k2b-scrollbar-thumb: rgb(113 113 122 / 0.55);
   --k2b-scrollbar-thumb-hover: rgb(113 113 122 / 0.75);
@@ -6801,6 +6802,7 @@
     display: none !important;
   }
 
+  .k2b-ui .k2b-button[data-variant="input"]:focus-visible,
   .k2b-ui .k2b-number-input__step:focus-visible,
   .k2b-ui .k2b-panes__separator:focus-visible > span,
   .k2b-ui .k2b-chart[data-interactive="true"]:focus-visible,

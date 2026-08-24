@@ -748,7 +748,8 @@
   box-shadow: var(--k2b-shadow-frame);
 }
 
-.k2b-ui:is([data-theme="dark"], .k2b-dark) .k2b-app-workspace,
+.k2b-ui[data-theme="dark"] .k2b-app-workspace,
+.k2b-ui.k2b-dark .k2b-app-workspace,
 .dark .k2b-ui .k2b-app-workspace {
   border-color: var(--k2b-border);
 }
