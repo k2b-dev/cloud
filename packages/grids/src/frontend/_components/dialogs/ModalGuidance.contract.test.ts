@@ -35,13 +35,14 @@ describe("Grids settings dialog guidance", () => {
     const combinedTable = await source("./FederatedTableDialog.tsx");
     const recordAudit = await source("../records/RecordAuditDialog.tsx");
     const recordDocuments = await source("../records/RecordDocumentsSection.tsx");
+    const documentGenerate = await source("../documents/DocumentGenerateDialog.tsx");
 
     expect(viewSettings).toContain('title="Control what this view shows"');
     expect(viewSettings).toContain("does not change the records themselves");
     expect(computedColumn).toContain('title="Show a value calculated for this view"');
     expect(combinedTable).toContain("choose the source field whose value should appear");
     expect(recordAudit).toContain('title="Why this is required"');
-    expect(recordDocuments).toContain('title="The generated PDF stays unchanged"');
+    expect(documentGenerate).toContain('title="The generated Document stays unchanged"');
     expect(recordDocuments).not.toContain("recursive record snapshot");
   });
 });
