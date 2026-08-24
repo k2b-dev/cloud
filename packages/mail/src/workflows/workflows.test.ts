@@ -55,6 +55,8 @@ describe("Mail workflow manifest", () => {
   test("exposes only the canonical Mail vocabulary", () => {
     expect(mailWorkflowManifest.triggers.map(({ kind }) => kind)).toEqual(["messageReceived", "schedule"]);
     expect(mailWorkflowManifest.actions.map(({ kind }) => kind)).toEqual([
+      "linkSpaceItem",
+      "createSpaceEvent",
       "addKeyword",
       "removeKeyword",
       "moveMessage",
@@ -76,6 +78,7 @@ describe("Mail workflow manifest", () => {
       "scheduleDraftSend",
       "notifyUser",
       "automaticReply",
+      "aiExtractData",
       "aiGenerateText",
       "aiClassify",
       "aiClassifyMany",
@@ -93,11 +96,13 @@ describe("Mail workflow manifest", () => {
   });
 
   test("preserves the published manifest hash", async () => {
-    expect(await hashWorkflowJson(mailWorkflowManifest)).toBe("a8938c5d08289020d47f729721db2f2aaab314fb26e0f11426d4c1ba23fb5b71");
+    expect(await hashWorkflowJson(mailWorkflowManifest)).toBe("bcfbf29a90b066d21351bb4cf2e70934a1fdee736dcab6fd6c426bd6250465a5");
   });
 
   test("classifies provider, collaboration, and terminal effects", () => {
     expect(Object.fromEntries(mailWorkflowManifest.actions.map((action) => [action.kind, action.effect]))).toEqual({
+      linkSpaceItem: "durable-intent",
+      createSpaceEvent: "durable-intent",
       addKeyword: "durable-intent",
       removeKeyword: "durable-intent",
       moveMessage: "durable-intent",
@@ -119,6 +124,7 @@ describe("Mail workflow manifest", () => {
       scheduleDraftSend: "durable-intent",
       notifyUser: "durable-intent",
       automaticReply: "durable-intent",
+      aiExtractData: "durable-intent",
       aiGenerateText: "durable-intent",
       aiClassify: "durable-intent",
       aiClassifyMany: "durable-intent",
