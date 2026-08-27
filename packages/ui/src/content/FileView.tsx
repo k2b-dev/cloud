@@ -25,6 +25,7 @@ import {
 } from "solid-js";
 import { toast } from "../feedback/toast";
 import { MarkdownEditor } from "../inputs/markdown/MarkdownEditor";
+import { useUiMessages } from "../intl/messages";
 import Placeholder from "../surfaces/Placeholder";
 import CodeDisplay, { type CodeDisplayLanguage } from "./CodeDisplay";
 import { type FileViewFile, fileViewExtension, getFileViewPreviewKind, parseDelimitedText } from "./file-view-preview";
@@ -130,18 +131,21 @@ function OverlayPanel(props: { actions?: JSX.Element; children: JSX.Element }) {
   );
 }
 
-const downloadAction = (props: FileViewRendererProps): JSX.Element => (
-  <Show when={props.downloadHref}>
-    {(href) => (
-      <OverlayAction
-        icon="ti-download"
-        title="Download"
-        href={href()}
-        download={props.file.path.slice(props.file.path.lastIndexOf("/") + 1)}
-      />
-    )}
-  </Show>
-);
+const DownloadAction = (props: FileViewRendererProps): JSX.Element => {
+  const messages = useUiMessages();
+  return (
+    <Show when={props.downloadHref}>
+      {(href) => (
+        <OverlayAction
+          icon="ti-download"
+          title={messages().download}
+          href={href()}
+          download={props.file.path.slice(props.file.path.lastIndexOf("/") + 1)}
+        />
+      )}
+    </Show>
+  );
+};
 
 /** Toolbar-styled icon button — reuses the package markdown-editor tool primitive. */
 function EditorToolButton(props: { icon: string; title: string; onClick: () => void; disabled?: boolean }) {
@@ -164,6 +168,7 @@ function EditorToolButton(props: { icon: string; title: string; onClick: () => v
 // ── Built-in renderers ──────────────────────────────────────────────────────
 
 function MarkdownRenderer(props: FileViewRendererProps) {
+  const messages = useUiMessages();
   const [editing, setEditing] = createSignal(false);
   return (
     <Show
@@ -173,9 +178,9 @@ function MarkdownRenderer(props: FileViewRendererProps) {
           actions={
             <>
               <Show when={props.editor}>
-                <OverlayAction icon="ti-pencil" title="Edit" onClick={() => setEditing(true)} />
+                <OverlayAction icon="ti-pencil" title={messages().edit} onClick={() => setEditing(true)} />
               </Show>
-              {downloadAction(props)}
+              <DownloadAction {...props} />
             </>
           }
         >
@@ -199,7 +204,7 @@ function MarkdownRenderer(props: FileViewRendererProps) {
               onSave={() => void editor.save()}
               saveDisabled={!editor.dirty()}
               saving={editor.saving()}
-              toolbarTrailing={<EditorToolButton icon="ti ti-eye" title="Preview" onClick={() => setEditing(false)} />}
+              toolbarTrailing={<EditorToolButton icon="ti ti-eye" title={messages().preview} onClick={() => setEditing(false)} />}
             />
           </div>
         );
@@ -209,11 +214,12 @@ function MarkdownRenderer(props: FileViewRendererProps) {
 }
 
 function TextRenderer(props: FileViewRendererProps) {
+  const messages = useUiMessages();
   return (
     <Show
       when={props.editor}
       fallback={
-        <OverlayPanel actions={downloadAction(props)}>
+        <OverlayPanel actions={<DownloadAction {...props} />}>
           <CodeDisplay code={props.content.content} language={codeLanguage(props.file.path)} />
         </OverlayPanel>
       }
@@ -226,7 +232,7 @@ function TextRenderer(props: FileViewRendererProps) {
             class="k2b-markdown-editor"
             data-fill="true"
             role="group"
-            aria-label="Text editor"
+            aria-label={messages().textEditor}
             onKeyDown={(event) => {
               if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
                 event.preventDefault();
@@ -244,8 +250,8 @@ function TextRenderer(props: FileViewRendererProps) {
                       class="k2b-markdown-editor__tool"
                       href={href()}
                       download={props.file.path.slice(props.file.path.lastIndexOf("/") + 1)}
-                      title="Download"
-                      aria-label="Download"
+                      title={messages().download}
+                      aria-label={messages().download}
                     >
                       <i class="ti ti-download" />
                     </a>
@@ -253,7 +259,7 @@ function TextRenderer(props: FileViewRendererProps) {
                 </Show>
                 <EditorToolButton
                   icon={editor().saving() ? "ti ti-loader-2 k2b-spin" : "ti ti-device-floppy"}
-                  title="Save (Ctrl/Cmd+S)"
+                  title={messages().saveShortcut}
                   disabled={!editor().dirty() || editor().saving()}
                   onClick={() => void editor().save()}
                 />
@@ -288,7 +294,7 @@ function JsonRenderer(props: FileViewRendererProps) {
   };
 
   return (
-    <OverlayPanel actions={downloadAction(props)}>
+    <OverlayPanel actions={<DownloadAction {...props} />}>
       <div class="k2b-content-file-view__document">
         <Show when={parsed().ok} fallback={<CodeDisplay code={props.content.content} language="text" />}>
           <StructuredDataPreview data={parsedValue()} maxRows={200} />
@@ -299,6 +305,7 @@ function JsonRenderer(props: FileViewRendererProps) {
 }
 
 function DelimitedTextRenderer(props: FileViewRendererProps) {
+  const messages = useUiMessages();
   const delimiter = () =>
     fileViewExtension(props.file.path) === "tsv" || props.content.mediaType === "text/tab-separated-values" ? "\t" : ",";
   const preview = createMemo(() => parseDelimitedText(props.content.content, delimiter()));
@@ -306,10 +313,10 @@ function DelimitedTextRenderer(props: FileViewRendererProps) {
   const rows = createMemo(() => preview().rows.slice(1));
 
   return (
-    <OverlayPanel actions={downloadAction(props)}>
+    <OverlayPanel actions={<DownloadAction {...props} />}>
       <Show
         when={headers().length > 0}
-        fallback={<Placeholder icon="ti ti-table" title="Empty file" description="This delimited file contains no rows." />}
+        fallback={<Placeholder icon="ti ti-table" title={messages().emptyFile} description={messages().delimitedFileEmpty} />}
       >
         <div class="k2b-content-file-view__sheet">
           <table class="k2b-content-file-view__table">
@@ -318,7 +325,7 @@ function DelimitedTextRenderer(props: FileViewRendererProps) {
                 <For each={headers()}>
                   {(header, index) => (
                     <th scope="col">
-                      <span>{header || `Column ${index() + 1}`}</span>
+                      <span>{header || messages().column({ number: index() + 1 })}</span>
                     </th>
                   )}
                 </For>
@@ -335,7 +342,7 @@ function DelimitedTextRenderer(props: FileViewRendererProps) {
             </tbody>
           </table>
           <Show when={preview().truncated}>
-            <p class="k2b-content-file-view__truncated">Preview limited to 200 data rows and 50 columns.</p>
+            <p class="k2b-content-file-view__truncated">{messages().previewLimited}</p>
           </Show>
         </div>
       </Show>
@@ -348,7 +355,7 @@ const mediaSource = (props: FileViewRendererProps): string =>
 
 function ImageRenderer(props: FileViewRendererProps) {
   return (
-    <OverlayPanel actions={downloadAction(props)}>
+    <OverlayPanel actions={<DownloadAction {...props} />}>
       <div class="k2b-content-file-view__media">
         <img src={mediaSource(props)} alt={props.file.path} />
       </div>
@@ -357,23 +364,22 @@ function ImageRenderer(props: FileViewRendererProps) {
 }
 
 function PdfRenderer(props: FileViewRendererProps) {
+  const messages = useUiMessages();
   const href = () => props.previewHref ?? props.downloadHref;
   return (
-    <Show
-      when={href()}
-      fallback={<Placeholder icon="ti ti-file-type-pdf" title="PDF" description="No inline preview available for this source." />}
-    >
+    <Show when={href()} fallback={<Placeholder icon="ti ti-file-type-pdf" title="PDF" description={messages().noInlinePreview} />}>
       {(href) => <object data={href()} type="application/pdf" class="k2b-content-file-view__pdf" aria-label={props.file.path} />}
     </Show>
   );
 }
 
 function AudioRenderer(props: FileViewRendererProps) {
+  const messages = useUiMessages();
   return (
-    <OverlayPanel actions={downloadAction(props)}>
+    <OverlayPanel actions={<DownloadAction {...props} />}>
       <div class="k2b-content-file-view__media" data-kind="audio">
         <audio controls preload="metadata" src={mediaSource(props)} aria-label={props.file.path}>
-          Your browser does not support audio playback.
+          {messages().audioUnsupported}
         </audio>
       </div>
     </OverlayPanel>
@@ -381,11 +387,12 @@ function AudioRenderer(props: FileViewRendererProps) {
 }
 
 function VideoRenderer(props: FileViewRendererProps) {
+  const messages = useUiMessages();
   return (
-    <OverlayPanel actions={downloadAction(props)}>
+    <OverlayPanel actions={<DownloadAction {...props} />}>
       <div class="k2b-content-file-view__media" data-kind="video">
         <video controls preload="metadata" playsinline src={mediaSource(props)} aria-label={props.file.path}>
-          Your browser does not support video playback.
+          {messages().videoUnsupported}
         </video>
       </div>
     </OverlayPanel>
@@ -393,17 +400,18 @@ function VideoRenderer(props: FileViewRendererProps) {
 }
 
 function BinaryRenderer(props: FileViewRendererProps) {
+  const messages = useUiMessages();
   return (
     <Placeholder
       icon="ti ti-file-unknown"
-      title="No preview"
-      description={props.content.mediaType || "Binary file"}
+      title={messages().noPreview}
+      description={props.content.mediaType || messages().binaryFile}
       action={
         <Show when={props.downloadHref}>
           {(href) => (
             <a class="k2b-button" data-variant="secondary" data-size="sm" href={href()} download="">
               <i class="ti ti-download" aria-hidden="true" />
-              Download
+              {messages().download}
             </a>
           )}
         </Show>
@@ -460,6 +468,7 @@ export const formatFileViewSize = (bytes: number): string => {
 };
 
 export default function FileView(props: FileViewProps) {
+  const messages = useUiMessages();
   const [draft, setDraft] = createSignal("");
   const [savedDraft, setSavedDraft] = createSignal("");
   const [nativeRevision, setNativeRevision] = createSignal(0);
@@ -472,7 +481,7 @@ export default function FileView(props: FileViewProps) {
     },
     onSuccess: (saved) => {
       if (props.file.path === saved.path) setSavedDraft(saved.content);
-      toast.success("File saved");
+      toast.success(messages().fileSaved);
     },
     onError: (error) => toast.error(error.message),
   });
@@ -549,10 +558,10 @@ export default function FileView(props: FileViewProps) {
     <div class={`k2b-content-file-view ${props.class ?? ""}`}>
       <Switch>
         <Match when={content.loading && content() === undefined}>
-          <Placeholder icon="ti ti-loader-2" title="Loading…" />
+          <Placeholder icon="ti ti-loader-2" title={messages().loading} />
         </Match>
         <Match when={content.error}>
-          <Placeholder icon="ti ti-alert-circle" title="Failed to load file" description={String(content.error?.message ?? "")} />
+          <Placeholder icon="ti ti-alert-circle" title={messages().failedLoadFile} description={String(content.error?.message ?? "")} />
         </Match>
         <Match when={resolvedContent() && renderer()}>
           {(active) => {

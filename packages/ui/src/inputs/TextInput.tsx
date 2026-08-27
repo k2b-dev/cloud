@@ -1,5 +1,6 @@
 import { createSignal, type JSX, Show, splitProps } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { useUiMessages } from "../intl/messages";
 import type { Completion } from "./completion";
 import type { ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
@@ -32,6 +33,7 @@ export type TextInputProps = Omit<
   };
 
 export function TextInput(props: TextInputProps): JSX.Element {
+  const messages = useUiMessages();
   const [local, rest] = splitProps(props, [
     "activeIcon",
     "aria-describedby",
@@ -158,7 +160,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
               <button
                 type="button"
                 class="k2b-input-shell__clear k2b-input-clear-action"
-                aria-label={local.clearLabel ?? "Clear"}
+                aria-label={local.clearLabel ?? messages().clear}
                 onClick={clear}
               >
                 <i class="ti ti-x" aria-hidden="true" />
@@ -168,7 +170,7 @@ export function TextInput(props: TextInputProps): JSX.Element {
               <button
                 type="button"
                 class="k2b-input-shell__clear"
-                aria-label={passwordVisible() ? "Hide password" : "Show password"}
+                aria-label={passwordVisible() ? messages().hidePassword : messages().showPassword}
                 aria-pressed={passwordVisible()}
                 disabled={rest.disabled}
                 onClick={() => setPasswordVisible((visible) => !visible)}

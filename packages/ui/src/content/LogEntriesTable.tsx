@@ -1,7 +1,8 @@
 import { dates } from "@k2b/stdlib";
 import { Show } from "solid-js";
-import DataTable, { type DataTableColumn } from "./DataTable";
+import { useUiMessages } from "../intl/messages";
 import Placeholder from "../surfaces/Placeholder";
+import DataTable, { type DataTableColumn } from "./DataTable";
 
 export type LogTableEntry = {
   id: number | string;
@@ -31,6 +32,7 @@ const levelIcon: Record<string, { icon: string; level: string; label: string }> 
 };
 
 export default function LogEntriesTable(props: Props) {
+  const messages = useUiMessages();
   const columns = (): DataTableColumn<LogTableEntry>[] => [
     { id: "level", header: "Level", value: (entry) => entry.level },
     { id: "source", header: `Source (${props.entries.length})`, value: (entry) => entry.source },
@@ -41,7 +43,7 @@ export default function LogEntriesTable(props: Props) {
   return (
     <Show
       when={props.entries.length > 0}
-      fallback={<Placeholder surface="paper" description={<>{props.emptyMessage ?? "No log entries found."}</>} />}
+      fallback={<Placeholder surface="paper" description={<>{props.emptyMessage ?? messages().noLogEntries}</>} />}
     >
       <DataTable
         rows={props.entries}

@@ -5,6 +5,7 @@ import { createMemo, createSignal, For, mergeProps, onCleanup, onMount, Show } f
 import { Button } from "../actions/Button";
 import SegmentedControl from "../actions/SegmentedControl";
 import { useDateConfigLocale } from "../intl/locale";
+import { useUiMessages } from "../intl/messages";
 import { layoutCalendarIntervals } from "./calendar-event-layout";
 import { calendarDayIndexAtPoint, calendarMinuteAtPoint, startCalendarPointerSession } from "./calendar-pointer";
 
@@ -156,18 +157,6 @@ type TimedOverflowLayout = {
   hiddenEvents: NormalizedEvent[];
   groupStartDate: Date;
   groupEndDate: Date;
-};
-
-const labels: Required<CalendarLabels> = {
-  today: "Today",
-  day: "Day",
-  week: "Week",
-  month: "Month",
-  year: "Year",
-  allDay: "All day",
-  noEvents: "No events",
-  previous: "Previous",
-  next: "Next",
 };
 
 const ownerDateConfig = (owner: CalendarProps): DateContext => ({
@@ -574,6 +563,7 @@ const CalendarViewLinks = (props: {
   view: CalendarView;
   options: Array<{ value: CalendarView; label: string }>;
 }): JSX.Element => {
+  const messages = useUiMessages();
   const refs: HTMLAnchorElement[] = [];
   const selectRelative = (currentIndex: number, direction: -1 | 1) => {
     if (props.options.length === 0) return;
@@ -595,7 +585,7 @@ const CalendarViewLinks = (props: {
   return (
     <div
       role="radiogroup"
-      aria-label="Calendar view"
+      aria-label={messages().calendarView}
       aria-orientation="horizontal"
       class="k2b-segmented-control k2b-calendar-view-switcher"
     >
@@ -640,6 +630,7 @@ const adjacentCalendarDate = (date: Date, view: CalendarView, direction: -1 | 1,
 };
 
 const CalendarHeader = (props: { date: Date; view: CalendarView; labels: Required<CalendarLabels>; owner: CalendarProps }): JSX.Element => {
+  const messages = useUiMessages();
   const dateConfig = () => ownerDateConfig(props.owner);
   const previous = () => adjacentCalendarDate(props.date, props.view, -1, dateConfig());
   const next = () => adjacentCalendarDate(props.date, props.view, 1, dateConfig());
@@ -743,7 +734,7 @@ const CalendarHeader = (props: { date: Date; view: CalendarView; labels: Require
             <SegmentedControl
               value={() => (props.view === "mobile-month" ? "month" : props.view)}
               onValueChange={goView}
-              ariaLabel="Calendar view"
+              ariaLabel={messages().calendarView}
               options={viewOptions()}
             />
           }
@@ -766,6 +757,7 @@ const MonthView = (props: {
   events: NormalizedEvent[];
   labels: Required<CalendarLabels>;
 }): JSX.Element => {
+  const messages = useUiMessages();
   const dateConfig = createMemo(() => ownerDateConfig(props.owner));
   const [movePreview, setMovePreview] = createSignal<CalendarPreview | null>(null);
   const [movingEventId, setMovingEventId] = createSignal("");
@@ -820,7 +812,7 @@ const MonthView = (props: {
     <div class="k2b-calendar-month" style={{ "grid-template-rows": `auto repeat(${weeks().length}, minmax(5rem, 1fr))` }}>
       <div class="k2b-calendar-month__weekdays" data-week-numbers={props.owner.withWeekNumbers ? "true" : undefined}>
         <Show when={props.owner.withWeekNumbers}>
-          <div class="k2b-calendar-month__weekday">Wk</div>
+          <div class="k2b-calendar-month__weekday">{messages().weekShort}</div>
         </Show>
         <For each={weekdays()}>{(day) => <div class="k2b-calendar-month__weekday">{day}</div>}</For>
       </div>
@@ -873,7 +865,10 @@ const MonthView = (props: {
                             <CalendarNavigationLink
                               owner={props.owner}
                               href={dayHref()}
-                              anchorProps={{ class: "k2b-calendar-month__day-target", "aria-label": `Open ${dayLabel}` }}
+                              anchorProps={{
+                                class: "k2b-calendar-month__day-target",
+                                "aria-label": messages().openDate({ label: dayLabel }),
+                              }}
                             />
                           )}
                         </Show>
@@ -883,7 +878,7 @@ const MonthView = (props: {
                         type="button"
                         class="k2b-calendar-month__day-target"
                         data-interactive="true"
-                        aria-label={`Create event on ${dayLabel}`}
+                        aria-label={messages().createEventOn({ label: dayLabel })}
                         {...slotInteractionProps(
                           props.owner,
                           () => {
@@ -916,7 +911,7 @@ const MonthView = (props: {
                               class: "k2b-calendar-month__day-number",
                               "data-today": isToday ? "true" : undefined,
                               "data-outside": !sameMonth ? "true" : undefined,
-                              "aria-label": `Open ${dayLabel}`,
+                              "aria-label": messages().openDate({ label: dayLabel }),
                             }}
                           >
                             {calendar.formatDayNumber(day, dateConfig())}
@@ -935,7 +930,7 @@ const MonthView = (props: {
                     <div class="k2b-calendar-month__events">
                       <Show when={eventStack().preview}>
                         <div class="k2b-calendar-preview">
-                          {props.events.find((event) => event.id === eventStack().preview!.id)?.title ?? "Move event"}
+                          {props.events.find((event) => event.id === eventStack().preview!.id)?.title ?? messages().moveEvent}
                         </div>
                       </Show>
                       <For each={eventStack().visibleEvents}>
@@ -990,6 +985,7 @@ const TimeGridView = (props: {
   labels: Required<CalendarLabels>;
   days: Date[];
 }): JSX.Element => {
+  const messages = useUiMessages();
   const dateConfig = createMemo(() => ownerDateConfig(props.owner));
   const gridStartHour = () => props.owner.visibleStartHour ?? 0;
   const gridEndHour = () => props.owner.visibleEndHour ?? 23;
@@ -1408,7 +1404,7 @@ const TimeGridView = (props: {
                             <Show when={props.owner.onEventResize}>
                               <button
                                 type="button"
-                                aria-label="Resize event"
+                                aria-label={messages().resizeEvent}
                                 draggable={false}
                                 class="k2b-calendar-time-grid__resize"
                                 onPointerDown={resizeStart}
@@ -1435,7 +1431,7 @@ const TimeGridView = (props: {
                             class="k2b-calendar-time-grid__overflow"
                             style={{ top: `${layout.top}%`, height: `${layout.height}%` }}
                             title={hiddenTitle()}
-                            aria-label={`${overflow.hiddenEvents.length} hidden overlapping events`}
+                            aria-label={messages().hiddenOverlappingEvents({ count: overflow.hiddenEvents.length })}
                             onClick={(event) => {
                               event.stopPropagation();
                               setExpandedOverflow(expandedOverflow() === key ? "" : key);
@@ -1588,6 +1584,7 @@ const MobileMonthView = (props: {
 const CalendarBody = (props: { children: JSX.Element }): JSX.Element => <div class="k2b-calendar-body">{props.children}</div>;
 
 const Calendar = (props: CalendarProps): JSX.Element => {
+  const messages = useUiMessages();
   // Subviews derive their date config from the owner props, so the inherited
   // render locale is merged here once; an explicit dateConfig.locale wins.
   const localizedConfig = useDateConfigLocale(() => props.dateConfig);
@@ -1606,7 +1603,18 @@ const Calendar = (props: CalendarProps): JSX.Element => {
   const selectedDate = createMemo(() => safeDate(props.selectedDate ?? props.date));
   const [now, setNow] = createSignal(new Date());
   const normalizedEvents = createMemo(() => normalizeEvents(props.events, dateConfig()));
-  const mergedLabels = createMemo(() => ({ ...labels, ...props.labels }));
+  const mergedLabels = createMemo<Required<CalendarLabels>>(() => ({
+    today: messages().today,
+    day: messages().day,
+    week: messages().week,
+    month: messages().month,
+    year: messages().year,
+    allDay: messages().allDay,
+    noEvents: messages().noEvents,
+    previous: messages().previous,
+    next: messages().next,
+    ...props.labels,
+  }));
   const days = createMemo(() => {
     if (view() === "day") return [date()];
     return calendar.getWeekDays(date(), dateConfig());

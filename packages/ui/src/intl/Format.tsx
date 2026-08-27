@@ -77,6 +77,8 @@ export type FormatRelativeTimeProps = TimeElementProps &
     value: Date | string | null | undefined;
     /** Deterministic base timestamp; defaults to now. */
     base?: Date | string;
+    /** IANA timezone used to select calendar-relative labels. Defaults to `"UTC"`. */
+    timeZone?: string;
   };
 
 export type FormatDurationProps = TimeElementProps &
@@ -193,13 +195,13 @@ const FormatTime = temporalComponent((date, context) => dates.formatTime(date, c
 const FormatDateTime = temporalComponent((date, context) => dates.formatDateTime(date, context));
 
 const FormatRelativeTime = (props: FormatRelativeTimeProps): JSX.Element => {
-  const [own, rest] = splitProps(props, ["value", "locale", "base", "fallback"]);
+  const [own, rest] = splitProps(props, ["value", "locale", "base", "timeZone", "fallback"]);
   const locale = useLocale();
   return (
     <Show when={toDate(own.value)} fallback={<span {...rest}>{own.fallback ?? FALLBACK}</span>}>
       {(date) => (
         <time {...rest} datetime={date().toISOString()}>
-          {dates.formatTimeSpan(date(), { locale: own.locale ?? locale(), base: own.base })}
+          {dates.formatTimeSpan(date(), { locale: own.locale ?? locale(), base: own.base, timeZone: own.timeZone ?? "UTC" })}
         </time>
       )}
     </Show>

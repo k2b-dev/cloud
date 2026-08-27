@@ -1,4 +1,5 @@
 import { createMemo, For, type JSX } from "solid-js";
+import { useUiMessages } from "../intl/messages";
 
 export type SegmentOption<T extends string = string> = {
   value: T;
@@ -20,6 +21,7 @@ export type SegmentedControlProps<T extends string = string> = {
 
 /** Controlled radio group with automatic selection during arrow-key navigation. */
 export function SegmentedControl<T extends string = string>(props: SegmentedControlProps<T>): JSX.Element {
+  const messages = useUiMessages();
   const buttons: HTMLButtonElement[] = [];
   const currentValue = createMemo<T>(() => (typeof props.value === "function" ? props.value() : props.value));
   const enabled = createMemo(() =>
@@ -60,7 +62,7 @@ export function SegmentedControl<T extends string = string>(props: SegmentedCont
       class={`k2b-segmented-control ${props.class ?? ""}`}
       data-size={props.size ?? "md"}
       role="radiogroup"
-      aria-label={props.ariaLabel ?? props.label ?? "Options"}
+      aria-label={props.ariaLabel ?? props.label ?? messages().options}
       aria-orientation="horizontal"
       aria-disabled={props.disabled ? "true" : undefined}
     >

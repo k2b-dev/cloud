@@ -2,6 +2,7 @@ import { createContext, type JSX, Show, useContext } from "solid-js";
 import { Tabs } from "../actions/Tabs";
 import type { OpenDialogOptions } from "../feedback/dialog-core";
 import { prompts } from "../feedback/prompts";
+import { resolveUiMessages, useUiMessages } from "../intl/messages";
 
 export type PanelDialogSurface = "contained" | "floating";
 
@@ -93,39 +94,42 @@ export const confirmDiscardIfDirty = async (dirty: boolean | (() => boolean)): P
   const hasChanges = typeof dirty === "function" ? dirty() : dirty;
   if (!hasChanges) return true;
   return Boolean(
-    await prompts.confirm("Discard unsaved changes?", {
-      title: "Unsaved changes",
+    await prompts.confirm(resolveUiMessages().discardUnsavedChanges, {
+      title: resolveUiMessages().unsavedChangesTitle,
       variant: "danger",
-      confirmText: "Discard",
+      confirmText: resolveUiMessages().discard,
     }),
   );
 };
 
-const PanelDialogHeader = (props: PanelDialogHeaderProps): JSX.Element => (
-  <header class="k2b-panel-dialog__header" data-surface={usePanelDialogSurface()}>
-    <Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
-    <div class="k2b-panel-dialog__heading">
-      <h2>{props.title}</h2>
-      <Show when={props.subtitle}>
-        <p>{props.subtitle}</p>
+const PanelDialogHeader = (props: PanelDialogHeaderProps): JSX.Element => {
+  const messages = useUiMessages();
+  return (
+    <header class="k2b-panel-dialog__header" data-surface={usePanelDialogSurface()}>
+      <Show when={props.icon}>{(icon) => <i class={icon()} aria-hidden="true" />}</Show>
+      <div class="k2b-panel-dialog__heading">
+        <h2>{props.title}</h2>
+        <Show when={props.subtitle}>
+          <p>{props.subtitle}</p>
+        </Show>
+      </div>
+      <Show when={props.actions}>
+        <div class="k2b-panel-dialog__actions">{props.actions}</div>
       </Show>
-    </div>
-    <Show when={props.actions}>
-      <div class="k2b-panel-dialog__actions">{props.actions}</div>
-    </Show>
-    <Show when={props.close}>
-      <button
-        type="button"
-        class="k2b-dialog__close"
-        aria-label={props.closeLabel ?? "close dialog"}
-        disabled={props.closeDisabled}
-        onClick={props.close}
-      >
-        <i class="ti ti-x" aria-hidden="true" />
-      </button>
-    </Show>
-  </header>
-);
+      <Show when={props.close}>
+        <button
+          type="button"
+          class="k2b-dialog__close"
+          aria-label={props.closeLabel ?? messages().closeDialog}
+          disabled={props.closeDisabled}
+          onClick={props.close}
+        >
+          <i class="ti ti-x" aria-hidden="true" />
+        </button>
+      </Show>
+    </header>
+  );
+};
 
 const PanelDialogBody = (props: PanelDialogBodyProps): JSX.Element => (
   <div class="k2b-panel-dialog__body" data-scroll-preserve={props.scrollPreserveKey} data-surface={usePanelDialogSurface()}>
@@ -164,12 +168,13 @@ const PanelDialogSection = (props: PanelDialogSectionProps): JSX.Element => (
 );
 
 const PanelDialogTabs = <T extends string>(props: PanelDialogTabsProps<T>): JSX.Element => {
+  const messages = useUiMessages();
   return (
     <Tabs
       class="k2b-panel-dialog__tabs"
       value={props.value}
       onValueChange={props.onValueChange}
-      ariaLabel={props.ariaLabel ?? props.label ?? "Dialog tabs"}
+      ariaLabel={props.ariaLabel ?? props.label ?? messages().dialogTabs}
       options={props.options}
     />
   );

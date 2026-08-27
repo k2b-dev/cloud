@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { useUiMessages } from "../intl/messages";
 import { ChoiceGroups } from "./ChoiceGroups";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, nextEnabledChoiceIndex } from "./choice";
 import type { ValueFieldProps } from "./field-contract";
@@ -39,9 +40,10 @@ type SelectionSnapshot = {
   display: string;
 };
 
-const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : "Options could not be loaded");
+const errorMessage = (error: unknown, fallback: string): string => (error instanceof Error ? error.message : fallback);
 
 export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element {
+  const messages = useUiMessages();
   const meta = createFieldMeta(props.id);
   const listboxId = `${meta.controlId}-listbox`;
   const [cache, setCache] = createSignal<Record<string, AutocompleteSelectOption>>({});
@@ -85,7 +87,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
     const current = selectedGroup();
     return current && props.groups?.some((group) => group.value === current) ? current : null;
   });
-  const groupChoices = createMemo(() => [{ value: null, label: props.allGroupLabel ?? "All" }, ...(props.groups ?? [])]);
+  const groupChoices = createMemo(() => [{ value: null, label: props.allGroupLabel ?? messages().all }, ...(props.groups ?? [])]);
 
   const remember = (options: readonly AutocompleteSelectOption[], authoritative?: AutocompleteSelectOption) => {
     const next = { ...cache() };
@@ -129,7 +131,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
     setEditing(false);
   };
 
-  const invalidate = (message = props.noMatchText ?? "No matching option found") => {
+  const invalidate = (message = props.noMatchText ?? messages().noMatchingOption) => {
     pendingCommitQuery = undefined;
     setInternalError(message);
     popover.hide();
@@ -143,7 +145,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
       } catch (reason) {
         if (!signal.aborted) {
           setResolvedQuery(typed);
-          if (pendingCommitQuery === typed) invalidate(errorMessage(reason));
+          if (pendingCommitQuery === typed) invalidate(errorMessage(reason, messages().optionsCouldNotLoad));
         }
         throw reason;
       }
@@ -256,7 +258,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
   createEffect(() => {
     if (!inputRef) return;
     const message = internalError();
-    inputRef.setCustomValidity(message ?? (editing() ? "Select a matching option" : ""));
+    inputRef.setCustomValidity(message ?? (editing() ? messages().selectMatchingOption : ""));
   });
 
   const onKeyDown = (event: KeyboardEvent) => {
@@ -305,7 +307,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
             id={meta.controlId}
             type="text"
             value={display()}
-            placeholder={props.placeholder ?? "Type to search..."}
+            placeholder={props.placeholder ?? messages().typeToSearch}
             disabled={props.disabled}
             required={props.required}
             autofocus={props.autofocus}
@@ -356,7 +358,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
               type="button"
               class="k2b-choice-control__clear k2b-input-clear-action"
               tabindex={-1}
-              aria-label="Clear selection"
+              aria-label={messages().clearSelection}
               onPointerDown={(event) => event.preventDefault()}
               onClick={() => {
                 snapshot = { value: null, option: undefined, display: "" };
@@ -389,7 +391,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
         <Show when={props.name}>{(name) => <input type="hidden" name={name()} value={value() ?? ""} />}</Show>
         <span class="k2b-sr-only" role="status" aria-live="polite" aria-atomic="true">
           {loader.loading()
-            ? (props.checkingText ?? "Checking options")
+            ? (props.checkingText ?? messages().checkingOptions)
             : match()
               ? `Match: ${formatValue(match())}`
               : (internalError() ?? "")}
@@ -402,7 +404,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
           popover="manual"
           class="k2b-choice-popover"
           role="group"
-          aria-label={typeof props.label === "string" ? props.label : "Options"}
+          aria-label={typeof props.label === "string" ? props.label : messages().options}
           onFocusOut={(event) => {
             if (event.relatedTarget instanceof Node && (popoverRef?.contains(event.relatedTarget) || inputRef === event.relatedTarget))
               return;
@@ -425,7 +427,7 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
                 choices={groupChoices()}
                 value={activeGroup()}
                 onValueChange={chooseGroup}
-                ariaLabel={props.groupsAriaLabel ?? "Filter options"}
+                ariaLabel={props.groupsAriaLabel ?? messages().filterOptions}
                 controls={listboxId}
               />
             </div>
@@ -451,14 +453,14 @@ export function AutocompleteSelect(props: AutocompleteSelectProps): JSX.Element 
             <Show when={loader.loading() && options().length === 0}>
               <div class="k2b-choice-status">
                 <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
-                <span>{props.checkingText ?? "Checking options..."}</span>
+                <span>{props.checkingText ?? messages().checkingOptionsLoading}</span>
               </div>
             </Show>
             <For
               each={loadError() ? [] : options()}
               fallback={
                 <Show when={!loader.loading() && !loadError()}>
-                  <div class="k2b-choice-status">{props.noOptionsText ?? "No options found"}</div>
+                  <div class="k2b-choice-status">{props.noOptionsText ?? messages().noOptionsFound}</div>
                 </Show>
               }
             >

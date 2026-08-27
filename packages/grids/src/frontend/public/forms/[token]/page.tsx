@@ -1,5 +1,5 @@
 import { listLegalLinks } from "@valentinkolb/cloud";
-import { type AuthContext, getDateConfig } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { toPublicForm } from "../../../../api/form-api-shared";
 import { toPublicFields } from "../../../../api/public-dto";
 import { ssr } from "../../../../config";
@@ -30,7 +30,7 @@ export default ssr<AuthContext>(async (c) => {
   const themeMatch = cookie.match(/theme=([^;]+)/);
   c.get("page").theme = themeMatch?.[1] === "dark" ? "dark" : "light";
 
-  const legalLinks = await listLegalLinks();
+  const legalLinks = await listLegalLinks(getLocale(c));
 
   const form = await gridsService.form.getByPublicToken(token);
   if (!form || !form.isActive) {

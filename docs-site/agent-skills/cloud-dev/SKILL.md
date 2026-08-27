@@ -98,6 +98,8 @@ SolidJS library remains independent of Cloud and application domains.
   thread it through ordinary component props. Applications own localized
   human messages, while stable codes remain locale-independent. Transport
   final display strings across capabilities and widgets, not message keys.
+  `Layout` installs the SSR locale provider; a custom SSR root using neither
+  `Layout` nor `AdminLayout` must install one provider around its returned tree.
 
 ## Build and verify one complete slice
 

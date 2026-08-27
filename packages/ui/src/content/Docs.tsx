@@ -1,6 +1,7 @@
 import { For, type JSX, Show } from "solid-js";
-import type { CodeDisplayLanguage } from "./CodeDisplay";
 import CopyButton from "../actions/CopyButton";
+import { useUiMessages } from "../intl/messages";
+import type { CodeDisplayLanguage } from "./CodeDisplay";
 import { highlightCodeDisplayLines } from "./code-highlight";
 
 export type DocCodeHighlighter = (code: string) => string;
@@ -50,6 +51,7 @@ export const DocSection = (props: { title: string; eyebrow?: string; children: J
 export const DocInlineCode = (props: { children: JSX.Element }) => <code class="k2b-content-doc-inline-code">{props.children}</code>;
 
 export const DocCode = (props: DocCodeProps) => {
+  const messages = useUiMessages();
   const code = () => props.format?.(props.code) ?? props.code;
   const lineNumbers = () => props.lineNumbers ?? false;
   const hasHeader = () => Boolean(props.title || props.copy);
@@ -74,7 +76,7 @@ export const DocCode = (props: DocCodeProps) => {
         data-header={hasHeader() ? "true" : undefined}
         tabIndex={0}
         role="region"
-        aria-label={props.title ? `${props.title} code` : "Code"}
+        aria-label={props.title ? messages().codeLabel({ title: props.title }) : messages().code}
       >
         <div class="k2b-content-doc-code__lines">
           <For each={lines()}>

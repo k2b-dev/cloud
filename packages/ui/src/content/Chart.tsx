@@ -2,6 +2,8 @@ import type { MapViewport } from "@k2b/stdlib";
 import { charts } from "@k2b/stdlib";
 import type { JSX } from "solid-js";
 import { createEffect, createMemo, createSignal, createUniqueId, onCleanup, onMount, Show } from "solid-js";
+import { positionTooltipSurface } from "../feedback/tooltip-position";
+import { useUiMessages } from "../intl/messages";
 import { DEFAULT_MAP_VIEWPORT, normalizeMapViewport, panMapViewport, zoomMapViewport } from "./chart-map-viewport";
 import {
   panStateTimelineViewport,
@@ -12,7 +14,6 @@ import {
   stateTimelineHeight,
   zoomStateTimelineViewport,
 } from "./chart-state-timeline";
-import { positionTooltipSurface } from "../feedback/tooltip-position";
 
 /**
  * Chart — minimal Solid wrapper around `stdlib.charts`.
@@ -166,6 +167,7 @@ const isEmpty = (props: ChartProps): boolean => {
 };
 
 const Chart = (props: ChartProps): JSX.Element => {
+  const messages = useUiMessages();
   let containerRef: HTMLDivElement | undefined;
   let chartTooltipRef: HTMLSpanElement | undefined;
   let lineAnchorRef: HTMLSpanElement | undefined;
@@ -473,7 +475,7 @@ const Chart = (props: ChartProps): JSX.Element => {
         values.add(point.x);
         if (Number.isFinite(point.y) && !points.has(point.x)) points.set(point.x, point);
       }
-      return { label: entry.label ?? labels().series ?? "Series", points };
+      return { label: entry.label ?? labels().series ?? messages().series, points };
     });
     return { values: [...values].sort((left, right) => left - right), series };
   });
@@ -597,7 +599,7 @@ const Chart = (props: ChartProps): JSX.Element => {
       when={!isEmpty(props)}
       fallback={
         <div ref={containerRef} class={`k2b-chart k2b-chart__empty ${props.class ?? ""}`} style={chartStyle()}>
-          {labels().empty ?? "No data"}
+          {labels().empty ?? messages().noData}
         </div>
       }
     >
@@ -619,11 +621,11 @@ const Chart = (props: ChartProps): JSX.Element => {
         aria-describedby={interactiveLine() && lineInspectionActive() ? chartTooltipId : undefined}
         aria-label={
           interactiveMap()
-            ? (labels().interactiveMap ?? "Interactive map")
+            ? (labels().interactiveMap ?? messages().interactiveMap)
             : interactiveTimeline()
-              ? (labels().interactiveTimeline ?? "Interactive timeline")
+              ? (labels().interactiveTimeline ?? messages().interactiveTimeline)
               : interactiveLine()
-                ? (labels().interactiveLine ?? "Interactive line chart")
+                ? (labels().interactiveLine ?? messages().interactiveLineChart)
                 : undefined
         }
         tabIndex={interactive() ? 0 : undefined}
@@ -665,8 +667,8 @@ const Chart = (props: ChartProps): JSX.Element => {
               type="button"
               class="k2b-button k2b-icon-button"
               data-variant="secondary"
-              aria-label={labels().zoomIn ?? "Zoom in"}
-              title={`${labels().zoomIn ?? "Zoom in"} (+)`}
+              aria-label={labels().zoomIn ?? messages().zoomIn}
+              title={`${labels().zoomIn ?? messages().zoomIn} (+)`}
               onClick={() => zoom(1)}
             >
               <i class="ti ti-plus" aria-hidden="true" />
@@ -675,8 +677,8 @@ const Chart = (props: ChartProps): JSX.Element => {
               type="button"
               class="k2b-button k2b-icon-button"
               data-variant="secondary"
-              aria-label={labels().zoomOut ?? "Zoom out"}
-              title={`${labels().zoomOut ?? "Zoom out"} (-)`}
+              aria-label={labels().zoomOut ?? messages().zoomOut}
+              title={`${labels().zoomOut ?? messages().zoomOut} (-)`}
               onClick={() => zoom(-1)}
             >
               <i class="ti ti-minus" aria-hidden="true" />
@@ -685,8 +687,10 @@ const Chart = (props: ChartProps): JSX.Element => {
               type="button"
               class="k2b-button k2b-icon-button"
               data-variant="secondary"
-              aria-label={interactiveMap() ? (labels().resetMap ?? "Reset map view") : (labels().resetTimeline ?? "Reset timeline view")}
-              title={`${interactiveMap() ? (labels().resetMap ?? "Reset map view") : (labels().resetTimeline ?? "Reset timeline view")} (0)`}
+              aria-label={
+                interactiveMap() ? (labels().resetMap ?? messages().resetMapView) : (labels().resetTimeline ?? messages().resetTimelineView)
+              }
+              title={`${interactiveMap() ? (labels().resetMap ?? messages().resetMapView) : (labels().resetTimeline ?? messages().resetTimelineView)} (0)`}
               onClick={reset}
             >
               <i class="ti ti-focus-centered" aria-hidden="true" />

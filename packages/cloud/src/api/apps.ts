@@ -4,7 +4,7 @@ import { z } from "zod";
 import { ErrorResponseSchema } from "../contracts";
 import { type AuthContext, auth, jsonResponse, requiresAuth, v } from "../server";
 import { visibleNavigationApps } from "../ssr/app-navigation";
-import { getRuntimeContext } from "../ssr/runtime";
+import { getLocalizedRuntimeContext } from "../ssr/runtime";
 
 const AppListQuerySchema = z.object({
   search: z.string().trim().min(1).optional(),
@@ -37,7 +37,7 @@ export const appDiscoveryRoutes = new Hono<AuthContext>().use(auth.requireRole("
   v("query", AppListQuerySchema),
   (c) => {
     const search = c.req.valid("query").search?.toLowerCase();
-    const items = visibleNavigationApps(getRuntimeContext(c).apps, c.get("user"))
+    const items = visibleNavigationApps(getLocalizedRuntimeContext(c).apps, c.get("user"))
       .map((app) => ({
         id: app.id,
         name: app.name,

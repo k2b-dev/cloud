@@ -85,9 +85,12 @@ router.get("/api/inventory", (c) => {
 });
 ```
 
-Cloud SSR uses that same locale for `<html lang>`, the root `LocaleProvider`,
-and `getDateConfig(c)`. Never store a current locale in module or process state:
-concurrent SSR requests must remain isolated.
+Cloud SSR uses that same locale for `<html lang>` and `getDateConfig(c)`.
+`Layout` and `AdminLayout` also install the matching root `LocaleProvider`.
+If a custom SSR page deliberately uses neither layout, wrap its returned root
+once with `<LocaleProvider locale={getLocale(c)}>`. This is root wiring, not a
+locale prop to pass through the component tree. Never store a current locale in
+module or process state: concurrent SSR requests must remain isolated.
 
 ### Solid components and islands
 
@@ -106,6 +109,48 @@ An island is a separate Solid root. It does not inherit a server-side context
 object, so `useLocale()` falls back to `document.documentElement.lang` in the
 browser. Cloud keeps that value equal to the SSR locale. No locale prop plumbing
 or browser provider is required.
+
+Generic `@k2b/ui` chrome such as input placeholders, pagination, menus, loading
+states, and accessibility labels follows the inherited locale. Explicit labels,
+empty text, and descriptions passed by an application are application-owned and
+must already be localized.
+
+## Localize registered application presentation
+
+The complete base declaration stays in `name`, `description`, `adminNav`, and
+`legalLinks`. Add `presentation` only for localized overlays:
+
+```ts
+defineApp({
+  name: "Inventory",
+  description: "Manage stock and warehouses.",
+  adminNav: [
+    {
+      id: "inventory",
+      label: "Inventory",
+      links: [{ label: "Warehouses", href: "/admin/inventory/warehouses", icon: "ti ti-building-warehouse" }],
+    },
+  ],
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: {
+        name: "Inventar",
+        description: "Bestände und Lager verwalten.",
+        adminGroups: { inventory: "Inventar" },
+        adminLinks: { "/admin/inventory/warehouses": "Lager" },
+      },
+    },
+  },
+});
+```
+
+Admin groups use their explicit `id`; admin and legal links use their stable
+`href`. Cloud validates those references at startup and resolves exact locale,
+language ancestors, and the base declaration per field. IDs, routes, icons,
+permissions, and link targets never change with language. Runtime navigation,
+administration, Help surfaces, API Docs, and app listings all receive the same
+request-scoped presentation.
 
 ## Format values instead of translating them
 
@@ -138,8 +183,10 @@ return c.json(
 Clients branch on `code`, never on translated text. Logs use stable event names
 and structured fields; do not localize operational log messages. If an error
 crosses applications, the provider returns a ready-to-display localized message
-alongside its stable code. The caller must not know the provider's message keys
-or maintain a table of its codes just to display useful feedback.
+alongside its stable code. Cloud localizes its own Capability transport and
+validation failures before returning them. The caller must not know the
+provider's message keys or maintain a table of its codes just to display useful
+feedback.
 
 ## Cross application boundaries
 

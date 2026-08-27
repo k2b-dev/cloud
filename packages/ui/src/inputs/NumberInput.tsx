@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, type JSX, Show, splitProps } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { decimalSeparator, useLocale } from "../intl/locale";
+import { useUiMessages } from "../intl/messages";
 import type { ValueFieldProps } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
 
@@ -65,6 +66,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
   const value = () => resolveMaybeAccessor(local.value);
   const error = () => resolveMaybeAccessor(local.error);
   const contextLocale = useLocale();
+  const messages = useUiMessages();
   const separator = createMemo(() => decimalSeparator(local.locale ?? contextLocale()));
   // The visible text keeps the canonical number, only the decimal separator
   // follows the effective locale; grouping is never rendered while editing.
@@ -143,7 +145,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
           <button
             type="button"
             class="k2b-number-input__step"
-            aria-label={local.decreaseLabel ?? "Decrease value"}
+            aria-label={local.decreaseLabel ?? messages().decreaseValue}
             disabled={rest.disabled || local.disableSteppers || (value() !== null && value() !== undefined && value()! <= min())}
             onClick={() => stepBy(-1)}
           >
@@ -204,7 +206,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
             <button
               type="button"
               class="k2b-input-shell__clear k2b-input-clear-action"
-              aria-label={local.clearLabel ?? "Clear"}
+              aria-label={local.clearLabel ?? messages().clear}
               onClick={() => (local.onClear ? local.onClear() : commit(null))}
             >
               <i class="ti ti-x" aria-hidden="true" />
@@ -215,7 +217,7 @@ export function NumberInput(props: NumberInputProps): JSX.Element {
           <button
             type="button"
             class="k2b-number-input__step"
-            aria-label={local.increaseLabel ?? "Increase value"}
+            aria-label={local.increaseLabel ?? messages().increaseValue}
             disabled={rest.disabled || local.disableSteppers || (value() !== null && value() !== undefined && value()! >= max())}
             onClick={() => stepBy(1)}
           >

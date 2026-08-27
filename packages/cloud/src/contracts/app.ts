@@ -34,8 +34,28 @@ export type AppAdminNavigationLink = {
 };
 
 export type AppAdminNavigationGroup = {
+  /** Stable key used only to localize this presentation group. */
+  id?: string;
   label: string;
   links: AppAdminNavigationLink[];
+};
+
+export type AppPresentationTranslation = {
+  name?: string;
+  description?: string;
+  /** Group labels keyed by `adminNav[].id`. */
+  adminGroups?: Readonly<Record<string, string>>;
+  /** Link labels keyed by their stable same-origin href. */
+  adminLinks?: Readonly<Record<string, string>>;
+  /** Legal-link labels keyed by their stable same-origin href. */
+  legalLinks?: Readonly<Record<string, string>>;
+};
+
+export type AppPresentationCatalog = {
+  /** Locale of the complete `name`, `description`, `adminNav`, and `legalLinks` declaration. */
+  baseLocale: string;
+  /** Partial presentation overlays with exact -> ancestor -> base fallback. */
+  translations: Readonly<Record<string, AppPresentationTranslation>>;
 };
 
 export type AppMeta = {
@@ -43,6 +63,7 @@ export type AppMeta = {
   name: string;
   icon: string;
   description: string;
+  presentation?: AppPresentationCatalog;
   appearance?: AppAppearance;
   adminHref?: string;
   /** Optional multi-link admin navigation owned by this app. */

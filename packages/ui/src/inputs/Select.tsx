@@ -1,5 +1,6 @@
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { useUiMessages } from "../intl/messages";
 import { ChoiceGroups } from "./ChoiceGroups";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, filterChoiceOptions, nextEnabledChoiceIndex } from "./choice";
 import type { ValueFieldProps } from "./field-contract";
@@ -64,6 +65,7 @@ const normalize = (option: SelectSourceOption): NormalizedOption =>
       : { ...option, value: option.id, label: option.label || option.id };
 
 export function Select(props: SelectProps): JSX.Element {
+  const messages = useUiMessages();
   const meta = createFieldMeta(props.id);
   const listboxId = `${meta.controlId}-listbox`;
   const [query, setQuery] = createSignal("");
@@ -79,7 +81,7 @@ export function Select(props: SelectProps): JSX.Element {
     const current = selectedGroup();
     return current && props.groups?.some((group) => group.value === current) ? current : null;
   });
-  const groupChoices = createMemo(() => [{ value: null, label: props.allGroupLabel ?? "All" }, ...(props.groups ?? [])]);
+  const groupChoices = createMemo(() => [{ value: null, label: props.allGroupLabel ?? messages().all }, ...(props.groups ?? [])]);
   const activeView = () => (props.viewToggle ? selectedView() : "list");
 
   const loader = createChoiceLoader(
@@ -123,7 +125,7 @@ export function Select(props: SelectProps): JSX.Element {
   });
   const hasClearAction = () => Boolean(props.clearable && selected() && !props.disabled);
   const accessibleLabel = () =>
-    props["aria-label"] ?? (typeof props.label === "string" ? undefined : (props.placeholder ?? "Select option"));
+    props["aria-label"] ?? (typeof props.label === "string" ? undefined : (props.placeholder ?? messages().selectOption));
   const popover = createChoicePopover(() => Boolean(props.disabled));
   const focusedOption = () => options()[focusedIndex()];
   const focus = (index: number) => {
@@ -224,13 +226,13 @@ export function Select(props: SelectProps): JSX.Element {
             {(color) => <span class="k2b-choice-dot" style={{ "background-color": color() }} aria-hidden="true" />}
           </Show>
           <span class="k2b-choice-trigger__value" data-placeholder={selected() ? undefined : "true"}>
-            {selected()?.label ?? props.placeholder ?? "Select..."}
+            {selected()?.label ?? props.placeholder ?? messages().select}
           </span>
           <i class={popover.open() ? (props.activeIcon ?? "ti ti-chevron-up") : (props.icon ?? "ti ti-chevron-down")} aria-hidden="true" />
         </button>
         <Show when={props.name}>{(name) => <input type="hidden" name={name()} value={value() ?? ""} />}</Show>
         <Show when={hasClearAction()}>
-          <button type="button" class="k2b-choice-control__clear k2b-input-clear-action" aria-label="Clear selection" onClick={clear}>
+          <button type="button" class="k2b-choice-control__clear k2b-input-clear-action" aria-label={messages().clearSelection} onClick={clear}>
             <i class="ti ti-x" aria-hidden="true" />
           </button>
         </Show>
@@ -240,7 +242,7 @@ export function Select(props: SelectProps): JSX.Element {
           class="k2b-choice-popover"
           role="group"
           onKeyDown={onKeyDown}
-          aria-label={typeof props.label === "string" ? props.label : "Options"}
+          aria-label={typeof props.label === "string" ? props.label : messages().options}
         >
           <Show when={isSearchable()}>
             <div class="k2b-choice-search">
@@ -249,8 +251,8 @@ export function Select(props: SelectProps): JSX.Element {
                 ref={searchRef}
                 type="search"
                 value={query()}
-                placeholder={props.searchPlaceholder ?? "Search..."}
-                aria-label={props.searchPlaceholder ?? "Search options"}
+                placeholder={props.searchPlaceholder ?? messages().search}
+                aria-label={props.searchPlaceholder ?? messages().searchOptions}
                 aria-controls={listboxId}
                 aria-activedescendant={focusedOption() ? `${listboxId}-${focusedIndex()}` : undefined}
                 onInput={(event) => {
@@ -268,7 +270,7 @@ export function Select(props: SelectProps): JSX.Element {
                   choices={groupChoices()}
                   value={activeGroup()}
                   onValueChange={chooseGroup}
-                  ariaLabel={props.groupsAriaLabel ?? "Filter options"}
+                  ariaLabel={props.groupsAriaLabel ?? messages().filterOptions}
                   controls={listboxId}
                 />
               </Show>
@@ -276,7 +278,7 @@ export function Select(props: SelectProps): JSX.Element {
                 <button
                   type="button"
                   class="k2b-choice-view-toggle"
-                  aria-label={activeView() === "list" ? "Show grid view" : "Show list view"}
+                  aria-label={activeView() === "list" ? messages().showGridView : messages().showListView}
                   aria-controls={listboxId}
                   onClick={() => setSelectedView(activeView() === "list" ? "grid" : "list")}
                 >
@@ -297,7 +299,7 @@ export function Select(props: SelectProps): JSX.Element {
                 <div class="k2b-choice-status" data-tone="danger">
                   <span>{message()}</span>
                   <button type="button" onClick={loader.retry}>
-                    Retry
+                    {messages().retry}
                   </button>
                 </div>
               )}
@@ -305,14 +307,14 @@ export function Select(props: SelectProps): JSX.Element {
             <Show when={loader.loading() && options().length === 0}>
               <div class="k2b-choice-status">
                 <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
-                <span>Loading...</span>
+                <span>{messages().loading}</span>
               </div>
             </Show>
             <For
               each={loader.error() ? [] : options()}
               fallback={
                 <Show when={!loader.loading() && !loader.error()}>
-                  <div class="k2b-choice-status">{isSearchable() ? "No results" : "No options available"}</div>
+                  <div class="k2b-choice-status">{isSearchable() ? messages().noResults : messages().noOptions}</div>
                 </Show>
               }
             >

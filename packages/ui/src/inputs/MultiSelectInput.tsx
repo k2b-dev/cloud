@@ -1,6 +1,7 @@
 import { createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { colorTintStyle, normalizeHexColor } from "../internal/color";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { useUiMessages } from "../intl/messages";
 import { ChoiceGroups } from "./ChoiceGroups";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, filterChoiceOptions, nextEnabledChoiceIndex } from "./choice";
 import type { ValueFieldProps } from "./field-contract";
@@ -55,6 +56,7 @@ const normalize = (option: MultiSelectOption): NormalizedOption =>
       : { ...option, value: option.id, label: option.label || option.id };
 
 export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
+  const messages = useUiMessages();
   const meta = createFieldMeta(props.id);
   const listboxId = `${meta.controlId}-listbox`;
   const [query, setQuery] = createSignal("");
@@ -69,7 +71,7 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
     const current = selectedGroup();
     return current && props.groups?.some((group) => group.value === current) ? current : null;
   });
-  const groupChoices = createMemo(() => [{ value: null, label: props.allGroupLabel ?? "All" }, ...(props.groups ?? [])]);
+  const groupChoices = createMemo(() => [{ value: null, label: props.allGroupLabel ?? messages().all }, ...(props.groups ?? [])]);
   const asyncOptions = createChoiceLoader(
     () =>
       props.fetchData
@@ -207,7 +209,7 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
             when={selected().length > 0}
             fallback={
               <span class="k2b-choice-trigger__value" data-placeholder="true">
-                {props.placeholder ?? "Select..."}
+                {props.placeholder ?? messages().select}
               </span>
             }
           >
@@ -228,7 +230,7 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
                     </Show>
                     <button
                       type="button"
-                      aria-label={`Remove ${option.label}`}
+                      aria-label={messages().removeNamed({ name: option.label })}
                       disabled={props.disabled}
                       tabIndex={-1}
                       onClick={(event) => {
@@ -254,7 +256,7 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
           <button
             type="button"
             class="k2b-choice-control__clear k2b-input-clear-action"
-            aria-label={props.clearLabel ?? "Clear selection"}
+            aria-label={props.clearLabel ?? messages().clearSelection}
             onClick={(event) => {
               event.stopPropagation();
               emit([]);
@@ -271,7 +273,7 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
           class="k2b-choice-popover"
           role="group"
           onKeyDown={handleKeyDown}
-          aria-label={typeof props.label === "string" ? props.label : "Options"}
+          aria-label={typeof props.label === "string" ? props.label : messages().options}
         >
           <Show when={searchable()}>
             <div class="k2b-choice-search">
@@ -280,8 +282,8 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
                 ref={searchRef}
                 type="search"
                 value={query()}
-                placeholder={props.searchPlaceholder ?? "Search..."}
-                aria-label={props.searchPlaceholder ?? "Search options"}
+                placeholder={props.searchPlaceholder ?? messages().search}
+                aria-label={props.searchPlaceholder ?? messages().searchOptions}
                 aria-controls={listboxId}
                 aria-activedescendant={focusedOption() ? `${listboxId}-${focusedIndex()}` : undefined}
                 onInput={(event) => {
@@ -299,7 +301,7 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
                 choices={groupChoices()}
                 value={activeGroup()}
                 onValueChange={chooseGroup}
-                ariaLabel={props.groupsAriaLabel ?? "Filter options"}
+                ariaLabel={props.groupsAriaLabel ?? messages().filterOptions}
                 controls={listboxId}
               />
             </div>
@@ -310,7 +312,7 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
                 <div class="k2b-choice-status" data-tone="danger">
                   <span>{message()}</span>
                   <button type="button" onClick={asyncOptions.retry}>
-                    {props.retryLabel ?? "Retry"}
+                    {props.retryLabel ?? messages().retry}
                   </button>
                 </div>
               )}
@@ -318,7 +320,7 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
             <Show when={asyncOptions.loading() && visibleOptions().length === 0}>
               <div class="k2b-choice-status">
                 <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
-                <span>{props.loadingLabel ?? "Loading..."}</span>
+                <span>{props.loadingLabel ?? messages().loading}</span>
               </div>
             </Show>
             <For
@@ -326,7 +328,7 @@ export function MultiSelectInput(props: MultiSelectInputProps): JSX.Element {
               fallback={
                 <Show when={!asyncOptions.loading() && !asyncOptions.error()}>
                   <div class="k2b-choice-status">
-                    {isAsync() || query() ? (props.noResultsLabel ?? "No results") : (props.emptyLabel ?? "No options available")}
+                    {isAsync() || query() ? (props.noResultsLabel ?? messages().noResults) : (props.emptyLabel ?? messages().noOptions)}
                   </div>
                 </Show>
               }

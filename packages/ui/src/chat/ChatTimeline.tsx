@@ -1,4 +1,5 @@
 import { createEffect, createSignal, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
+import { useUiMessages } from "../intl/messages";
 import Placeholder from "../surfaces/Placeholder";
 import { ChatActivity, ChatMessage } from "./ChatPrimitives";
 import { isChatNearBottom, restoredChatScrollTop } from "./chat-behavior";
@@ -58,6 +59,7 @@ export type ChatTimelineProps = {
 };
 
 export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
+  const messages = useUiMessages();
   const [pinned, setPinned] = createSignal(true);
   const [loadingOlderInternally, setLoadingOlderInternally] = createSignal(false);
   const [historyError, setHistoryError] = createSignal<string | null>(null);
@@ -116,7 +118,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
     try {
       prepended = (await props.onLoadOlder()) !== false;
     } catch (error) {
-      setHistoryError(error instanceof Error ? error.message : "Could not load older messages");
+      setHistoryError(error instanceof Error ? error.message : messages().couldNotLoadOlderMessages);
     } finally {
       setLoadingOlderInternally(false);
     }
@@ -181,7 +183,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
   });
 
   return (
-    <section class={`k2b-chat-timeline ${props.class ?? ""}`} aria-label={props.label ?? "Conversation"}>
+    <section class={`k2b-chat-timeline ${props.class ?? ""}`} aria-label={props.label ?? messages().conversation}>
       <div
         ref={(element) => {
           viewportRef = element;
@@ -189,7 +191,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
         }}
         class="k2b-chat-timeline__viewport"
         role="region"
-        aria-label={`${props.label ?? "Conversation"} messages`}
+        aria-label={messages().conversationMessages({ label: props.label ?? messages().conversation })}
         tabIndex={0}
         onWheel={(event) => {
           if (event.deltaY < 0) noteUserScrollAway();
@@ -235,12 +237,12 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
               <Show when={canLoadOlder()}>
                 <button type="button" class="k2b-chat-timeline__older" onClick={() => void loadOlder()}>
                   <i class="ti ti-history" aria-hidden="true" />
-                  Load older messages
+                  {messages().loadOlderMessages}
                 </button>
               </Show>
               <Show when={loadingOlder()}>
                 <ChatActivity
-                  label="Loading older messages"
+                  label={messages().loadingOlderMessages}
                   icon="ti ti-history"
                   trailing={<i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />}
                 />
@@ -248,7 +250,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
               <Show when={historyError()}>
                 {(message) => (
                   <ChatActivity
-                    label="Could not load older messages"
+                    label={messages().couldNotLoadOlderMessages}
                     description={message()}
                     icon="ti ti-alert-circle"
                     tone="danger"
@@ -256,7 +258,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
                       <button
                         type="button"
                         class="k2b-chat-timeline__retry"
-                        aria-label="Retry loading older messages"
+                        aria-label={messages().retryOlderMessages}
                         onClick={() => void loadOlder()}
                       >
                         <i class="ti ti-refresh" aria-hidden="true" />
@@ -274,7 +276,7 @@ export function ChatTimeline(props: ChatTimelineProps): JSX.Element {
                 class="k2b-chat-timeline__placeholder"
                 state={props.loading ? "loading" : "empty"}
                 icon={props.loading ? undefined : "ti ti-sparkles"}
-                title={props.loading ? "Loading conversation" : (props.emptyTitle ?? "Start a conversation")}
+                title={props.loading ? messages().loadingConversation : (props.emptyTitle ?? messages().startConversation)}
                 description={!props.loading ? props.emptyDescription : undefined}
               />
             }

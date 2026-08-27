@@ -10,13 +10,13 @@ import {
   WidgetStatus,
   type WidgetStatusTone,
 } from "@k2b/ui";
-import { type DashboardWidget, listApps, listLegalLinks, listWidgets } from "@valentinkolb/cloud";
+import { type DashboardWidget, listLegalLinks, listWidgets } from "@valentinkolb/cloud";
 import type { WidgetBlock, WidgetResponse } from "@valentinkolb/cloud/contracts";
-import { type AppRegistryEntry, hasRole, type Role, type User } from "@valentinkolb/cloud/contracts";
+import { hasRole, type Role, type RuntimeAppMeta, type User } from "@valentinkolb/cloud/contracts";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { logger } from "@valentinkolb/cloud/services";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import { getLocalizedRuntimeContext, Layout } from "@valentinkolb/cloud/ssr";
 import type { JSX } from "solid-js";
 import { ssr } from "../config";
 import { dashboardSettingsService } from "../service";
@@ -231,7 +231,7 @@ const DashboardWidgetCard = (props: { entry: RenderedWidgetResult }) => (
   </Widget>
 );
 
-const appIsAvailable = (app: AppRegistryEntry, user: User) => {
+const appIsAvailable = (app: RuntimeAppMeta, user: User) => {
   const nav = app.nav;
   if (!nav || nav.section === "hidden") return false;
   if (nav.requiresRoles?.length && !nav.requiresRoles.some((role) => hasRole(user, role as Role))) return false;
@@ -251,8 +251,8 @@ export default ssr<AuthContext>(async (c) => {
   const settings = legacySettings ?? storedSettings.settings;
   const gradient = gradients.getGradientById(settings.gradient);
 
-  const [widgets, apps] = await Promise.all([listWidgets(), listApps()]);
-  const legalLinks = await listLegalLinks();
+  const [widgets, legalLinks] = await Promise.all([listWidgets(), listLegalLinks(locale)]);
+  const apps = getLocalizedRuntimeContext(c).apps;
   const availableApps: DashboardAppSummary[] = [
     ...apps
       .filter((entry) => appIsAvailable(entry, user))

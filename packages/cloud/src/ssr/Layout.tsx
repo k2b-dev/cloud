@@ -24,7 +24,7 @@ import type { LayoutBreadcrumb } from "./layout-runtime";
 import NavMenu from "./NavMenu.island";
 import ProfilePreferences from "./ProfilePreferences.island";
 import RegisteredHelpDocuments from "./RegisteredHelpDocuments.island";
-import { getRuntimeContext, type RuntimeContext } from "./runtime";
+import { getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
 import TimezoneCookie from "./TimezoneCookie.island";
 
 // Types
@@ -153,7 +153,7 @@ function ExpiryWarnings({ user, dateConfig }: { user: User; dateConfig: DateCont
 // (and the workspace layout provider) exist.
 export default function Layout(props: LayoutProps) {
   const { c, title, fullPage, fullWidth, focusMode, flushCanvas, workspaceSidebarCollapsible } = props;
-  const runtime = getRuntimeContext(c);
+  const runtime = getLocalizedRuntimeContext(c);
   const cookie = c.req.raw.headers.get("Cookie") ?? "";
   const theme = readThemeFromCookieHeader(cookie);
   c.get("page").theme = theme;

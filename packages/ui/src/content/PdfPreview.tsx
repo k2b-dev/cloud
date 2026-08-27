@@ -1,4 +1,5 @@
 import { createSignal, onCleanup, Show } from "solid-js";
+import { resolveUiMessages, useUiMessages } from "../intl/messages";
 
 export type PdfPreviewRequest = () => Promise<Response | Blob>;
 
@@ -19,10 +20,11 @@ const readErrorMessage = async (response: Response): Promise<string> => {
   } catch {
     // Fall through to the HTTP status fallback.
   }
-  return `PDF preview failed with HTTP ${response.status}`;
+  return resolveUiMessages().pdfPreviewHttpError({ status: response.status });
 };
 
 export default function PdfPreview(props: PdfPreviewProps) {
+  const messages = useUiMessages();
   const [url, setUrl] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
   const [opening, setOpening] = createSignal(false);
@@ -83,7 +85,7 @@ export default function PdfPreview(props: PdfPreviewProps) {
       return;
     }
     tab.opener = null;
-    tab.document.title = props.title ?? "PDF preview";
+    tab.document.title = props.title ?? messages().pdfPreview;
     tab.document.body.textContent = "Rendering PDF preview...";
     setOpening(true);
     setError(null);
@@ -122,7 +124,7 @@ export default function PdfPreview(props: PdfPreviewProps) {
             disabled={loading() || opening() || props.disabled?.()}
           >
             <i class={opening() ? "ti ti-loader-2 k2b-spin" : "ti ti-external-link"} aria-hidden="true" />
-            {props.openButtonLabel ?? "Open preview"}
+            {props.openButtonLabel ?? messages().openPreview}
           </button>
           <button
             type="button"
@@ -133,7 +135,7 @@ export default function PdfPreview(props: PdfPreviewProps) {
             disabled={loading() || opening() || props.disabled?.()}
           >
             <i class={loading() ? "ti ti-loader-2 k2b-spin" : "ti ti-file-type-pdf"} aria-hidden="true" />
-            {props.buttonLabel ?? "Preview PDF"}
+            {props.buttonLabel ?? messages().previewPdf}
           </button>
         </div>
       </div>
@@ -142,13 +144,13 @@ export default function PdfPreview(props: PdfPreviewProps) {
         when={url()}
         fallback={
           <div class="k2b-content-pdf-preview__empty">
-            <Show when={error()} fallback={<span>{props.emptyText ?? "Render a PDF preview to see the final output."}</span>}>
+            <Show when={error()} fallback={<span>{props.emptyText ?? messages().renderPdfPreview}</span>}>
               {(message) => <div class="k2b-content-pdf-preview__error">{message()}</div>}
             </Show>
           </div>
         }
       >
-        {(currentUrl) => <iframe class="k2b-content-pdf-preview__frame" src={currentUrl()} title={props.title ?? "PDF preview"} />}
+        {(currentUrl) => <iframe class="k2b-content-pdf-preview__frame" src={currentUrl()} title={props.title ?? messages().pdfPreview} />}
       </Show>
     </section>
   );

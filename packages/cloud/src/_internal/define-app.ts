@@ -11,7 +11,15 @@ import { routes } from "@k2b/ssr/hono";
 import { type Context, Hono } from "hono";
 import { generateSpecs } from "hono-openapi";
 import { env } from "../config/env";
-import type { AppAdminNavigationGroup, AppAppearance, AppLifecycle, AppMeta, CloudContext, WidgetEndpoint } from "../contracts/app";
+import type {
+  AppAdminNavigationGroup,
+  AppAppearance,
+  AppLifecycle,
+  AppMeta,
+  AppPresentationCatalog,
+  CloudContext,
+  WidgetEndpoint,
+} from "../contracts/app";
 import { CAPABILITY_FRAMEWORK_ERROR_CODES, CAPABILITY_MAX_REQUEST_BYTES, type CapabilityDefinitions } from "../contracts/capabilities";
 import { type BoundNotificationMap, bindNotificationDefinitions, type NotificationDefinitionMap } from "../contracts/notification-types";
 import type { AppRegistryEntry } from "../contracts/registry";
@@ -27,9 +35,11 @@ import { get, loadCache as loadSettingsCache, set } from "../services/settings";
 import { createSettingsAPI, type SettingsAPI } from "../services/settings/api";
 import { registerSettings, toLegacySettingDefs } from "../services/settings/defaults";
 import { cloudMcpResourceUri } from "../shared/app-url";
+import { capabilityMessages } from "../shared/capability-messages";
 import { normalizeLocale } from "../shared/locale";
 import { themeBootstrapScript } from "../shared/theme";
 import { appFaviconHref } from "./app-favicon";
+import { compileAppPresentation } from "./app-presentation";
 import { readBoundedJson } from "./bounded-json";
 import { appRuntimeMetadata } from "./build-metadata";
 import { compileCapabilities, invokeCompiledCapability, reviewCompiledCapability, serializeCapabilityProviderResult } from "./capabilities";
@@ -69,6 +79,8 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   name: string;
   icon: string;
   description: string;
+  /** Optional localized overlays for app-owned presentation metadata. */
+  presentation?: AppPresentationCatalog;
   appearance?: AppAppearance;
   /** URL prefix for SSR asset isolation. Omit for the global `/_ssr/` path (core). */
   basePath?: string;
@@ -77,6 +89,7 @@ export type AppOptions<S extends AppSettingsMap = {}, N extends NotificationDefi
   adminHref?: string;
   /** Multi-link admin navigation contributed by this app. */
   adminNav?: ReadonlyArray<{
+    id?: string;
     label: string;
     links: ReadonlyArray<{ label: string; href: string; icon: string }>;
   }>;
@@ -299,7 +312,7 @@ export const defineApp = <
   });
 
   // ── 2. Meta ───────────────────────────────────────────────────────────
-  const meta: AppMeta = {
+  const baseMeta: AppMeta = {
     id: opts.id,
     name: opts.name,
     icon: opts.icon,
@@ -308,6 +321,7 @@ export const defineApp = <
     adminHref: opts.adminHref,
     adminNav: opts.adminNav?.map(
       (group): AppAdminNavigationGroup => ({
+        id: group.id,
         label: group.label,
         links: group.links.map((link) => ({ ...link })),
       }),
@@ -319,6 +333,7 @@ export const defineApp = <
     settingKeys: opts.settings ? Object.keys(opts.settings) : undefined,
     openapi: opts.openapi,
   };
+  const meta: AppMeta = { ...baseMeta, presentation: compileAppPresentation(baseMeta, opts.presentation) };
 
   // ── 3. start() — builds and boots the Hono server ────────────────────
   const start = async (startOpts: StartOptions): Promise<StartResult> => {
@@ -357,6 +372,7 @@ export const defineApp = <
       name: meta.name,
       icon: meta.icon,
       description: meta.description,
+      presentation: meta.presentation,
       appearance: meta.appearance,
       baseUrl,
       runtime: appRuntimeMetadata,
@@ -373,6 +389,7 @@ export const defineApp = <
             }
           : undefined,
       adminNav: meta.adminNav?.map((group) => ({
+        id: group.id,
         label: group.label,
         links: group.links.map((link) => ({ ...link })),
       })),
@@ -491,9 +508,13 @@ export const defineApp = <
 
     if (compiledCapabilities) {
       const invoke = async (c: Context<AuthContext>, kind: "query" | "action" | "review") => {
+        // Framework-owned endpoints run before the app's settings middleware,
+        // so the operator default is read directly instead of via a snapshot.
+        const requestLocale = resolveLocale(c.req.raw.headers, await get<string>("app.locale"));
+        const messages = capabilityMessages(requestLocale);
         const parsedBody = await readBoundedJson(c.req.raw, CAPABILITY_MAX_REQUEST_BYTES);
         if (!parsedBody.ok) {
-          const message = parsedBody.reason === "too_large" ? "Capability request is too large" : "Capability request body must be JSON";
+          const message = parsedBody.reason === "too_large" ? messages.requestTooLarge : messages.requestBodyJson;
           return c.json({ code: CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed, message }, 400);
         }
         if (
@@ -506,7 +527,7 @@ export const defineApp = <
           return c.json(
             {
               code: CAPABILITY_FRAMEWORK_ERROR_CODES.validationFailed,
-              message: "Capability request must contain only an input field",
+              message: messages.requestInputOnly,
             },
             400,
           );
@@ -515,9 +536,6 @@ export const defineApp = <
         const actor = c.get("actor");
         const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
         const idempotencyKey = c.req.header("idempotency-key") || undefined;
-        // Framework-owned endpoints run before the app's settings middleware,
-        // so the operator default is read directly instead of via a snapshot.
-        const requestLocale = resolveLocale(c.req.raw.headers, await get<string>("app.locale"));
         const invocation = {
           compiled: compiledCapabilities,
           localId: c.req.param("capabilityId") ?? "",

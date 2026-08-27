@@ -31,3 +31,18 @@ export const canonicalLocale = (value: string | null | undefined): string | unde
 
 /** Canonicalize one locale tag, falling back when the value is invalid. */
 export const normalizeLocale = (value: string | null | undefined, fallback = DEFAULT_LOCALE): string => canonicalLocale(value) ?? fallback;
+
+/** Exact requested locale, then its BCP 47 ancestors, then the canonical base locale. */
+export const localeFallbackChain = (requestedLocale: string | null | undefined, baseLocale = DEFAULT_LOCALE): string[] => {
+  const requested = canonicalLocale(requestedLocale);
+  const base = normalizeLocale(baseLocale);
+  const chain: string[] = [];
+  let candidate = requested;
+  while (candidate) {
+    chain.push(candidate);
+    const separator = candidate.lastIndexOf("-");
+    candidate = separator > 0 ? candidate.slice(0, separator) : undefined;
+  }
+  if (!chain.includes(base)) chain.push(base);
+  return chain;
+};

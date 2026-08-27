@@ -1,5 +1,6 @@
 import { fuzzy } from "@k2b/stdlib";
 import { createMemo, type JSX } from "solid-js";
+import { useUiMessages } from "../intl/messages";
 import type { ValueFieldProps } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
 import { DEFAULT_ICON_GROUPS, DEFAULT_ICON_OPTIONS } from "./icon-options";
@@ -22,6 +23,7 @@ export type IconInputProps = ValueFieldProps<string | null> & {
 };
 
 export function IconInput(props: IconInputProps): JSX.Element {
+  const messages = useUiMessages();
   const options = () => props.options ?? DEFAULT_ICON_OPTIONS;
   const groups = () => props.groups ?? (props.options === undefined ? DEFAULT_ICON_GROUPS : undefined);
   const filterOptions = (source: readonly SelectOption[], query: string): readonly SelectOption[] => {
@@ -56,7 +58,7 @@ export function IconInput(props: IconInputProps): JSX.Element {
       error={props.error}
       aria-label={props["aria-label"]}
       aria-describedby={props["aria-describedby"]}
-      placeholder={props.placeholder ?? "Pick an icon…"}
+      placeholder={props.placeholder ?? messages().pickIcon}
       disabled={props.disabled}
       required={props.required}
       clearable={props.clearable ?? true}
@@ -67,14 +69,14 @@ export function IconInput(props: IconInputProps): JSX.Element {
       options={[...options()]}
       groups={groups()}
       defaultGroup={props.defaultGroup ?? (props.options === undefined ? "recommended" : undefined)}
-      groupsAriaLabel={props.groupsAriaLabel ?? "Filter icons"}
+      groupsAriaLabel={props.groupsAriaLabel ?? messages().filterIcons}
       allGroupLabel={props.allGroupLabel}
       viewToggle={props.viewToggle ?? true}
       defaultView={props.defaultView ?? "grid"}
       gridSize={props.gridSize ?? "sm"}
       searchable
       filterOptions={filterOptions}
-      searchPlaceholder="Search icons…"
+      searchPlaceholder={messages().search}
       icon={selectedOption()?.icon ?? "ti ti-icons"}
     />
   );

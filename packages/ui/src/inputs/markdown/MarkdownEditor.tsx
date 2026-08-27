@@ -1,6 +1,7 @@
 import { highlight } from "@k2b/stdlib";
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../../internal/field";
+import { useUiMessages } from "../../intl/messages";
 import {
   abbreviations as abbreviationsCompletion,
   buildSuggestContext,
@@ -14,12 +15,12 @@ import {
   resolveSuggestions,
   type Suggestion,
 } from "../completion";
+import type { ValueFieldProps } from "../field-contract";
+import { resolveMaybeAccessor } from "../field-contract";
 import { computeActiveFormats } from "./active-formats";
 import { handleListContinuation, handleShortcut, handleSmartPaste } from "./behaviors";
 import { isInCodeZone } from "./code-zone";
 import Toolbar from "./Toolbar";
-import type { ValueFieldProps } from "../field-contract";
-import { resolveMaybeAccessor } from "../field-contract";
 
 export type MarkdownEditorProps = ValueFieldProps<string> & {
   onSubmit?: () => void;
@@ -48,6 +49,7 @@ type CompletionState = {
 };
 
 export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
+  const messages = useUiMessages();
   const meta = createFieldMeta(props.id);
   let textarea: HTMLTextAreaElement | undefined;
   let preview: HTMLDivElement | undefined;
@@ -464,8 +466,8 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
         <button
           type="button"
           class="k2b-markdown-editor__tool"
-          title="Save (Ctrl/Cmd+S)"
-          aria-label="Save"
+          title={messages().saveShortcut}
+          aria-label={messages().save}
           tabIndex={-1}
           disabled={props.disabled || props.saveDisabled || props.saving}
           onMouseDown={(event) => event.preventDefault()}
@@ -572,8 +574,14 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
           </div>
         </Show>
         <Show when={state() || loading() || completionError()}>
-          <div ref={dropdown} popover="manual" class="k2b-autocomplete__options" role="presentation" aria-label="Completion suggestions">
-            <div id={listboxId} class="k2b-autocomplete__listbox" role="listbox" aria-label="Suggestions">
+          <div
+            ref={dropdown}
+            popover="manual"
+            class="k2b-autocomplete__options"
+            role="presentation"
+            aria-label={messages().completionSuggestions}
+          >
+            <div id={listboxId} class="k2b-autocomplete__listbox" role="listbox" aria-label={messages().suggestions}>
               <Show when={loading()}>
                 <div class="k2b-autocomplete__status" role="status">
                   <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
@@ -586,7 +594,7 @@ export function MarkdownEditor(props: MarkdownEditorProps): JSX.Element {
                     <i class="ti ti-alert-circle" aria-hidden="true" />
                     <span>{message()}</span>
                     <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={retryCompletion}>
-                      Retry
+                      {messages().retry}
                     </button>
                   </div>
                 )}

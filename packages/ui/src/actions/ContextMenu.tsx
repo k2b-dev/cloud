@@ -1,5 +1,6 @@
 import { createMemo, createSignal, createUniqueId, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { Portal } from "solid-js/web";
+import { useUiMessages } from "../intl/messages";
 import { type DropdownItem, DropdownItems, type DropdownPosition, dropdownPosition } from "./Dropdown";
 
 export type ContextMenuProps = {
@@ -32,6 +33,7 @@ const focusableItems = (menu: HTMLElement | undefined): HTMLElement[] =>
 
 /** Right-click menu with keyboard invocation, one-open-at-a-time behavior, and viewport clamping. */
 export function ContextMenu(props: ContextMenuProps): JSX.Element {
+  const messages = useUiMessages();
   const generatedId = `k2b-context-${createUniqueId()}`;
   const menuId = `${generatedId}-menu`;
   const [position, setPosition] = createSignal<{ x: number; y: number }>();
@@ -134,7 +136,7 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
         class={hostClass()}
         role="group"
         tabIndex={props.disabled ? undefined : (props.tabIndex ?? 0)}
-        aria-label={props.label ?? "Context menu"}
+        aria-label={props.label ?? messages().contextMenu}
         aria-haspopup="menu"
         aria-expanded={isOpen()}
         aria-controls={isOpen() ? menuId : undefined}
@@ -162,7 +164,7 @@ export function ContextMenu(props: ContextMenuProps): JSX.Element {
               id={menuId}
               class="k2b-ui k2b-context-menu"
               role="menu"
-              aria-label={props.label ?? "Context menu"}
+              aria-label={props.label ?? messages().contextMenu}
               style={{ left: `${point().x}px`, top: `${point().y}px` }}
               onPointerDown={(event) => event.stopPropagation()}
             >

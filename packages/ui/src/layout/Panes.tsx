@@ -1,5 +1,6 @@
 import { type DndCollisionContext, type DndController, type DndDroppableSnapshot, dnd } from "@k2b/stdlib/solid";
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { useUiMessages } from "../intl/messages";
 import {
   activatePanesItem,
   applyPanesIntent,
@@ -186,6 +187,7 @@ const requireItem = (items: Map<string, PanesItem>, id: string): PanesItem => {
 };
 
 export default function Panes(props: PanesProps): JSX.Element {
+  const messages = useUiMessages();
   const instanceId = `k2b-panes-${createUniqueId()}`;
   const items = createMemo(() => createItemMap(props.items));
   const layout = createMemo(() => {
@@ -240,15 +242,15 @@ export default function Panes(props: PanesProps): JSX.Element {
   const requestAdd = (targetItemId: string | null) => props.onAddItem?.(targetItemId);
 
   return (
-    <div class={`k2b-panes ${props.class ?? ""}`} data-k2b-panes role="group" aria-label={props.ariaLabel ?? "Pane workspace"}>
+    <div class={`k2b-panes ${props.class ?? ""}`} data-k2b-panes role="group" aria-label={props.ariaLabel ?? messages().paneWorkspace}>
       <Show
         when={layout().root}
         fallback={
           <div class="k2b-panes__empty">
             <Show when={props.onAddItem !== undefined}>
-              <button type="button" class="k2b-panes__add" onClick={() => requestAdd(null)} aria-label="Add pane">
+              <button type="button" class="k2b-panes__add" onClick={() => requestAdd(null)} aria-label={messages().addPane}>
                 <i class="ti ti-plus" aria-hidden="true" />
-                <span>Add pane</span>
+                <span>{messages().addPane}</span>
               </button>
             </Show>
           </div>
@@ -310,6 +312,7 @@ function PanesNodeRenderer(props: RendererProps): JSX.Element {
 }
 
 function PanesSplitRenderer(props: Omit<RendererProps, "node"> & { node: () => PanesSplit }): JSX.Element {
+  const messages = useUiMessages();
   let container: HTMLDivElement | undefined;
   let separatorElement: HTMLButtonElement | undefined;
   let stopResize: (() => void) | undefined;
@@ -458,7 +461,7 @@ function PanesSplitRenderer(props: Omit<RendererProps, "node"> & { node: () => P
         tabIndex={props.canResize() ? 0 : -1}
         class="k2b-panes__separator"
         data-direction={props.node().direction}
-        aria-label="Resize panes"
+        aria-label={messages().resizePanes}
         onPointerDown={startResize}
         onKeyDown={onResizeKeyDown}
       >
@@ -476,6 +479,7 @@ function ActivePane(props: { itemId: string; itemById: () => Map<string, PanesIt
 }
 
 function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => PanesGroup }): JSX.Element {
+  const messages = useUiMessages();
   let tabsElement: HTMLDivElement | undefined;
   let scrollbarDragOffset = 0;
   let stopTabPress: (() => void) | undefined;
@@ -559,7 +563,9 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
     const track = event.currentTarget;
     const current = scrollbar();
     scrollbarDragOffset =
-      event.target === track ? current.width / 2 : Math.min(current.width, Math.max(0, event.clientX - track.getBoundingClientRect().left - current.left));
+      event.target === track
+        ? current.width / 2
+        : Math.min(current.width, Math.max(0, event.clientX - track.getBoundingClientRect().left - current.left));
     track.setPointerCapture(event.pointerId);
     scrollFromPointer(event);
   };
@@ -604,12 +610,14 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
   };
   const targetLabel = (target: PanesDropTarget): string => {
     const targetItem = requireItem(props.itemById(), target.targetItemId);
-    if (target.kind === "group") return `Add to ${targetItem.title}`;
+    if (target.kind === "group") return messages().addToNamed({ name: targetItem.title });
     if (target.kind === "tab") {
       const before = target.beforeItemId ? requireItem(props.itemById(), target.beforeItemId) : null;
-      return before ? `Insert before ${before.title}` : "Insert at end";
+      return before ? messages().insertBeforeNamed({ name: before.title }) : messages().insertAtEnd;
     }
-    return `Add ${target.side} of ${targetItem.title}`;
+    return target.side
+      ? messages().addPaneSide({ side: target.side, name: targetItem.title })
+      : messages().addToNamed({ name: targetItem.title });
   };
   return (
     <section class="k2b-panes__group">
@@ -617,7 +625,7 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
         ref={tabsElement}
         class="k2b-panes__tabs"
         role="tablist"
-        aria-label="Pane tabs"
+        aria-label={messages().paneTabs}
         aria-orientation="horizontal"
         onScroll={syncScrollbar}
       >
@@ -682,8 +690,8 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
                   <button
                     type="button"
                     class="k2b-panes__close"
-                    title={`Close ${item().title}`}
-                    aria-label={`Close ${item().title}`}
+                    title={messages().closeNamed({ name: item().title })}
+                    aria-label={messages().closeNamed({ name: item().title })}
                     onPointerDown={(event) => event.stopPropagation()}
                     onClick={(event) => {
                       event.stopPropagation();
@@ -704,8 +712,8 @@ function PanesGroupRenderer(props: Omit<RendererProps, "node"> & { node: () => P
           <button
             type="button"
             class="k2b-panes__add k2b-panes__add--tab"
-            aria-label="Add pane"
-            title="Add pane"
+            aria-label={messages().addPane}
+            title={messages().addPane}
             onClick={() => props.addItem(props.node().active)}
           >
             <i class="ti ti-plus" aria-hidden="true" />

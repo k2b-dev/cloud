@@ -5,7 +5,7 @@ section: Build an app
 order: 120
 description: Declare application identity, routes, navigation, and platform integrations with defineApp().
 tags: [applications, define-app, configuration]
-updated: 2026-08-12
+updated: 2026-08-27
 ---
 
 # Define an application
@@ -103,6 +103,7 @@ Use `adminNav` for grouped links:
 ```ts
 adminNav: [
   {
+    id: "inventory",
     label: "Inventory",
     links: [
       {
@@ -116,7 +117,35 @@ adminNav: [
 ```
 
 Each group needs a `label` and `links`. Each link needs a `label`, `href`, and
-Tabler `icon`.
+Tabler `icon`. Add a stable group `id` when its label is translated through
+`presentation`.
+
+## Translate registered presentation
+
+Keep the complete base presentation in the normal application declaration.
+`presentation` adds partial locale overlays for `name`, `description`, admin
+group and link labels, and legal-link labels:
+
+```ts
+presentation: {
+  baseLocale: "en",
+  translations: {
+    de: {
+      name: "Inventar",
+      adminGroups: { inventory: "Inventar" },
+      adminLinks: { "/admin/inventory/warehouses": "Lager" },
+      legalLinks: { "/inventory/privacy": "Datenschutz" },
+    },
+  },
+},
+```
+
+Group labels are keyed by `adminNav[].id`; link labels are keyed by their
+stable `href`. Unknown references, invalid locale tags, duplicate canonical
+locales, and oversized catalogs fail during startup. Runtime consumers receive
+the exact locale, its language ancestors, then the base declaration per field.
+See [Internationalization](/en/docs/build/internationalization) for ownership
+and fallback conventions.
 
 ## Set the application appearance
 
@@ -159,6 +188,7 @@ The remaining options declare application-owned contributions:
 | `notifications` | Notification definitions the application may send | [Notifications](/en/docs/platform/notifications) |
 | `widgets` | Dashboard widget endpoints | [Dashboard widgets](/en/docs/platform/dashboard-widgets) |
 | `legalLinks` | Application-owned legal and information links | — |
+| `presentation` | Localized overlays for registered human-facing app metadata | [Internationalization](/en/docs/build/internationalization) |
 | `openapi` | Public OpenAPI document path | [Typed HTTP APIs](/en/docs/server/http#publish-openapi) |
 
 Definitions establish ownership and types. They do not run an operation.

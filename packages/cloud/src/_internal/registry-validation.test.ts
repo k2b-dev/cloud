@@ -21,6 +21,14 @@ describe("validateAppRegistryEntry", () => {
   });
   test("rejects partial runtime metadata", () =>
     expect(validateAppRegistryEntry({ ...valid, runtime: { release: valid.runtime.release } })).toContain("runtime.syncVersion"));
+  test("accepts valid app presentation and rejects malformed translation maps", () => {
+    expect(
+      validateAppRegistryEntry({ ...valid, presentation: { baseLocale: "en", translations: { de: { name: "Kern" } } } }),
+    ).toBeNull();
+    expect(
+      validateAppRegistryEntry({ ...valid, presentation: { baseLocale: "en", translations: { de: { adminLinks: [] } } } }),
+    ).toContain("presentation.translations.de.adminLinks");
+  });
   test("accepts a valid Help summary", () =>
     expect(
       validateAppRegistryEntry({

@@ -1,6 +1,7 @@
 import { createMemo, type JSX, Show } from "solid-js";
 import { Dropdown, type DropdownItem, type DropdownPosition } from "../actions/Dropdown";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { useUiMessages } from "../intl/messages";
 import type { MaybeAccessor, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
 
@@ -24,6 +25,7 @@ export type SelectChipProps<T extends string | number = string> = ValueFieldProp
 };
 
 export function SelectChip<T extends string | number = string>(props: SelectChipProps<T>): JSX.Element {
+  const messages = useUiMessages();
   const meta = createFieldMeta(props.id);
   const value = () => resolveMaybeAccessor(props.value)!;
   const selected = () => props.options.find((option) => option.value === value());
@@ -55,7 +57,7 @@ export function SelectChip<T extends string | number = string>(props: SelectChip
         position={props.position ?? "bottom-right"}
         /* Cloud opens this menu at `w-40`. */
         width={props.menuWidth ?? "10rem"}
-        label={props["aria-label"] ?? (typeof props.label === "string" ? props.label : "Choose option")}
+        label={props["aria-label"] ?? (typeof props.label === "string" ? props.label : messages().chooseOption)}
         items={items()}
       >
         <Dropdown.Trigger
@@ -63,7 +65,7 @@ export function SelectChip<T extends string | number = string>(props: SelectChip
           id={meta.controlId}
           class="k2b-select-chip"
           disabled={props.disabled}
-          label={props["aria-label"] ?? (typeof props.label === "string" ? props.label : "Choose option")}
+          label={props["aria-label"] ?? (typeof props.label === "string" ? props.label : messages().chooseOption)}
           {...fieldControlAria(meta, props)}
         >
           <Show

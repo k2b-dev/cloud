@@ -12,6 +12,7 @@ import {
   useContext,
 } from "solid-js";
 import { Tooltip, type TooltipPlacement } from "../feedback/Tooltip";
+import { useUiMessages } from "../intl/messages";
 import { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from "./Button";
 
 export type DropdownPosition = "bottom-right" | "bottom-left" | "top-right" | "top-left" | "right-start";
@@ -272,6 +273,7 @@ function DropdownChoiceItem(props: DropdownChoice): JSX.Element {
 }
 
 export function DropdownItems(props: { items: readonly DropdownItem[]; close: (restoreFocus?: boolean) => void }): JSX.Element {
+  const messages = useUiMessages();
   const renderItem = (item: DropdownAction | DropdownChoice): JSX.Element =>
     "choice" in item ? (
       <DropdownChoiceItem {...item} />
@@ -300,7 +302,7 @@ export function DropdownItems(props: { items: readonly DropdownItem[]; close: (r
               class="k2b-dropdown__section"
               data-divided={index() > 0 ? "true" : undefined}
               role="group"
-              aria-label={(item as DropdownSection).sectionLabel ?? "Actions"}
+              aria-label={(item as DropdownSection).sectionLabel ?? messages().actions}
             >
               <Show when={(item as DropdownSection).sectionLabel}>{(label) => <div class="k2b-dropdown__label">{label()}</div>}</Show>
               <For each={(item as DropdownSection).items}>{renderItem}</For>
@@ -402,6 +404,7 @@ function DropdownTrigger(props: DropdownTriggerProps): JSX.Element {
 
 /** Accessible top-layer menu with explicit trigger ownership. */
 function DropdownRoot(props: DropdownProps): JSX.Element {
+  const messages = useUiMessages();
   const id = createUniqueId().replace(/[^a-zA-Z0-9_-]/g, "-");
   const menuId = `k2b-dropdown-${id}`;
   const [internalOpen, setInternalOpen] = createSignal(false);
@@ -523,7 +526,7 @@ function DropdownRoot(props: DropdownProps): JSX.Element {
           id={menuId}
           popover="auto"
           role="menu"
-          aria-label={props.label ?? "Dropdown menu"}
+          aria-label={props.label ?? messages().dropdownMenu}
           class={`k2b-dropdown__menu ${props.menuClass ?? ""}`}
           style={props.width ? { "--k2b-dropdown-width": props.width } : undefined}
           data-position={position()}

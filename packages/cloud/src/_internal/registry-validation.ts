@@ -3,6 +3,7 @@ import type { AppRegistryEntry } from "../contracts/registry";
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 const isString = (value: unknown): value is string => typeof value === "string";
 const isStringArray = (value: unknown): value is string[] => Array.isArray(value) && value.every(isString);
+const isStringRecord = (value: unknown): value is Record<string, string> => isRecord(value) && Object.values(value).every(isString);
 
 const invalid = (path: string, expected: string): string => `${path} must be ${expected}`;
 
@@ -29,6 +30,23 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
       return invalid("runtime.syncVersion", "a non-empty string");
     }
   }
+  if (value.presentation !== undefined) {
+    if (!isRecord(value.presentation) || !isString(value.presentation.baseLocale) || !isRecord(value.presentation.translations)) {
+      return invalid("presentation", "a localized app-presentation catalog");
+    }
+    for (const [locale, translation] of Object.entries(value.presentation.translations)) {
+      if (!isRecord(translation)) return invalid(`presentation.translations.${locale}`, "an object");
+      if (translation.name !== undefined && !isString(translation.name)) return invalid(`presentation.translations.${locale}.name`, "a string");
+      if (translation.description !== undefined && !isString(translation.description)) {
+        return invalid(`presentation.translations.${locale}.description`, "a string");
+      }
+      for (const field of ["adminGroups", "adminLinks", "legalLinks"] as const) {
+        if (translation[field] !== undefined && !isStringRecord(translation[field])) {
+          return invalid(`presentation.translations.${locale}.${field}`, "a string map");
+        }
+      }
+    }
+  }
   if (value.nav !== undefined) {
     if (!isRecord(value.nav)) return invalid("nav", "an object");
     if (!isString(value.nav.href) || !["primary", "more", "hidden"].includes(String(value.nav.section))) {
@@ -44,6 +62,7 @@ export const validateAppRegistryEntry = (value: unknown): string | null => {
       value.adminNav.some(
         (group) =>
           !isRecord(group) ||
+          (group.id !== undefined && !isString(group.id)) ||
           !isString(group.label) ||
           !Array.isArray(group.links) ||
           group.links.some((link) => !isRecord(link) || !isString(link.label) || !isString(link.href) || !isString(link.icon)),

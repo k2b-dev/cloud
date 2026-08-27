@@ -1,6 +1,7 @@
 import { children, createMemo, createUniqueId, type JSX, Show } from "solid-js";
 import { Button, type ButtonVariant } from "../actions/Button";
 import type { MaybeAccessor } from "../inputs/field-contract";
+import { useUiMessages } from "../intl/messages";
 
 const read = <T,>(value: MaybeAccessor<T>): T => (typeof value === "function" ? (value as () => T)() : value);
 
@@ -162,6 +163,7 @@ export type SettingsFieldControlProps = {
 };
 
 export function SettingsField(props: SettingsFieldProps): JSX.Element {
+  const messages = useUiMessages();
   const id = createUniqueId();
   const descriptionId = `k2b-settings-field-${id}-description`;
   const errorId = `k2b-settings-field-${id}-error`;
@@ -176,7 +178,7 @@ export function SettingsField(props: SettingsFieldProps): JSX.Element {
         <div class="k2b-settings-field__heading">
           <strong>{props.label}</strong>
           <Show when={props.changed !== undefined && read(props.changed)}>
-            <span>Unsaved</span>
+            <span>{messages().unsaved}</span>
           </Show>
         </div>
         <p id={descriptionId}>{props.description}</p>
@@ -209,6 +211,7 @@ const SettingsActions = (
     disableWithoutChanges?: boolean;
   },
 ): JSX.Element => {
+  const messages = useUiMessages();
   const changeCount = () => read(props.changeCount);
   const loading = () => read(props.loading);
   const disabled = () => loading() || Boolean(props.disableWithoutChanges && changeCount() === 0);
@@ -216,29 +219,30 @@ const SettingsActions = (
   return (
     <div class="k2b-settings-actions">
       <Button variant="secondary" disabled={disabled()} onClick={props.onDiscard}>
-        Discard
+        {messages().discard}
       </Button>
       <Button
         variant={props.saveVariant ?? "primary"}
         loading={loading()}
-        loadingLabel="Saving"
+        loadingLabel={messages().saving}
         disabled={saveDisabled()}
         onClick={props.onSave}
       >
         <i class="ti ti-device-floppy" aria-hidden="true" />
-        {props.saveLabel ?? "Save changes"}
+        {props.saveLabel ?? messages().saveChanges}
       </Button>
     </div>
   );
 };
 
 export function SettingsSaveBar(props: SettingsSaveBarProps): JSX.Element {
+  const messages = useUiMessages();
   const changeCount = () => read(props.changeCount);
   return (
     <Show when={changeCount() > 0}>
       <div class={`k2b-settings-save-bar ${props.class ?? ""}`}>
         <p role="status" aria-live="polite">
-          <strong>{changeCount()}</strong> unsaved change{changeCount() === 1 ? "" : "s"}
+          <strong>{changeCount()}</strong> {messages().unsavedChangeLabel({ count: changeCount() })}
         </p>
         <SettingsActions {...props} />
       </div>
@@ -249,12 +253,13 @@ export function SettingsSaveBar(props: SettingsSaveBarProps): JSX.Element {
 export type SettingsPanelFooterProps = SettingsSaveBarProps;
 
 export function SettingsPanelFooter(props: SettingsPanelFooterProps): JSX.Element {
+  const messages = useUiMessages();
   const changeCount = () => read(props.changeCount);
   return (
     <>
       <p class="k2b-settings-panel-footer__status" role="status" aria-live="polite">
-        <Show when={changeCount() > 0} fallback="No unsaved changes">
-          <strong>{changeCount()}</strong> unsaved change{changeCount() === 1 ? "" : "s"}
+        <Show when={changeCount() > 0} fallback={messages().noUnsavedChanges}>
+          <strong>{changeCount()}</strong> {messages().unsavedChangeLabel({ count: changeCount() })}
         </Show>
       </p>
       <SettingsActions {...props} disableWithoutChanges />

@@ -12,7 +12,7 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const domBeforeImport = typeof document;
-const { Format, LocaleProvider, NumberInput, useLocale } = await import("../index");
+const { Chat, Format, LocaleProvider, NumberInput, Pagination, useLocale } = await import("../index");
 
 const ShowLocale = (): JSX.Element => {
   const locale = useLocale();
@@ -55,6 +55,25 @@ describe("LocaleProvider / useLocale SSR", () => {
   test("keeps independent render trees isolated", () => {
     expect(renderToString(() => provided("de", () => createComponent(ShowLocale, {})))).toContain("[de]");
     expect(renderToString(() => createComponent(ShowLocale, {}))).toContain("[en]");
+  });
+
+  test("localizes generic component chrome without app-owned label props", () => {
+    const html = renderToString(() =>
+      provided(
+        "de-CH",
+        () =>
+          createComponent(Chat, {
+            get children() {
+              return "Inhalt";
+            },
+          }),
+        () => createComponent(Pagination, { currentPage: 2, totalPages: 3, baseUrl: "/items?page=" }),
+      ),
+    );
+    expect(html).toContain('aria-label="Chat"');
+    expect(html).toContain('aria-label="Seitennavigation"');
+    expect(html).toContain("Seite 2 von 3");
+    expect(html).toContain('aria-label="Vorherige Seite"');
   });
 });
 

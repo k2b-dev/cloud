@@ -2,6 +2,7 @@ import { dropzone } from "@k2b/stdlib/solid";
 import { createEffect, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { useUiMessages } from "../intl/messages";
 import type { FieldProps, ValueFieldProps } from "./field-contract";
 import { commitFieldValue, resolveMaybeAccessor } from "./field-contract";
 import {
@@ -29,6 +30,7 @@ export type FileDropzoneProps = FieldProps & {
 };
 
 export function FileDropzone(props: FileDropzoneProps): JSX.Element {
+  const messages = useUiMessages();
   const meta = createFieldMeta(props.id);
   const disabled = () => Boolean(props.disabled || props.busy);
   const error = () => resolveMaybeAccessor(props.error);
@@ -45,12 +47,12 @@ export function FileDropzone(props: FileDropzoneProps): JSX.Element {
   });
   const title = () =>
     props.busy
-      ? "Uploading…"
+      ? messages().uploading
       : zone.invalidDrag()
-        ? "File type not accepted"
+        ? messages().fileTypeNotAccepted
         : zone.isDragging()
-          ? "Drop to upload"
-          : (props.title ?? "Drop files or click to choose");
+          ? messages().dropToUpload
+          : (props.title ?? messages().dropFiles);
 
   return (
     <Field
@@ -86,7 +88,7 @@ export function FileDropzone(props: FileDropzoneProps): JSX.Element {
               </Show>
             }
           >
-            <span class="k2b-dropzone__subtitle">Choose a file that matches this field.</span>
+            <span class="k2b-dropzone__subtitle">{messages().chooseMatchingFile}</span>
           </Show>
           <Show when={props.hint}>
             <span class="k2b-dropzone__hint">{props.hint}</span>
@@ -98,7 +100,8 @@ export function FileDropzone(props: FileDropzoneProps): JSX.Element {
         class="k2b-sr-only"
         type="file"
         aria-label={
-          props["aria-label"] ?? (typeof props.label === "string" ? props.label : props.multiple === false ? "Choose file" : "Choose files")
+          props["aria-label"] ??
+          (typeof props.label === "string" ? props.label : props.multiple === false ? messages().chooseFile : messages().chooseFiles)
         }
         accept={props.accept}
         multiple={props.multiple ?? true}
@@ -132,6 +135,7 @@ const defaultImageTransform = async (file: File): Promise<string> => {
 };
 
 export function ImageInput(props: ImageInputProps): JSX.Element {
+  const messages = useUiMessages();
   const meta = createFieldMeta(props.id);
   const [busy, setBusy] = createSignal(false);
   const [localError, setLocalError] = createSignal<string>();
@@ -143,7 +147,7 @@ export function ImageInput(props: ImageInputProps): JSX.Element {
     return current && !current.includes(props.fallbackMarker ?? "?fallback") ? current : null;
   };
   const compact = () => props.variant === "small";
-  const changeLabel = () => (value() ? "Change image" : "Add image");
+  const changeLabel = () => (value() ? messages().changeImage : messages().addImage);
   const changeIcon = () => (value() ? "ti ti-pencil" : "ti ti-photo-plus");
   const select = async (file: File | undefined) => {
     if (!file || disabled()) return;
@@ -153,7 +157,7 @@ export function ImageInput(props: ImageInputProps): JSX.Element {
       const transformed = await (props.transform ?? defaultImageTransform)(file);
       commitFieldValue(props, transformed);
     } catch (error) {
-      setLocalError(error instanceof Error ? error.message : "Image could not be processed.");
+      setLocalError(error instanceof Error ? error.message : messages().imageProcessingFailed);
     } finally {
       setBusy(false);
       if (input) input.value = "";
@@ -181,7 +185,7 @@ export function ImageInput(props: ImageInputProps): JSX.Element {
       >
         <div class="k2b-image-input__preview">
           <Show when={value()} fallback={<i class="ti ti-photo-off" aria-hidden="true" />}>
-            {(source) => <img src={source()} alt={typeof props.label === "string" ? props.label : "Selected image"} />}
+            {(source) => <img src={source()} alt={typeof props.label === "string" ? props.label : messages().selectedImage} />}
           </Show>
         </div>
         <div class="k2b-image-input__actions">
@@ -191,19 +195,19 @@ export function ImageInput(props: ImageInputProps): JSX.Element {
               <Button
                 variant="secondary"
                 loading={busy()}
-                loadingLabel="Processing image"
+                loadingLabel={messages().processingImage}
                 disabled={disabled()}
                 onClick={() => input?.click()}
               >
                 <i class={changeIcon()} aria-hidden="true" />
-                {value() ? "Change" : "Add"}
+                {value() ? messages().change : messages().add}
               </Button>
             }
           >
             <IconButton
               label={changeLabel()}
               loading={busy()}
-              loadingLabel="Processing image"
+              loadingLabel={messages().processingImage}
               disabled={disabled()}
               onClick={() => input?.click()}
             >
@@ -219,7 +223,7 @@ export function ImageInput(props: ImageInputProps): JSX.Element {
                 </Button>
               }
             >
-              <IconButton label="Remove image" disabled={disabled()} onClick={() => commitFieldValue(props, null)}>
+              <IconButton label={messages().removeImage} disabled={disabled()} onClick={() => commitFieldValue(props, null)}>
                 <i class="ti ti-trash" aria-hidden="true" />
               </IconButton>
             </Show>
@@ -305,6 +309,7 @@ const loadPreviewState = async (source: ImageCropSource): Promise<PreviewState> 
 };
 
 export function ImageCropper(props: ImageCropperProps): JSX.Element {
+  const messages = useUiMessages();
   let frame: HTMLDivElement | undefined;
   let activePreview: PreviewState | null = null;
   const aspect = () => props.aspect ?? "free";
@@ -358,11 +363,11 @@ export function ImageCropper(props: ImageCropperProps): JSX.Element {
           return;
         }
         replacePreview(nextPreview);
-      } catch (reason) {
+      } catch {
         if (disposed) return;
         replacePreview(null);
         setCrop(null);
-        setError(reason instanceof Error ? reason.message : "Failed to load image.");
+        setError(messages().failedLoadImage);
       } finally {
         if (!disposed) setLoading(false);
       }
@@ -521,18 +526,18 @@ export function ImageCropper(props: ImageCropperProps): JSX.Element {
   return (
     <div class={`k2b-image-cropper ${props.class ?? ""}`}>
       <div class="k2b-image-cropper__stage">
-        <Show when={!loading()} fallback={<small>Preparing image…</small>}>
+        <Show when={!loading()} fallback={<small>{messages().preparingImage}</small>}>
           <Show when={!error()} fallback={<small class="k2b-image-cropper__error">{error()}</small>}>
             <Show when={preview() && crop()}>
               <div ref={frame} class="k2b-image-cropper__frame" style={previewFrameStyle()}>
-                <img src={preview()!.url} alt="Crop preview" draggable={false} style={previewImageStyle()} />
+                <img src={preview()!.url} alt={messages().cropPreview} draggable={false} style={previewImageStyle()} />
                 <div
                   class="k2b-image-cropper__selection"
                   data-shape={previewShape()}
                   style={cropStyle()}
                   role="group"
                   tabIndex={disabled() ? undefined : 0}
-                  aria-label="Crop area. Use arrow keys to move; hold Shift for larger steps."
+                  aria-label={messages().cropArea}
                   onPointerDown={(event) => startDrag("move", event)}
                   onKeyDown={(event) => nudgeCrop("move", event)}
                 >
@@ -543,7 +548,7 @@ export function ImageCropper(props: ImageCropperProps): JSX.Element {
                           type="button"
                           class="k2b-image-cropper__handle"
                           data-handle={handle}
-                          aria-label={`Resize crop ${handle}`}
+                          aria-label={messages().resizeCrop({ handle })}
                           disabled={disabled()}
                           onPointerDown={(event) => startDrag(handle, event)}
                           onKeyDown={(event) => nudgeCrop(handle, event)}
@@ -555,8 +560,8 @@ export function ImageCropper(props: ImageCropperProps): JSX.Element {
                 <button
                   type="button"
                   class="k2b-image-cropper__rotate"
-                  title="Rotate right"
-                  aria-label="Rotate right"
+                  title={messages().rotateRight}
+                  aria-label={messages().rotateRight}
                   disabled={disabled() || !crop() || Boolean(error())}
                   onClick={rotateRight}
                 >

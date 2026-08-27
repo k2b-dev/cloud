@@ -1,4 +1,5 @@
 import { For, type JSX, Show } from "solid-js";
+import { useUiMessages } from "../../intl/messages";
 import {
   insertLink,
   toggleBold,
@@ -43,6 +44,20 @@ const TOOLS: readonly Tool[] = [
 ];
 
 export default function Toolbar(props: ToolbarProps): JSX.Element {
+  const messages = useUiMessages();
+  const title = (id: string, fallback: string): string =>
+    ({
+      bold: messages().boldShortcut,
+      italic: messages().italicShortcut,
+      code: messages().inlineCodeShortcut,
+      link: messages().linkShortcut,
+      h1: messages().heading1Shortcut,
+      h2: messages().heading2Shortcut,
+      h3: messages().heading3Shortcut,
+      bullet: messages().bulletListShortcut,
+      ordered: messages().numberedListShortcut,
+      quote: messages().quote,
+    })[id] ?? fallback;
   let toolbar!: HTMLDivElement;
   const moveFocus = (event: KeyboardEvent): void => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -67,7 +82,7 @@ export default function Toolbar(props: ToolbarProps): JSX.Element {
   };
 
   return (
-    <div ref={toolbar} class="k2b-markdown-editor__toolbar" role="toolbar" aria-label="Markdown formatting" onKeyDown={moveFocus}>
+    <div ref={toolbar} class="k2b-markdown-editor__toolbar" role="toolbar" aria-label={messages().markdownFormatting} onKeyDown={moveFocus}>
       <For each={TOOLS}>
         {(tool, index) =>
           tool.kind === "separator" ? (
@@ -76,8 +91,8 @@ export default function Toolbar(props: ToolbarProps): JSX.Element {
             <button
               type="button"
               class="k2b-markdown-editor__tool"
-              title={tool.title}
-              aria-label={tool.title}
+              title={title(tool.id, tool.title)}
+              aria-label={title(tool.id, tool.title)}
               aria-pressed={props.activeFormats?.().has(tool.id) ? "true" : undefined}
               disabled={props.disabled}
               tabIndex={index() === 0 ? 0 : -1}

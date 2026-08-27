@@ -1,6 +1,7 @@
 import type { HelpManifest } from "../shared/help";
-import type { AppAdminNavigationGroup, AppAppearance, AppAppearanceColor } from "./app";
+import type { AppAdminNavigationGroup, AppAppearance, AppAppearanceColor, AppPresentationCatalog } from "./app";
 import type { CapabilityManifest } from "./capabilities";
+import type { Role } from "./shared";
 import type { DashboardWidgetPresentation } from "./widgets";
 
 /**
@@ -14,7 +15,7 @@ export type AppRegistryNav = {
   match?: string;
   section: "primary" | "more" | "hidden";
   requiresAuth?: boolean;
-  requiresRoles?: string[];
+  requiresRoles?: Role[];
   adminHref?: string;
 };
 
@@ -83,6 +84,7 @@ export type AppRegistryEntry = {
   name: string;
   icon: string;
   description: string;
+  presentation?: AppPresentationCatalog;
   appearance?: AppAppearance;
   baseUrl: string;
   /** Build metadata reported by the running app. Missing on older app releases. */

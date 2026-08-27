@@ -1,4 +1,5 @@
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { useUiMessages } from "../intl/messages";
 
 export type LightboxImage = {
   src: string;
@@ -17,6 +18,7 @@ type LightboxProps = {
  * Supports keyboard navigation, touch swipe gestures, and screen readers.
  */
 export default function Lightbox(props: LightboxProps) {
+  const messages = useUiMessages();
   const clampIndex = (value: number, images = props.images): number =>
     images.length === 0 ? 0 : Math.max(0, Math.min(value, images.length - 1));
   const [index, setIndex] = createSignal(clampIndex(props.initialIndex ?? 0));
@@ -121,7 +123,7 @@ export default function Lightbox(props: LightboxProps) {
       onMouseDown={handleBackdropClick}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
-      aria-label="Image lightbox"
+      aria-label={messages().imageLightbox}
     >
       {/* Top bar */}
       <div class="k2b-content-lightbox__bar">
@@ -140,14 +142,14 @@ export default function Lightbox(props: LightboxProps) {
 
         <div class="k2b-content-lightbox__actions">
           <Show when={current()?.downloadUrl}>
-            <a href={current()!.downloadUrl} download="" class="k2b-content-lightbox__button" aria-label="Download image">
+            <a href={current()!.downloadUrl} download="" class="k2b-content-lightbox__button" aria-label={messages().downloadImage}>
               <i class="ti ti-download" aria-hidden="true" />
-              <span class="k2b-content-lightbox__button-label">Download</span>
+              <span class="k2b-content-lightbox__button-label">{messages().download}</span>
             </a>
           </Show>
-          <button type="button" onClick={close} class="k2b-content-lightbox__button" aria-label="Close lightbox">
+          <button type="button" onClick={close} class="k2b-content-lightbox__button" aria-label={messages().closeLightbox}>
             <i class="ti ti-x" aria-hidden="true" />
-            <span class="k2b-content-lightbox__button-label">Close</span>
+            <span class="k2b-content-lightbox__button-label">{messages().close}</span>
           </button>
         </div>
       </div>
@@ -159,16 +161,22 @@ export default function Lightbox(props: LightboxProps) {
       </div>
 
       <Show when={isMultiple()}>
-        <button type="button" onClick={prev} class="k2b-content-lightbox__nav" data-direction="previous" aria-label="Previous image">
+        <button
+          type="button"
+          onClick={prev}
+          class="k2b-content-lightbox__nav"
+          data-direction="previous"
+          aria-label={messages().previousImage}
+        >
           <i class="ti ti-chevron-left" aria-hidden="true" />
         </button>
-        <button type="button" onClick={next} class="k2b-content-lightbox__nav" data-direction="next" aria-label="Next image">
+        <button type="button" onClick={next} class="k2b-content-lightbox__nav" data-direction="next" aria-label={messages().nextImage}>
           <i class="ti ti-chevron-right" aria-hidden="true" />
         </button>
       </Show>
 
       <Show when={isMultiple() && props.images.length <= 10}>
-        <div class="k2b-content-lightbox__dots" role="group" aria-label="Image navigation">
+        <div class="k2b-content-lightbox__dots" role="group" aria-label={messages().imageNavigation}>
           <For each={props.images}>
             {(_, i) => (
               <button
@@ -176,7 +184,7 @@ export default function Lightbox(props: LightboxProps) {
                 onClick={() => setIndex(i())}
                 class="k2b-content-lightbox__dot"
                 aria-current={index() === i() ? "true" : undefined}
-                aria-label={`Go to image ${i() + 1}`}
+                aria-label={messages().goToImage({ index: i() + 1 })}
               />
             )}
           </For>

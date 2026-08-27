@@ -1,5 +1,6 @@
 import { ButtonLink } from "@k2b/ui";
 import { listLegalLinks } from "@valentinkolb/cloud";
+import { getLocale } from "@valentinkolb/cloud/server";
 import { coreSettings } from "@valentinkolb/cloud/services";
 import {
   normalizeRedirectTo,
@@ -20,7 +21,7 @@ export default ssr(async (c) => {
     coreSettings.get<boolean>("freeipa.enable"),
     coreSettings.get<boolean>("user.allow_self_registration"),
     coreSettings.get<string>("app.contact_email"),
-    listLegalLinks(),
+    listLegalLinks(getLocale(c)),
   ]);
   const appName = rawAppName || "My App";
   const freeIpaEnabled = Boolean(freeIpaEnabledRaw);

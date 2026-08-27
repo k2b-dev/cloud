@@ -1,4 +1,5 @@
 import { createMemo, For, type JSX } from "solid-js";
+import { useUiMessages } from "../intl/messages";
 import { PANES_LAYOUT_VERSION, type PanesLayout } from "../layout/panes-layout";
 import { AutocompleteEditor, type AutocompleteEditorProps } from "./AutocompleteEditor";
 import type { Completion, Suggestion } from "./completion";
@@ -148,13 +149,14 @@ const highlightTemplate = (text: string): string => {
 };
 
 export function TemplateEditor(props: TemplateEditorProps): JSX.Element {
+  const messages = useUiMessages();
   const completions = createMemo(() => templateCompletions(props.variables));
   return (
     <AutocompleteEditor
       {...props}
       lines={props.lines ?? 22}
       spellcheck={props.spellcheck ?? false}
-      placeholder={props.placeholder ?? "Write HTML with Liquid values like {{ APP_NAME }}..."}
+      placeholder={props.placeholder ?? messages().templateEditorPlaceholder}
       highlight={highlightTemplate}
       completions={completions()}
     />
@@ -162,9 +164,10 @@ export function TemplateEditor(props: TemplateEditorProps): JSX.Element {
 }
 
 export function TemplatePreview(props: TemplatePreviewProps): JSX.Element {
+  const messages = useUiMessages();
   return (
     <section class={`k2b-template-preview ${props.class ?? ""}`}>
-      <iframe sandbox="" srcdoc={props.html} title={props.title ?? "Template preview"} />
+      <iframe sandbox="" srcdoc={props.html} title={props.title ?? messages().templatePreview} />
     </section>
   );
 }

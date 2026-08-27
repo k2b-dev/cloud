@@ -1,5 +1,5 @@
 import { Scalar } from "@scalar/hono-api-reference";
-import { getRuntimeContext } from "@valentinkolb/cloud/ssr";
+import { getLocalizedRuntimeContext } from "@valentinkolb/cloud/ssr";
 import { Hono } from "hono";
 import { apiDocsHelp } from "../help";
 import { buildApiDocsGuideSource, buildScalarSources } from "../sources";
@@ -17,7 +17,7 @@ import { buildApiDocsGuideSource, buildScalarSources } from "../sources";
 const pages = new Hono().get(
   "/",
   Scalar(async (c) => {
-    const runtime = getRuntimeContext(c);
+    const runtime = getLocalizedRuntimeContext(c);
     const sources = [buildApiDocsGuideSource(apiDocsHelp.getMarkdown("api-docs-start") ?? ""), ...buildScalarSources(runtime.apps)];
 
     return {

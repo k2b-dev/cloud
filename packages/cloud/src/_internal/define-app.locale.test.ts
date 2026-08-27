@@ -13,8 +13,9 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { defineApp } = await import("./define-app");
 const { default: Layout } = await import("../ssr/Layout");
+const { getLocale } = await import("../server/locale");
 const { getDateConfig } = await import("../server/time");
-const { useLocale } = await import("@k2b/ui");
+const { LocaleProvider, useLocale } = await import("@k2b/ui");
 
 /**
  * The locale slice is request-scoped: two concurrent SSR requests with
@@ -70,6 +71,19 @@ const server = new Hono()
           },
         });
     }),
+  )
+  .get(
+    "/custom",
+    ...app.ssr((c) => {
+      const locale = getLocale(c);
+      return () =>
+        createComponent(LocaleProvider, {
+          locale,
+          get children() {
+            return createComponent(LocaleEcho, {});
+          },
+        });
+    }),
   );
 
 const htmlLang = (html: string): string | undefined => html.match(/<html lang="([^"]*)"/)?.[1];
@@ -114,5 +128,12 @@ describe("SSR locale isolation", () => {
     const html = await response.text();
     expect(htmlLang(html)).toBe("en");
     expect(echoedLocale(html)).toBe("en");
+  });
+
+  test("custom SSR roots can bind the same request locale without using Layout", async () => {
+    const response = await server.request("/custom", { headers: { "Accept-Language": "de-CH" } });
+    const html = await response.text();
+    expect(htmlLang(html)).toBe("de-CH");
+    expect(echoedLocale(html)).toBe("de-CH");
   });
 });

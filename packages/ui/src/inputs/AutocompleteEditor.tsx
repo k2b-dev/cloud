@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onCleanup, onMount, Show, untrack } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { useUiMessages } from "../intl/messages";
 import {
   buildSuggestContext,
   type Completion,
@@ -38,6 +39,7 @@ type CompletionState = {
 };
 
 export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element {
+  const messages = useUiMessages();
   const meta = createFieldMeta(props.id);
   let textarea: HTMLTextAreaElement | undefined;
   let preview: HTMLDivElement | undefined;
@@ -220,7 +222,7 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
     } catch (error) {
       if (signal.aborted || isAbortError(error)) return;
       setLoading(false);
-      setCompletionError(error instanceof Error ? error.message : "Suggestions could not be loaded");
+      setCompletionError(error instanceof Error ? error.message : messages().suggestionsCouldNotLoad);
       setDropdownOpen(true);
       queueMicrotask(positionDropdown);
     }
@@ -243,7 +245,7 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
     } catch (error) {
       if (signal.aborted || isAbortError(error)) return;
       setLoading(false);
-      setCompletionError(error instanceof Error ? error.message : "Suggestions could not be loaded");
+      setCompletionError(error instanceof Error ? error.message : messages().suggestionsCouldNotLoad);
       setDropdownOpen(true);
       queueMicrotask(positionDropdown);
     }
@@ -481,8 +483,14 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
           />
         </div>
         <Show when={state() || loading() || completionError()}>
-          <div ref={dropdown} popover="manual" class="k2b-autocomplete__options" role="presentation" aria-label="Completion suggestions">
-            <div id={listboxId} class="k2b-autocomplete__listbox" role="listbox" aria-label="Suggestions">
+          <div
+            ref={dropdown}
+            popover="manual"
+            class="k2b-autocomplete__options"
+            role="presentation"
+            aria-label={messages().completionSuggestions}
+          >
+            <div id={listboxId} class="k2b-autocomplete__listbox" role="listbox" aria-label={messages().suggestions}>
               <Show when={loading()}>
                 <div class="k2b-autocomplete__status" role="status">
                   <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" />
@@ -495,7 +503,7 @@ export function AutocompleteEditor(props: AutocompleteEditorProps): JSX.Element 
                     <i class="ti ti-alert-circle" aria-hidden="true" />
                     <span>{message()}</span>
                     <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={retryCompletion}>
-                      Retry
+                      {messages().retry}
                     </button>
                   </div>
                 )}

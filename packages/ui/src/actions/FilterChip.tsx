@@ -1,4 +1,5 @@
 import { createMemo, type JSX, Show } from "solid-js";
+import { useUiMessages } from "../intl/messages";
 import Dropdown, { type DropdownItem } from "./Dropdown";
 
 export type FilterChipOption = {
@@ -29,6 +30,7 @@ export type FilterChipProps = {
 
 /** Section-aware controlled filter with immediate single- and multi-select commits. */
 export function FilterChip(props: FilterChipProps): JSX.Element {
+  const messages = useUiMessages();
   const selectedValues = createMemo(() => new Set(props.value));
   const defaultValues = createMemo(() => new Set(props.defaultValue ?? []));
   const sectionByValue = createMemo(() => {
@@ -84,12 +86,12 @@ export function FilterChip(props: FilterChipProps): JSX.Element {
     return [
       ...optionItems(),
       {
-        sectionLabel: "Filter actions",
+        sectionLabel: messages().filterActions,
         items: [
           {
             action: reset,
             icon: hasDefault() ? "ti ti-refresh" : "ti ti-x",
-            label: hasDefault() ? "Reset" : "Clear",
+            label: hasDefault() ? messages().reset : messages().clear,
             variant: "danger",
           },
         ],

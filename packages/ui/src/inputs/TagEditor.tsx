@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
+import { useUiMessages } from "../intl/messages";
 import { Tag } from "../surfaces/Tag";
 import { ColorInput } from "./ChoiceInputs";
 import { TextInput } from "./TextInput";
@@ -39,23 +40,12 @@ export type TagEditorProps<T extends TagEditorItem = TagEditorItem> = {
   class?: string;
 };
 
-const DEFAULT_LABELS: TagEditorLabels = {
-  create: "Add tag",
-  empty: "No tags yet",
-  name: "Name",
-  namePlaceholder: "Tag name",
-  color: "Color",
-  save: "Save",
-  cancel: "Cancel",
-  edit: "Edit",
-  remove: "Delete",
-};
-
 type EditorFormProps = {
   initial?: TagEditorItem;
   labels: TagEditorLabels;
   defaultColor: string;
   busy: boolean;
+  saveError: string;
   onCancel: () => void;
   onDirtyChange?: (dirty: boolean) => void;
   onSave: (value: TagEditorValue) => Promise<void>;
@@ -79,7 +69,7 @@ function EditorForm(props: EditorFormProps): JSX.Element {
     try {
       await props.onSave({ name: normalized, color: color() });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The tag could not be saved.");
+      setError(cause instanceof Error ? cause.message : props.saveError);
     }
   };
 
@@ -125,10 +115,22 @@ function EditorForm(props: EditorFormProps): JSX.Element {
 
 /** Controlled tag manager. Persistence, authorization, confirmation, and toasts stay with the consumer. */
 export function TagEditor<T extends TagEditorItem = TagEditorItem>(props: TagEditorProps<T>): JSX.Element {
+  const messages = useUiMessages();
   const [mode, setMode] = createSignal<"create" | string | null>(null);
   const [busyId, setBusyId] = createSignal<string | null>(null);
   const [rowError, setRowError] = createSignal<{ id: string; message: string }>();
-  const labels = (): TagEditorLabels => ({ ...DEFAULT_LABELS, ...props.labels });
+  const labels = (): TagEditorLabels => ({
+    create: messages().addTag,
+    empty: messages().noTagsYet,
+    name: messages().name,
+    namePlaceholder: messages().tagName,
+    color: messages().color,
+    save: messages().save,
+    cancel: messages().cancel,
+    edit: messages().edit,
+    remove: messages().delete,
+    ...props.labels,
+  });
   const defaultColor = () => props.defaultColor ?? "#6b7280";
   const run = async (id: string, action: () => void | Promise<void>) => {
     if (busyId()) return;
@@ -138,7 +140,7 @@ export function TagEditor<T extends TagEditorItem = TagEditorItem>(props: TagEdi
       await action();
       setMode(null);
     } catch (cause) {
-      setRowError({ id, message: cause instanceof Error ? cause.message : "The tag action failed." });
+      setRowError({ id, message: cause instanceof Error ? cause.message : messages().tagActionFailed });
       throw cause;
     } finally {
       setBusyId(null);
@@ -192,6 +194,7 @@ export function TagEditor<T extends TagEditorItem = TagEditorItem>(props: TagEdi
                     labels={labels()}
                     defaultColor={defaultColor()}
                     busy={busyId() === item.id}
+                    saveError={messages().tagCouldNotBeSaved}
                     onCancel={() => setMode(null)}
                     onDirtyChange={props.onDirtyChange}
                     onSave={(value) => run(item.id, () => props.onUpdate?.(item, value))}
@@ -225,6 +228,7 @@ export function TagEditor<T extends TagEditorItem = TagEditorItem>(props: TagEdi
               labels={labels()}
               defaultColor={defaultColor()}
               busy={busyId() === "create"}
+              saveError={messages().tagCouldNotBeSaved}
               onCancel={() => setMode(null)}
               onDirtyChange={props.onDirtyChange}
               onSave={(value) => run("create", () => create()(value))}

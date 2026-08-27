@@ -1,6 +1,6 @@
 import { LinkCard } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { AdminLayout, getRuntimeContext, hasDedicatedRuntimeRoute } from "@valentinkolb/cloud/ssr";
+import { AdminLayout, getLocalizedRuntimeContext, hasDedicatedRuntimeRoute } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 
 const PLATFORM_TASKS = [
@@ -49,7 +49,7 @@ const PLATFORM_TASKS = [
 ] as const;
 
 export default ssr<AuthContext>(async (c) => {
-  const allApps = getRuntimeContext(c).apps;
+  const allApps = getLocalizedRuntimeContext(c).apps;
   const adminApps = allApps.filter((app) => !!app.adminHref && app.id !== "gateway-ops").sort((a, b) => a.name.localeCompare(b.name));
   const gatewayAdminAvailable = hasDedicatedRuntimeRoute(allApps, "/admin/gateway", "core");
   const observabilityAvailable = hasDedicatedRuntimeRoute(allApps, "/admin/observability", "core");

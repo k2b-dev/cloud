@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, createUniqueId, For, type JSX, onMount, Show } from "solid-js";
 import { Dropdown, type DropdownItem as DropdownItemData } from "../actions/Dropdown";
 import { SelectChip } from "../inputs/SelectChip";
+import { useUiMessages } from "../intl/messages";
 import { ChatContextUsage as ContextUsage } from "./ChatPrimitives";
 import { executeChatAction, filterChatCommands, nextChatCommandIndex, reportChatFailure, runChatSubmission } from "./chat-behavior";
 import type { ChatAction, ChatAttachment, ChatComposerState, ChatContextUsageData, ChatModelOption, ChatSubmitInput } from "./types";
@@ -67,6 +68,7 @@ const attachmentIcon = (attachment: ChatAttachment): string =>
   attachment.icon ?? (attachment.kind === "image" ? "ti ti-photo" : attachment.kind === "resource" ? "ti ti-link" : "ti ti-file");
 
 export function ChatComposer(props: ChatComposerProps): JSX.Element {
+  const messages = useUiMessages();
   const commandListId = `k2b-chat-commands-${createUniqueId().replace(/[^A-Za-z0-9_-]/g, "-")}`;
   const [selectedCommandIndex, setSelectedCommandIndex] = createSignal(0);
   const [dragActive, setDragActive] = createSignal(false);
@@ -106,7 +108,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
     if (props.fileSelection) {
       items.push({
         icon: addingFiles() ? "ti ti-loader-2 k2b-spin" : "ti ti-paperclip",
-        label: props.fileSelection.label ?? "Attach files",
+        label: props.fileSelection.label ?? messages().attachFiles,
         disabled: !canSelectFiles(),
         action: () => fileInputRef?.click(),
       });
@@ -275,10 +277,10 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       data-running={running() ? "true" : undefined}
       data-drag-active={dragActive() ? "true" : undefined}
       role="group"
-      aria-label={props.label ?? "Message composer"}
+      aria-label={props.label ?? messages().messageComposer}
     >
       <Show when={commandsOpen()}>
-        <div id={commandListId} class="k2b-chat-composer__commands" role="listbox" aria-label="Commands">
+        <div id={commandListId} class="k2b-chat-composer__commands" role="listbox" aria-label={messages().commands}>
           <For each={commandMatches()}>
             {(command, index) => (
               <button
@@ -303,7 +305,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       </Show>
 
       <Show when={attachments().length > 0}>
-        <div class="k2b-chat-composer__attachments" role="list" aria-label="Attachments" tabIndex={0}>
+        <div class="k2b-chat-composer__attachments" role="list" aria-label={messages().attachments} tabIndex={0}>
           <For each={attachments()}>
             {(attachment) => (
               <div class="k2b-chat-composer__attachment" role="listitem">
@@ -331,7 +333,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                         href={href()}
                         target="_blank"
                         rel="noopener noreferrer"
-                        aria-label={`Open ${attachment.name} in a new tab`}
+                        aria-label={messages().openInNewTab({ name: attachment.name })}
                       >
                         <Show
                           when={attachment.kind === "image" && attachment.previewUrl}
@@ -361,7 +363,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                   <button
                     type="button"
                     class="k2b-chat-composer__attachment-remove"
-                    aria-label={`Remove ${attachment.name}`}
+                    aria-label={messages().removeNamed({ name: attachment.name })}
                     disabled={blocked()}
                     onClick={() => setAttachments(attachments().filter((candidate) => candidate.id !== attachment.id))}
                   >
@@ -377,7 +379,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       <div
         class="k2b-chat-composer__input"
         role="group"
-        aria-label="Message input"
+        aria-label={messages().messageInput}
         onDragEnter={(event) => {
           if (!canSelectFiles() || !event.dataTransfer?.types.includes("Files")) return;
           event.preventDefault();
@@ -400,7 +402,7 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
       >
         <Show when={dragActive()}>
           <div class="k2b-chat-composer__drop" aria-hidden="true">
-            Drop files to attach
+            {messages().dropFilesToAttach}
           </div>
         </Show>
         {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: popup attributes are conditional with the combobox role */}
@@ -409,8 +411,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           rows={1}
           value={props.value}
           disabled={blocked()}
-          placeholder={props.placeholder ?? (running() ? "Add guidance..." : "Write a message or type / ...")}
-          aria-label={props.inputLabel ?? "Message"}
+          placeholder={props.placeholder ?? (running() ? messages().addGuidance : messages().writeMessage)}
+          aria-label={props.inputLabel ?? messages().message}
           role={commandsOpen() ? "combobox" : undefined}
           aria-autocomplete={commandsOpen() ? "list" : undefined}
           aria-controls={commandsOpen() ? commandListId : undefined}
@@ -444,8 +446,13 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
         <div class="k2b-chat-composer__tools">
           {props.footerTools}
           <Show when={hasAddMenu()}>
-            <Dropdown.Root position="top-right" width="12rem" label="Add to chat" items={menuItems()} disabled={blocked()}>
-              <Dropdown.Trigger appearance="plain" class="k2b-chat-composer__icon-action" label="Add to chat" title="Add to chat">
+            <Dropdown.Root position="top-right" width="12rem" label={messages().addToChat} items={menuItems()} disabled={blocked()}>
+              <Dropdown.Trigger
+                appearance="plain"
+                class="k2b-chat-composer__icon-action"
+                label={messages().addToChat}
+                title={messages().addToChat}
+              >
                 <i class="ti ti-plus" aria-hidden="true" />
               </Dropdown.Trigger>
             </Dropdown.Root>
@@ -466,11 +473,11 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
           </Show>
           <Show when={(props.models?.length ?? 0) > 0}>
             <SelectChip
-              aria-label="Choose model"
+              aria-label={messages().chooseModel}
               position="top-right"
               class="k2b-chat-composer__model"
               menuWidth="15rem"
-              placeholder="Model"
+              placeholder={messages().model}
               value={() => props.selectedModelId ?? ""}
               options={(props.models ?? []).map((model) => ({
                 value: model.id,
@@ -516,16 +523,22 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
                   submitting()
                     ? running()
                       ? runningSubmitIntent() === "queue"
-                        ? "Queueing"
-                        : "Steering"
-                      : "Sending"
+                        ? messages().queueing
+                        : messages().steering
+                      : messages().sending
                     : running()
                       ? runningSubmitIntent() === "queue"
-                        ? "Queue message"
-                        : "Steer response"
-                      : "Send message"
+                        ? messages().queueMessage
+                        : messages().steerResponse
+                      : messages().sendMessage
                 }
-                title={running() ? (runningSubmitIntent() === "queue" ? "Queue message" : "Steer response") : "Send message"}
+                title={
+                  running()
+                    ? runningSubmitIntent() === "queue"
+                      ? messages().queueMessage
+                      : messages().steerResponse
+                    : messages().sendMessage
+                }
                 onClick={() => void submit()}
               >
                 <i class={submitting() ? "ti ti-loader-2 k2b-spin" : "ti ti-arrow-up"} aria-hidden="true" />
@@ -536,8 +549,8 @@ export function ChatComposer(props: ChatComposerProps): JSX.Element {
               type="button"
               class="k2b-chat-composer__stop"
               disabled={stopping()}
-              aria-label={stopping() ? "Stopping" : "Stop response"}
-              title={stopping() ? "Stopping" : "Stop response"}
+              aria-label={stopping() ? messages().stopping : messages().stopResponse}
+              title={stopping() ? messages().stopping : messages().stopResponse}
               onClick={() => reportChatFailure(() => props.onStop?.(), props.onError)}
             >
               <i class={stopping() ? "ti ti-loader-2 k2b-spin" : "ti ti-player-stop"} aria-hidden="true" />

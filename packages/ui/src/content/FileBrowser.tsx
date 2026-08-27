@@ -11,6 +11,7 @@ import { createEffect, createMemo, createResource, createSignal, Match, onCleanu
 import Dropdown from "../actions/Dropdown";
 import { dialogCore } from "../feedback/dialog-core";
 import { prompts } from "../feedback/prompts";
+import { resolveUiMessages, useUiMessages } from "../intl/messages";
 import PanelDialog, { panelDialogOptions } from "../layout/PanelDialog";
 import Placeholder from "../surfaces/Placeholder";
 import FileTree, { type FileTreeEntry } from "./FileTree";
@@ -54,6 +55,7 @@ const parentOf = (path: string): string => {
 };
 
 export function FileBrowserPanel(props: FileBrowserPanelProps) {
+  const messages = useUiMessages();
   // FileSource is an imperative adapter. Its methods may read host signals,
   // but refreshes stay owned by this component (`refetch` / `refreshKey`);
   // tracking those implementation details can otherwise feed a write back
@@ -114,8 +116,8 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
     if (selectedDirty() && current) {
       const confirmed = props.confirmDiscard
         ? await props.confirmDiscard(current, nextPath)
-        : await prompts.confirm("Discard the unsaved changes in this file?", {
-            title: "Discard changes",
+        : await prompts.confirm(messages().discardUnsavedFile, {
+            title: messages().discardChanges,
             variant: "danger",
           });
       if (!confirmed) return false;
@@ -147,7 +149,7 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
 
   const createFile = (dirPath: string) =>
     run(async () => {
-      const name = await prompts.prompt("Name of the new file:", "", { title: "New file" });
+      const name = await prompts.prompt(messages().newFileName, "", { title: messages().newFile });
       if (!name || typeof name !== "string" || !name.trim() || name.includes("/")) return;
       const path = `${dirPath === "/" ? "" : dirPath}/${name.trim()}`;
       if (!(await canLeaveCurrent(path))) return;
@@ -158,7 +160,7 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
 
   const createFolder = (dirPath: string) =>
     void (async () => {
-      const name = await prompts.prompt("Name of the new folder:", "", { title: "New folder" });
+      const name = await prompts.prompt(messages().newFolderName, "", { title: messages().newFolder });
       if (!name || typeof name !== "string" || !name.trim() || name.includes("/")) return;
       const path = `${dirPath === "/" ? "" : dirPath}/${name.trim()}`;
       setPendingFolders((folders) => [...folders, path]);
@@ -228,13 +230,13 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
           return;
         }
         const files = filesBehind(path);
-        if (files.length === 0) throw new Error("This folder is empty.");
+        if (files.length === 0) throw new Error(messages().folderEmpty);
         const zipEntries = await Promise.all(
           files.map(async (file) => ({ filename: file.slice(path.length + 1), source: await contentBytes(file) })),
         );
         downloadFileFromContent(await createZip(zipEntries), `${baseName(path) || "files"}.zip`, "application/zip");
       } catch (error) {
-        void prompts.error(error instanceof Error ? error.message : "Download failed");
+        void prompts.error(error instanceof Error ? error.message : messages().downloadFailed);
       }
     })();
 
@@ -254,33 +256,40 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
   });
 
   const addMenuItems = () => [
-    ...(pathWritable("/") ? [{ icon: "ti ti-file-plus", label: "New file", action: () => createFile("/") }] : []),
-    ...(pathWritable("/") ? [{ icon: "ti ti-folder-plus", label: "New folder", action: () => createFolder("/") }] : []),
-    ...(pathMutable("/") && props.source.upload ? [{ icon: "ti ti-upload", label: "Upload files", action: () => pickUpload("/") }] : []),
+    ...(pathWritable("/") ? [{ icon: "ti ti-file-plus", label: messages().newFile, action: () => createFile("/") }] : []),
+    ...(pathWritable("/") ? [{ icon: "ti ti-folder-plus", label: messages().newFolder, action: () => createFolder("/") }] : []),
+    ...(pathMutable("/") && props.source.upload
+      ? [{ icon: "ti ti-upload", label: messages().uploadFiles, action: () => pickUpload("/") }]
+      : []),
   ];
 
   return (
     <div class={`k2b-content-file-browser ${props.class ?? ""}`} data-default-height={props.class ? undefined : "true"}>
       <div class="k2b-content-file-browser__sidebar">
         <div class="k2b-content-file-browser__header">
-          <p class="k2b-content-file-browser__title">Files</p>
+          <p class="k2b-content-file-browser__title">{messages().files}</p>
           <Show when={addMenuItems().length > 0}>
-            <Dropdown.Root position="bottom-left" items={addMenuItems()} label="Add file, folder, or upload">
-              <Dropdown.Trigger appearance="plain" class="k2b-content-file-browser__add" label="Add file, folder, or upload" title="Add">
+            <Dropdown.Root position="bottom-left" items={addMenuItems()} label={messages().addFileFolderUpload}>
+              <Dropdown.Trigger
+                appearance="plain"
+                class="k2b-content-file-browser__add"
+                label={messages().addFileFolderUpload}
+                title={messages().add}
+              >
                 <i class="ti ti-plus" aria-hidden="true" />
-                <span class="k2b-sr-only">Add file, folder, or upload</span>
+                <span class="k2b-sr-only">{messages().addFileFolderUpload}</span>
               </Dropdown.Trigger>
             </Dropdown.Root>
           </Show>
         </div>
         <Switch>
           <Match when={entries.loading && entries() === undefined}>
-            <Placeholder icon="ti ti-loader-2" title="Loading files…" />
+            <Placeholder icon="ti ti-loader-2" title={messages().loadingFiles} />
           </Match>
           <Match when={entries.error}>
             <Placeholder
               icon="ti ti-alert-circle"
-              title="Failed to load files"
+              title={messages().failedLoadFiles}
               description={String(entries.error?.message ?? entries.error ?? "")}
             />
           </Match>
@@ -294,7 +303,7 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
             />
           </Match>
           <Match when={true}>
-            <Placeholder icon="ti ti-folder-open" title="No files" description="This space is empty." />
+            <Placeholder icon="ti ti-folder-open" title={messages().noFiles} description={messages().spaceEmpty} />
           </Match>
         </Switch>
         <input
@@ -306,9 +315,9 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
         />
       </div>
 
-      <Switch fallback={<Placeholder icon="ti ti-file" title="Select a file" description="Pick a file from the tree to view it." />}>
+      <Switch fallback={<Placeholder icon="ti ti-file" title={messages().selectFile} description={messages().pickFileFromTree} />}>
         <Match when={selectedEntry()?.kind === "folder"}>
-          <Placeholder icon="ti ti-folder" title="Folder selected" description="Choose a file to preview it." />
+          <Placeholder icon="ti ti-folder" title={messages().folderSelected} description={messages().chooseFileToPreview} />
         </Match>
         <Match when={selectedEntry()}>
           {(entry) => (
@@ -342,12 +351,13 @@ export function FileBrowserPanel(props: FileBrowserPanelProps) {
 }
 
 /** Open the file browser as a dialog. Returns when the dialog closes. */
-export const openFileBrowser = (options: { source: FileSource; title?: string; subtitle?: string; icon?: string }): Promise<void> =>
-  dialogCore.open<void>(
+export const openFileBrowser = (options: { source: FileSource; title?: string; subtitle?: string; icon?: string }): Promise<void> => {
+  const messages = resolveUiMessages();
+  return dialogCore.open<void>(
     (close) => (
       <PanelDialog>
         <PanelDialog.Header
-          title={options.title ?? "Files"}
+          title={options.title ?? messages.files}
           subtitle={options.subtitle}
           icon={options.icon ?? "ti ti-folder"}
           close={() => close()}
@@ -359,3 +369,4 @@ export const openFileBrowser = (options: { source: FileSource; title?: string; s
     ),
     panelDialogOptions,
   );
+};

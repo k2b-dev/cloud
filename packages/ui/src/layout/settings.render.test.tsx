@@ -290,7 +290,7 @@ describe("@k2b/ui complete settings surfaces", () => {
     expect(describedBy).toHaveLength(2);
     for (const id of describedBy) expect(field).toContain(`id="${id}"`);
     expect(bar).toContain("2</strong> unsaved changes");
-    expect(footer).toContain("1</strong> unsaved change");
+    expect(footer.replaceAll(/<!--.*?-->/g, "")).toContain("1</strong> unsaved change");
     expect(bar).toContain('role="status"');
     expect(bar).toContain('aria-live="polite"');
     expect(footer).toContain('role="status"');

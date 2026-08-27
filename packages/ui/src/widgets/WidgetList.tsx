@@ -1,4 +1,5 @@
 import { For, type JSX, Show } from "solid-js";
+import { useUiMessages } from "../intl/messages";
 import type { WidgetTone } from "./WidgetHero";
 
 export type WidgetListItem = {
@@ -35,12 +36,13 @@ function ItemContent(props: { item: WidgetListItem }): JSX.Element {
 }
 
 export function WidgetList(props: WidgetListProps): JSX.Element {
+  const messages = useUiMessages();
   return (
     <Show
       when={props.items.length > 0}
       fallback={
         <div class="k2b-widget-list__empty" data-grow={props.grow ? "true" : undefined}>
-          <span>{props.emptyMessage ?? "Nothing here yet."}</span>
+          <span>{props.emptyMessage ?? messages().nothingHere}</span>
         </div>
       }
     >

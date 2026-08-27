@@ -108,6 +108,20 @@ describe("capability API", () => {
     expect(await second.json()).toMatchObject({ apps: [{ appId: "zeta" }], page: { hasMore: false } });
   });
 
+  test("projects localized app presentation into the capability catalog", async () => {
+    const capability = entry();
+    const app = {
+      ...summary(capability),
+      presentation: { baseLocale: "en", translations: { de: { name: "Demo-App", description: "Deutsche Beschreibung" } } },
+    };
+    const catalog = await loadCapabilityCatalogPage(
+      { limit: 10 },
+      { listApps: async () => [app], getCapability: async () => capability },
+      "de-CH",
+    );
+    expect(catalog.apps[0]).toMatchObject({ appName: "Demo-App", appDescription: "Deutsche Beschreibung" });
+  });
+
   test("returns a structured error for an unavailable app", async () => {
     const routes = createCapabilityRoutes({ getCapability: async () => null, authenticate });
     const response = await routes.request("/capabilities/v1/queries/missing/get", {
@@ -117,6 +131,17 @@ describe("capability API", () => {
     });
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ code: "APP_UNAVAILABLE", message: "App missing is not currently available" });
+  });
+
+  test("localizes framework errors without changing their stable code", async () => {
+    const routes = createCapabilityRoutes({ getCapability: async () => null, authenticate });
+    const response = await routes.request("/capabilities/v1/queries/missing/get", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-cloud-locale": "de-CH" },
+      body: JSON.stringify({ input: { id: "one" } }),
+    });
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ code: "APP_UNAVAILABLE", message: "App missing ist derzeit nicht verfügbar" });
   });
 
   test("returns structured registry failures for dispatch and catalog", async () => {

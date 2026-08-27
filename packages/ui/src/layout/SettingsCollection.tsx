@@ -1,5 +1,6 @@
 import { children, createMemo, createUniqueId, For, type JSX, Show } from "solid-js";
 import { IconButton } from "../actions/Button";
+import { useUiMessages } from "../intl/messages";
 import Placeholder from "../surfaces/Placeholder";
 
 const SETTINGS_COLLECTION_ACTION = Symbol("SettingsCollection.Action");
@@ -82,28 +83,31 @@ const SettingsCollectionItemStatus = (props: SettingsCollectionItemStatusProps):
 const SettingsCollectionItemActions = (props: SettingsCollectionItemActionsProps): JSX.Element =>
   definition(SETTINGS_COLLECTION_ITEM_ACTIONS, props);
 
-const SettingsCollectionItemReorder = (props: SettingsCollectionItemReorderProps): JSX.Element => (
-  <>
-    <IconButton
-      label={`Move ${props.label} up`}
-      size="sm"
-      title="Move up"
-      disabled={props.disabled || props.index <= 0}
-      onClick={() => props.onMove(-1)}
-    >
-      <i class="ti ti-arrow-up" aria-hidden="true" />
-    </IconButton>
-    <IconButton
-      label={`Move ${props.label} down`}
-      size="sm"
-      title="Move down"
-      disabled={props.disabled || props.index >= props.count - 1}
-      onClick={() => props.onMove(1)}
-    >
-      <i class="ti ti-arrow-down" aria-hidden="true" />
-    </IconButton>
-  </>
-);
+const SettingsCollectionItemReorder = (props: SettingsCollectionItemReorderProps): JSX.Element => {
+  const messages = useUiMessages();
+  return (
+    <>
+      <IconButton
+        label={messages().moveNamedUp({ label: props.label })}
+        size="sm"
+        title={messages().moveUp}
+        disabled={props.disabled || props.index <= 0}
+        onClick={() => props.onMove(-1)}
+      >
+        <i class="ti ti-arrow-up" aria-hidden="true" />
+      </IconButton>
+      <IconButton
+        label={messages().moveNamedDown({ label: props.label })}
+        size="sm"
+        title={messages().moveDown}
+        disabled={props.disabled || props.index >= props.count - 1}
+        onClick={() => props.onMove(1)}
+      >
+        <i class="ti ti-arrow-down" aria-hidden="true" />
+      </IconButton>
+    </>
+  );
+};
 
 const SettingsCollectionItem = ((props: SettingsCollectionItemProps): JSX.Element =>
   definition(SETTINGS_COLLECTION_ITEM, props)) as SettingsCollectionItemComponent;
@@ -113,6 +117,7 @@ SettingsCollectionItem.Actions = SettingsCollectionItemActions;
 SettingsCollectionItem.Reorder = SettingsCollectionItemReorder;
 
 const SettingsCollection = ((props: SettingsCollectionProps): JSX.Element => {
+  const messages = useUiMessages();
   const resolved = children(() => props.children);
   const items = createMemo(() =>
     collect<SettingsCollectionItemDefinition>(resolved(), (entry): entry is SettingsCollectionItemDefinition =>
@@ -140,7 +145,7 @@ const SettingsCollection = ((props: SettingsCollectionProps): JSX.Element => {
       </header>
       <Show
         when={items().length > 0}
-        fallback={<Placeholder variant="compact" align="left" description={props.empty ?? "Nothing here yet."} />}
+        fallback={<Placeholder variant="compact" align="left" description={props.empty ?? messages().nothingHere} />}
       >
         <ul class="k2b-settings-collection__list">
           <For each={items()}>

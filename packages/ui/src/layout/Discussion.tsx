@@ -1,6 +1,7 @@
 import { createEffect, createSignal, createUniqueId, type JSX, onCleanup, onMount, Show, splitProps } from "solid-js";
 import { Button, IconButton } from "../actions/Button";
 import { MarkdownEditor } from "../inputs/markdown/MarkdownEditor";
+import { useUiMessages } from "../intl/messages";
 
 export type DiscussionProps = Omit<JSX.HTMLAttributes<HTMLElement>, "children" | "class"> & {
   label: JSX.Element;
@@ -93,6 +94,7 @@ const DiscussionRoot = (props: DiscussionProps): JSX.Element => {
 };
 
 const DiscussionComposer = (props: DiscussionComposerProps): JSX.Element => {
+  const messages = useUiMessages();
   const [local, formProps] = splitProps(props, [
     "label",
     "onSubmit",
@@ -117,7 +119,7 @@ const DiscussionComposer = (props: DiscussionComposerProps): JSX.Element => {
       const accepted = await local.onSubmit(normalized);
       if (accepted !== false) setMessage("");
     } catch (error) {
-      setSubmitError(error instanceof Error ? error.message : "Could not post message");
+      setSubmitError(error instanceof Error ? error.message : messages().couldNotPostMessage);
     } finally {
       setSubmitting(false);
     }
@@ -151,7 +153,7 @@ const DiscussionComposer = (props: DiscussionComposerProps): JSX.Element => {
         <div class="k2b-discussion__composer-inset-action">
           <IconButton
             type="submit"
-            label={local.submitLabel ?? "Post message"}
+            label={local.submitLabel ?? messages().postMessage}
             size="sm"
             variant="primary"
             loading={submitting()}
@@ -172,7 +174,7 @@ const DiscussionComposer = (props: DiscussionComposerProps): JSX.Element => {
         {(onCancel) => (
           <footer>
             <Button type="button" variant="ghost" size="xs" disabled={submitting()} onClick={onCancel()}>
-              {local.cancelLabel ?? "Cancel"}
+              {local.cancelLabel ?? messages().cancel}
             </Button>
           </footer>
         )}
@@ -193,6 +195,7 @@ const scrollOwner = (element: HTMLElement): HTMLElement | null => {
 };
 
 const DiscussionList = (props: DiscussionListProps): JSX.Element => {
+  const messages = useUiMessages();
   const [loadingMoreInternally, setLoadingMoreInternally] = createSignal(false);
   const [loadMoreError, setLoadMoreError] = createSignal<string | null>(null);
   const [sentinelVisible, setSentinelVisible] = createSignal(false);
@@ -217,7 +220,7 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
     try {
       loaded = (await props.onLoadMore()) !== false;
     } catch (error) {
-      if (active) setLoadMoreError(error instanceof Error ? error.message : "Could not load earlier messages");
+      if (active) setLoadMoreError(error instanceof Error ? error.message : messages().couldNotLoadEarlierMessages);
     } finally {
       if (active) setLoadingMoreInternally(false);
     }
@@ -264,7 +267,7 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
       <div ref={sentinelRef} class="k2b-discussion__sentinel" aria-hidden="true" />
       <Show when={props.loading}>
         <p class="k2b-discussion__status" role="status">
-          <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" /> {props.loadingLabel ?? "Loading messages"}
+          <i class="ti ti-loader-2 k2b-spin" aria-hidden="true" /> {props.loadingLabel ?? messages().loadingMessages}
         </p>
       </Show>
       <Show when={props.error}>
@@ -273,7 +276,7 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
             <span>{error()}</span>
             <Show when={props.onRetry}>
               <button type="button" onClick={props.onRetry}>
-                Retry
+                {messages().retry}
               </button>
             </Show>
           </div>
@@ -284,7 +287,7 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
           <div class="k2b-discussion__status" role="alert">
             <span>{error()}</span>
             <button type="button" onClick={() => void loadMore(true)}>
-              Retry
+              {messages().retry}
             </button>
           </div>
         )}
@@ -292,7 +295,7 @@ const DiscussionList = (props: DiscussionListProps): JSX.Element => {
       <Show when={!props.loading && !props.error && !loadMoreError() && (canLoadMore() || loadingMore())}>
         <button type="button" class="k2b-discussion__load-more" disabled={loadingMore()} onClick={() => void loadMore()}>
           <i class={`ti ${loadingMore() ? "ti-loader-2 k2b-spin" : "ti-history"}`} aria-hidden="true" />
-          {loadingMore() ? (props.loadingLabel ?? "Loading messages") : (props.loadMoreLabel ?? "Load earlier")}
+          {loadingMore() ? (props.loadingLabel ?? messages().loadingMessages) : (props.loadMoreLabel ?? messages().loadEarlier)}
         </button>
       </Show>
       <ol ref={listRef} class="k2b-discussion__list">

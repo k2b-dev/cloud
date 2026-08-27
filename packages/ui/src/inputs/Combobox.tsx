@@ -1,5 +1,6 @@
 import { createSignal, For, type JSX, Show } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { useUiMessages } from "../intl/messages";
 import { type ChoiceOption, createChoiceLoader, createChoicePopover, nextEnabledChoiceIndex } from "./choice";
 import type { FieldProps, MaybeAccessor } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
@@ -17,6 +18,7 @@ export type ComboboxProps = FieldProps & {
 const iconClass = (icon: string) => (icon.split(/\s+/).includes("ti") ? icon : `ti ${icon}`);
 
 export function Combobox(props: ComboboxProps): JSX.Element {
+  const messages = useUiMessages();
   const meta = createFieldMeta(props.id);
   const listboxId = `${meta.controlId}-listbox`;
   const [localQuery, setLocalQuery] = createSignal("");
@@ -103,7 +105,7 @@ export function Combobox(props: ComboboxProps): JSX.Element {
             id={meta.controlId}
             type="text"
             value={query()}
-            placeholder={props.placeholder ?? "Search..."}
+            placeholder={props.placeholder ?? messages().search}
             disabled={props.disabled}
             role="combobox"
             aria-autocomplete="list"
@@ -132,14 +134,14 @@ export function Combobox(props: ComboboxProps): JSX.Element {
                 <div class="k2b-choice-status" data-tone="danger">
                   <span>{message()}</span>
                   <button type="button" onClick={loader.retry}>
-                    Retry
+                    {messages().retry}
                   </button>
                 </div>
               )}
             </Show>
             <For
               each={loader.error() ? [] : options()}
-              fallback={<div class="k2b-choice-status">{query().length >= 2 ? "No results found" : "Type to search..."}</div>}
+              fallback={<div class="k2b-choice-status">{query().length >= 2 ? messages().noResultsFound : messages().typeToSearch}</div>}
             >
               {(option, index) => (
                 <button

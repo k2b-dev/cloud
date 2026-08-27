@@ -5,7 +5,7 @@ section: Frontend
 order: 810
 description: Render application pages on the server and map them to explicit routes.
 tags: [ssr, routing, solidjs]
-updated: 2026-07-27
+updated: 2026-08-27
 ---
 
 # SSR pages and routing
@@ -46,8 +46,10 @@ The returned function must be synchronous. Solid SSR creates JSX inside
 The framework resolves the request locale into `c.get("page").lang` and the
 document's `<html lang>` attribute for every SSR page; `Layout` provides the
 same value to `@k2b/ui` components and browser islands inherit it from the
-document. See [Locale and time](/en/docs/server/locale-and-time) before
-formatting dates or numbers in a page.
+document. A custom SSR root that uses neither `Layout` nor `AdminLayout` must
+wrap its returned component tree once with `LocaleProvider` from `@k2b/ui`,
+using `getLocale(c)`. See [Internationalization](/en/docs/build/internationalization)
+before formatting or translating values in a page.
 
 ## Authorize page data
 

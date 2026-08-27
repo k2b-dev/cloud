@@ -1,5 +1,6 @@
 import { Link, type LinkNavigateEvent } from "@k2b/ssr/nav";
 import { createMemo, For, type JSX, Show } from "solid-js";
+import { useUiMessages } from "../intl/messages";
 
 export type PaginationProps = {
   currentPage: number;
@@ -37,6 +38,7 @@ const PaginationLink = (props: PaginationLinkProps) =>
 
 /** Link-based pagination with directional navigation and compact mobile disclosure. */
 export const Pagination = (props: PaginationProps): JSX.Element => {
+  const messages = useUiMessages();
   const totalPages = createMemo(() => Math.max(1, Math.floor(Number.isFinite(props.totalPages) ? props.totalPages : 1)));
   const currentPage = createMemo(() =>
     Math.min(totalPages(), Math.max(1, Math.floor(Number.isFinite(props.currentPage) ? props.currentPage : 1))),
@@ -50,13 +52,13 @@ export const Pagination = (props: PaginationProps): JSX.Element => {
 
   return (
     <Show when={totalPages() > 1}>
-      <nav class="k2b-pagination" aria-label="Pagination">
+      <nav class="k2b-pagination" aria-label={messages().pagination}>
         <span class="k2b-sr-only">
-          Page {currentPage()} of {totalPages()}
+          {messages().pageOf({ page: currentPage(), total: totalPages() })}
         </span>
         <div class="k2b-pagination__pages">
           <Show when={currentPage() > 1}>
-            <PaginationLink href={href(currentPage() - 1)} rel="prev" label="Previous page" onNavigate={props.onNavigate}>
+            <PaginationLink href={href(currentPage() - 1)} rel="prev" label={messages().previousPage} onNavigate={props.onNavigate}>
               <i class="ti ti-chevron-left" aria-hidden="true" />
             </PaginationLink>
           </Show>
@@ -80,7 +82,7 @@ export const Pagination = (props: PaginationProps): JSX.Element => {
                     fallback={
                       <PaginationLink
                         href={href(page)}
-                        label={`Page ${page}`}
+                        label={messages().goToPage({ page })}
                         class={mobileVisible() ? "" : "k2b-pagination__page--wide-only"}
                         onNavigate={props.onNavigate}
                       >
@@ -98,7 +100,7 @@ export const Pagination = (props: PaginationProps): JSX.Element => {
           </For>
 
           <Show when={currentPage() < totalPages()}>
-            <PaginationLink href={href(currentPage() + 1)} rel="next" label="Next page" onNavigate={props.onNavigate}>
+            <PaginationLink href={href(currentPage() + 1)} rel="next" label={messages().nextPage} onNavigate={props.onNavigate}>
               <i class="ti ti-chevron-right" aria-hidden="true" />
             </PaginationLink>
           </Show>

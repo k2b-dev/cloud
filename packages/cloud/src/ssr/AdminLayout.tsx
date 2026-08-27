@@ -3,7 +3,7 @@ import type { JSX } from "solid-js/jsx-runtime";
 import type { LayoutAnnouncementsState } from "../server/middleware/settings";
 import AdminSidebar from "./AdminSidebar";
 import Layout from "./Layout";
-import { getRuntimeContext, type RuntimeContext } from "./runtime";
+import { getLocalizedRuntimeContext, type RuntimeContext } from "./runtime";
 
 type Breadcrumb = { title: string; href?: string };
 type AdminLayoutContext = {
@@ -22,7 +22,7 @@ type Props = {
 export default function AdminLayout({ children, c, title }: Props) {
   const url = new URL(c.req.raw.url);
   const currentPath = `${url.pathname}${url.search}`;
-  const runtime = getRuntimeContext(c);
+  const runtime = getLocalizedRuntimeContext(c);
   const breadcrumbs: Breadcrumb[] = [
     { title: "Start", href: "/" },
     { title: "Admin", href: "/admin" },

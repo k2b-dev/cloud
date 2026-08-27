@@ -6,6 +6,8 @@ import {
   CapabilityCatalogSchema,
   capabilityResultSchema,
 } from "../contracts/capabilities";
+import { capabilityMessages } from "../shared/capability-messages";
+import { LOCALE_HEADER } from "../shared/locale";
 import { readCapabilityResponse } from "./response";
 import type {
   CapabilityCatalogClientResult,
@@ -38,20 +40,29 @@ const requestUrl = (baseUrl: string, path: string): string => `${baseUrl.replace
 const unavailable = (
   cause: unknown,
   invocation?: Pick<CapabilityInvocation, "kind" | "idempotencyKey">,
+  locale?: string,
 ): { ok: false; error: CapabilityClientError } => ({
   ok: false,
   error:
     invocation?.kind === "action" && !invocation.idempotencyKey
       ? {
           code: CAPABILITY_FRAMEWORK_ERROR_CODES.actionOutcomeUnknown,
-          message: "The Action response was lost and its outcome is unknown; do not retry automatically",
+          message: capabilityMessages(locale).actionOutcomeUnknown,
           status: 502,
           details: { retrySafe: false },
         }
       : cause instanceof Error && cause.name === "AbortError"
-        ? { code: CAPABILITY_FRAMEWORK_ERROR_CODES.requestCancelled, message: "Capability request was cancelled", status: 499 }
-        : { code: CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable, message: "Cloud is unavailable", status: 503 },
+        ? { code: CAPABILITY_FRAMEWORK_ERROR_CODES.requestCancelled, message: capabilityMessages(locale).requestCancelled, status: 499 }
+        : { code: CAPABILITY_FRAMEWORK_ERROR_CODES.appUnavailable, message: capabilityMessages(locale).cloudUnavailable, status: 503 },
 });
+
+const clientLocale = (headers?: HeadersInit): string | undefined => {
+  try {
+    return new Headers(headers).get(LOCALE_HEADER) ?? (typeof document === "undefined" ? undefined : document.documentElement.lang);
+  } catch {
+    return typeof document === "undefined" ? undefined : document.documentElement.lang;
+  }
+};
 
 const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, TInput = unknown>(
   invocation: CapabilityInvocation<TInput>,
@@ -78,11 +89,11 @@ const invokeCapabilityWithResultSchema = async <TDataSchema extends z.ZodType, T
       (result.error.code === CAPABILITY_FRAMEWORK_ERROR_CODES.invalidAppResponse ||
         result.error.code === CAPABILITY_FRAMEWORK_ERROR_CODES.responseTooLarge)
     ) {
-      return unavailable(new Error("Action response was invalid"), invocation);
+      return unavailable(new Error("Action response was invalid"), invocation, clientLocale(options.headers));
     }
     return result;
   } catch (cause) {
-    return unavailable(cause, invocation);
+    return unavailable(cause, invocation, clientLocale(options.headers));
   }
 };
 
@@ -111,7 +122,7 @@ export const listCapabilityCatalog = async (options: CapabilityCatalogOptions = 
     });
     return readCapabilityResponse(response, CapabilityCatalogSchema, CAPABILITY_MAX_CATALOG_BYTES);
   } catch (cause) {
-    return unavailable(cause);
+    return unavailable(cause, undefined, clientLocale(options.headers));
   }
 };
 
@@ -133,6 +144,6 @@ export const reviewCapabilityAction = async <TInput = unknown>(
     });
     return readCapabilityResponse(response, CapabilityActionReviewSchema);
   } catch (cause) {
-    return unavailable(cause);
+    return unavailable(cause, undefined, clientLocale(options.headers));
   }
 };

@@ -2,6 +2,7 @@ import { type DateContext, dates } from "@k2b/stdlib";
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
 import { useDateConfigLocale } from "../intl/locale";
+import { useUiMessages } from "../intl/messages";
 import {
   type DateRangeValue,
   dateKey,
@@ -101,6 +102,7 @@ function PickerShell<T>(props: {
   wide?: boolean;
   timezone?: string;
 }): JSX.Element {
+  const messages = useUiMessages();
   const meta = createFieldMeta(props.owner.id);
   const [open, setOpen] = createSignal(false);
   const error = () => resolveMaybeAccessor(props.owner.error);
@@ -182,7 +184,7 @@ function PickerShell<T>(props: {
         >
           <i class={`${props.icon} k2b-date-trigger__icon`} aria-hidden="true" />
           <span class="k2b-date-trigger__value">
-            <Show when={props.valueLabel()} fallback={props.owner.placeholder ?? "Pick date"}>
+            <Show when={props.valueLabel()} fallback={props.owner.placeholder ?? messages().pickDate}>
               {props.valueContent?.() ?? props.valueLabel()}
             </Show>
           </span>
@@ -193,7 +195,7 @@ function PickerShell<T>(props: {
           <button
             type="button"
             class="k2b-date-trigger__clear k2b-input-clear-action"
-            aria-label="Clear date"
+            aria-label={messages().clearDate}
             onClick={(event) => {
               event.stopPropagation();
               close();
@@ -211,7 +213,7 @@ function PickerShell<T>(props: {
           class="k2b-date-popover"
           popover="auto"
           role="dialog"
-          aria-label={typeof props.owner.label === "string" ? props.owner.label : "Date picker"}
+          aria-label={typeof props.owner.label === "string" ? props.owner.label : messages().datePicker}
           onToggle={(event) => {
             const nextOpen = event.newState === "open";
             setOpen(nextOpen);
@@ -237,9 +239,10 @@ function PickerShell<T>(props: {
 }
 
 function PresetRail<T>(props: { presets?: readonly DatePreset<T>[]; onSelect: (value: T) => void }): JSX.Element {
+  const messages = useUiMessages();
   return (
     <Show when={props.presets?.length}>
-      <aside class="k2b-date-presets" aria-label="Date presets">
+      <aside class="k2b-date-presets" aria-label={messages().datePresets}>
         <For each={props.presets}>
           {(preset) => (
             <button type="button" onClick={() => props.onSelect(preset.value)}>
@@ -262,6 +265,7 @@ function DatePickerPanel(props: {
   onDayPreview?: (date: string | null) => void;
   dateConfig?: DateContext;
 }): JSX.Element {
+  const messages = useUiMessages();
   const [view, setView] = createSignal<PanelView>("days");
   const context = createMemo(() => pickerContext(props.dateConfig));
   const month = createMemo(() => yearMonth(props.visibleMonth(), context()));
@@ -312,8 +316,8 @@ function DatePickerPanel(props: {
 
   const moveMonth = (delta: number) => props.setVisibleMonth(dates.addMonths(props.visibleMonth(), delta, context()));
   const moveYear = (delta: number) => props.setVisibleMonth(monthDate(month().year + delta, month().month, context()));
-  const previousLabel = () => (view() === "days" ? "Previous month" : "Previous year");
-  const nextLabel = () => (view() === "days" ? "Next month" : "Next year");
+  const previousLabel = () => (view() === "days" ? messages().previousMonth : messages().previousYear);
+  const nextLabel = () => (view() === "days" ? messages().nextMonth : messages().nextYear);
 
   const focusDate = (date: Date) => {
     const targetKey = dateKey(date, context());
@@ -346,7 +350,7 @@ function DatePickerPanel(props: {
   };
 
   return (
-    <section ref={calendar} class="k2b-date-calendar" aria-label="Calendar">
+    <section ref={calendar} class="k2b-date-calendar" aria-label={messages().calendar}>
       <header class="k2b-date-calendar__header">
         <button
           type="button"
@@ -442,6 +446,7 @@ function DatePickerPanel(props: {
 }
 
 function TimeInput(props: { time: string; onChange: (time: string) => void; label?: string }): JSX.Element {
+  const messages = useUiMessages();
   return (
     <label class="k2b-date-time">
       <Show when={props.label}>
@@ -455,7 +460,7 @@ function TimeInput(props: { time: string; onChange: (time: string) => void; labe
           placeholder="09:00"
           onInput={(event) => props.onChange(filterTimeInput(event.currentTarget.value))}
           onBlur={() => props.onChange(normalizeTimeInput(props.time))}
-          aria-label={props.label ? `${props.label} time` : "Time"}
+          aria-label={props.label ? messages().timeLabel({ label: props.label }) : messages().time}
         />
         <i class="ti ti-clock" aria-hidden="true" />
       </span>
@@ -575,6 +580,7 @@ export function DateTimePicker(props: DateTimePickerProps): JSX.Element {
 }
 
 export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
+  const messages = useUiMessages();
   const withTime = () => props.withTime ?? false;
   const value = () => resolveMaybeAccessor(props.value);
   const dateConfig = useDateConfigLocale(() => props.dateConfig);
@@ -611,7 +617,7 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
     const format = withTime() ? formatDateTimeValue : displayDate;
     return (
       <span class="k2b-date-range-value">
-        <span>{value().start ? format(value().start, dateConfig()) : "Start"}</span>
+        <span>{value().start ? format(value().start, dateConfig()) : messages().start}</span>
         <i class="ti ti-arrow-narrow-right" aria-hidden="true" />
         <span>{value().end ? format(value().end, dateConfig()) : "End"}</span>
       </span>
@@ -732,14 +738,14 @@ export function DateRangePicker(props: DateRangePickerProps): JSX.Element {
 
           <Show when={withTime()}>
             <div class="k2b-date-range-times">
-              <TimeInput label="Start" time={startTime()} onChange={setStartTime} />
-              <TimeInput label="End" time={endTime()} onChange={setEndTime} />
+              <TimeInput label={messages().start} time={startTime()} onChange={setStartTime} />
+              <TimeInput label={messages().end} time={endTime()} onChange={setEndTime} />
             </div>
           </Show>
 
           <div class="k2b-date-actions">
             <Show when={withTime() && props.durationPresets?.length}>
-              <div class="k2b-date-durations" role="group" aria-label="Duration presets">
+              <div class="k2b-date-durations" role="group" aria-label={messages().durationPresets}>
                 <For each={props.durationPresets}>
                   {(preset) => (
                     <button type="button" aria-pressed={durationMinutes() === preset.minutes} onClick={() => applyDuration(preset.minutes)}>

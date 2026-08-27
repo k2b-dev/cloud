@@ -1,6 +1,7 @@
 import { createSignal, For, type JSX, onCleanup, Show } from "solid-js";
 import { Dropdown, type DropdownItem } from "../actions/Dropdown";
 import { Tooltip } from "../feedback/Tooltip";
+import { type UiMessages, useUiMessages } from "../intl/messages";
 import { ProgressBar } from "../surfaces/ProgressBar";
 import { executeChatAction } from "./chat-behavior";
 import type { ChatAction, ChatActivityTone, ChatAttachment, ChatContextUsageData, ChatMessageStatus, ChatRole } from "./types";
@@ -50,17 +51,17 @@ export type ChatContextUsageProps = ChatContextUsageData & {
   class?: string;
 };
 
-const roleLabel = (role: ChatRole): string => {
-  if (role === "assistant") return "Assistant";
-  if (role === "user") return "User";
-  if (role === "tool") return "Tool";
-  return "System";
+const roleLabel = (role: ChatRole, messages: UiMessages): string => {
+  if (role === "assistant") return messages.assistant;
+  if (role === "user") return messages.user;
+  if (role === "tool") return messages.tool;
+  return messages.system;
 };
 
-const statusLabel = (status: ChatMessageStatus | undefined): string | null => {
-  if (status === "pending") return "Waiting";
-  if (status === "streaming") return "Generating";
-  if (status === "error") return "Failed";
+const statusLabel = (status: ChatMessageStatus | undefined, messages: UiMessages): string | null => {
+  if (status === "pending") return messages.waiting;
+  if (status === "streaming") return messages.generating;
+  if (status === "error") return messages.failed;
   return null;
 };
 
@@ -113,10 +114,11 @@ const dateTime = (value: string | Date | undefined): string | null => {
 };
 
 export function ChatMessage(props: ChatMessageProps): JSX.Element {
+  const messages = useUiMessages();
   const [busyActionId, setBusyActionId] = createSignal<string | null>(null);
   const [completedActionId, setCompletedActionId] = createSignal<string | null>(null);
   let completedTimer: ReturnType<typeof setTimeout> | undefined;
-  const status = () => statusLabel(props.status);
+  const status = () => statusLabel(props.status, messages());
   const timestamp = () => dateTime(props.createdAt);
   // Locale and timezone are application policy. Requiring an explicit visible
   // label keeps SSR and hydration byte-stable while `createdAt` still supplies
@@ -170,9 +172,9 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
       data-chat-anchor={props.anchorId !== undefined ? String(props.anchorId) : undefined}
       aria-busy={props.status === "pending" || props.status === "streaming" ? "true" : undefined}
     >
-      <span class="k2b-sr-only">{props.label ?? roleLabel(props.role)}: </span>
+      <span class="k2b-sr-only">{props.label ?? roleLabel(props.role, messages())}: </span>
       <Show when={(props.attachments?.length ?? 0) > 0}>
-        <div class="k2b-chat-message__attachments" role="list" aria-label="Attachments">
+        <div class="k2b-chat-message__attachments" role="list" aria-label={messages().attachments}>
           <For each={props.attachments}>
             {(attachment) => {
               const content = () => (
@@ -205,7 +207,7 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
                       href={href()}
                       target="_blank"
                       rel="noopener noreferrer"
-                      aria-label={`Open ${attachment.name} in a new tab`}
+                      aria-label={messages().openInNewTab({ name: attachment.name })}
                     >
                       {content()}
                     </a>
@@ -238,13 +240,13 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
               </Show>
             }
           >
-            <span class="k2b-chat-message__status k2b-chat-message__status--streaming" role="status" aria-label="Generating">
+            <span class="k2b-chat-message__status k2b-chat-message__status--streaming" role="status" aria-label={messages().generating}>
               <ChatProgressDots />
             </span>
           </Show>
           <Show when={time()}>{(label) => <time dateTime={timestamp() ?? undefined}>{label()}</time>}</Show>
           <Show when={actions().length > 0 && actionDisplay() === "inline"}>
-            <span class="k2b-chat-message__actions" role="group" aria-label="Message actions">
+            <span class="k2b-chat-message__actions" role="group" aria-label={messages().messageActions}>
               <For each={actions()}>
                 {(action) => (
                   <button
@@ -263,8 +265,13 @@ export function ChatMessage(props: ChatMessageProps): JSX.Element {
             </span>
           </Show>
           <Show when={actions().length > 0 && actionDisplay() === "menu"}>
-            <Dropdown.Root position="bottom-left" width="12rem" label="Message actions" items={menuItems()}>
-              <Dropdown.Trigger appearance="plain" class="k2b-chat-message__menu" label="Message actions" title="Message actions">
+            <Dropdown.Root position="bottom-left" width="12rem" label={messages().messageActions} items={menuItems()}>
+              <Dropdown.Trigger
+                appearance="plain"
+                class="k2b-chat-message__menu"
+                label={messages().messageActions}
+                title={messages().messageActions}
+              >
                 <i class="ti ti-dots" aria-hidden="true" />
               </Dropdown.Trigger>
             </Dropdown.Root>
@@ -339,8 +346,9 @@ export function ChatActivity(props: ChatActivityProps): JSX.Element {
 }
 
 export function ChatContextUsage(props: ChatContextUsageProps): JSX.Element {
+  const messages = useUiMessages();
   const formatNumber = (value: number) => (props.formatNumber ?? formatStableInteger)(value);
-  const formattedUsageValue = (value: number | null): string => (value === null ? "Unknown" : formatNumber(value));
+  const formattedUsageValue = (value: number | null): string => (value === null ? messages().unknown : formatNumber(value));
   const usage = () => normalizedUsage(props.usage);
   const loopUsage = () => normalizedUsage(props.loopUsage);
   const total = () => usage().total ?? 0;
@@ -351,11 +359,12 @@ export function ChatContextUsage(props: ChatContextUsageProps): JSX.Element {
   const accessibleLabel = () => {
     if (!reported()) {
       return windowSize() > 0
-        ? `Context usage unavailable, ${formatNumber(windowSize())} token context window`
-        : "Context usage unavailable";
+        ? messages().contextUsageUnavailableWithWindow({ window: formatNumber(windowSize()) })
+        : messages().contextUsageUnavailable;
     }
-    const usage = `${formatNumber(total())} tokens used`;
-    return percent() === null ? usage : `${usage}, ${percent()}% of the context window`;
+    return percent() === null
+      ? messages().tokensUsed({ total: formatNumber(total()) })
+      : messages().tokensUsedPercent({ total: formatNumber(total()), percent: percent()! });
   };
 
   return (
@@ -363,41 +372,46 @@ export function ChatContextUsage(props: ChatContextUsageProps): JSX.Element {
       placement="top"
       content={
         <div class="k2b-chat-context__tooltip">
-          <strong>Last request context</strong>
+          <strong>{messages().lastRequestContext}</strong>
           <Show when={percent() !== null}>
-            <ProgressBar value={percent() ?? 0} size="xs" tone={(percent() ?? 0) >= 85 ? "danger" : "info"} label="Context window used" />
+            <ProgressBar
+              value={percent() ?? 0}
+              size="xs"
+              tone={(percent() ?? 0) >= 85 ? "danger" : "info"}
+              label={messages().contextWindowUsed}
+            />
           </Show>
           <dl>
             <Show when={props.modelLabel}>
               {(model) => (
                 <div>
-                  <dt>Model</dt>
+                  <dt>{messages().model}</dt>
                   <dd>{model()}</dd>
                 </div>
               )}
             </Show>
             <div>
-              <dt>Input</dt>
+              <dt>{messages().input}</dt>
               <dd>{formattedUsageValue(usage().input)}</dd>
             </div>
             <div>
-              <dt>Output</dt>
+              <dt>{messages().output}</dt>
               <dd>{formattedUsageValue(usage().output)}</dd>
             </div>
             <Show when={loopUsage().reported}>
               <div>
-                <dt>Loop total</dt>
+                <dt>{messages().loopTotal}</dt>
                 <dd>{formattedUsageValue(loopUsage().total)}</dd>
               </div>
             </Show>
             <div>
-              <dt>Window</dt>
-              <dd>{windowSize() > 0 ? formatNumber(windowSize()) : "Not configured"}</dd>
+              <dt>{messages().window}</dt>
+              <dd>{windowSize() > 0 ? formatNumber(windowSize()) : messages().notConfigured}</dd>
             </div>
             <Show when={remaining() !== null}>
               <div>
-                <dt>Remaining</dt>
-                <dd>{remaining() === null ? "Unknown" : formatNumber(remaining()!)}</dd>
+                <dt>{messages().remaining}</dt>
+                <dd>{remaining() === null ? messages().unknown : formatNumber(remaining()!)}</dd>
               </div>
             </Show>
           </dl>

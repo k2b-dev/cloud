@@ -3,6 +3,7 @@ import type { AppAppearanceColor } from "../contracts/app";
 import type { CapabilityManifest } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry, HelpRegistryEntry } from "../contracts/registry";
 import type { DashboardWidgetPresentation } from "../contracts/widgets";
+import { resolveAppPresentations } from "../shared/app-presentation";
 import { parseCapabilityManifest } from "./capabilities";
 import { validateAppRegistryEntry } from "./registry-validation";
 
@@ -261,8 +262,9 @@ export const listAppsDetailed = async (): Promise<AppRegistryDetail[]> => {
  * one app, declaration order is preserved. Duplicate `href`s are de-duped
  * (last-seen wins).
  */
-export const listLegalLinks = async (): Promise<Array<{ label: string; href: string; icon?: string }>> => {
-  const apps = await listApps();
+export const listLegalLinks = async (locale?: string): Promise<Array<{ label: string; href: string; icon?: string }>> => {
+  const registeredApps = await listApps();
+  const apps = locale ? resolveAppPresentations(registeredApps, locale) : registeredApps;
   const seen = new Map<string, { label: string; href: string; icon?: string }>();
   for (const app of apps) {
     for (const link of app.legalLinks ?? []) seen.set(link.href, { ...link });

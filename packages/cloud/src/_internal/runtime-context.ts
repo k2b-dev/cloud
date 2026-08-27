@@ -18,9 +18,26 @@ export const buildRuntimeFromRegistry = (entries: AppRegistryEntry[], capabiliti
       name: e.name,
       icon: e.icon,
       description: e.description,
+      presentation: e.presentation
+        ? {
+            baseLocale: e.presentation.baseLocale,
+            translations: Object.fromEntries(
+              Object.entries(e.presentation.translations).map(([locale, translation]) => [
+                locale,
+                {
+                  ...translation,
+                  adminGroups: translation.adminGroups ? { ...translation.adminGroups } : undefined,
+                  adminLinks: translation.adminLinks ? { ...translation.adminLinks } : undefined,
+                  legalLinks: translation.legalLinks ? { ...translation.legalLinks } : undefined,
+                },
+              ]),
+            ),
+          }
+        : undefined,
       appearance: e.appearance,
       adminHref: e.nav?.adminHref,
       adminNav: e.adminNav?.map((group) => ({
+        id: group.id,
         label: group.label,
         links: group.links.map((link) => ({ ...link })),
       })),

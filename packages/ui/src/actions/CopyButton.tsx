@@ -1,5 +1,6 @@
 import { copyToClipboard } from "@k2b/stdlib/browser";
 import { createSignal, type JSX, onCleanup, splitProps } from "solid-js";
+import { useUiMessages } from "../intl/messages";
 import { Button, type ButtonProps } from "./Button";
 
 export type CopyButtonValue = { text: string; value?: string } | { text?: string; value: string };
@@ -28,6 +29,7 @@ export async function copyText(
 }
 
 export function CopyButton(props: CopyButtonProps): JSX.Element {
+  const messages = useUiMessages();
   const [local, rest] = splitProps(props, [
     "class",
     "copiedLabel",
@@ -68,7 +70,7 @@ export function CopyButton(props: CopyButtonProps): JSX.Element {
     resetTimer = setTimeout(() => setCopied(false), local.resetAfter ?? 2000);
   };
 
-  const visibleLabel = () => (copied() ? (local.copiedLabel ?? "Copied") : (local.label ?? "Copy"));
+  const visibleLabel = () => (copied() ? (local.copiedLabel ?? messages().copied) : (local.label ?? messages().copy));
   const icon = () => (copied() ? "ti ti-check" : "ti ti-copy");
   const iconOnly = () => local.iconOnly ?? local.label === undefined;
   const buttonLabel = () => (local.loading && local.loadingLabel ? local.loadingLabel : visibleLabel());

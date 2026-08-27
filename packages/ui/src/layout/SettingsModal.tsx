@@ -1,4 +1,5 @@
 import { children, createMemo, createSignal, createUniqueId, For, type JSX, Show } from "solid-js";
+import { useUiMessages } from "../intl/messages";
 import { assertUniqueStableUiIds } from "./stable-id";
 
 const SETTINGS_MODAL_TAB = Symbol("SettingsModal.Tab");
@@ -111,6 +112,7 @@ function SettingsModalFooter(props: SettingsModalFooterProps): JSX.Element {
 }
 
 const SettingsModal = ((props: SettingsModalProps): JSX.Element => {
+  const messages = useUiMessages();
   const resolved = children(() => props.children);
   const railEntries = createMemo(() => collectRailEntries(resolved()));
   const tabs = createMemo(() => {
@@ -181,12 +183,17 @@ const SettingsModal = ((props: SettingsModalProps): JSX.Element => {
   return (
     <div class={`k2b-settings ${props.class ?? ""}`} role="region" aria-label={props.title}>
       <Show when={props.onClose}>
-        <button type="button" class="k2b-settings__close k2b-icon-button" aria-label={props.closeLabel ?? "Close"} onClick={props.onClose}>
+        <button
+          type="button"
+          class="k2b-settings__close k2b-icon-button"
+          aria-label={props.closeLabel ?? messages().close}
+          onClick={props.onClose}
+        >
           <i class="ti ti-x" aria-hidden="true" />
         </button>
       </Show>
       <aside class="k2b-settings__rail">
-        <nav class="k2b-settings__tabs" aria-label={`${props.title} sections`} role="tablist">
+        <nav class="k2b-settings__tabs" aria-label={messages().sectionsLabel({ title: props.title })} role="tablist">
           <For each={railEntries()}>
             {(entry) =>
               isGroupDefinition(entry) ? (

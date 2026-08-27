@@ -1,5 +1,6 @@
 import { ButtonLink } from "@k2b/ui";
 import { listLegalLinks } from "@valentinkolb/cloud";
+import { getLocale } from "@valentinkolb/cloud/server";
 import { coreSettings } from "@valentinkolb/cloud/services";
 import { normalizeRedirectTo, readThemeFromCookieHeader } from "@valentinkolb/cloud/shared";
 import { ssr } from "../../../config";
@@ -7,7 +8,7 @@ import NewPasswordForm from "./NewPasswordForm.island";
 
 /** Set new password page (for expired/temporary passwords). */
 export default ssr(async (c) => {
-  const [rawAppName, legalLinks] = await Promise.all([coreSettings.get<string>("app.name"), listLegalLinks()]);
+  const [rawAppName, legalLinks] = await Promise.all([coreSettings.get<string>("app.name"), listLegalLinks(getLocale(c))]);
   const appName = rawAppName || "My App";
   const params = new URL(c.req.url).searchParams;
   const user = params.get("ipa-uid") ?? "";

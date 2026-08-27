@@ -1,7 +1,7 @@
 import { i18n } from "@k2b/stdlib";
 import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
 import { resolveHelpManifest } from "@valentinkolb/cloud/shared";
-import { getRuntimeContext } from "@valentinkolb/cloud/ssr";
+import { getLocalizedRuntimeContext } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import CoreLayoutHelp from "../CoreLayoutHelp.island";
 
@@ -18,7 +18,7 @@ const messages = i18n.define({
 export default ssr<AuthContext>((c) => {
   const locale = getLocale(c);
   const { t } = messages.resolve([locale]);
-  const app = getRuntimeContext(c).apps.find((candidate) => candidate.id === c.req.param("appId"));
+  const app = getLocalizedRuntimeContext(c).apps.find((candidate) => candidate.id === c.req.param("appId"));
   const help = app?.help ? resolveHelpManifest(app.help, locale) : undefined;
   if (!app || !help) {
     c.status(404);

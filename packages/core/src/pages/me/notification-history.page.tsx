@@ -1,10 +1,9 @@
 import { dates } from "@k2b/stdlib";
 import { DataTable, type DataTableColumn, Pagination, Placeholder } from "@k2b/ui";
-import { listApps } from "@valentinkolb/cloud";
 import type { NotificationDeliveryStatus, UserNotificationHistoryItem } from "@valentinkolb/cloud/contracts";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { notifications } from "@valentinkolb/cloud/services";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import { getLocalizedRuntimeContext, Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import AccountHub, { AccountPageHeader, AccountSubnav, notificationViews } from "./AccountHub";
 import NotificationHistoryFilters from "./NotificationHistoryFilters.island";
@@ -30,10 +29,8 @@ export default ssr<AuthContext>(async (c) => {
   const rawStatus = c.req.query("status");
   const status =
     rawStatus && historyStatuses.has(rawStatus as NotificationDeliveryStatus) ? (rawStatus as NotificationDeliveryStatus) : undefined;
-  const [history, registeredApps] = await Promise.all([
-    notifications.user.history.list({ userId: user.id, page, perPage: 25, status }),
-    listApps(),
-  ]);
+  const history = await notifications.user.history.list({ userId: user.id, page, perPage: 25, status });
+  const registeredApps = getLocalizedRuntimeContext(c).apps;
   const appNames = new Map(registeredApps.map((app) => [app.id, app.name]));
   const baseUrl = status ? `/me/notifications/history?status=${encodeURIComponent(status)}&page=` : "/me/notifications/history?page=";
 

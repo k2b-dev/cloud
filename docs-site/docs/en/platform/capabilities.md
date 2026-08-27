@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-08-23
+updated: 2026-08-27
 ---
 
 # App capabilities
@@ -724,6 +724,10 @@ Framework errors include `VALIDATION_FAILED`, `SCHEMA_MISMATCH`,
 own domain error codes. Provider failures accept the explicit HTTP statuses
 `400`, `401`, `403`, `404`, `409`, `429`, `499`, `500`, `502`, `503`, and
 `504`; other statuses fail closed as an invalid provider response.
+Cloud resolves the human `message` of framework-owned failures from the
+caller's request locale without changing the code, status, details, or retry
+semantics. Provider-owned failures remain the application's responsibility and
+must already contain their final localized message.
 `DEADLINE_EXCEEDED` is retry-safe for Queries and required-idempotency Actions.
 `ACTION_OUTCOME_UNKNOWN` means a non-idempotent
 Action may already have taken effect and must not be retried automatically.

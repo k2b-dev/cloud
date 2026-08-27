@@ -1,5 +1,6 @@
 import { createEffect, createSignal, createUniqueId, type JSX, Show } from "solid-js";
 import { createFieldMeta, Field, fieldControlAria } from "../internal/field";
+import { useUiMessages } from "../intl/messages";
 import type { ValueFieldProps } from "./field-contract";
 import { resolveMaybeAccessor } from "./field-contract";
 
@@ -12,10 +13,11 @@ export type TagsInputProps = ValueFieldProps<string[]> & {
 };
 
 export function TagsInput(props: TagsInputProps): JSX.Element {
+  const messages = useUiMessages();
   const meta = createFieldMeta(props.id);
   const announcementId = `k2b-tags-${createUniqueId()}`;
   const error = () => resolveMaybeAccessor(props.error);
-  const placeholder = () => props.placeholder ?? "Tags (e.g. Tag 1, Tag 2,...)";
+  const placeholder = () => props.placeholder ?? messages().tagsPlaceholder;
   const [focused, setFocused] = createSignal(false);
   let focusStartValue: readonly string[] = [];
   const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
@@ -45,7 +47,12 @@ export function TagsInput(props: TagsInputProps): JSX.Element {
     const removed = previous.filter((tag) => !nextTags.has(tag));
     const announcement = document.getElementById(announcementId);
     if (announcement) {
-      announcement.textContent = `${added.length ? `Tags added: ${added.join(", ")}. ` : ""}${removed.length ? `Tags removed: ${removed.join(", ")}.` : ""}`;
+      announcement.textContent = [
+        added.length ? messages().tagsAdded({ tags: added.join(", ") }) : "",
+        removed.length ? messages().tagsRemoved({ tags: removed.join(", ") }) : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
     }
   };
 

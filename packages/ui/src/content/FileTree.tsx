@@ -8,8 +8,9 @@
 import { fileIcons } from "@k2b/stdlib";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import ContextMenu from "../actions/ContextMenu";
-import { allFolderPaths, buildTree, type FileTreeEntry, flattenVisible, parentOf, type TreeNode } from "./file-tree";
 import Dropdown, { type DropdownItem } from "../actions/Dropdown";
+import { useUiMessages } from "../intl/messages";
+import { allFolderPaths, buildTree, type FileTreeEntry, flattenVisible, parentOf, type TreeNode } from "./file-tree";
 
 export type { FileTreeEntry } from "./file-tree";
 
@@ -52,6 +53,7 @@ export type FileTreeProps = {
 };
 
 export default function FileTree(props: FileTreeProps) {
+  const messages = useUiMessages();
   let previousTree: TreeNode[] = [];
   const tree = createMemo(() => (previousTree = buildTree(props.entries, previousTree)));
 
@@ -151,23 +153,32 @@ export default function FileTree(props: FileTreeProps) {
     tree();
     const items: DropdownItem[] = [...(props.contextMenu?.(node.entry) ?? [])];
     if (node.isFolder && props.actions?.createFile) {
-      items.push({ icon: "ti ti-file-plus", label: "New file", action: () => void props.actions?.createFile?.(node.entry.path) });
+      items.push({ icon: "ti ti-file-plus", label: messages().newFile, action: () => void props.actions?.createFile?.(node.entry.path) });
     }
     if (node.isFolder && props.actions?.createFolder) {
-      items.push({ icon: "ti ti-folder-plus", label: "New folder", action: () => void props.actions?.createFolder?.(node.entry.path) });
+      items.push({
+        icon: "ti ti-folder-plus",
+        label: messages().newFolder,
+        action: () => void props.actions?.createFolder?.(node.entry.path),
+      });
     }
     if (props.actions?.download) {
       items.push({
         icon: node.isFolder ? "ti ti-file-zip" : "ti ti-download",
-        label: node.isFolder ? "Download as ZIP" : "Download",
+        label: node.isFolder ? messages().downloadAsZip : messages().download,
         action: () => void props.actions?.download?.(node.entry.path, node.isFolder),
       });
     }
     if (!node.isFolder && props.actions?.rename) {
-      items.push({ icon: "ti ti-cursor-text", label: "Rename", action: () => beginRename(node) });
+      items.push({ icon: "ti ti-cursor-text", label: messages().rename, action: () => beginRename(node) });
     }
     if (props.actions?.remove) {
-      items.push({ icon: "ti ti-trash", label: "Delete", variant: "danger", action: () => void props.actions?.remove?.(node.entry.path) });
+      items.push({
+        icon: "ti ti-trash",
+        label: messages().delete,
+        variant: "danger",
+        action: () => void props.actions?.remove?.(node.entry.path),
+      });
     }
     return items;
   };
@@ -225,7 +236,7 @@ export default function FileTree(props: FileTreeProps) {
     <ContextMenu
       class="k2b-content-file-tree__context-host"
       tabIndex={-1}
-      label={contextNode() ? `Actions for ${contextNode()!.name}` : "File actions"}
+      label={contextNode() ? messages().actionsFor({ name: contextNode()!.name }) : messages().fileActions}
       items={contextItems()}
       disabled={contextItems().length === 0}
       onOpen={() => setContextMenuOpen(true)}
@@ -239,7 +250,7 @@ export default function FileTree(props: FileTreeProps) {
         class={`k2b-content-file-tree ${props.class ?? ""}`}
         data-drop-root={dropTarget() === "/" ? "true" : undefined}
         role="tree"
-        aria-label={props.label ?? "Files"}
+        aria-label={props.label ?? messages().files}
         onDragOver={(event) => {
           if (!canDrop(event)) return;
           event.preventDefault();
@@ -336,7 +347,7 @@ export default function FileTree(props: FileTreeProps) {
                             tabIndex={-1}
                             class="k2b-content-file-tree__actions"
                             label={`Actions for ${currentNode().name}`}
-                            title="Actions"
+                            title={messages().actions}
                           >
                             <i class="ti ti-dots" aria-hidden="true" />
                             <span class="k2b-sr-only">Actions for {currentNode().name}</span>

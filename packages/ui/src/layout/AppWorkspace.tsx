@@ -12,6 +12,7 @@ import {
   Show,
   useContext,
 } from "solid-js";
+import { useUiMessages } from "../intl/messages";
 import { installAppWorkspaceController } from "./app-workspace-controller";
 import {
   APP_WORKSPACE_DETAIL_DEFAULT,
@@ -796,6 +797,7 @@ function AppWorkspaceSidebarRow(props: AppWorkspaceSidebarRowProps): JSX.Element
 }
 
 function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Element {
+  const messages = useUiMessages();
   const mode = useContext(SidebarModeContext);
   const resolved = children(() => props.children);
   const resolvedActions = children(() => props.actions);
@@ -859,7 +861,7 @@ function AppWorkspaceSidebarItem(props: AppWorkspaceSidebarItemProps): JSX.Eleme
     const slot = actionSlot();
     if (!slot && !props.actionIcon) return null;
     const content = slot?.children ?? <i class={iconClass(slot?.icon ?? props.actionIcon, "ti-dots")} />;
-    const label = slot?.label ?? props.actionLabel ?? "Row action";
+    const label = slot?.label ?? props.actionLabel ?? messages().rowAction;
     const select = (event: MouseEvent) => {
       event.preventDefault();
       event.stopPropagation();

@@ -43,6 +43,16 @@ describe("buildRuntimeFromRegistry", () => {
     expect(buildRuntimeFromRegistry([app]).apps[0]?.adminNav).toEqual(app.adminNav);
   });
 
+  it("projects app presentation catalogs without sharing mutable registry objects", () => {
+    const app = entry();
+    app.presentation = { baseLocale: "en", translations: { de: { name: "Beispiel" } } };
+
+    const projected = buildRuntimeFromRegistry([app]).apps[0]?.presentation;
+    expect(projected).toEqual(app.presentation);
+    expect(projected).not.toBe(app.presentation);
+    expect(projected?.translations).not.toBe(app.presentation.translations);
+  });
+
   it("projects the registered Help manifest", () => {
     const app = entry();
     app.help = {

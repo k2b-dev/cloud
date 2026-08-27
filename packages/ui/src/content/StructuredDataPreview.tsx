@@ -1,6 +1,7 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
 import CopyButton from "../actions/CopyButton";
-import { resolveMaybeAccessor, type MaybeAccessor } from "../inputs/field-contract";
+import { type MaybeAccessor, resolveMaybeAccessor } from "../inputs/field-contract";
+import { useUiMessages } from "../intl/messages";
 
 export type StructuredDataPreviewMode = "formatted" | "raw";
 export type StructuredDataValue =
@@ -63,6 +64,7 @@ const formatInlineValue = (value: StructuredDataValue): string => {
 const formatJson = (data: StructuredDataValue): string => JSON.stringify(data, null, 2);
 
 export default function StructuredDataPreview(props: StructuredDataPreviewProps) {
+  const messages = useUiMessages();
   const [internalMode, setInternalMode] = createSignal<StructuredDataPreviewMode>(props.defaultMode ?? "formatted");
   const mode = () => (props.mode === undefined ? internalMode() : resolveMaybeAccessor(props.mode));
   const setMode = (next: StructuredDataPreviewMode) => {
@@ -87,14 +89,14 @@ export default function StructuredDataPreview(props: StructuredDataPreviewProps)
             <pre>{raw()}</pre>
             <Show when={props.copy !== false}>
               <div class="k2b-content-structured-data__copy">
-                <CopyButton text={raw()} label="Copy" />
+                <CopyButton text={raw()} />
               </div>
             </Show>
           </div>
         }
       >
         <div class="k2b-content-structured-data__surface">
-          <Show when={hasData()} fallback={<p class="k2b-content-structured-data__empty">{props.empty ?? "No data."}</p>}>
+          <Show when={hasData()} fallback={<p class="k2b-content-structured-data__empty">{props.empty ?? messages().noData}</p>}>
             <div class="k2b-content-structured-data__rows">
               <For each={visibleRows()}>
                 {(row) => {

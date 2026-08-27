@@ -106,6 +106,7 @@ describe("public capability client", () => {
     const unavailable = await invokeCapability(
       { appId: "demo", capabilityId: "get", kind: "query", input: {} },
       {
+        headers: { "x-cloud-locale": "de-CH" },
         fetch: async () => {
           throw new Error("offline");
         },
@@ -113,7 +114,7 @@ describe("public capability client", () => {
     );
 
     expect(invalid).toMatchObject({ ok: false, error: { code: "INVALID_APP_RESPONSE", status: 502 } });
-    expect(unavailable).toMatchObject({ ok: false, error: { code: "APP_UNAVAILABLE", status: 503 } });
+    expect(unavailable).toMatchObject({ ok: false, error: { code: "APP_UNAVAILABLE", message: "Cloud ist nicht verfügbar", status: 503 } });
   });
 
   test("marks a lost non-idempotent Action response as outcome unknown", async () => {

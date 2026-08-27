@@ -1,6 +1,7 @@
 import type { JSX } from "solid-js";
 import type { PromptSearchInput, PromptSearchItem, PromptSearchOptions } from "../feedback/prompts";
 import { prompts } from "../feedback/prompts";
+import { resolveUiMessages, useUiMessages } from "../intl/messages";
 
 export const SPOTLIGHT_SHORTCUT = "mod+shift+k";
 export const SPOTLIGHT_SHORTCUT_LABEL = "⇧⌘K";
@@ -31,19 +32,21 @@ export const isSpotlightShortcut = (event: KeyboardEvent): boolean =>
 
 export const openSpotlightSearch = <T = unknown>(options: SpotlightSearchOptions<T>): Promise<PromptSearchItem<T> | undefined> => {
   const { resolve, ...promptOptions } = options;
+  const messages = resolveUiMessages();
   return prompts.search(resolve, {
     icon: "ti ti-search",
-    placeholder: "Search...",
+    placeholder: messages.search,
     minQueryLength: 0,
-    noResultsText: "No results.",
+    noResultsText: messages.spotlightNoResults,
     size: "small",
     ...promptOptions,
   });
 };
 
 export function SpotlightButton(props: SpotlightButtonProps): JSX.Element {
+  const messages = useUiMessages();
   const variant = () => props.variant ?? "default";
-  const label = () => props.label ?? "Search";
+  const label = () => props.label ?? messages().searchLabel;
   const icon = () => props.icon ?? "ti ti-search";
   const shortcut = () => (props.shortcutLabel === undefined ? SPOTLIGHT_SHORTCUT_LABEL : props.shortcutLabel);
   const title = () => props.title ?? `${label()} (${SPOTLIGHT_SHORTCUT_TITLE})`;

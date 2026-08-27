@@ -1,4 +1,5 @@
 import { type JSX, Show } from "solid-js";
+import { useUiMessages } from "../intl/messages";
 import { Paper } from "../surfaces/Paper";
 import Placeholder from "../surfaces/Placeholder";
 import { PanelHeader } from "./PanelHeader";
@@ -19,6 +20,7 @@ export type DataPanelProps = {
 };
 
 export function DataPanel(props: DataPanelProps): JSX.Element {
+  const messages = useUiMessages();
   const hasToolbar = () => Boolean(props.search || props.filters);
 
   return (
@@ -39,12 +41,12 @@ export function DataPanel(props: DataPanelProps): JSX.Element {
             state="error"
             variant="compact"
             icon="ti ti-plug-connected-x"
-            title="Could not load this data"
+            title={messages().couldNotLoadData}
             description={props.error ?? undefined}
           />
         }
       >
-        <Show when={!props.isEmpty} fallback={<Placeholder variant="compact" description={props.empty ?? "Nothing to show."} />}>
+        <Show when={!props.isEmpty} fallback={<Placeholder variant="compact" description={props.empty ?? messages().nothingToShow} />}>
           {props.children}
         </Show>
       </Show>

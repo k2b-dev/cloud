@@ -9,6 +9,7 @@ import { NumberInput } from "../inputs/NumberInput";
 import { Select } from "../inputs/Select";
 import { TagsInput } from "../inputs/TagsInput";
 import { TextInput } from "../inputs/TextInput";
+import { resolveUiMessages } from "../intl/messages";
 import { dialogCore, type OpenDialogOptions } from "./dialog-core";
 
 export interface DialogOptions {
@@ -162,6 +163,7 @@ const isEmpty = (value: unknown): boolean =>
   value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0);
 
 export const createFormState = <T extends Record<string, FieldSchema>>(schema: T) => {
+  const messages = resolveUiMessages();
   const [values, setValues] = createStore<Record<string, PromptFormValue>>({});
   const [errors, setErrors] = createStore<Record<string, string | undefined>>({});
 
@@ -172,8 +174,8 @@ export const createFormState = <T extends Record<string, FieldSchema>>(schema: T
   const validateField = (key: string, value: PromptFormValue): string | null => {
     const field = schema[key];
     if (!field || field.type === "info") return null;
-    if (field.type === "boolean" && field.required && value !== true) return "required";
-    if (field.required && isEmpty(value)) return "required";
+    if (field.type === "boolean" && field.required && value !== true) return messages.required;
+    if (field.required && isEmpty(value)) return messages.required;
     if ("validate" in field && field.validate) {
       const customError = (field.validate as (next: never) => string | null)(value as never);
       if (customError) return customError;
@@ -222,7 +224,7 @@ export const DialogHeader = (props: { close: () => void; title?: string; icon?: 
     <Show when={props.title} fallback={<span class="k2b-dialog__header-spacer" />}>
       {(title) => <h2>{title()}</h2>}
     </Show>
-    <button type="button" class="k2b-dialog__close" aria-label="close dialog" onClick={props.close}>
+    <button type="button" class="k2b-dialog__close" aria-label={resolveUiMessages().closeDialog} onClick={props.close}>
       <i class="ti ti-x" aria-hidden="true" />
     </button>
   </header>
@@ -409,11 +411,11 @@ const PromptFormDialog = <T extends Record<string, FieldSchema>>(props: {
       <footer class="k2b-dialog__actions">
         <Show when={props.config.cancelText !== false}>
           <button type="button" class="k2b-button" data-variant="secondary" onClick={() => props.close(null)}>
-            {props.config.cancelText || "Cancel"}
+            {props.config.cancelText || resolveUiMessages().cancel}
           </button>
         </Show>
         <button type="submit" class="k2b-button" data-variant={props.config.variant ?? "primary"}>
-          {props.config.confirmText ?? "Save"}
+          {props.config.confirmText ?? resolveUiMessages().save}
         </button>
       </footer>
     </form>
@@ -463,15 +465,15 @@ const openSearchPrompt = <T = unknown>(resolver: CloudSearchResolver<T>, options
       const searchError = createMemo(() => {
         const error = searchMutation.error();
         if (!error || error.name === "AbortError") return null;
-        return error.message || "Search failed.";
+        return error.message || resolveUiMessages().searchFailed;
       });
       const shouldShowResults = createMemo(() => {
         if (query().trim().length < minQueryLength) return false;
         return hasLoaded() || searchError() !== null || items().length > 0;
       });
       const emptyStateText = createMemo(() => {
-        if (!hasLoaded()) return options?.emptyText ?? "Type to search.";
-        return options?.noResultsText ?? "No results.";
+        if (!hasLoaded()) return options?.emptyText ?? resolveUiMessages().typeToSearch;
+        return options?.noResultsText ?? resolveUiMessages().noResults;
       });
       const { debouncedFn: debounceSearch, cancel: cancelDebounce } = timed.debounce((nextQuery: string) => {
         setActiveSearchQuery(nextQuery);
@@ -528,7 +530,7 @@ const openSearchPrompt = <T = unknown>(resolver: CloudSearchResolver<T>, options
                 id={searchId}
                 type="search"
                 role="combobox"
-                aria-label={options?.ariaLabel ?? options?.title ?? "Search"}
+                aria-label={options?.ariaLabel ?? options?.title ?? resolveUiMessages().search}
                 aria-autocomplete="list"
                 aria-controls={listboxId}
                 aria-expanded={shouldShowResults()}
@@ -548,7 +550,7 @@ const openSearchPrompt = <T = unknown>(resolver: CloudSearchResolver<T>, options
                     execute(items()[activeIndex()]);
                   }
                 }}
-                placeholder={options?.placeholder ?? "Search..."}
+                placeholder={options?.placeholder ?? resolveUiMessages().search}
                 spellcheck={false}
                 autocapitalize="off"
                 autocomplete="off"
@@ -581,7 +583,7 @@ const openSearchPrompt = <T = unknown>(resolver: CloudSearchResolver<T>, options
                     </p>
                   }
                 >
-                  <div id={listboxId} class="k2b-prompt-search__list" role="listbox" aria-label="Search results">
+                  <div id={listboxId} class="k2b-prompt-search__list" role="listbox" aria-label={resolveUiMessages().searchResults}>
                     <For each={items()}>
                       {(item, index) => (
                         <button
@@ -630,7 +632,7 @@ const openSearchPrompt = <T = unknown>(resolver: CloudSearchResolver<T>, options
       contentClassName: "k2b-dialog__viewport is-search",
       initialFocus: "first-input",
       cancelBehavior: options?.cancelBehavior,
-      ariaLabel: options?.ariaLabel ?? options?.title ?? "Search",
+      ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().search,
     },
   );
 
@@ -678,11 +680,11 @@ export const prompts = {
     dialogCore.open<void>(
       (close) => (
         <div class="k2b-dialog__panel">
-          <DialogHeader title={options?.title || "Info"} icon={options?.icon} close={() => close()} />
+          <DialogHeader title={options?.title || resolveUiMessages().info} icon={options?.icon} close={() => close()} />
           <div class="k2b-dialog__body">{content}</div>
           <footer class="k2b-dialog__actions">
             <button type="button" class="k2b-button" data-variant={options?.variant ?? "primary"} onClick={() => close()}>
-              {options?.confirmText || "OK"}
+              {options?.confirmText || resolveUiMessages().ok}
             </button>
           </footer>
         </div>
@@ -691,7 +693,7 @@ export const prompts = {
         panelClassName: panelClass(options),
         contentClassName: contentClass(options?.surface),
         cancelBehavior: options?.cancelBehavior,
-        ariaLabel: options?.ariaLabel ?? options?.title ?? "Info",
+        ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().info,
       },
     ),
 
@@ -699,7 +701,7 @@ export const prompts = {
     prompts.alert(content, {
       ...options,
       variant: "success",
-      title: options?.title ?? "Success",
+      title: options?.title ?? resolveUiMessages().success,
       icon: options?.icon ?? "ti ti-check",
     }),
 
@@ -719,10 +721,10 @@ export const prompts = {
               <div class="k2b-dialog__body">{content}</div>
               <footer class="k2b-dialog__actions">
                 <button type="button" class="k2b-button" data-variant="secondary" onClick={() => close(false)}>
-                  {options?.cancelText || "Cancel"}
+                  {options?.cancelText || resolveUiMessages().cancel}
                 </button>
                 <button type="button" class="k2b-button" data-variant={options?.variant ?? "primary"} onClick={() => close(true)}>
-                  {options?.confirmText || "Confirm"}
+                  {options?.confirmText || resolveUiMessages().confirm}
                 </button>
               </footer>
             </div>
@@ -761,10 +763,10 @@ export const prompts = {
             </div>
             <footer class="k2b-dialog__actions">
               <button type="button" class="k2b-button" data-variant="secondary" onClick={() => close(false)}>
-                {options?.cancelText || "Cancel"}
+                {options?.cancelText || resolveUiMessages().cancel}
               </button>
               <button type="submit" class="k2b-button" data-variant={options?.variant ?? "primary"} disabled={!canConfirm()}>
-                {options?.confirmText || "Confirm"}
+                {options?.confirmText || resolveUiMessages().confirm}
               </button>
             </footer>
           </form>
@@ -775,7 +777,7 @@ export const prompts = {
         contentClassName: contentClass(options?.surface),
         initialFocus: confirmationPhrase ? () => confirmationInput ?? null : undefined,
         cancelBehavior: options?.cancelBehavior,
-        ariaLabel: options?.ariaLabel ?? options?.title ?? "Confirmation",
+        ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().confirmation,
       },
     );
   },
@@ -788,7 +790,7 @@ export const prompts = {
       panelClassName: panelClass(config),
       contentClassName: contentClass(),
       cancelBehavior: config.cancelBehavior,
-      ariaLabel: config.ariaLabel ?? config.title ?? "Form",
+      ariaLabel: config.ariaLabel ?? config.title ?? resolveUiMessages().form,
     })) ?? null,
 
   dialog: <T = unknown>(component: (close: (result?: T) => void) => JSX.Element, options?: DialogOptions): Promise<T | undefined> =>
@@ -809,7 +811,7 @@ export const prompts = {
         panelClassName: panelClass(options),
         contentClassName: contentClass(options?.surface),
         cancelBehavior: options?.cancelBehavior,
-        ariaLabel: options?.ariaLabel ?? options?.title ?? "Dialog",
+        ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().dialog,
       },
     ),
 
@@ -819,11 +821,11 @@ export const prompts = {
     dialogCore.open(
       (close) => (
         <div class="k2b-dialog__panel">
-          <DialogHeader title={options?.title ?? "Error"} icon={options?.icon ?? "ti ti-alert-circle"} close={close} />
+          <DialogHeader title={options?.title ?? resolveUiMessages().error} icon={options?.icon ?? "ti ti-alert-circle"} close={close} />
           <div class="k2b-dialog__body">{content}</div>
           <footer class="k2b-dialog__actions">
             <button type="button" class="k2b-button" onClick={() => close()}>
-              {options?.confirmText || "Close"}
+              {options?.confirmText || resolveUiMessages().close}
             </button>
           </footer>
         </div>
@@ -832,7 +834,7 @@ export const prompts = {
         panelClassName: panelClass({ ...options, variant: "danger" }),
         contentClassName: contentClass(options?.surface),
         cancelBehavior: options?.cancelBehavior,
-        ariaLabel: options?.ariaLabel ?? options?.title ?? "Error",
+        ariaLabel: options?.ariaLabel ?? options?.title ?? resolveUiMessages().error,
       },
     ),
 };

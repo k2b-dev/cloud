@@ -1,3 +1,5 @@
+import { canonicalLocale, localeFallbackChain } from "./locale";
+
 export type HelpDocumentManifest = {
   /** Resolved content locale. Present on request-scoped manifests. */
   locale?: string;
@@ -41,30 +43,8 @@ export type ResolvedHelpManifest = Omit<HelpManifest, "documentsByLocale" | "doc
   documents: readonly HelpDocumentManifest[];
 };
 
-const canonicalLocale = (value: string): string | undefined => {
-  try {
-    return Intl.getCanonicalLocales(value)[0];
-  } catch {
-    return undefined;
-  }
-};
-
 /** Exact locale, then BCP 47 ancestors, then the corpus base locale. */
-export const helpLocaleChain = (requestedLocale: string, baseLocale: string): string[] => {
-  const requested = canonicalLocale(requestedLocale);
-  const base = canonicalLocale(baseLocale) ?? "en";
-  const chain: string[] = [];
-  if (requested) {
-    let candidate: string | undefined = requested;
-    while (candidate) {
-      chain.push(candidate);
-      const separator = candidate.lastIndexOf("-");
-      candidate = separator > 0 ? candidate.slice(0, separator) : undefined;
-    }
-  }
-  if (!chain.includes(base)) chain.push(base);
-  return chain;
-};
+export const helpLocaleChain = localeFallbackChain;
 
 /** Resolve localized Help metadata per article while preserving the base article set and order. */
 export const resolveHelpManifest = (manifest: HelpManifest, requestedLocale: string): ResolvedHelpManifest => {

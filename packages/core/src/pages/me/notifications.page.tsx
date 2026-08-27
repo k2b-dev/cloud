@@ -1,7 +1,6 @@
-import { listApps } from "@valentinkolb/cloud";
 import type { AuthContext } from "@valentinkolb/cloud/server";
 import { notifications } from "@valentinkolb/cloud/services";
-import { Layout } from "@valentinkolb/cloud/ssr";
+import { getLocalizedRuntimeContext, Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import AccountHub, { AccountPageHeader, AccountSubnav, notificationViews } from "./AccountHub";
 import BrowserNotificationSetup from "./BrowserNotificationSetup.island";
@@ -9,7 +8,8 @@ import NotificationPreferences, { type NotificationAppMeta } from "./Notificatio
 
 export default ssr<AuthContext>(async (c) => {
   const user = c.get("user");
-  const [preferences, registeredApps] = await Promise.all([notifications.user.preferences.list(user.id), listApps()]);
+  const preferences = await notifications.user.preferences.list(user.id);
+  const registeredApps = getLocalizedRuntimeContext(c).apps;
   const apps: NotificationAppMeta[] = registeredApps.map((app) => ({ id: app.id, name: app.name, icon: app.icon }));
 
   return () => (
