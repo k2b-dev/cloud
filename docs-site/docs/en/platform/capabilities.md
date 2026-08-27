@@ -782,7 +782,8 @@ it only for human-facing formatting or optional message catalogs — stable
 error codes and result data must not depend on it, and callers never need to
 interpret provider message codes. See
 [Locale and time](/en/docs/server/locale-and-time) for the resolution
-contract.
+contract and [Internationalize an application](/en/docs/build/internationalization)
+for the message and error boundary.
 
 Browser and client islands use the same-origin public client:
 

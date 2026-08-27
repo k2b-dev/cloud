@@ -696,7 +696,7 @@ export class AiTurnExecutor {
     const memoryActive = Boolean(prefs?.memoryEnabled);
     const memory = memoryActive && user ? await aiMemories.selectHot(user.id, query) : null;
     const timeZone = String((await coreSettings.get<string>("app.timezone")) || "").trim() || "UTC";
-    const promptLocale = normalizeLocale(await coreSettings.get<string>("app.locale"));
+    const promptLocale = normalizeLocale(config.locale ?? (await coreSettings.get<string>("app.locale")));
     const project = config.project;
     const projectSubject = project ? accessSubjectForActor(material.actor) : null;
     // Skills are an Assistant/default-tool capability. Custom and structured
@@ -844,6 +844,7 @@ export class AiTurnExecutor {
               error: error instanceof Error ? error.message : String(error),
             }),
           listHelpRegistry: loadCurrentHelp,
+          locale: promptLocale,
           onHelpRegistryError: (error) =>
             log.warn("AI Help registry unavailable; continuing without Help documents", {
               error: error instanceof Error ? error.message : String(error),
@@ -855,6 +856,7 @@ export class AiTurnExecutor {
                   reviewAiCapability({
                     conversationId,
                     authority: capabilityAuthority!,
+                    locale: promptLocale,
                     entry,
                     args,
                     context,
@@ -873,6 +875,7 @@ export class AiTurnExecutor {
                       conversationId,
                       turnId,
                       authority: capabilityAuthority!,
+                      locale: promptLocale,
                       entry,
                       args,
                       context,

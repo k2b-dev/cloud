@@ -7,6 +7,7 @@ import type { AccessSubject } from "../server/services/access";
 import { isAccountExpired } from "../services/account-model";
 import { accounts } from "../services/accounts";
 import { session } from "../services/session";
+import { LOCALE_HEADER } from "../shared/locale";
 import type { AiCapabilityCatalogEntry } from "./capabilities";
 import { aiToolAudit } from "./tool-audit";
 import type { AiConversationService } from "./types";
@@ -76,6 +77,7 @@ type AiCapabilityCall = {
   conversationId: string;
   turnId?: string;
   authority: { actor: CapabilityActor; accessSubject: AccessSubject };
+  locale?: string;
   entry: AiCapabilityCatalogEntry;
   args: unknown;
   context: ToolContext;
@@ -96,6 +98,7 @@ const dispatchAiCapability = async (input: AiCapabilityCall, review: boolean): P
   const token = await createDelegation(input.authority.actor.user.id, 60);
   try {
     const headers = new Headers({ authorization: `Bearer ${token}` });
+    if (input.locale) headers.set(LOCALE_HEADER, input.locale);
     const action = input.entry.kind === "action" ? (input.entry.operation as CapabilityActionManifest) : null;
     if (!review && action?.idempotency === "required" && input.context.callId) {
       const key = idempotencyKey(input.conversationId, input.context.callId);

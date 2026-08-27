@@ -31,16 +31,16 @@ import {
   CAPABILITY_MAX_REQUEST_BYTES,
   CAPABILITY_MAX_RESULT_BYTES,
   CAPABILITY_PROTOCOL_VERSION,
-  CapabilitySemanticLinkSchema,
-  CloudResourceRefSchema,
-  cloudResourceRefAppId,
   type CapabilityActionManifest,
   type CapabilityQueryManifest,
+  CapabilitySemanticLinkSchema,
+  CloudResourceRefSchema,
   capabilityResultJsonSchema,
+  cloudResourceRefAppId,
   resolveCapabilityResourceReader,
 } from "../contracts/capabilities";
 import type { AppRegistryEntry, CapabilityRegistryEntry, HelpRegistryEntry } from "../contracts/registry";
-import { type AuthContext, auth, rateLimit } from "../server";
+import { type AuthContext, auth, rateLimit, resolveLocale } from "../server";
 import { logger } from "../services/logging";
 import { get } from "../services/settings";
 import { cloudMcpResourceUri, publicCloudOrigin } from "../shared/app-url";
@@ -62,6 +62,7 @@ const log = logger("mcp");
 type McpRouteDependencies = CapabilityDispatchDependencies & {
   listApps?: () => Promise<AppRegistryEntry[]>;
   listHelp?: () => Promise<HelpRegistryEntry[]>;
+  getOperatorLocale?: () => Promise<string | undefined>;
   getAppUrl?: () => Promise<string>;
   authenticate?: MiddlewareHandler<AuthContext>;
   limit?: MiddlewareHandler<AuthContext>;
@@ -80,11 +81,12 @@ const helpCatalogItemJsonSchema = {
     appId: { type: "string" },
     appName: { type: "string" },
     kind: { type: "string", const: "help" },
+    locale: { type: "string" },
     documentId: { type: "string" },
     title: { type: "string" },
     description: { type: "string" },
   },
-  required: ["appId", "appName", "kind", "documentId", "title"],
+  required: ["appId", "appName", "kind", "locale", "documentId", "title"],
 } as const;
 
 type CapabilityTool = {
@@ -385,6 +387,7 @@ const helpResource = (document: HelpCatalogDocument): Resource => ({
     "cloud/appId": document.appId,
     "cloud/documentId": document.documentId,
     "cloud/manifestHash": document.manifestHash,
+    "cloud/locale": document.locale,
   },
 });
 
@@ -473,7 +476,13 @@ const callHelpTool = async (name: string, argsValue: unknown, catalog: readonly 
 const createMcpServer = (request: Request, dependencies: McpRouteDependencies, oauthScopes: string[] | null): Server => {
   const registry = dependencies.listApps ?? listApps;
   const capabilityLookup = dependencies.getCapability ?? getCapability;
-  const helpCatalog = () => loadHelpCatalog({ listApps: registry, listHelp: dependencies.listHelp ?? listHelp });
+  let helpLocale: Promise<string> | undefined;
+  const resolveHelpLocale = () =>
+    (helpLocale ??= (dependencies.getOperatorLocale ?? (() => get<string>("app.locale")))().then((operatorDefault) =>
+      resolveLocale(request.headers, operatorDefault),
+    ));
+  const helpCatalog = async () =>
+    loadHelpCatalog({ listApps: registry, listHelp: dependencies.listHelp ?? listHelp }, await resolveHelpLocale());
   const hasScope = (scope: "read" | "write"): boolean =>
     oauthScopes === null || oauthScopes.includes(scope) || oauthScopes.includes("admin");
   const requireScope = (scope: "read" | "write"): void => {
@@ -517,7 +526,16 @@ const createMcpServer = (request: Request, dependencies: McpRouteDependencies, o
     }
     const document = findHelpDocument(catalog, identity.appId, identity.documentId);
     if (!document) throw new McpError(ErrorCode.InvalidParams, "Help resource is not in the current live catalog");
-    return { contents: [{ uri: message.params.uri, mimeType: "text/markdown", text: document.markdown }] };
+    return {
+      contents: [
+        {
+          uri: message.params.uri,
+          mimeType: "text/markdown",
+          text: document.markdown,
+          _meta: { "cloud/manifestHash": document.manifestHash, "cloud/locale": document.locale },
+        },
+      ],
+    };
   });
 
   server.setRequestHandler(ListToolsRequestSchema, async (message) => {

@@ -5,7 +5,7 @@ section: Server
 order: 240
 description: Resolve the request locale and timezone once and reuse them for formatting, SSR, and capability metadata.
 tags: [server, locale, timezone, i18n, formatting]
-updated: 2026-08-24
+updated: 2026-08-27
 ---
 
 # Locale and time
@@ -15,9 +15,9 @@ both per request, keeps them separate, and never stores them in process-global
 state, so concurrent requests with different preferences stay isolated.
 
 The locale drives formatting, the document language, and the selection of
-opt-in application [message catalogs](#opt-into-message-catalogs). It does not
-automatically translate product copy: Cloud ships its UI text, validation
-messages, capability errors, help, notifications, and emails untranslated.
+opt-in application message catalogs. It does not automatically translate
+product copy. Applications opt in at the boundary that owns each message; see
+[Internationalize an application](/en/docs/build/internationalization).
 
 ## Resolve the request locale
 
@@ -50,6 +50,12 @@ resolver still returns a deterministic value.
 `Headers` outside a request context, and `preferredLocale(headers)` returns
 only the caller's explicit preference (or `undefined`). `normalizeLocale` and
 `canonicalLocale` from `@valentinkolb/cloud/shared` canonicalize single tags.
+
+Authenticated users can choose English or German from the shared profile menu.
+Cloud writes the choice to the root-scoped `cloud.locale` cookie and reloads
+the current page, so the next SSR response, `<html lang>`, formatters, islands,
+widgets, Help, and capability calls all receive the same preference. The
+preference is browser-local; it is not an account setting.
 
 ## Keep timezone separate
 
@@ -127,14 +133,19 @@ router.get("/api/inventory", (c) => {
 });
 ```
 
+The complete conventions for catalog placement, errors, SSR and islands,
+capabilities, widgets, Help, notifications, email, and testing live in
+[Internationalize an application](/en/docs/build/internationalization).
+
 ## Non-goals
 
-This contract prepares internationalization without introducing it:
+This contract prepares internationalization without translating application
+copy automatically:
 
-- Cloud does not translate existing product copy, framework errors, help,
-  notifications, or emails; stable error codes never change with the locale.
-- There is no built-in language-picker UI. Honoring the `cloud.locale` cookie
-  is the extension point for one.
+- Cloud does not automatically translate existing product copy; stable error
+  codes never change with the locale.
+- The shared profile menu currently offers English and German. Applications do
+  not own language selection and must not write a competing preference.
 - Applications do not receive locale props through component trees; the
   document language and providers above own inheritance.
 

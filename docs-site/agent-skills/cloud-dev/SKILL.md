@@ -93,6 +93,11 @@ SolidJS library remains independent of Cloud and application domains.
   client-side domain model.
 - Keep reloadable state in the URL. Acknowledge live events only after all
   affected queries commit a covering snapshot.
+- Resolve the request locale once. Use `getLocale(c)` on the server and the
+  inherited `@k2b/ui` locale in Solid; never keep a process-global locale or
+  thread it through ordinary component props. Applications own localized
+  human messages, while stable codes remain locale-independent. Transport
+  final display strings across capabilities and widgets, not message keys.
 
 ## Build and verify one complete slice
 

@@ -5,7 +5,7 @@ section: Frontend
 order: 820
 description: Place application pages in the shared Cloud layout and navigation.
 tags: [layout, navigation, breadcrumbs]
-updated: 2026-08-12
+updated: 2026-08-27
 ---
 
 # Layout and navigation
@@ -13,7 +13,7 @@ updated: 2026-08-12
 Wrap every application page in `Layout` or `AdminLayout`.
 
 The shared layout provides the header, breadcrumbs, app navigation, mobile
-navigation, global search, theme control, and footer.
+navigation, global search, profile preferences, and footer.
 
 Layout owns Cloud chrome; an [application shell](/en/docs/frontend/application-shells)
 owns the geometry inside it. Keeping those layers separate lets Cloud evolve
@@ -41,6 +41,24 @@ Use `fullWidth` for a multi-column workspace. Use `fullPage` for a fill-height
 surface without the footer.
 
 Do not reproduce Cloud chrome inside application content.
+
+## Use the responsive profile menu
+
+Authenticated users change the theme or language from the profile control and
+can open `/me` for the remaining profile settings. Applications must not add a
+second theme or language control to their own content.
+
+The shared layout chooses the placement with CSS:
+
+- On mobile, clicking the profile avatar opens the menu in the header;
+- On desktop viewports up to `1536px` wide, the header and breadcrumbs are
+  removed and the profile avatar moves to the bottom of the app rail;
+- On wider desktop viewports, the profile avatar stays in the header.
+
+On pointer devices, clicking the avatar opens `/me`; hovering or focusing it
+opens the adjacent preference menu. Touch and coarse-pointer devices use the
+clickable dropdown. The responsive switch does not require client-side layout
+state, so the SSR markup and the first browser frame use the same shell.
 
 ## Register navigation
 

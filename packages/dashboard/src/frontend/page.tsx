@@ -14,7 +14,7 @@ import { type DashboardWidget, listApps, listLegalLinks, listWidgets } from "@va
 import type { WidgetBlock, WidgetResponse } from "@valentinkolb/cloud/contracts";
 import { type AppRegistryEntry, hasRole, type Role, type User } from "@valentinkolb/cloud/contracts";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { logger } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import type { JSX } from "solid-js";
@@ -30,6 +30,8 @@ import {
   resolveDashboardWidgetLayout,
 } from "../shared";
 import DashboardControls, { DashboardEditButton } from "./EditDashboard.island";
+import { type DashboardMessages, dashboardMessages } from "./messages";
+import { dashboardWidgetRequestHeaders } from "./widget-request";
 
 const log = logger("dashboard");
 const WIDGET_TIMEOUT_MS = 500;
@@ -63,14 +65,14 @@ type WidgetFetchResult =
  *   - other / timeout → render a small error placeholder so one bad widget
  *           does not block or disappear from the dashboard.
  */
-const widgetErrorResponse = (widget: DashboardWidget, message: string): WidgetResponse => ({
+const widgetErrorResponse = (widget: DashboardWidget, title: string, message: string): WidgetResponse => ({
   title: widget.appName,
   icon: widget.appIcon,
   blocks: [
     {
       kind: "status",
       tone: "error",
-      title: "Widget unavailable",
+      title,
       message,
       icon: "ti ti-alert-circle",
       grow: true,
@@ -89,14 +91,19 @@ const logSlowWidget = (widget: DashboardWidget, durationMs: number, status: numb
   });
 };
 
-const fetchWidget = async (widget: DashboardWidget, cookie: string): Promise<WidgetFetchResult | null> => {
+const fetchWidget = async (
+  widget: DashboardWidget,
+  cookie: string,
+  locale: string,
+  t: DashboardMessages,
+): Promise<WidgetFetchResult | null> => {
   const controller = new AbortController();
   const startedAt = performance.now();
   const timeout = setTimeout(() => controller.abort(), WIDGET_TIMEOUT_MS);
 
   try {
     const resp = await fetch(widget.url, {
-      headers: cookie ? { Cookie: cookie } : {},
+      headers: dashboardWidgetRequestHeaders(cookie, locale),
       signal: controller.signal,
     });
     const durationMs = Math.round(performance.now() - startedAt);
@@ -114,7 +121,7 @@ const fetchWidget = async (widget: DashboardWidget, cookie: string): Promise<Wid
       return {
         source: widget,
         status: "error",
-        data: widgetErrorResponse(widget, "The widget endpoint returned an error."),
+        data: widgetErrorResponse(widget, t.widgetUnavailable, t.widgetEndpointError),
       };
     }
     const data = (await resp.json()) as WidgetResponse;
@@ -133,7 +140,7 @@ const fetchWidget = async (widget: DashboardWidget, cookie: string): Promise<Wid
     return {
       source: widget,
       status: "error",
-      data: widgetErrorResponse(widget, isTimeout ? "The widget took too long to respond." : "The widget could not be loaded."),
+      data: widgetErrorResponse(widget, t.widgetUnavailable, isTimeout ? t.widgetTimeout : t.widgetLoadFailed),
     };
   } finally {
     clearTimeout(timeout);
@@ -235,6 +242,8 @@ export default ssr<AuthContext>(async (c) => {
   const user = expectUserBackedActor(c);
   const greeting = user?.displayName || user?.uid || "there";
   const cookie = c.req.raw.headers.get("Cookie") ?? "";
+  const locale = getLocale(c);
+  const { t } = dashboardMessages.resolve([locale]);
 
   const storedSettings = await dashboardSettingsService.get(user.id);
   const legacySettings = !storedSettings.exists ? readLegacyDashboardSettings(cookie) : null;
@@ -261,7 +270,7 @@ export default ssr<AuthContext>(async (c) => {
             name: "Admin",
             icon: "ti ti-settings",
             href: "/admin",
-            description: "Platform administration, app settings, logs, and gateway controls.",
+            description: t.adminDescription,
           },
         ]
       : []),
@@ -278,7 +287,7 @@ export default ssr<AuthContext>(async (c) => {
     }));
 
   // Pull visible widget endpoints, fetch in parallel, classify by status.
-  const results = await Promise.all(widgetsToFetch.map((w) => fetchWidget(w, cookie)));
+  const results = await Promise.all(widgetsToFetch.map((w) => fetchWidget(w, cookie, locale, t)));
 
   const visible = results.filter((r): r is Extract<typeof r, { status: 200 }> => r?.status === 200);
   const inaccessible = results.filter((r): r is Extract<typeof r, { status: 403 }> => r?.status === 403);
@@ -327,20 +336,20 @@ export default ssr<AuthContext>(async (c) => {
   const overviewRows = groupDashboardWidgetRows(overviewWidgets, 3);
 
   return () => (
-    <Layout c={c} title="Dashboard" fullPage>
+    <Layout c={c} title={t.title} fullPage>
       <ScrollArea class="flex-1">
         <div class="dashboard-page">
           <div class="dashboard-intro">
             <header class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between" style="view-transition-name: page-title">
               <div class="min-w-0">
-                <p class="mb-1 text-xs font-medium text-dimmed">Your workspace</p>
+                <p class="mb-1 text-xs font-medium text-dimmed">{t.workspace}</p>
                 <h1 class="text-2xl font-semibold text-primary sm:text-3xl">
-                  Hi,{" "}
+                  {t.greetingPrefix}{" "}
                   <span class={gradient.style ? "" : "app-accent-text"} style={gradient.style}>
                     {greeting}
                   </span>
                 </h1>
-                <p class="mt-1 text-sm text-dimmed">A quick view across the apps and work that matter to you.</p>
+                <p class="mt-1 text-sm text-dimmed">{t.intro}</p>
               </div>
               <DashboardEditButton
                 apps={availableApps}
@@ -366,7 +375,9 @@ export default ssr<AuthContext>(async (c) => {
               variant="panel"
               description={
                 <>
-                  No widgets to show. Use <em>Edit dashboard</em> to enable any you have access to.
+                  {t.emptyBefore}
+                  <em>{t.emptyAction}</em>
+                  {t.emptyAfter}
                 </>
               }
             />
@@ -374,7 +385,7 @@ export default ssr<AuthContext>(async (c) => {
             <div class={`dashboard-briefing-grid ${contextWidgets.length > 0 ? "has-context" : ""}`}>
               <div class="dashboard-primary-column">
                 {focusWidgets.length > 0 ? (
-                  <section aria-label="Focus widgets" class="dashboard-widget-zone dashboard-focus-zone">
+                  <section aria-label={t.focusWidgets} class="dashboard-widget-zone dashboard-focus-zone">
                     {focusRows.map((row) => (
                       <div class="dashboard-widget-row">
                         {row.map((item) => (
@@ -386,7 +397,7 @@ export default ssr<AuthContext>(async (c) => {
                 ) : null}
 
                 {overviewWidgets.length > 0 ? (
-                  <section aria-label="Overview widgets" class="dashboard-widget-zone">
+                  <section aria-label={t.overviewWidgets} class="dashboard-widget-zone">
                     {overviewRows.map((row) => (
                       <div class="dashboard-widget-row">
                         {row.map((item) => (
@@ -399,7 +410,7 @@ export default ssr<AuthContext>(async (c) => {
               </div>
 
               {contextWidgets.length > 0 ? (
-                <aside aria-label="Context widgets" class="dashboard-context-column">
+                <aside aria-label={t.contextWidgets} class="dashboard-context-column">
                   {contextWidgets.map((item) => (
                     <DashboardWidgetCard entry={item.widget.entry} />
                   ))}

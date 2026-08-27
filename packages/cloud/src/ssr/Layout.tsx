@@ -1,5 +1,5 @@
 import type { DateContext } from "@k2b/stdlib";
-import { AppWorkspace, Avatar, appWorkspaceLayoutStyle, LocaleProvider, NoticeCard } from "@k2b/ui";
+import { AppWorkspace, appWorkspaceLayoutStyle, LocaleProvider, NoticeCard } from "@k2b/ui";
 import type { JSX } from "solid-js/jsx-runtime";
 import { readAppWorkspaceLayoutCookie, resolveAppWorkspaceLayoutForSidebar } from "../_internal/app-workspace-state";
 import { resolveNavMatch } from "../contracts/app"; // ==========================
@@ -7,7 +7,7 @@ import { hasRole, type User } from "../contracts/shared";
 import { getLocale } from "../server/locale";
 import type { LayoutAnnouncementsState } from "../server/middleware/settings";
 import { getDateConfig } from "../server/time";
-import { dates } from "../shared";
+import { dates, resolveHelpManifest } from "../shared";
 import { readThemeFromCookieHeader } from "../shared/theme";
 import AppLaunchpad, { type AppLaunchpadApp } from "./AppLaunchpad.island";
 import AppWorkspaceController from "./AppWorkspaceController.island";
@@ -22,9 +22,9 @@ import HotkeysHelpRail from "./HotkeysHelpRail.island";
 import LayoutBreadcrumbs from "./LayoutBreadcrumbs.island";
 import type { LayoutBreadcrumb } from "./layout-runtime";
 import NavMenu from "./NavMenu.island";
+import ProfilePreferences from "./ProfilePreferences.island";
 import RegisteredHelpDocuments from "./RegisteredHelpDocuments.island";
 import { getRuntimeContext, type RuntimeContext } from "./runtime";
-import ThemeToggleRail from "./ThemeToggleRail.island";
 import TimezoneCookie from "./TimezoneCookie.island";
 
 // Types
@@ -155,7 +155,8 @@ export default function Layout(props: LayoutProps) {
   const { c, title, fullPage, fullWidth, focusMode, flushCanvas, workspaceSidebarCollapsible } = props;
   const runtime = getRuntimeContext(c);
   const cookie = c.req.raw.headers.get("Cookie") ?? "";
-  c.get("page").theme = readThemeFromCookieHeader(cookie);
+  const theme = readThemeFromCookieHeader(cookie);
+  c.get("page").theme = theme;
   // One request-scoped locale drives <html lang>, the LocaleProvider below,
   // and date formatting. The SSR seam and this component both resolve through
   // the same canonical getLocale(c), so pages cannot diverge the three seams.
@@ -164,7 +165,7 @@ export default function Layout(props: LayoutProps) {
   const user = c.get("user");
   const pathname = new URL(c.req.raw.url).pathname;
   const currentApp = resolveCurrentApp(runtime.apps, pathname);
-  const registeredHelp = currentApp?.help;
+  const registeredHelp = currentApp?.help ? resolveHelpManifest(currentApp.help, lang) : undefined;
   const workspaceLayout = resolveAppWorkspaceLayoutForSidebar(
     readAppWorkspaceLayoutCookie(cookie, currentApp?.id),
     workspaceSidebarCollapsible,
@@ -221,6 +222,11 @@ export default function Layout(props: LayoutProps) {
   if (!page.title) page.title = pageTitle;
   const breadcrumbs: Breadcrumb[] = !title ? [{ title: appName }] : typeof title === "string" ? [{ title }] : title;
   const showRail = !!user;
+  const profileName = user?.displayName || user?.uid || "?";
+  const profileAvatarSrc =
+    user?.avatarHash && user.id
+      ? `/api/accounts/users/${encodeURIComponent(user.id)}/avatar?rev=${encodeURIComponent(user.avatarHash)}`
+      : undefined;
   const mainLayoutClass = fullPage || fullWidth ? "flex flex-col" : "md:overflow-auto";
   const canvasStyle =
     [appAppearanceStyle(currentApp?.appearance), appWorkspaceLayoutStyle(workspaceLayout), focusMode && flushCanvas ? "padding:0" : ""]
@@ -250,6 +256,7 @@ export default function Layout(props: LayoutProps) {
         class={`cloud-app-canvas relative flex w-full ${fullPage ? "h-dvh overflow-hidden" : "min-h-screen md:h-screen md:overflow-hidden"}`}
         style={canvasStyle}
         data-app-id={currentApp?.id}
+        data-layout-authenticated={showRail ? "true" : undefined}
         data-workspace-sidebar-collapsed={workspaceLayout?.sidebarCollapsed ? "true" : undefined}
       >
         <TimezoneCookie />
@@ -286,7 +293,7 @@ export default function Layout(props: LayoutProps) {
               <div class="mt-auto flex flex-col items-center gap-1">
                 <GlobalSearchTrigger variant="rail" searchHelpApps={searchHelpApps} />
                 <HotkeysHelpRail variant="rail" registerHotkey searchHelpApps={searchHelpApps} accent={currentApp?.appearance?.accent} />
-                <ThemeToggleRail />
+                <ProfilePreferences avatarSrc={profileAvatarSrc} initialTheme={theme} name={profileName} placement="rail" />
               </div>
             </nav>
           </aside>
@@ -330,22 +337,12 @@ export default function Layout(props: LayoutProps) {
               </div>
               {user ? (
                 <>
-                  <a href="/me" class="hidden cursor-pointer items-center justify-center md:flex" aria-label="Profile">
-                    <Avatar
-                      name={user.displayName || user.uid}
-                      src={
-                        user.avatarHash
-                          ? `/api/accounts/users/${encodeURIComponent(user.id)}/avatar?rev=${encodeURIComponent(user.avatarHash)}`
-                          : undefined
-                      }
-                      size="xs"
-                    />
-                  </a>
                   <div class="md:hidden">
                     <div class="flex items-center gap-1">
                       <AppLaunchpad apps={launchpadApps} legalLinks={legalLinks} variant="header" label="Open apps" />
                     </div>
                   </div>
+                  <ProfilePreferences avatarSrc={profileAvatarSrc} initialTheme={theme} name={profileName} placement="header" />
                 </>
               ) : (
                 <NavMenu user={navMenuUser} />

@@ -1,4 +1,6 @@
+import { text } from "@k2b/stdlib";
 import { For, type JSX, Show } from "solid-js";
+import { useLocale } from "../intl/locale";
 import type { WidgetTone } from "./WidgetHero";
 
 export type WidgetPill = {
@@ -14,10 +16,13 @@ export type WidgetPillsProps = {
 };
 
 function Content(props: { pill: WidgetPill }): JSX.Element {
+  const locale = useLocale();
   return (
     <>
       <span class="k2b-widget-pill__label">{props.pill.label}</span>
-      <span class="k2b-widget-pill__value">{props.pill.value}</span>
+      <span class="k2b-widget-pill__value">
+        {typeof props.pill.value === "number" ? text.pprintNumber(props.pill.value, { locale: locale() }) : props.pill.value}
+      </span>
     </>
   );
 }

@@ -534,6 +534,8 @@ export type AiChatTurnRunConfig = {
   /** Stable public ID exposed as runtime context, not instructions. */
   chatId?: string;
   actor?: RequestActor;
+  /** Request locale persisted with the turn so async execution keeps the caller preference. */
+  locale?: string;
   modelPolicy?: AiModelPolicy;
   requestedModelId?: string;
   /** Optional instructions that apply only to this turn. */

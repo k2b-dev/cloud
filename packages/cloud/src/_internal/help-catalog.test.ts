@@ -64,6 +64,24 @@ describe("live Help catalog", () => {
     ]);
   });
 
+  test("resolves each document through exact locale, ancestors, and base", () => {
+    const localized: HelpRegistryEntry = {
+      ...help,
+      baseLocale: "en",
+      documents: [...help.documents, { id: "overview", title: "Overview", order: 20, markdown: "English overview" }],
+      documentsByLocale: {
+        de: [{ ...help.documents[0]!, title: "Berechtigungen", markdown: "Deutscher Inhalt" }],
+        "de-CH": [{ id: "overview", title: "Übersicht CH", order: 20, markdown: "Schweizer Inhalt" }],
+      },
+    };
+    const catalog = createHelpCatalog([localized], "de-CH");
+
+    expect(catalog.map(({ documentId, title, locale }) => ({ documentId, title, locale }))).toEqual([
+      { documentId: "permissions", title: "Berechtigungen", locale: "de-CH" },
+      { documentId: "overview", title: "Übersicht CH", locale: "de-CH" },
+    ]);
+  });
+
   test("round-trips stable Help resource URIs", () => {
     const uri = helpResourceUri("inventory", "getting started");
     expect(uri).toBe("cloud://help/inventory/getting%20started");

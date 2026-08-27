@@ -48,6 +48,18 @@ describe("buildRuntimeFromRegistry", () => {
     app.help = {
       manifestHash: "sha256",
       pageBase: "/app/example/help",
+      baseLocale: "en",
+      documentsByLocale: {
+        de: [
+          {
+            id: "getting-started",
+            title: "Erste Schritte",
+            order: 10,
+            searchUrl: "/api/help/v1/example/search",
+            url: "/api/help/v1/example/documents/getting-started",
+          },
+        ],
+      },
       documents: [
         {
           id: "getting-started",
@@ -63,6 +75,7 @@ describe("buildRuntimeFromRegistry", () => {
     expect(projected).toEqual(app.help);
     expect(projected).not.toBe(app.help);
     expect(projected?.documents).not.toBe(app.help.documents);
+    expect(projected?.documentsByLocale?.de).not.toBe(app.help.documentsByLocale?.de);
   });
 
   it("projects Universal Search tags and aliases from the live capability manifest", () => {

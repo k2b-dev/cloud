@@ -57,6 +57,23 @@ describe("Help registration compiler", () => {
     });
   });
 
+  test("compiles one bounded multilingual corpus with partial ancestor fallback", () => {
+    const definition = defineHelp({
+      baseLocale: "en",
+      documents: {
+        en: [article("start", "Start", 10), article("details", "Details", 20)],
+        de: [article("start", "Starten", 10, "Deutscher Inhalt").replace("order: 10\n", "")],
+        "de-CH": [article("details", "Details CH", 20, "Schweizer Inhalt")],
+      },
+    });
+    const compiled = compileHelp({ appId: "inventory", appName: "Inventory", appIcon: "ti ti-package", definition });
+
+    expect(compiled.registryEntry.baseLocale).toBe("en");
+    expect(Object.keys(compiled.registryEntry.documentsByLocale ?? {})).toEqual(["de", "de-CH"]);
+    expect(definition.getMarkdown("start", "de-CH")).toContain("Deutscher Inhalt");
+    expect(compiled.registryEntry.documents).toHaveLength(2);
+  });
+
   test("fails closed when an article or corpus exceeds its bound", () => {
     expect(() =>
       compileHelp({

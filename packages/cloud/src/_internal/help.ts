@@ -30,28 +30,43 @@ export const compileHelp = (input: {
   const appId = encodeURIComponent(input.appId);
   const pageBase = `${normalizedBasePath(input.basePath)}/help`;
   const searchUrl = `/api/help/v1/${appId}/search`;
-  const documents = input.definition.documents.map(({ id, title, icon, description, order, markdown, searchText }) => {
-    const markdownBytes = new TextEncoder().encode(markdown).byteLength;
-    if (markdownBytes > HELP_DOCUMENT_MAX_BYTES) {
-      throw new Error(`Help document "${id}" exceeds the ${HELP_DOCUMENT_MAX_BYTES}-byte limit`);
-    }
-    return { id, title, icon, description, order, markdown, searchText };
-  });
-  const manifestHash = helpHash({ appId: input.appId, documents });
-  const manifest = documents.map<HelpDocumentManifest>(({ id, title, icon, description, order }) => ({
-    id,
-    title,
-    icon,
-    description,
-    order,
-    searchUrl,
-    url: `/api/help/v1/${appId}/documents/${encodeURIComponent(id)}`,
-  }));
+  const compileDocuments = (source: readonly (typeof input.definition.documents)[number][]) =>
+    source.map(({ id, title, icon, description, order, markdown, searchText }) => {
+      const markdownBytes = new TextEncoder().encode(markdown).byteLength;
+      if (markdownBytes > HELP_DOCUMENT_MAX_BYTES) {
+        throw new Error(`Help document "${id}" exceeds the ${HELP_DOCUMENT_MAX_BYTES}-byte limit`);
+      }
+      return { id, title, icon, description, order, markdown, searchText };
+    });
+  const baseLocale = input.definition.baseLocale ?? "en";
+  const documents = compileDocuments(input.definition.documents);
+  const documentsByLocale = Object.fromEntries(
+    Object.entries(input.definition.documentsByLocale ?? {})
+      .filter(([locale]) => locale !== baseLocale)
+      .map(([locale, localized]) => [locale, compileDocuments(localized)]),
+  );
+  const manifestHash = helpHash({ appId: input.appId, baseLocale, documents, documentsByLocale });
+  const toManifest = (source: readonly (typeof documents)[number][]) =>
+    source.map<HelpDocumentManifest>(({ id, title, icon, description, order }) => ({
+      id,
+      title,
+      icon,
+      description,
+      order,
+      searchUrl,
+      url: `/api/help/v1/${appId}/documents/${encodeURIComponent(id)}`,
+    }));
+  const manifest = toManifest(documents);
+  const manifestByLocale = Object.fromEntries(
+    Object.entries(documentsByLocale).map(([locale, localized]) => [locale, toManifest(localized)]),
+  );
   const registryEntry: HelpRegistryEntry = {
     appId: input.appId,
     appName: input.appName,
     appIcon: input.appIcon,
     manifestHash,
+    baseLocale,
+    documentsByLocale,
     documents,
   };
   const bytes = serializedBytes(registryEntry);
@@ -59,7 +74,7 @@ export const compileHelp = (input: {
     throw new Error(`Help corpus exceeds the ${HELP_REGISTRY_MAX_BYTES}-byte registry limit`);
   }
   return {
-    summary: { manifestHash, pageBase, documents: manifest },
+    summary: { manifestHash, pageBase, baseLocale, documentsByLocale: manifestByLocale, documents: manifest },
     registryEntry,
   };
 };

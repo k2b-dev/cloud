@@ -791,6 +791,136 @@
   background: transparent;
 }
 
+/* Profile preferences stay Cloud-owned because their placement follows the
+   global shell. Width, height, and pointer media queries select an already
+   server-rendered variant; no client layout state or placeholder is needed. */
+.layout-profile-preferences {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.layout-profile-preferences[data-placement="rail"] {
+  display: none;
+}
+
+.layout-profile-preferences__link,
+.layout-profile-preferences__dropdown-trigger {
+  display: none;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ui-radius-surface);
+  color: inherit;
+  background: transparent;
+  text-decoration: none;
+  transition: background-color 150ms ease-out;
+}
+
+.layout-profile-preferences__link:hover,
+.layout-profile-preferences__dropdown-trigger:hover {
+  background: var(--ui-hover);
+}
+
+.layout-profile-preferences__link:focus-visible,
+.layout-profile-preferences__dropdown-trigger:focus-visible {
+  outline: none;
+  box-shadow: var(--ui-focus);
+}
+
+.layout-profile-preferences__panel {
+  position: absolute;
+  z-index: 100;
+  display: none;
+  width: min(14rem, calc(100vw - 1rem));
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.25rem;
+  color: var(--color-zinc-700);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 120ms ease-out;
+}
+
+.dark .layout-profile-preferences__panel {
+  color: var(--color-zinc-300);
+}
+
+.layout-profile-preferences[data-placement="header"] .layout-profile-preferences__panel {
+  top: 100%;
+  right: 0;
+}
+
+.layout-profile-preferences[data-placement="rail"] .layout-profile-preferences__panel {
+  bottom: 0;
+  left: 100%;
+}
+
+.layout-profile-preferences:focus-within .layout-profile-preferences__panel {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.layout-profile-preferences__panel .menu-item > i {
+  width: 1rem;
+  flex: none;
+  text-align: center;
+}
+
+.layout-profile-preferences > .layout-profile-preferences__dropdown {
+  display: inline-flex;
+}
+
+.layout-profile-preferences__dropdown-trigger {
+  display: inline-flex;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .layout-profile-preferences:hover .layout-profile-preferences__panel {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+}
+
+@media (min-width: 768px) and (hover: hover) and (pointer: fine) {
+  .layout-profile-preferences__link,
+  .layout-profile-preferences__panel {
+    display: flex;
+  }
+
+  .layout-profile-preferences > .layout-profile-preferences__dropdown {
+    display: none;
+  }
+}
+
+/* Keep the 46px header for wider desktop viewports. Compact and 14-inch
+   laptop widths stay rail-only, while viewports wider than 1536px retain the
+   header. Because it becomes display:none, the shell flex gap adds no empty
+   top row or double spacing. */
+@media (min-width: 768px) and (max-width: 96rem) {
+  .cloud-app-canvas[data-layout-authenticated="true"] .layout-header {
+    display: none;
+  }
+
+  .cloud-app-canvas[data-layout-authenticated="true"] .layout-profile-preferences[data-placement="rail"] {
+    display: inline-flex;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .layout-profile-preferences__link,
+  .layout-profile-preferences__dropdown-trigger,
+  .layout-profile-preferences__panel {
+    transition: none;
+  }
+}
+
 /* Workspace navigation chrome and resource identity. */
 .workspace-sidebar-header {
   min-height: var(--ui-control-md);

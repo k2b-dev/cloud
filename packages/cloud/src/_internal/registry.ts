@@ -204,24 +204,31 @@ export const getCapability = async (appId: string): Promise<CapabilityRegistryEn
 const isHelpRegistryEntry = (value: unknown): value is HelpRegistryEntry => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const entry = value as Partial<HelpRegistryEntry>;
+  const validDocument = (document: unknown) =>
+    !!document &&
+    typeof document === "object" &&
+    typeof (document as { id?: unknown }).id === "string" &&
+    typeof (document as { title?: unknown }).title === "string" &&
+    typeof (document as { order?: unknown }).order === "number" &&
+    typeof (document as { markdown?: unknown }).markdown === "string" &&
+    ((document as { searchText?: unknown }).searchText === undefined ||
+      typeof (document as { searchText?: unknown }).searchText === "string") &&
+    ((document as { icon?: unknown }).icon === undefined || typeof (document as { icon?: unknown }).icon === "string") &&
+    ((document as { description?: unknown }).description === undefined ||
+      typeof (document as { description?: unknown }).description === "string");
   return (
     typeof entry.appId === "string" &&
     typeof entry.appName === "string" &&
     typeof entry.appIcon === "string" &&
     typeof entry.manifestHash === "string" &&
+    (entry.baseLocale === undefined || typeof entry.baseLocale === "string") &&
     Array.isArray(entry.documents) &&
-    entry.documents.every(
-      (document) =>
-        !!document &&
-        typeof document === "object" &&
-        typeof document.id === "string" &&
-        typeof document.title === "string" &&
-        typeof document.order === "number" &&
-        typeof document.markdown === "string" &&
-        (document.searchText === undefined || typeof document.searchText === "string") &&
-        (document.icon === undefined || typeof document.icon === "string") &&
-        (document.description === undefined || typeof document.description === "string"),
-    )
+    entry.documents.every(validDocument) &&
+    (entry.documentsByLocale === undefined ||
+      (!!entry.documentsByLocale &&
+        typeof entry.documentsByLocale === "object" &&
+        !Array.isArray(entry.documentsByLocale) &&
+        Object.values(entry.documentsByLocale).every((documents) => Array.isArray(documents) && documents.every(validDocument))))
   );
 };
 

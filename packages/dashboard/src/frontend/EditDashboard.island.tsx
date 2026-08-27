@@ -13,6 +13,7 @@ import {
   TextInput,
   Tooltip,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import type { DashboardWidgetSpan, DashboardWidgetZone } from "@valentinkolb/cloud/contracts";
 import { openAppLaunchpad } from "@valentinkolb/cloud/ssr/islands";
@@ -31,6 +32,7 @@ import {
   normalizeDashboardShortcutHref,
   resolveDashboardWidgetLayout,
 } from "../shared";
+import { dashboardMessages } from "./messages";
 
 type Props = {
   apps: DashboardAppSummary[];
@@ -53,9 +55,14 @@ const errorMessage = async (response: Response, fallback: string): Promise<strin
   return fallback;
 };
 
-const saveSettings = async (settings: DashboardSettings): Promise<void> => {
+const saveSettings = async (settings: DashboardSettings, fallback: string): Promise<void> => {
   const response = await apiClient.settings.$put({ json: settings });
-  if (!response.ok) throw new Error(await errorMessage(response, "Failed to save dashboard settings"));
+  if (!response.ok) throw new Error(await errorMessage(response, fallback));
+};
+
+const useDashboardText = () => {
+  const locale = useLocale();
+  return () => dashboardMessages.resolve([locale()]).t;
 };
 
 const isExternalHref = (href: string): boolean => /^https?:\/\//i.test(href);
@@ -89,6 +96,7 @@ const ShortcutBadge = (props: { icon: string; title: string; href?: string; acce
 };
 
 export default function DashboardControls(props: Props) {
+  const t = useDashboardText();
   const appById = createMemo(() => new Map(props.apps.map((app) => [app.id, app])));
   const resolvedShortcuts = createMemo<ResolvedShortcut[]>(() =>
     props.settings.shortcuts
@@ -121,16 +129,16 @@ export default function DashboardControls(props: Props) {
 
   const openAddShortcut = () => {
     void prompts.dialog<void>((close) => <ShortcutForm apps={props.apps} settings={props.settings} close={close} />, {
-      title: "Add shortcut",
+      title: t().addShortcut,
       icon: "ti ti-plus",
       size: "medium",
     });
   };
 
   return (
-    <nav aria-label="Dashboard shortcuts" class="flex flex-wrap gap-2">
-      <ShortcutBadge icon="ti ti-grid-dots" title="Apps" accent onClick={openApps} />
-      <ShortcutBadge icon="ti ti-plus" title="Add shortcut" onClick={openAddShortcut} />
+    <nav aria-label={t().dashboardShortcuts} class="flex flex-wrap gap-2">
+      <ShortcutBadge icon="ti ti-grid-dots" title={t().apps} accent onClick={openApps} />
+      <ShortcutBadge icon="ti ti-plus" title={t().addShortcut} onClick={openAddShortcut} />
       <For each={resolvedShortcuts()}>
         {(shortcut) => <ShortcutBadge icon={shortcut.icon} title={shortcut.title} href={shortcut.href} />}
       </For>
@@ -139,9 +147,10 @@ export default function DashboardControls(props: Props) {
 }
 
 export function DashboardEditButton(props: Props) {
+  const t = useDashboardText();
   const openAddShortcut = () => {
     void prompts.dialog<void>((close) => <ShortcutForm apps={props.apps} settings={props.settings} close={close} />, {
-      title: "Add shortcut",
+      title: t().addShortcut,
       icon: "ti ti-plus",
       size: "medium",
     });
@@ -149,7 +158,7 @@ export function DashboardEditButton(props: Props) {
 
   const openEdit = () => {
     void prompts.dialog<void>((close) => <EditForm props={props} close={close} onAddShortcut={openAddShortcut} />, {
-      title: "Edit dashboard",
+      title: t().editDashboard,
       icon: "ti ti-adjustments",
       size: "large",
     });
@@ -158,12 +167,13 @@ export function DashboardEditButton(props: Props) {
   return (
     <Button variant="secondary" size="sm" class="shrink-0" onClick={openEdit}>
       <i class="ti ti-adjustments" />
-      Edit dashboard
+      {t().editDashboard}
     </Button>
   );
 }
 
 const ShortcutForm = (params: { apps: DashboardAppSummary[]; settings: DashboardSettings; close: (r?: void) => void }) => {
+  const t = useDashboardText();
   const { apps, settings, close } = params;
   const [kind, setKind] = createSignal<"app" | "link">(apps.length > 0 ? "app" : "link");
   const [appId, setAppId] = createSignal(apps[0]?.id ?? "");
@@ -173,7 +183,7 @@ const ShortcutForm = (params: { apps: DashboardAppSummary[]; settings: Dashboard
   const normalizedHref = () => normalizeDashboardShortcutHref(href());
   const hrefError = () => {
     if (!href().trim() || isSafeDashboardShortcutHref(normalizedHref())) return undefined;
-    return "Use an HTTPS URL, an internal path beginning with /, or a mailto link.";
+    return t().urlHint;
   };
   const canSubmit = () =>
     kind() === "app" ? Boolean(appId()) : title().trim().length > 0 && href().trim().length > 0 && hrefError() === undefined;
@@ -190,14 +200,14 @@ const ShortcutForm = (params: { apps: DashboardAppSummary[]; settings: Dashboard
               href: normalizedHref(),
               icon: icon() || "ti ti-link",
             };
-      await saveSettings({ ...settings, shortcuts: [...settings.shortcuts, shortcut] });
+      await saveSettings({ ...settings, shortcuts: [...settings.shortcuts, shortcut] }, t().saveSettingsFailed);
     },
     onSuccess: () => {
       close();
-      toast.success("Shortcut added.");
+      toast.success(t().shortcutAdded);
       window.location.reload();
     },
-    onError: (error) => prompts.error(error instanceof Error ? error.message : "Failed to add shortcut."),
+    onError: (error) => prompts.error(error instanceof Error ? error.message : t().addShortcutFailed),
   });
 
   return (
@@ -205,14 +215,14 @@ const ShortcutForm = (params: { apps: DashboardAppSummary[]; settings: Dashboard
       <SegmentedControl<"app" | "link">
         value={kind}
         onValueChange={setKind}
-        ariaLabel="Shortcut type"
+        ariaLabel={t().shortcutType}
         options={
           apps.length > 0
             ? [
-                { value: "app", label: "App", icon: "ti ti-apps" },
-                { value: "link", label: "Link", icon: "ti ti-link" },
+                { value: "app", label: t().app, icon: "ti ti-apps" },
+                { value: "link", label: t().link, icon: "ti ti-link" },
               ]
-            : [{ value: "link", label: "Link", icon: "ti ti-link" }]
+            : [{ value: "link", label: t().link, icon: "ti ti-link" }]
         }
       />
 
@@ -221,7 +231,7 @@ const ShortcutForm = (params: { apps: DashboardAppSummary[]; settings: Dashboard
         fallback={
           <div class="grid gap-4 sm:grid-cols-2">
             <TextInput
-              label="Title"
+              label={t().titleLabel}
               value={title}
               onValueChange={setTitle}
               icon="ti ti-text-caption"
@@ -230,7 +240,7 @@ const ShortcutForm = (params: { apps: DashboardAppSummary[]; settings: Dashboard
               placeholder="Docs"
             />
             <TextInput
-              label="URL"
+              label={t().url}
               value={href}
               onValueChange={setHref}
               error={hrefError}
@@ -243,13 +253,13 @@ const ShortcutForm = (params: { apps: DashboardAppSummary[]; settings: Dashboard
               placeholder="example.com"
             />
             <div class="sm:col-span-2">
-              <IconInput label="Icon" value={icon} onValueChange={(value) => setIcon(value ?? "")} required clearable={false} />
+              <IconInput label={t().icon} value={icon} onValueChange={(value) => setIcon(value ?? "")} required clearable={false} />
             </div>
           </div>
         }
       >
         <Select
-          label="App"
+          label={t().app}
           icon="ti ti-apps"
           value={appId}
           onValueChange={(value) => setAppId(value ?? "")}
@@ -260,10 +270,10 @@ const ShortcutForm = (params: { apps: DashboardAppSummary[]; settings: Dashboard
 
       <div class="flex justify-end gap-2">
         <Button variant="secondary" size="sm" onClick={() => close()}>
-          Cancel
+          {t().cancel}
         </Button>
-        <Button size="sm" onClick={() => save.mutate()} disabled={!canSubmit()} loading={save.loading()} loadingLabel="Adding shortcut">
-          Add shortcut
+        <Button size="sm" onClick={() => save.mutate()} disabled={!canSubmit()} loading={save.loading()} loadingLabel={t().addingShortcut}>
+          {t().addShortcut}
         </Button>
       </div>
     </div>
@@ -271,6 +281,7 @@ const ShortcutForm = (params: { apps: DashboardAppSummary[]; settings: Dashboard
 };
 
 const EditForm = (params: { props: Props; close: (r?: void) => void; onAddShortcut: () => void }) => {
+  const t = useDashboardText();
   const { props, close, onAddShortcut } = params;
   const [hidden, setHidden] = createSignal<string[]>([...props.settings.hiddenWidgets]);
   const [gradient, setGradient] = createSignal<string>(props.settings.gradient);
@@ -325,19 +336,22 @@ const EditForm = (params: { props: Props; close: (r?: void) => void; onAddShortc
 
   const save = mutations.create<void, void>({
     mutation: async () => {
-      await saveSettings({
-        hiddenWidgets: hidden(),
-        gradient: gradient(),
-        shortcuts: shortcuts(),
-        layout: layoutTouched() ? { widgets: layoutOverrides(), order: widgetOrder() } : props.settings.layout,
-      });
+      await saveSettings(
+        {
+          hiddenWidgets: hidden(),
+          gradient: gradient(),
+          shortcuts: shortcuts(),
+          layout: layoutTouched() ? { widgets: layoutOverrides(), order: widgetOrder() } : props.settings.layout,
+        },
+        t().saveSettingsFailed,
+      );
     },
     onSuccess: () => {
       close();
-      toast.success("Dashboard updated.");
+      toast.success(t().dashboardUpdated);
       window.location.reload();
     },
-    onError: (error) => prompts.error(error instanceof Error ? error.message : "Failed to save dashboard."),
+    onError: (error) => prompts.error(error instanceof Error ? error.message : t().saveDashboardFailed),
   });
 
   const appById = createMemo(() => new Map(props.apps.map((app) => [app.id, app])));
@@ -345,14 +359,14 @@ const EditForm = (params: { props: Props; close: (r?: void) => void; onAddShortc
   return (
     <div class="flex max-h-[70vh] flex-col gap-6 overflow-y-auto px-1 pb-1">
       <section class="flex flex-col gap-2">
-        <span class="text-[11px] uppercase tracking-wider text-dimmed">Name color</span>
+        <span class="text-[11px] uppercase tracking-wider text-dimmed">{t().nameColor}</span>
         <div class="flex flex-wrap gap-2">
           <For each={gradients.gradientPresets}>
             {(preset) => (
               <Tooltip.Anchor content={preset.label}>
                 <button
                   type="button"
-                  aria-label={`${preset.label} name color`}
+                  aria-label={t().nameColorLabel({ name: preset.label })}
                   aria-pressed={gradient() === preset.id}
                   onClick={() => setGradient(preset.id)}
                   class={`h-7 w-7 rounded-full transition-all ${
@@ -370,21 +384,18 @@ const EditForm = (params: { props: Props; close: (r?: void) => void; onAddShortc
 
       <section class="flex flex-col gap-3">
         <div class="flex items-center justify-between gap-3">
-          <span class="text-[11px] uppercase tracking-wider text-dimmed">Shortcuts</span>
+          <span class="text-[11px] uppercase tracking-wider text-dimmed">{t().shortcuts}</span>
           <Button variant="secondary" size="sm" onClick={onAddShortcut}>
             <i class="ti ti-plus" />
-            Add
+            {t().add}
           </Button>
         </div>
-        <Show
-          when={shortcuts().length > 0}
-          fallback={<Placeholder align="left" class="px-0 py-2" description={<>No custom shortcuts yet.</>} />}
-        >
+        <Show when={shortcuts().length > 0} fallback={<Placeholder align="left" class="px-0 py-2" description={<>{t().noShortcuts}</>} />}>
           <ul class="flex flex-col gap-2">
             <For each={shortcuts()}>
               {(shortcut) => {
                 const app = shortcut.kind === "app" ? appById().get(shortcut.appId) : null;
-                const title = shortcut.kind === "link" ? shortcut.title : (shortcut.title ?? app?.name ?? "Unknown app");
+                const title = shortcut.kind === "link" ? shortcut.title : (shortcut.title ?? app?.name ?? t().unknownApp);
                 const icon = shortcut.kind === "link" ? shortcut.icon : (shortcut.icon ?? app?.icon ?? "ti ti-apps");
                 const meta = shortcut.kind === "link" ? shortcut.href : (app?.description ?? shortcut.appId);
                 return (
@@ -396,8 +407,8 @@ const EditForm = (params: { props: Props; close: (r?: void) => void; onAddShortc
                       <span class="block truncate text-sm font-medium text-primary">{title}</span>
                       <span class="block truncate text-xs text-dimmed">{meta}</span>
                     </span>
-                    <Tooltip.Anchor content="Remove shortcut">
-                      <IconButton size="sm" label={`Remove ${title}`} onClick={() => removeShortcut(shortcut.id)}>
+                    <Tooltip.Anchor content={t().removeShortcut}>
+                      <IconButton size="sm" label={t().removeNamed({ name: title })} onClick={() => removeShortcut(shortcut.id)}>
                         <i class="ti ti-trash" />
                       </IconButton>
                     </Tooltip.Anchor>
@@ -412,8 +423,8 @@ const EditForm = (params: { props: Props; close: (r?: void) => void; onAddShortc
       <Show when={props.available.length > 0}>
         <section class="flex flex-col gap-3">
           <div>
-            <span class="text-[11px] uppercase tracking-wider text-dimmed">Widgets</span>
-            <p class="mt-1 text-xs text-dimmed">Choose what leads your briefing and how much room each widget gets.</p>
+            <span class="text-[11px] uppercase tracking-wider text-dimmed">{t().widgets}</span>
+            <p class="mt-1 text-xs text-dimmed">{t().widgetsDescription}</p>
           </div>
           <ul class="flex flex-col gap-2">
             <For each={orderedWidgets()}>
@@ -422,11 +433,11 @@ const EditForm = (params: { props: Props; close: (r?: void) => void; onAddShortc
                 const overridden = () => layoutOverrides().some((entry) => entry.key === widget.key);
                 const recommendation = () => {
                   const parts = [
-                    widget.presentation?.defaultZone === "focus" ? "Focus" : null,
-                    widget.presentation?.defaultZone === "context" ? "Side" : null,
-                    widget.presentation?.defaultSpan === "wide" ? "Wide" : null,
+                    widget.presentation?.defaultZone === "focus" ? t().focus : null,
+                    widget.presentation?.defaultZone === "context" ? t().side : null,
+                    widget.presentation?.defaultSpan === "wide" ? t().wide : null,
                   ].filter(Boolean);
-                  return parts.length > 0 ? `App recommends ${parts.join(" · ")}` : null;
+                  return parts.length > 0 ? t().recommendation({ values: parts.join(" · ") }) : null;
                 };
                 return (
                   <li class="flex flex-col gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-3">
@@ -446,20 +457,20 @@ const EditForm = (params: { props: Props; close: (r?: void) => void; onAddShortc
                         }
                       />
                       <div class="flex shrink-0 items-center gap-1">
-                        <Tooltip.Anchor content="Move widget up" disabled={index() === 0}>
+                        <Tooltip.Anchor content={t().moveUp} disabled={index() === 0}>
                           <IconButton
                             size="sm"
-                            label={`Move ${widget.title} up`}
+                            label={t().moveNamedUp({ name: widget.title })}
                             disabled={index() === 0}
                             onClick={() => moveWidget(widget.key, -1)}
                           >
                             <i class="ti ti-arrow-up" />
                           </IconButton>
                         </Tooltip.Anchor>
-                        <Tooltip.Anchor content="Move widget down" disabled={index() === orderedWidgets().length - 1}>
+                        <Tooltip.Anchor content={t().moveDown} disabled={index() === orderedWidgets().length - 1}>
                           <IconButton
                             size="sm"
-                            label={`Move ${widget.title} down`}
+                            label={t().moveNamedDown({ name: widget.title })}
                             disabled={index() === orderedWidgets().length - 1}
                             onClick={() => moveWidget(widget.key, 1)}
                           >
@@ -473,27 +484,27 @@ const EditForm = (params: { props: Props; close: (r?: void) => void; onAddShortc
                       <SegmentedControl<DashboardWidgetZone>
                         value={() => resolved()?.zone ?? "overview"}
                         onValueChange={(zone) => updateWidgetLayout(widget.key, { zone })}
-                        ariaLabel={`${widget.title} section`}
+                        ariaLabel={t().sectionLabel({ name: widget.title })}
                         options={[
-                          { value: "focus", label: "Focus", icon: "ti ti-focus-2" },
-                          { value: "overview", label: "Overview", icon: "ti ti-layout-grid" },
-                          { value: "context", label: "Side", icon: "ti ti-layout-sidebar-right" },
+                          { value: "focus", label: t().focus, icon: "ti ti-focus-2" },
+                          { value: "overview", label: t().overview, icon: "ti ti-layout-grid" },
+                          { value: "context", label: t().side, icon: "ti ti-layout-sidebar-right" },
                         ]}
                       />
                       <Show when={resolved()?.zone !== "context"}>
                         <SegmentedControl<DashboardWidgetSpan>
                           value={() => resolved()?.span ?? "standard"}
                           onValueChange={(span) => updateWidgetLayout(widget.key, { span })}
-                          ariaLabel={`${widget.title} width`}
+                          ariaLabel={t().widthLabel({ name: widget.title })}
                           options={[
-                            { value: "standard", label: "Standard" },
-                            { value: "wide", label: "Wide" },
+                            { value: "standard", label: t().standard },
+                            { value: "wide", label: t().wide },
                           ]}
                         />
                       </Show>
                       <Show when={overridden()}>
                         <Button variant="ghost" size="sm" onClick={() => resetWidgetLayout(widget.key)}>
-                          Reset
+                          {t().reset}
                         </Button>
                       </Show>
                     </div>
@@ -507,7 +518,7 @@ const EditForm = (params: { props: Props; close: (r?: void) => void; onAddShortc
 
       <Show when={props.inaccessible.length > 0}>
         <section class="flex flex-col gap-2">
-          <span class="text-[11px] uppercase tracking-wider text-dimmed">Not available at your access level</span>
+          <span class="text-[11px] uppercase tracking-wider text-dimmed">{t().inaccessible}</span>
           <ul class="grid gap-2 sm:grid-cols-2">
             <For each={props.inaccessible}>
               {(widget) => (
@@ -522,14 +533,14 @@ const EditForm = (params: { props: Props; close: (r?: void) => void; onAddShortc
         </section>
       </Show>
 
-      <p class="text-[11px] text-dimmed">These settings are saved to your account and apply on every device.</p>
+      <p class="text-[11px] text-dimmed">{t().settingsPersistence}</p>
 
       <div class="flex justify-end gap-2 pt-2">
         <Button variant="secondary" size="sm" onClick={() => close()}>
-          Cancel
+          {t().cancel}
         </Button>
-        <Button size="sm" onClick={() => save.mutate()} loading={save.loading()} loadingLabel="Saving dashboard">
-          Save
+        <Button size="sm" onClick={() => save.mutate()} loading={save.loading()} loadingLabel={t().savingDashboard}>
+          {t().save}
         </Button>
       </div>
     </div>

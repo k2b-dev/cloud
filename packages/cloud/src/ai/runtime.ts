@@ -17,8 +17,8 @@ import type {
   AiChatTurnRunConfig,
   AiClientToolId,
   AiCompactionTurnRunConfig,
-  AiConversationResourceObservation,
   AiConversationFileSnapshot,
+  AiConversationResourceObservation,
   AiInterChatMessage,
   AiModelPolicy,
   AiPendingTurnAction,
@@ -73,6 +73,7 @@ export type SubmitAiChatTurnInput = {
   input: Input;
   userMessage: Message;
   actor?: RequestActor;
+  locale?: string;
   modelPolicy?: AiModelPolicy;
   requestedModelId?: string;
   /** Optional instructions that apply only to this turn. */
@@ -119,6 +120,7 @@ export const submitAiChatTurn = async (input: SubmitAiChatTurnInput): Promise<{ 
     input: canonicalInput,
     chatId: input.chatId,
     actor: input.actor,
+    ...(input.locale ? { locale: input.locale } : {}),
     modelPolicy: input.modelPolicy,
     requestedModelId: input.requestedModelId,
     systemPrompt: input.systemPrompt,
@@ -150,6 +152,7 @@ export const deliverAiInterChatMessage = async (input: {
   message: AiInterChatMessage;
   chatId?: string;
   actor: RequestActor;
+  locale?: string;
   modelPolicy?: AiModelPolicy;
   systemPrompt?: string;
   project?: AiChatTurnRunConfig["project"];
@@ -168,6 +171,7 @@ export const deliverAiInterChatMessage = async (input: {
     input: text,
     chatId: input.chatId,
     actor: input.actor,
+    ...(input.locale ? { locale: input.locale } : {}),
     modelPolicy: input.modelPolicy,
     systemPrompt: input.systemPrompt,
     project: input.project,

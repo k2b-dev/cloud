@@ -92,6 +92,12 @@ Before calling a change complete, decide which of these apply:
 - **Server and browser:** SSR owns initial data and permissions. Solid islands
   own only the interaction that needs a browser. Reload, navigation, and URL
   state preserve the same result.
+- **Internationalization:** resolve one request-scoped locale. Applications own
+  their message catalogs and final human-facing strings; stable codes, logs,
+  and message keys do not become translated transport contracts. Use the
+  inherited `@k2b/ui` locale for rendering and forward locale metadata across
+  capabilities and widgets. Never introduce process-global locale state,
+  per-component locale plumbing, or a language picker as incidental scope.
 - **Data and effects:** applications own durable domain data in Postgres;
   Valkey coordinates bounded runtime work. Commit domain state before
   retryable notifications or external effects. Bound work that can grow or

@@ -75,6 +75,19 @@ const help: HelpRegistryEntry = {
   appName: "Demo",
   appIcon: "ti ti-box",
   manifestHash: "help-hash",
+  baseLocale: "en",
+  documentsByLocale: {
+    de: [
+      {
+        id: "getting-started",
+        title: "Erste Schritte",
+        description: "Demo-Elemente erstellen und prüfen.",
+        order: 10,
+        markdown: "# Erste Schritte\n\nErstelle ein Element und prüfe den aktuellen Zustand.",
+        searchText: "erste schritte element erstellen prüfen aktueller zustand",
+      },
+    ],
+  },
   documents: [
     {
       id: "getting-started",
@@ -123,6 +136,7 @@ const passThrough: NonNullable<McpTestDependencies["limit"]> = async (_c, next) 
 const createMcpRoutes = (dependencies: McpTestDependencies = {}) =>
   createMcpRoutesBase({
     listApps: async () => [summary(app)],
+    getOperatorLocale: async () => "en",
     getAppUrl: async () => "cloud.example",
     authenticate: passThrough,
     limit: passThrough,
@@ -511,7 +525,7 @@ describe("capability MCP projection", () => {
           {
             uri: "cloud://help/demo/getting-started",
             mimeType: "text/markdown",
-            _meta: { "cloud/manifestHash": "help-hash" },
+            _meta: { "cloud/manifestHash": "help-hash", "cloud/locale": "en" },
           },
         ],
       },
@@ -556,6 +570,16 @@ describe("capability MCP projection", () => {
       expect.objectContaining({ type: "resource_link", uri: "cloud://help/demo/getting-started" }),
     );
     expect(readResult.result.content.some((item) => item.type === "resource")).toBe(false);
+
+    const localized = await rpc(
+      routes,
+      { jsonrpc: "2.0", id: 34, method: "tools/call", params: { name: "cloud__help__search", arguments: { query: "element erstellen" } } },
+      "2025-11-25",
+      { "x-cloud-locale": "de-CH" },
+    );
+    expect(await localized.json()).toMatchObject({
+      result: { structuredContent: { documents: [{ locale: "de", title: "Erste Schritte" }] } },
+    });
   });
 
   test("paginates large Help catalogs and excludes stale corpora at the route boundary", async () => {
@@ -686,6 +710,7 @@ describe("capability MCP projection", () => {
   test("runs the authenticated MCP endpoint behind a request limiter", async () => {
     let requests = 0;
     const routes = createMcpRoutes({
+      listApps: async () => [],
       limit: async (c, next) => {
         requests += 1;
         if (requests > 1) return c.json({ message: "Rate limit exceeded" }, 429, { "Retry-After": "1" });

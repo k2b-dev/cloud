@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
-import type { HelpDocumentManifest, HelpDocumentPayload, HelpSearchPayload } from "../shared/help";
+import { type HelpDocumentManifest, type HelpDocumentPayload, type HelpSearchPayload, helpLocaleChain } from "../shared/help";
 import { markdownToPlainText, renderHelpMarkdown } from "../shared/markdown";
 
 const metadataSchema = z.object({
@@ -9,18 +9,21 @@ const metadataSchema = z.object({
   title: z.string().trim().min(1),
   icon: z.string().trim().min(1).optional(),
   description: z.string().trim().min(1).optional(),
-  order: z.number().int().default(100),
+  order: z.number().int().optional(),
 });
 
-export type HelpDefinitionDocument = z.infer<typeof metadataSchema> & {
+export type HelpDefinitionDocument = Omit<z.infer<typeof metadataSchema>, "order"> & {
+  order: number;
   markdown: string;
   html: string;
   searchText: string;
 };
 
 export type HelpDefinition = {
+  baseLocale?: string;
+  documentsByLocale?: Readonly<Record<string, readonly HelpDefinitionDocument[]>>;
   documents: readonly HelpDefinitionDocument[];
-  getMarkdown: (id: string) => string | undefined;
+  getMarkdown: (id: string, locale?: string) => string | undefined;
 };
 
 export type HelpCollection = {
@@ -30,7 +33,9 @@ export type HelpCollection = {
   getMarkdown: (id: string) => string | undefined;
 };
 
-const parseSource = (source: string): HelpDefinitionDocument => {
+type ParsedHelpDocument = Omit<HelpDefinitionDocument, "order"> & { order?: number };
+
+const parseSource = (source: string): ParsedHelpDocument => {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/.exec(source);
   if (!match) throw new Error("Help documents require YAML frontmatter wrapped in --- markers");
 
@@ -46,22 +51,81 @@ const parseSource = (source: string): HelpDefinitionDocument => {
   };
 };
 
-/** Define one app-owned Help corpus without routing or authorization config. */
-export const defineHelp = (options: { documents: readonly string[] }): HelpDefinition => {
-  const documents = options.documents
+const canonicalLocale = (value: string): string => {
+  try {
+    return Intl.getCanonicalLocales(value)[0]!;
+  } catch {
+    throw new Error(`Invalid help locale "${value}"`);
+  }
+};
+
+const parseDocuments = (
+  sources: readonly string[],
+  locale: string,
+  baseById?: ReadonlyMap<string, HelpDefinitionDocument>,
+): readonly HelpDefinitionDocument[] => {
+  const documents = sources
     .map(parseSource)
+    .map((document): HelpDefinitionDocument => {
+      const base = baseById?.get(document.id);
+      if (!baseById) return { ...document, order: document.order ?? 100 };
+      if (!base) throw new Error(`Help locale "${locale}" contains unknown document id "${document.id}"`);
+      if ((document.icon !== undefined && document.icon !== base.icon) || (document.order !== undefined && document.order !== base.order)) {
+        throw new Error(`Help locale "${locale}" must preserve icon and order for document "${document.id}"`);
+      }
+      return { ...document, icon: base.icon, description: document.description ?? base.description, order: base.order };
+    })
     .sort((a, b) => a.order - b.order || a.title.localeCompare(b.title))
     .map((document) => Object.freeze(document));
-  const byId = new Map<string, HelpDefinitionDocument>();
-
+  const ids = new Set<string>();
   for (const document of documents) {
-    if (byId.has(document.id)) throw new Error(`Duplicate help document id "${document.id}"`);
-    byId.set(document.id, document);
+    if (ids.has(document.id)) throw new Error(`Duplicate help document id "${document.id}" in locale "${locale}"`);
+    ids.add(document.id);
+  }
+  return Object.freeze(documents);
+};
+
+/** Define one app-owned Help corpus without routing or authorization config. */
+export const defineHelp = (
+  options:
+    | { documents: readonly string[]; baseLocale?: never }
+    | { baseLocale: string; documents: Readonly<Record<string, readonly string[]>> },
+): HelpDefinition => {
+  const localized = (value: typeof options): value is { baseLocale: string; documents: Readonly<Record<string, readonly string[]>> } =>
+    typeof value.baseLocale === "string";
+  const baseLocale = canonicalLocale(localized(options) ? options.baseLocale : "en");
+  const rawSourceMap: Readonly<Record<string, readonly string[]>> = localized(options)
+    ? options.documents
+    : { [baseLocale]: options.documents };
+  const sourceMap: Record<string, readonly string[]> = {};
+  for (const [rawLocale, sources] of Object.entries(rawSourceMap)) {
+    const locale = canonicalLocale(rawLocale);
+    if (sourceMap[locale]) throw new Error(`Duplicate help locale "${locale}"`);
+    sourceMap[locale] = sources;
+  }
+  const documentsByLocale: Record<string, readonly HelpDefinitionDocument[]> = {};
+  const baseSources = sourceMap[baseLocale];
+  if (!baseSources) throw new Error(`Help documents require the base locale "${baseLocale}"`);
+  const documents = parseDocuments(baseSources, baseLocale);
+  documentsByLocale[baseLocale] = documents;
+  const baseById = new Map(documents.map((document) => [document.id, document]));
+  for (const [locale, sources] of Object.entries(sourceMap)) {
+    if (locale === baseLocale) continue;
+    if (documentsByLocale[locale]) throw new Error(`Duplicate help locale "${locale}"`);
+    documentsByLocale[locale] = parseDocuments(sources, locale, baseById);
   }
 
   return {
+    baseLocale,
+    documentsByLocale: Object.freeze(documentsByLocale),
     documents: Object.freeze(documents),
-    getMarkdown: (id) => byId.get(id)?.markdown,
+    getMarkdown: (id, locale = baseLocale) => {
+      for (const candidate of helpLocaleChain(canonicalLocale(locale), baseLocale)) {
+        const localized = documentsByLocale[candidate]?.find((document) => document.id === id);
+        if (localized) return localized.markdown;
+      }
+      return undefined;
+    },
   };
 };
 
@@ -91,6 +155,7 @@ export const defineHelpCollection = (options: { basePath: string; sources: reado
     .get("/search", (context) => {
       const query = context.req.query("q")?.trim().toLocaleLowerCase().slice(0, 200) ?? "";
       const payload: HelpSearchPayload = {
+        locale: "en",
         ids: query
           ? documents
               .filter((document) =>
@@ -105,6 +170,7 @@ export const defineHelpCollection = (options: { basePath: string; sources: reado
       const document = byId.get(context.req.param("id"));
       if (!document) return context.json({ error: "Help document not found" }, 404);
       const payload: HelpDocumentPayload = {
+        locale: "en",
         id: document.id,
         title: document.title,
         markdown: document.markdown,

@@ -1,9 +1,10 @@
 import { clipboard, hotkeys } from "@k2b/stdlib/solid";
-import { NoticeCard, Button, IconButton, IconButtonLink, MarkdownView, Placeholder, prompts } from "@k2b/ui";
+import { Button, IconButton, IconButtonLink, MarkdownView, NoticeCard, Placeholder, prompts, useLocale } from "@k2b/ui";
 import type { HelpDocumentManifest, HelpDocumentPayload, HelpSearchPayload } from "@valentinkolb/cloud/shared";
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { appAccentStyle } from "./app-appearance";
 import { type GlobalSearchHelpApp, openGlobalSearchHelpDialog } from "./GlobalSearchHelpDialog";
+import { helpMessages } from "./help-messages";
 import { formatHelpBundleMarkdown, formatHelpDocumentMarkdown } from "./layout-help-markdown";
 import { adjacentHelpDocuments, focusHelpArticleHeading, resetHelpArticleScroll } from "./layout-help-navigation";
 import { layoutHelpTopicHref } from "./layout-help-url";
@@ -103,12 +104,14 @@ export function LayoutHelpDocuments(props: LayoutHelpDocumentsProps) {
 }
 
 const Shortcuts = (props: { openSearchHelp: () => void }) => {
+  const locale = useLocale();
+  const t = () => helpMessages.resolve([locale()]).t;
   const entries = createMemo(() => [...hotkeys.entries()].sort((a, b) => a.label.localeCompare(b.label) || a.keys.localeCompare(b.keys)));
   return (
     <div class="flex flex-col gap-3">
-      <p class="text-sm leading-relaxed text-dimmed">Shortcuts follow the current app and view. This list updates automatically.</p>
+      <p class="text-sm leading-relaxed text-dimmed">{t().shortcutsIntro}</p>
       <Button size="sm" variant="secondary" class="self-start" onClick={props.openSearchHelp}>
-        <i class="ti ti-search" /> Search help
+        <i class="ti ti-search" /> {t().searchHelp}
       </Button>
       <div class="flex flex-col gap-2">
         <For each={entries()}>
@@ -148,6 +151,8 @@ const HelpShell = (props: {
   surface?: "modal" | "page" | "embedded";
   syncPageUrl?: boolean;
 }) => {
+  const locale = useLocale();
+  const t = () => helpMessages.resolve([locale()]).t;
   const [externalTopics, setExternalTopics] = createSignal(mergeTopics(sortedTopics(), props.documents));
   const [view, setView] = createSignal<HelpView>(props.session.view);
   const [query, setQuery] = createSignal(props.session.query);
@@ -195,7 +200,7 @@ const HelpShell = (props: {
       element,
       icon: element.dataset.helpIcon ?? "ti ti-point",
       id: element.id,
-      title: element.textContent?.trim() || "Section",
+      title: element.textContent?.trim() || t().section,
     }));
     setArticleSections(sections);
     setActiveSectionId(sections[0]?.id ?? null);
@@ -212,9 +217,9 @@ const HelpShell = (props: {
 
   const shortcutsTopic = createMemo<HelpTopic>(() => ({
     id: "shortcuts",
-    title: "Shortcuts",
+    title: t().shortcuts,
     icon: "ti ti-keyboard",
-    description: "Keyboard actions for the current page.",
+    description: t().shortcutsDescription,
     order: 0,
     kind: "content",
     children: <Shortcuts openSearchHelp={() => openGlobalSearchHelpDialog(props.searchHelpApps)} />,
@@ -258,7 +263,7 @@ const HelpShell = (props: {
             signal: controller.signal,
             headers: { Accept: "application/json" },
           });
-          if (!response.ok) throw new Error(`Help search failed (${response.status})`);
+          if (!response.ok) throw new Error(t().searchFailed({ status: response.status }));
           const payload = (await response.json()) as Partial<HelpSearchPayload>;
           return Array.isArray(payload.ids) ? payload.ids.filter((id): id is string => typeof id === "string") : [];
         }),
@@ -325,17 +330,25 @@ const HelpShell = (props: {
   onCleanup(() => copyAllController?.abort());
 
   const loadDocument = async (topic: HelpDocumentManifest, signal: AbortSignal) => {
-    const cached = props.session.articleCache.get(topic.url);
+    const cacheKey = `${topic.locale ?? "en"}:${topic.url}`;
+    const cached = props.session.articleCache.get(cacheKey);
     if (cached) return cached;
 
     const response = await fetch(topic.url, { signal, headers: { Accept: "application/json" } });
-    if (!response.ok) throw new Error(`Help request failed (${response.status})`);
+    if (!response.ok) throw new Error(t().requestFailed({ status: response.status }));
     const value = (await response.json()) as Partial<HelpDocumentPayload>;
-    if (value.id !== topic.id || typeof value.html !== "string" || typeof value.markdown !== "string" || typeof value.title !== "string") {
-      throw new Error("Help server returned an invalid document");
+    if (
+      value.id !== topic.id ||
+      (value.locale !== undefined && typeof value.locale !== "string") ||
+      (topic.locale !== undefined && value.locale !== undefined && value.locale !== topic.locale) ||
+      typeof value.html !== "string" ||
+      typeof value.markdown !== "string" ||
+      typeof value.title !== "string"
+    ) {
+      throw new Error(t().invalidDocument);
     }
-    const document = value as HelpDocumentPayload;
-    props.session.articleCache.set(topic.url, document);
+    const document: HelpDocumentPayload = { ...(value as HelpDocumentPayload), locale: value.locale ?? topic.locale ?? "en" };
+    props.session.articleCache.set(cacheKey, document);
     return document;
   };
 
@@ -347,7 +360,7 @@ const HelpShell = (props: {
     setLoadError(null);
     setLoading(false);
     if (!topic || topic.kind !== "document" || view() !== "article") return;
-    const cached = props.session.articleCache.get(topic.url);
+    const cached = props.session.articleCache.get(`${topic.locale ?? "en"}:${topic.url}`);
     if (cached) {
       setPayload(cached);
       restoreArticleScroll();
@@ -365,7 +378,7 @@ const HelpShell = (props: {
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
-        if (version === requestVersion) setLoadError(error instanceof Error ? error.message : "Could not load help");
+        if (version === requestVersion) setLoadError(error instanceof Error ? error.message : t().loadFallback);
       })
       .finally(() => {
         if (version === requestVersion) setLoading(false);
@@ -400,7 +413,7 @@ const HelpShell = (props: {
       await allHelpClipboard.copy(formatHelpBundleMarkdown(documents));
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError")) {
-        setCopyAllError(error instanceof Error ? error.message : "Could not copy help");
+        setCopyAllError(error instanceof Error ? error.message : t().copyFallback);
       }
     } finally {
       if (copyAllController === controller) {
@@ -436,14 +449,14 @@ const HelpShell = (props: {
     setView("hub");
   };
   const modalTitle = createMemo(() => {
-    if (view() === "article") return activeTopic()?.title ?? "Help";
-    if (view() === "search") return "Search help";
-    return "Help";
+    if (view() === "article") return activeTopic()?.title ?? t().help;
+    if (view() === "search") return t().searchHelp;
+    return t().help;
   });
   const modalDescription = createMemo(() => {
-    if (view() === "article") return activeTopic()?.description ?? "Guides, workflows, and shortcuts";
-    if (view() === "search") return "Find a task, concept, or shortcut.";
-    return "Guides, workflows, and shortcuts";
+    if (view() === "article") return activeTopic()?.description ?? t().description;
+    if (view() === "search") return t().searchDescription;
+    return t().description;
   });
   const modalIcon = createMemo(() => {
     if (view() === "article") return iconClass(activeTopic()?.icon);
@@ -478,7 +491,7 @@ const HelpShell = (props: {
 
   const TopicNavigation = () => (
     <Show when={adjacentTopics().previous || adjacentTopics().next}>
-      <nav class="mt-12 grid gap-3 sm:grid-cols-2" aria-label="Help topic navigation">
+      <nav class="mt-12 grid gap-3 sm:grid-cols-2" aria-label={t().topicNavigation}>
         <Show when={adjacentTopics().previous}>
           {(previous) => (
             <button
@@ -488,7 +501,7 @@ const HelpShell = (props: {
             >
               <span class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
                 <i class="ti ti-arrow-left" aria-hidden="true" />
-                Previous topic
+                {t().previousTopic}
               </span>
               <span class="text-sm font-medium text-primary group-hover:app-accent-text">{previous().title}</span>
             </button>
@@ -502,7 +515,7 @@ const HelpShell = (props: {
               onClick={() => openTopic(next().id)}
             >
               <span class="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-dimmed">
-                Next topic
+                {t().nextTopic}
                 <i class="ti ti-arrow-right" aria-hidden="true" />
               </span>
               <span class="text-sm font-medium text-primary group-hover:app-accent-text">{next().title}</span>
@@ -530,8 +543,8 @@ const HelpShell = (props: {
           <Show when={view() !== "hub"}>
             <IconButton
               class="shrink-0"
-              label={view() === "article" ? "Back to help topics" : "Back to help"}
-              title="Back"
+              label={view() === "article" ? t().backToTopics : t().backToHelp}
+              title={t().back}
               onClick={() => (view() === "article" ? goBack() : showHub())}
             >
               <i class="ti ti-arrow-left" />
@@ -548,12 +561,12 @@ const HelpShell = (props: {
               {modalDescription()}
             </p>
           </div>
-          <div class="flex shrink-0 items-center gap-1" role="group" aria-label="Help actions">
+          <div class="flex shrink-0 items-center gap-1" role="group" aria-label={t().actions}>
             <Show when={view() === "hub" && documentTopics().length > 0}>
               <IconButton
                 disabled={copyingAll()}
-                label={allHelpClipboard.wasCopied() ? "Help copied as Markdown" : "Copy all help as Markdown"}
-                title={allHelpClipboard.wasCopied() ? "Copied" : "Copy all help as Markdown"}
+                label={allHelpClipboard.wasCopied() ? t().helpCopied : t().copyAllHelp}
+                title={allHelpClipboard.wasCopied() ? t().copied : t().copyAllHelp}
                 onClick={() => void copyAllHelp()}
               >
                 <i class={copyingAll() ? "ti ti-loader-2 animate-spin" : allHelpClipboard.wasCopied() ? "ti ti-check" : "ti ti-markdown"} />
@@ -562,8 +575,8 @@ const HelpShell = (props: {
             <Show when={view() === "article" && activeTopic()?.kind === "document"}>
               <IconButton
                 disabled={!payload()}
-                label={articleClipboard.wasCopied() ? "Article copied as Markdown" : "Copy article as Markdown"}
-                title={articleClipboard.wasCopied() ? "Copied" : "Copy article as Markdown"}
+                label={articleClipboard.wasCopied() ? t().articleCopied : t().copyArticle}
+                title={articleClipboard.wasCopied() ? t().copied : t().copyArticle}
                 onClick={() => {
                   const topic = activeTopic();
                   if (topic) void copyArticle(topic, payload());
@@ -578,8 +591,8 @@ const HelpShell = (props: {
                   href={layoutHelpTopicHref(pageBase(), view() === "article" ? activeId() : null)}
                   target="_blank"
                   rel="noopener noreferrer"
-                  label="Open help in a new browser window"
-                  title="Open full-page help"
+                  label={t().openWindow}
+                  title={t().openFullPage}
                   onClick={(event) => {
                     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
 
@@ -599,7 +612,7 @@ const HelpShell = (props: {
                 </IconButtonLink>
               )}
             </Show>
-            <IconButton label="Close help" title="Close" onClick={props.close}>
+            <IconButton label={t().closeHelp} title={t().close} onClick={props.close}>
               <i class="ti ti-x" />
             </IconButton>
           </div>
@@ -620,20 +633,20 @@ const HelpShell = (props: {
           <div class="mx-auto flex max-w-3xl flex-col gap-6">
             <div class="flex flex-col items-start justify-between gap-3 sm:flex-row">
               <div>
-                <h3 class="text-xl font-semibold text-primary">How can we help?</h3>
-                <p class="mt-1 text-sm text-dimmed">Find a task, concept, or shortcut for the current app.</p>
+                <h3 class="text-xl font-semibold text-primary">{t().heading}</h3>
+                <p class="mt-1 text-sm text-dimmed">{t().headingDescription}</p>
               </div>
               <Show when={props.surface !== "modal" && documentTopics().length > 0}>
                 <Button size="sm" variant="secondary" class="shrink-0" disabled={copyingAll()} onClick={() => void copyAllHelp()}>
                   <i class={copyingAll() ? "ti ti-loader-2 animate-spin" : allHelpClipboard.wasCopied() ? "ti ti-check" : "ti ti-copy"} />
-                  {copyingAll() ? "Preparing…" : allHelpClipboard.wasCopied() ? "Copied" : "Copy all as Markdown"}
+                  {copyingAll() ? t().preparing : allHelpClipboard.wasCopied() ? t().copied : t().copyAllShort}
                 </Button>
               </Show>
             </div>
             <Show when={copyAllError()}>
               {(message) => (
                 <p class="text-xs text-danger" role="alert">
-                  Could not copy all help: {message()}
+                  {t().copyAllFailed({ message: message() })}
                 </p>
               )}
             </Show>
@@ -642,7 +655,7 @@ const HelpShell = (props: {
               <input
                 class="min-w-0 flex-1 bg-transparent text-sm outline-none"
                 value={query()}
-                placeholder="Search help…"
+                placeholder={t().searchPlaceholder}
                 onInput={(event) => {
                   setQuery(event.currentTarget.value);
                   if (event.currentTarget.value.trim()) setView("search");
@@ -651,14 +664,14 @@ const HelpShell = (props: {
             </label>
             <section aria-labelledby="help-start-title">
               <h4 id="help-start-title" class="mb-2 text-xs font-semibold uppercase tracking-wide text-dimmed">
-                Start here
+                {t().startHere}
               </h4>
               <TopicList items={topics().slice(0, 5)} />
             </section>
             <Show when={topics().length > 5}>
               <section aria-labelledby="help-all-title">
                 <h4 id="help-all-title" class="mb-2 text-xs font-semibold uppercase tracking-wide text-dimmed">
-                  All topics
+                  {t().allTopics}
                 </h4>
                 <TopicList items={topics().slice(5)} />
               </section>
@@ -670,7 +683,7 @@ const HelpShell = (props: {
           <div class="mx-auto flex max-w-3xl flex-col gap-4">
             <div class="flex items-center gap-2">
               <Show when={props.surface !== "modal"}>
-                <IconButton label="Back to help" onClick={showHub}>
+                <IconButton label={t().backToHelp} onClick={showHub}>
                   <i class="ti ti-arrow-left" />
                 </IconButton>
               </Show>
@@ -680,7 +693,7 @@ const HelpShell = (props: {
                   autofocus
                   class="min-w-0 flex-1 bg-transparent text-sm outline-none"
                   value={query()}
-                  placeholder="Search help…"
+                  placeholder={t().searchPlaceholder}
                   onInput={(event) => setQuery(event.currentTarget.value)}
                 />
               </label>
@@ -689,11 +702,11 @@ const HelpShell = (props: {
               <Show when={searching()}>
                 <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
               </Show>
-              {results().length} {results().length === 1 ? "result" : "results"}
+              {t().results({ count: results().length })}
             </p>
             <TopicList items={results()} />
             <Show when={results().length === 0 && !searching()}>
-              <Placeholder icon="ti ti-search-off" title="No help topic matches this search." />
+              <Placeholder icon="ti ti-search-off" title={t().noResults} />
             </Show>
           </div>
         </Show>
@@ -707,7 +720,7 @@ const HelpShell = (props: {
                   class="mb-6 inline-flex items-center gap-1.5 text-xs font-medium text-dimmed hover:app-accent-text focus-ui"
                   onClick={goBack}
                 >
-                  <i class="ti ti-arrow-left" /> Back
+                  <i class="ti ti-arrow-left" /> {t().back}
                 </button>
                 <header class="mb-8 grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3 gap-y-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
                   <span class="help-topic-icon flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--ui-radius-control)] app-accent-text">
@@ -729,7 +742,7 @@ const HelpShell = (props: {
                       onClick={() => void copyArticle(topic(), payload())}
                     >
                       <i class={articleClipboard.wasCopied() ? "ti ti-check" : "ti ti-markdown"} />
-                      {articleClipboard.wasCopied() ? "Copied" : "Copy Markdown"}
+                      {articleClipboard.wasCopied() ? t().copied : t().copyMarkdown}
                     </Button>
                   </Show>
                 </header>
@@ -737,15 +750,15 @@ const HelpShell = (props: {
               <Show when={topic().kind === "content"}>{legacyTopicContent(topic())}</Show>
               <Show when={topic().kind === "document"}>
                 <Show when={loading()}>
-                  <Placeholder state="loading" variant="panel" title="Loading help…" />
+                  <Placeholder state="loading" variant="panel" title={t().loading} />
                 </Show>
                 <Show when={loadError()}>
                   {(message) => (
                     <NoticeCard tone="danger" icon={false}>
-                      <p class="font-medium">Could not load this topic</p>
+                      <p class="font-medium">{t().loadFailed}</p>
                       <p class="mt-1 text-sm">{message()}</p>
                       <Button size="sm" variant="secondary" class="mt-3" onClick={() => setLoadAttempt((value) => value + 1)}>
-                        Try again
+                        {t().tryAgain}
                       </Button>
                     </NoticeCard>
                   )}
@@ -754,8 +767,8 @@ const HelpShell = (props: {
                   {(document) => (
                     <div class="help-article-layout">
                       <Show when={articleSections().length > 0}>
-                        <nav class="help-article-toc" aria-label="On this page">
-                          <p class="help-article-toc-label">On this page</p>
+                        <nav class="help-article-toc" aria-label={t().onThisPage}>
+                          <p class="help-article-toc-label">{t().onThisPage}</p>
                           <ol>
                             <For each={articleSections()}>
                               {(section) => (
@@ -791,11 +804,7 @@ const HelpShell = (props: {
           )}
         </Show>
         <span class="sr-only" aria-live="polite">
-          {articleClipboard.wasCopied()
-            ? "Article copied as Markdown."
-            : allHelpClipboard.wasCopied()
-              ? "All help copied as Markdown."
-              : ""}
+          {articleClipboard.wasCopied() ? t().articleCopiedAnnouncement : allHelpClipboard.wasCopied() ? t().allCopiedAnnouncement : ""}
         </span>
       </div>
     </div>

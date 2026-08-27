@@ -11,7 +11,7 @@ export * from "./app-url";
 export * from "./branding";
 export * from "./email-html";
 export * from "./format";
-export type * from "./help";
+export * from "./help";
 export type * from "./icons";
 export { icons } from "./icons";
 export * from "./locale";

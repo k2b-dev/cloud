@@ -5,7 +5,7 @@ section: Platform services
 order: 570
 description: Add application-owned information to the shared Cloud dashboard.
 tags: [dashboard, widgets, authorization]
-updated: 2026-07-27
+updated: 2026-08-26
 ---
 
 # Dashboard widgets
@@ -16,6 +16,10 @@ dashboard.
 The application owns an authenticated JSON endpoint. Cloud discovers the
 endpoint, fetches it with the user's session, and renders the shared widget
 blocks.
+
+Cloud also forwards the Dashboard request's resolved locale in the
+`x-cloud-locale` header. Resolve it with `getLocale(c)` in the endpoint; do not
+rely on `Accept-Language` surviving the server-side fan-out.
 
 ## Register an endpoint
 
@@ -97,6 +101,14 @@ Each list item requires `label`. It can contain `icon`, `iconTone`, `sub`,
 `meta`, and `href`.
 
 Each pill requires `label` and `value`. It can contain `tone` and `href`.
+
+`WidgetResponse` contains final display strings, never catalog keys. Numeric
+`stat.value` and `pill.value` fields are formatted automatically by `@k2b/ui`
+for the inherited locale; string values remain byte-for-byte unchanged. Return
+a string when the value is already deliberately composed. The application
+owns labels, dates, currency, relative time, plurals, list text, empty states,
+and error guidance. See
+[Internationalize an application](/en/docs/build/internationalization).
 
 Use `placeholder` for a compact empty or unavailable state inside the widget.
 

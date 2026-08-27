@@ -14,6 +14,7 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 const { Widget } = await import("./Widget");
 const { WidgetHero } = await import("./WidgetHero");
 const { WidgetList } = await import("./WidgetList");
+const { LocaleProvider } = await import("../intl/locale");
 const { WidgetPills } = await import("./WidgetPills");
 const { WidgetStat } = await import("./WidgetStat");
 const { WidgetStatus } = await import("./WidgetStatus");
@@ -97,6 +98,21 @@ describe("@k2b/ui Cloud-faithful widget composition", () => {
     expect(status).toContain("One source unavailable");
     expect(status).toContain('data-grow="true"');
     expect(custom).toContain("ti ti-clock");
+  });
+
+  test("formats numeric widget values with the render locale and preserves strings", () => {
+    const number = renderToString(() =>
+      createComponent(LocaleProvider, {
+        locale: "de-CH",
+        get children() {
+          return createComponent(WidgetStat, { label: "Requests", value: 1234.5 });
+        },
+      }),
+    );
+    const string = renderToString(() => createComponent(WidgetPills, { pills: [{ label: "Code", value: "1234.5" }] }));
+
+    expect(number).toContain(new Intl.NumberFormat("de-CH").format(1234.5));
+    expect(string).toContain("1234.5");
   });
 
   test("keeps the widget chrome Cloud actually paints", () => {

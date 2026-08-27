@@ -243,6 +243,7 @@ describe("AI capability catalog", () => {
           appId: "grids",
           appName: "Grids",
           kind: "help",
+          locale: "en",
           documentId: "grids-gql",
           title: "GQL reference",
           description: "Query Grids data.",
@@ -252,6 +253,27 @@ describe("AI capability catalog", () => {
     expect(await read.execute({ appId: "grids", documentId: "grids-gql", query: "GQL preindexed" }, context)).toMatchObject({
       document: { kind: "help", markdown: expect.stringContaining("from table Books"), truncated: false },
     });
+  });
+
+  test("resolves AI Help for the turn locale without exposing message keys", async () => {
+    const help: HelpRegistryEntry = {
+      appId: "grids",
+      appName: "Grids",
+      appIcon: "ti ti-table",
+      manifestHash: "localized",
+      baseLocale: "en",
+      documents: [{ id: "start", title: "Start", order: 10, markdown: "# Start\n\nEnglish help." }],
+      documentsByLocale: {
+        de: [{ id: "start", title: "Starten", order: 10, markdown: "# Starten\n\nDeutsche Hilfe." }],
+      },
+    };
+    const [search] = prepareAiTools({ tools: createAiHelpTools([help], "de-CH"), actor, conversationId: "localized" }).tools;
+    if (!search || search.kind !== "server") throw new Error("Help search missing");
+    const result = await search.execute(
+      { query: "Deutsche Hilfe" },
+      { signal: AbortSignal.timeout(1_000), requestApproval: async () => true, requestClientTool: async <T>() => undefined as T },
+    );
+    expect(result).toMatchObject({ documents: [{ locale: "de", title: "Starten" }] });
   });
 
   test("ranks non-contiguous Help terms and bounds long reads to relevant sections", async () => {

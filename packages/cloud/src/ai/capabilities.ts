@@ -292,6 +292,7 @@ const AiHelpCatalogItemSchema = z
     appId: z.string(),
     appName: z.string(),
     kind: z.literal("help"),
+    locale: z.string(),
     documentId: z.string(),
     title: z.string(),
     description: z.string().optional(),
@@ -304,8 +305,8 @@ const AiHelpDocumentSchema = AiHelpCatalogItemSchema.extend({
 }).strict();
 
 /** Search and read the live Help snapshot without loading one tool per article. */
-export const createAiHelpTools = (registry: readonly HelpRegistryEntry[]): AiRuntimeTool[] => {
-  const documents = createHelpCatalog(registry);
+export const createAiHelpTools = (registry: readonly HelpRegistryEntry[], locale = "en"): AiRuntimeTool[] => {
+  const documents = createHelpCatalog(registry, locale);
 
   const search = defineAiTool({
     name: "search_help",
@@ -621,6 +622,7 @@ export const createAiToolResolver =
     onCapabilityRegistryError?: (error: unknown) => void;
     listHelpRegistry?: () => Promise<HelpRegistryEntry[]>;
     onHelpRegistryError?: (error: unknown) => void;
+    locale?: string;
     maxLoadedTools?: number;
     execute?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<unknown>;
     review?: (entry: AiCapabilityCatalogEntry, args: unknown, context: ToolContext) => Promise<CapabilityActionReview | null>;
@@ -647,7 +649,7 @@ export const createAiToolResolver =
       });
     }
     const capabilityCatalog = buildAiCapabilityCatalog(registry);
-    const helpTools = input.listHelpRegistry ? createAiHelpTools(helpRegistry) : [];
+    const helpTools = input.listHelpRegistry ? createAiHelpTools(helpRegistry, input.locale) : [];
     const resourceTool =
       input.execute && capabilityCatalog.length > 0
         ? createAiResourceReaderTool({ apps: registry, catalog: capabilityCatalog, execute: input.execute })

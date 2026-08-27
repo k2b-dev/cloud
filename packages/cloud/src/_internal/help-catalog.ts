@@ -1,4 +1,5 @@
-import type { AppRegistryEntry, HelpRegistryEntry } from "../contracts/registry";
+import type { AppRegistryEntry, HelpRegistryDocument, HelpRegistryEntry } from "../contracts/registry";
+import { helpLocaleChain } from "../shared/help";
 import { markdownToPlainText } from "../shared/markdown";
 import { getApp, getHelp, listApps, listHelp } from "./registry";
 
@@ -10,6 +11,7 @@ export type HelpCatalogDocument = {
   appName: string;
   appIcon?: string;
   manifestHash: string;
+  locale: string;
   documentId: string;
   title: string;
   description?: string;
@@ -72,14 +74,32 @@ export const loadCurrentHelp = async (dependencies: HelpCatalogDependencies = {}
   return entries.filter((entry) => manifestHashes.get(entry.appId) === entry.manifestHash);
 };
 
-export const createHelpCatalog = (entries: readonly HelpRegistryEntry[]): HelpCatalogDocument[] =>
+const resolveRegistryDocuments = (
+  entry: HelpRegistryEntry,
+  requestedLocale: string,
+): { locale: string; documents: HelpRegistryDocument[] } => {
+  const baseLocale = entry.baseLocale ?? "en";
+  const variants = entry.documentsByLocale ?? {};
+  const chain = helpLocaleChain(requestedLocale, baseLocale);
+  const locale = chain.find((candidate) => candidate === baseLocale || variants[candidate] !== undefined) ?? baseLocale;
+  const byId = new Map(entry.documents.map((document) => [document.id, document]));
+  for (const candidate of [...chain.slice(0, chain.indexOf(baseLocale)), baseLocale].reverse()) {
+    if (candidate === baseLocale) continue;
+    for (const document of variants[candidate] ?? []) byId.set(document.id, { ...byId.get(document.id), ...document });
+  }
+  return { locale, documents: entry.documents.map((document) => byId.get(document.id) ?? document) };
+};
+
+export const createHelpCatalog = (entries: readonly HelpRegistryEntry[], requestedLocale = "en"): HelpCatalogDocument[] =>
   entries
     .flatMap((entry) => {
-      return entry.documents.map((document) => ({
+      const resolved = resolveRegistryDocuments(entry, requestedLocale);
+      return resolved.documents.map((document) => ({
         appId: entry.appId,
         appName: entry.appName,
         appIcon: entry.appIcon,
         manifestHash: entry.manifestHash,
+        locale: resolved.locale,
         documentId: document.id,
         title: document.title,
         description: document.description,
@@ -92,13 +112,14 @@ export const createHelpCatalog = (entries: readonly HelpRegistryEntry[]): HelpCa
       (left, right) => left.appId.localeCompare(right.appId) || left.order - right.order || left.documentId.localeCompare(right.documentId),
     );
 
-export const loadHelpCatalog = async (dependencies: HelpCatalogDependencies = {}): Promise<HelpCatalogDocument[]> =>
-  createHelpCatalog(await loadCurrentHelp(dependencies));
+export const loadHelpCatalog = async (dependencies: HelpCatalogDependencies = {}, requestedLocale = "en"): Promise<HelpCatalogDocument[]> =>
+  createHelpCatalog(await loadCurrentHelp(dependencies), requestedLocale);
 
 const catalogItem = (document: HelpCatalogDocument): HelpCatalogItem => ({
   appId: document.appId,
   appName: document.appName,
   kind: "help",
+  locale: document.locale,
   documentId: document.documentId,
   title: document.title,
   description: document.description,

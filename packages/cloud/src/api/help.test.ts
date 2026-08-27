@@ -63,11 +63,12 @@ describe("Help API", () => {
 
     const search = await routes.request("/help/v1/inventory/search?q=adapter");
     expect(search.status).toBe(200);
-    expect(await search.json()).toEqual({ ids: ["getting-started"] });
+    expect(await search.json()).toEqual({ locale: "en", ids: ["getting-started"] });
 
     const document = await routes.request("/help/v1/inventory/documents/getting-started");
     expect(document.status).toBe(200);
     expect(await document.json()).toMatchObject({
+      locale: "en",
       id: "getting-started",
       title: "Getting started",
       markdown: expect.stringContaining("Create an item"),
@@ -93,6 +94,7 @@ describe("Help API", () => {
     });
 
     expect(await (await routes.request("/help/v1/inventory/search?q=indexed%20alias")).json()).toEqual({
+      locale: "en",
       ids: ["getting-started"],
     });
     expect((await routes.request("/help/v1/inventory/documents/getting-started")).status).toBe(200);
@@ -102,6 +104,41 @@ describe("Help API", () => {
     currentHelp = { ...currentHelp, manifestHash: "next-manifest" };
     currentApp = { ...currentApp, help: { ...currentApp.help!, manifestHash: "next-manifest" } };
     expect((await routes.request("/help/v1/inventory/documents/getting-started")).status).toBe(200);
+    expect(renderCount).toBe(2);
+  });
+
+  test("uses the request locale for localized search, reads, and render caches", async () => {
+    const localized = compileHelp({
+      appId: "inventory",
+      appName: "Inventory",
+      appIcon: "ti ti-package",
+      definition: defineHelp({
+        baseLocale: "en",
+        documents: {
+          en: [source],
+          de: [source.replace("Getting started", "Erste Schritte").replace("Create the first item.", "Ersten Eintrag anlegen.")],
+        },
+      }),
+    });
+    const localizedApp = { ...app, help: localized.summary };
+    let renderCount = 0;
+    const routes = createHelpRoutes({
+      getApp: async () => localizedApp,
+      getHelp: async () => localized.registryEntry,
+      authenticate,
+      renderMarkdown: (markdown) => {
+        renderCount += 1;
+        return markdown;
+      },
+    });
+
+    const deHeaders = { "x-cloud-locale": "de-CH" };
+    const search = await routes.request("/help/v1/inventory/search?q=ersten", { headers: deHeaders });
+    expect(await search.json()).toEqual({ locale: "de", ids: ["getting-started"] });
+    const de = await routes.request("/help/v1/inventory/documents/getting-started", { headers: deHeaders });
+    expect(await de.json()).toMatchObject({ locale: "de", title: "Erste Schritte" });
+    const en = await routes.request("/help/v1/inventory/documents/getting-started", { headers: { "x-cloud-locale": "en" } });
+    expect(await en.json()).toMatchObject({ locale: "en", title: "Getting started" });
     expect(renderCount).toBe(2);
   });
 

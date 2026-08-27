@@ -137,6 +137,19 @@
         "It prefers a no-build restart because the changed source is mounted into the runtime.",
         "It reserves image rebuilds for UI, dependency, package-manifest, Dockerfile, or other image-baked changes."
       ]
+    },
+    {
+      "id": 13,
+      "prompt": "Make a Cloud application's SSR page, validation errors, capability output, dashboard widget, and Help locale-aware without adding a language picker.",
+      "expected_output": "Uses the request-scoped Cloud locale, an app-owned stdlib catalog, inherited UI formatting, stable error codes with localized messages, locale metadata at cross-app boundaries, and one localized Help corpus without locale prop plumbing or new preference UI.",
+      "files": [],
+      "expectations": [
+        "The response uses getLocale(c) on the server and the inherited @k2b/ui locale in Solid without process-global state or ordinary locale prop plumbing.",
+        "Stable error codes remain locale-independent while human-facing messages are localized by their owning application.",
+        "Capabilities and widgets carry final localized display strings rather than application message keys.",
+        "Localized Help remains one declaration and one bounded registration with exact, ancestor, and base fallback.",
+        "The response does not add a language picker, settings UI, or new browser persistence."
+      ]
     }
   ]
 }

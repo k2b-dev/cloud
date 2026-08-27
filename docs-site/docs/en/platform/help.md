@@ -5,7 +5,7 @@ section: Platform services
 order: 580
 description: Declare app-owned Markdown once for the shared Help UI, full-page Help, Assistant, and MCP.
 tags: [help, markdown, product, agents]
-updated: 2026-08-12
+updated: 2026-08-26
 ---
 
 # In-product Help
@@ -53,6 +53,33 @@ module name, so file-backed Help uses the directory form.
 
 Cloud does not scan the filesystem. Import every article and list it explicitly
 so ownership, review order, and bundle contents remain visible.
+
+### Add localized articles
+
+Keep all languages in the same Help declaration. Use one folder per canonical
+locale when an application ships translations:
+
+```text
+src/help/
+├── index.ts
+└── documents/
+    ├── en/
+    │   ├── inventory-start.help.md
+    │   └── inventory-access.help.md
+    └── de/
+        └── inventory-start.help.md
+```
+
+The base locale is complete and owns the logical article IDs, icons, and order.
+A localized folder may contain only the translated articles available today.
+It owns their title, description, and Markdown body. Keep the same `id`; do not
+create language-specific IDs or duplicate Help registrations. Localized
+frontmatter may omit `icon` and `order`; if repeated, they must match the base.
+
+Cloud resolves each article through the exact requested locale, its BCP 47
+ancestors, then the base locale. For example, `de-CH` can use a `de-CH` article,
+fall back to `de` for another article, and finally use `en` for an untranslated
+article.
 
 ## Write an article
 
@@ -162,6 +189,22 @@ export const inventoryHelp = defineHelp({
 });
 ```
 
+For localized Help, map explicitly imported sources by locale:
+
+```ts
+import accessEn from "./documents/en/inventory-access.help.md" with { type: "text" };
+import startEn from "./documents/en/inventory-start.help.md" with { type: "text" };
+import startDe from "./documents/de/inventory-start.help.md" with { type: "text" };
+
+export const inventoryHelp = defineHelp({
+  baseLocale: "en",
+  documents: {
+    en: [startEn, accessEn],
+    de: [startDe],
+  },
+});
+```
+
 The declaration has no route, base path, role, router, or Layout configuration.
 Cloud already knows the owning application's ID and base path when it starts.
 
@@ -207,8 +250,8 @@ Do not mount a Help API router, render a `Layout.HelpDocuments` registrar, or
 add standalone Help page routes. Those are consumers of the registration, not
 additional declarations.
 
-Cloud stores the bounded corpus in an ephemeral Help registry and keeps a small
-manifest with the normal app registration. The heartbeat repairs lost registry
+Cloud stores all locales as one bounded corpus in one ephemeral Help registry
+entry and keeps a small manifest with the normal app registration. The heartbeat repairs lost registry
 entries. Help is coordination state, not durable application data, so it does
 not use PostgreSQL or an application migration.
 
@@ -233,6 +276,12 @@ that reader while the application remains the content owner.
 The browser receives the small manifest and loads article bodies on demand. An
 agent uses bounded search and read operations; Cloud does not create one
 permanently loaded tool for every article.
+
+Every automatic surface uses the same request locale and returns its resolved
+content locale. Search and article caches distinguish locales, so regional
+fallback cannot mix content between requests. AI and MCP clients receive final
+localized titles, descriptions, and Markdown; they never receive application
+message keys.
 
 For a user-backed direct chat on a tool-capable model, AI Core resolves
 `search_help` and `read_help` dynamically from the current Help registry. This

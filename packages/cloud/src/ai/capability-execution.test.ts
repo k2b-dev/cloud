@@ -148,6 +148,7 @@ describe("AI capability authority", () => {
     const result = await executeAiCapability({
       conversationId: "conversation-1",
       authority: { actor: { kind: "user", user: current }, accessSubject: { type: "user", userId: current.id } },
+      locale: "de-CH",
       entry,
       args: { title: "Test" },
       context: {
@@ -167,6 +168,7 @@ describe("AI capability authority", () => {
         dispatch: async ({ request }) => {
           seen.push(request.headers.get("authorization") ?? "");
           seen.push(request.headers.get("idempotency-key") ?? "");
+          seen.push(request.headers.get("x-cloud-locale") ?? "");
           return Response.json({ data: { id: "created" } });
         },
       },
@@ -175,7 +177,8 @@ describe("AI capability authority", () => {
     expect(seen[0]).toBe(`create:${current.id}`);
     expect(seen[1]).toBe("Bearer short-lived-token");
     expect(seen[2]).toMatch(/^ai-[a-f0-9]{64}$/);
-    expect(seen[3]).toBe("revoke:short-lived-token");
+    expect(seen[3]).toBe("de-CH");
+    expect(seen[4]).toBe("revoke:short-lived-token");
   });
 
   test("resolves an advertised review without forwarding an idempotency key", async () => {

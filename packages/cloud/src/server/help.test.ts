@@ -34,7 +34,7 @@ describe("defineHelpCollection", () => {
 
     const searchResponse = await collection.router.request("/search?q=documentation");
     expect(searchResponse.status).toBe(200);
-    expect(await searchResponse.json()).toEqual({ ids: ["getting-started"] });
+    expect(await searchResponse.json()).toEqual({ ids: ["getting-started"], locale: "en" });
 
     const response = await collection.router.request("/getting-started");
     const payload = await response.json();

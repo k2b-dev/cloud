@@ -53,6 +53,10 @@ export type HelpRegistryEntry = {
   appName: string;
   appIcon: string;
   manifestHash: string;
+  /** Base language that owns the complete logical article set. Absent on legacy registrations. */
+  baseLocale?: string;
+  /** Partial localized article variants stored in the same bounded logical registration. */
+  documentsByLocale?: Readonly<Record<string, readonly HelpRegistryDocument[]>>;
   documents: readonly HelpRegistryDocument[];
 };
 

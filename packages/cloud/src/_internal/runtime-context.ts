@@ -40,6 +40,15 @@ export const buildRuntimeFromRegistry = (entries: AppRegistryEntry[], capabiliti
         ? {
             manifestHash: e.help.manifestHash,
             pageBase: e.help.pageBase,
+            baseLocale: e.help.baseLocale,
+            documentsByLocale: e.help.documentsByLocale
+              ? Object.fromEntries(
+                  Object.entries(e.help.documentsByLocale).map(([locale, documents]) => [
+                    locale,
+                    documents.map((document) => ({ ...document })),
+                  ]),
+                )
+              : undefined,
             documents: e.help.documents.map((document) => ({ ...document })),
           }
         : undefined,
