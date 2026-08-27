@@ -5,12 +5,14 @@ section: Frontend
 order: 880
 description: Collect input and show mutation progress, cancellation, success, and errors.
 tags: [forms, prompts, feedback]
-updated: 2026-08-10
+updated: 2026-08-28
 ---
 
 # Forms, prompts, and feedback
 
 Choose the smallest input surface that fits the task.
+Follow [Product language and tone](/en/docs/build/product-language-and-tone)
+for control labels, validation, confirmations, and recovery messages.
 
 ## Choose a prompt
 

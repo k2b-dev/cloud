@@ -5,7 +5,7 @@ section: Platform services
 order: 580
 description: Declare app-owned Markdown once for the shared Help UI, full-page Help, Assistant, and MCP.
 tags: [help, markdown, product, agents]
-updated: 2026-08-26
+updated: 2026-08-28
 ---
 
 # In-product Help
@@ -84,6 +84,10 @@ article.
 ## Write an article
 
 Each article is a Markdown asset with YAML frontmatter:
+
+Follow [Product language and tone](/en/docs/build/product-language-and-tone)
+for task structure, terminology, English and German prose, and translation
+equivalence.
 
 ```md
 ---

@@ -5,7 +5,7 @@ section: Platform services
 order: 530
 description: Define, send, and inspect typed notifications.
 tags: [notifications, email, browser]
-updated: 2026-07-27
+updated: 2026-08-28
 ---
 
 # Notifications
@@ -105,6 +105,10 @@ lists. An email-recipient definition must include `email` in
 `render` and `email` can also return a Promise.
 
 ### Render the content
+
+Follow [Product language and tone](/en/docs/build/product-language-and-tone)
+for notification titles, bodies, actions, and email subjects in English and
+German.
 
 `render()` receives the parsed payload and returns:
 

@@ -5,7 +5,7 @@ section: Build an app
 order: 165
 description: Add translations and locale-aware formatting without breaking Cloud SSR, islands, errors, Help, widgets, or capabilities.
 tags: [i18n, intl, locale, ssr, errors, help, widgets]
-updated: 2026-08-27
+updated: 2026-08-28
 ---
 
 # Internationalize an application
@@ -13,6 +13,11 @@ updated: 2026-08-27
 Internationalization is opt-in per application. Cloud resolves one canonical
 locale for each request and transports it across platform boundaries; the
 application owns its human-facing messages and decides which locales it ships.
+
+This page defines where messages and locale-sensitive values live. Follow
+[Product language and tone](/en/docs/build/product-language-and-tone) for the
+wording of controls, feedback, errors, notifications, and Help in English and
+German.
 
 Do not build a locale state store, pass locale through every component, or
 duplicate a component per language. On the server, call `getLocale(c)`. In

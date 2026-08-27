@@ -5,7 +5,7 @@ section: Platform services
 order: 555
 description: Publish a small, versioned RPC surface for cross-app calls, agents, CLI, and MCP.
 tags: [capabilities, rpc, agents, mcp]
-updated: 2026-08-27
+updated: 2026-08-28
 ---
 
 # App capabilities
@@ -727,7 +727,9 @@ own domain error codes. Provider failures accept the explicit HTTP statuses
 Cloud resolves the human `message` of framework-owned failures from the
 caller's request locale without changing the code, status, details, or retry
 semantics. Provider-owned failures remain the application's responsibility and
-must already contain their final localized message.
+must already contain their final localized message. Follow
+[Product language and tone](/en/docs/build/product-language-and-tone) for
+specific, recoverable error wording.
 `DEADLINE_EXCEEDED` is retry-safe for Queries and required-idempotency Actions.
 `ACTION_OUTCOME_UNKNOWN` means a non-idempotent
 Action may already have taken effect and must not be retried automatically.
