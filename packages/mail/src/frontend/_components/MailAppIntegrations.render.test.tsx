@@ -25,16 +25,16 @@ describe("Mail app integration states", () => {
     expect(source).not.toContain("title={participant.displayName || participant.email}");
     expect(source).toContain('class="ti ti-link-plus text-[var(--k2b-action)]"');
     expect(source.match(/text-\[var\(--k2b-action\)\]/g)).toHaveLength(3);
-    expect(source).toContain('title="Link Spaces"');
-    expect(source).toContain(">existing item</span>");
-    expect(source).toContain('title="Spaces Task"');
-    expect(source).toContain('title="Spaces Event"');
-    expect(source.match(/>new item<\/span>/g)).toHaveLength(2);
+    expect(source).toContain("title={messages().linkSpaces}");
+    expect(source).toContain("{messages().existingItem}</span>");
+    expect(source).toContain("title={messages().spacesTask}");
+    expect(source).toContain("title={messages().spacesEvent}");
+    expect(source.match(/{messages\(\)\.newItem}<\/span>/g)).toHaveLength(2);
     expect(source.match(/target="_blank"/g)).toHaveLength(3);
     expect(source.match(/rel="noopener noreferrer"/g)).toHaveLength(3);
-    expect(source).toContain('label: "Related Mail"');
+    expect(source).toContain("label: messages().relatedMail");
     expect(source).not.toContain('title="Related Mail"');
-    expect(source).toContain('label: "Unlink"');
+    expect(source).toContain("label: messages().unlink");
     expect(source).not.toContain("aria-label={`Unlink ${item.title}`}");
   });
 
@@ -68,8 +68,8 @@ describe("Mail app integration states", () => {
     expect(html).toContain('class="k2b-placeholder');
     expect(html).toContain('data-state="loading"');
     expect(html).toContain('role="status"');
-    expect(html).toContain("Loading contacts...");
-    expect(html).toContain("Loading Spaces...");
+    expect(html).toContain("Loading contacts…");
+    expect(html).toContain("Loading Spaces…");
     expect(html.match(/data-align="center"/g)?.length).toBe(2);
     expect(html).not.toContain("Spaces unavailable");
     expect(html).toContain('aria-label="Contacts" class="bg-[var(--ui-surface)] p-3"');

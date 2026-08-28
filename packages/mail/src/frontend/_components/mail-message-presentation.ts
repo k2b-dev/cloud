@@ -1,4 +1,4 @@
-import { type DateContext, dates } from "@k2b/stdlib";
+import { type DateContext, dates, i18n } from "@k2b/stdlib";
 import type { StatusTone } from "@k2b/ui";
 import type { CloudTheme } from "@valentinkolb/cloud/shared";
 import type { MessageDeliveryState, MessageDetail } from "../../service/messages";
@@ -164,18 +164,58 @@ type MessageDeliveryInput = MessageDeliveryState | MessageDelivery;
 
 const deliveryState = (input: MessageDeliveryInput): MessageDeliveryState => (typeof input === "string" ? input : input.state);
 
-export const messageDeliveryPresentation = (delivery: MessageDeliveryInput): { label: string; icon: string; tone: StatusTone } | null => {
+const deliveryMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      tryingAgain: ({ attempt, total }: { attempt: number; total: number }) => `Trying again · ${attempt}/${total}`,
+      scheduled: "Scheduled",
+      sending: "Sending",
+      sendingAttempt: ({ attempt, total }: { attempt: number; total: number }) => `Sending · ${attempt}/${total}`,
+      couldNotSend: "Couldn’t send",
+      deliveryUnclear: "Delivery status unclear",
+      partiallySent: "Partially sent",
+      sentNotSaved: "Sent, but not saved",
+      needsAttention: "Needs attention",
+      cancelled: "Cancelled",
+      undoSend: "Undo send",
+    },
+    de: {
+      tryingAgain: ({ attempt, total }) => `Erneuter Versuch · ${attempt}/${total}`,
+      scheduled: "Geplant",
+      sending: "Wird gesendet",
+      sendingAttempt: ({ attempt, total }) => `Wird gesendet · ${attempt}/${total}`,
+      couldNotSend: "Konnte nicht gesendet werden",
+      deliveryUnclear: "Versandstatus unklar",
+      partiallySent: "Teilweise gesendet",
+      sentNotSaved: "Gesendet, aber nicht gespeichert",
+      needsAttention: "Handlungsbedarf",
+      cancelled: "Abgebrochen",
+      undoSend: "Senden rückgängig machen",
+    },
+  },
+});
+
+export const messageDeliveryPresentation = (
+  delivery: MessageDeliveryInput,
+  locale = "en",
+): { label: string; icon: string; tone: StatusTone } | null => {
+  const t = deliveryMessages.resolve([locale]).t;
   const state = deliveryState(delivery);
   switch (state) {
     case "scheduled":
       return typeof delivery !== "string" && delivery.lastErrorCode
-        ? { label: `Trying again · ${delivery.attempt}/${delivery.maxAttempts}`, icon: "ti ti-refresh", tone: "warning" }
-        : { label: "Scheduled", icon: "ti ti-clock", tone: "neutral" };
+        ? {
+            label: t.tryingAgain({ attempt: delivery.attempt, total: delivery.maxAttempts }),
+            icon: "ti ti-refresh",
+            tone: "warning",
+          }
+        : { label: t.scheduled, icon: "ti ti-clock", tone: "neutral" };
     case "undo_window":
       return null;
     case "sending":
       return {
-        label: typeof delivery === "string" ? "Sending" : `Sending · ${delivery.attempt}/${delivery.maxAttempts}`,
+        label: typeof delivery === "string" ? t.sending : t.sendingAttempt({ attempt: delivery.attempt, total: delivery.maxAttempts }),
         icon: "ti ti-loader-2",
         tone: "running",
       };
@@ -186,32 +226,33 @@ export const messageDeliveryPresentation = (delivery: MessageDeliveryInput): { l
       return null;
     case "failed":
     case "reconciled_unsent":
-      return { label: "Couldn’t send", icon: "ti ti-alert-circle", tone: "error" };
+      return { label: t.couldNotSend, icon: "ti ti-alert-circle", tone: "error" };
     case "unknown":
-      return { label: "Delivery status unclear", icon: "ti ti-alert-triangle", tone: "warning" };
+      return { label: t.deliveryUnclear, icon: "ti ti-alert-triangle", tone: "warning" };
     case "needs_attention":
       return {
         label:
           typeof delivery !== "string" && delivery.lastErrorCode === "SMTP_PARTIAL_ACCEPTANCE"
-            ? "Partially sent"
+            ? t.partiallySent
             : typeof delivery !== "string" &&
                 ["SENT_APPEND_FAILED", "SENT_COPY_LEASE_EXPIRED", "SENT_RECONCILIATION_FAILED"].includes(delivery.lastErrorCode ?? "")
-              ? "Sent, but not saved"
-              : "Needs attention",
+              ? t.sentNotSaved
+              : t.needsAttention,
         icon: "ti ti-alert-triangle",
         tone: "warning",
       };
     case "cancelled":
-      return { label: "Cancelled", icon: "ti ti-ban", tone: "neutral" };
+      return { label: t.cancelled, icon: "ti ti-ban", tone: "neutral" };
   }
 };
 
-export const messageDeliveryControlLabel = (delivery: MessageDeliveryInput, canWrite: boolean): string | null => {
+export const messageDeliveryControlLabel = (delivery: MessageDeliveryInput, canWrite: boolean, locale = "en"): string | null => {
+  const t = deliveryMessages.resolve([locale]).t;
   const state = deliveryState(delivery);
-  if (state === "undo_window") return canWrite ? "Undo send" : null;
-  if (state === "scheduled") return messageDeliveryPresentation(delivery)?.label ?? null;
+  if (state === "undo_window") return canWrite ? t.undoSend : null;
+  if (state === "scheduled") return messageDeliveryPresentation(delivery, locale)?.label ?? null;
   if (["failed", "unknown", "reconciled_unsent", "needs_attention"].includes(state)) {
-    return messageDeliveryPresentation(delivery)?.label ?? null;
+    return messageDeliveryPresentation(delivery, locale)?.label ?? null;
   }
   return null;
 };

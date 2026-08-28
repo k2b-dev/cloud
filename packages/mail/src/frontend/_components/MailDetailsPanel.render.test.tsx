@@ -346,7 +346,7 @@ describe("Mail conversation detail panel", () => {
     expect(html).toContain('data-align="center"');
     expect(html).toContain('class="k2b-discussion__count">0</span>');
     expect(html).not.toContain("No team notes yet.");
-    expect(html).toContain("Loading contacts...");
+    expect(html).toContain("Loading contacts…");
     expect(html).not.toContain(">Attachments<");
     expect(html).not.toContain(">Here now<");
   });

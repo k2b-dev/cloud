@@ -1,13 +1,15 @@
-import { type AuthContext, getDateConfig } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../../../../config";
 import { calendarInvitations, type MailRequestContext, mailboxAccess, mailboxes, senderIdentities } from "../../../../../service";
 import MailDraftSeedComposerPage from "../../../../_components/MailDraftSeedComposerPage.island";
 import { mailDraftReturnHref } from "../../../../_components/mail-compose-route";
 import { readMailComposerPanesFromCookieHeader } from "../../../../_components/mail-composer-panes";
+import { mailPageMessages } from "../../../../pages-messages";
 import { projectComposeData, resolveSsrMailboxId } from "../../../../ssr-public-boundary";
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = mailPageMessages.resolve([getLocale(c)]);
   const mailboxShortId = c.req.param("mailboxId") ?? "";
   const seedId = c.req.param("seedId") ?? "";
   const mailboxId = await resolveSsrMailboxId(mailboxShortId);
@@ -33,7 +35,7 @@ export default ssr<AuthContext>(async (c) => {
   const popout = c.req.query("window") === "1";
   const initialPanes = readMailComposerPanesFromCookieHeader(c.req.header("cookie"));
   return () => (
-    <Layout c={c} fullPage focusMode flushCanvas={popout} title={[{ title: "Mail", href: returnHref }, { title: "New message" }]}>
+    <Layout c={c} fullPage focusMode flushCanvas={popout} title={[{ title: t.breadcrumbMail, href: returnHref }, { title: t.newMessage }]}>
       <MailDraftSeedComposerPage
         mailboxId={mailboxShortId}
         currentActor={currentActor}

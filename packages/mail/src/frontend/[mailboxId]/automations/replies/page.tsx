@@ -1,13 +1,15 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../../../config";
 import type { MailRequestContext } from "../../../../service";
 import { loadMailAutomaticRepliesWorkspace } from "../../../../service/automation-workspace";
 import { isAutomaticReplyPresetId } from "../../../_components/MailAutomaticReplySettings";
 import MailAutomaticRepliesPage from "../../../MailAutomaticRepliesPage.island";
+import { mailPageMessages } from "../../../pages-messages";
 import { projectAutomationWorkspace, resolveSsrMailboxId } from "../../../ssr-public-boundary";
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = mailPageMessages.resolve([getLocale(c)]);
   const mailboxShortId = c.req.param("mailboxId") ?? "";
   const actor = c.get("actor");
   const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
@@ -29,11 +31,11 @@ export default ssr<AuthContext>(async (c) => {
       fullPage
       workspaceSidebarCollapsible={false}
       title={[
-        { title: "Start", href: "/" },
-        { title: "Mail", href: "/app/mail" },
+        { title: t.breadcrumbStart, href: "/" },
+        { title: t.breadcrumbMail, href: "/app/mail" },
         { title: data.mailbox.name, href: `/app/mail/${mailboxShortId}` },
-        { title: "Automations", href: `/app/mail/${mailboxShortId}/automations` },
-        { title: "Automatic replies" },
+        { title: t.breadcrumbAutomations, href: `/app/mail/${mailboxShortId}/automations` },
+        { title: t.breadcrumbAutomaticReplies },
       ]}
     >
       <MailAutomaticRepliesPage

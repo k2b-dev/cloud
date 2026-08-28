@@ -1,4 +1,4 @@
-import { type AuthContext, getDateConfig } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { readThemeFromCookieHeader } from "@valentinkolb/cloud/shared";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
@@ -8,9 +8,11 @@ import { loadMailboxPageData } from "../../service/workspace";
 import { readMailUserPreferencesFromCookieHeader } from "../_components/mail-user-preferences";
 import { readMailWorkspacePreferences } from "../_components/mail-workspace-preferences";
 import MailWorkspace from "../MailWorkspace.island";
+import { mailPageMessages } from "../pages-messages";
 import { projectMailboxPageData, resolveSsrMailboxId, resolveSsrWorkspaceUrl } from "../ssr-public-boundary";
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = mailPageMessages.resolve([getLocale(c)]);
   const mailboxShortId = c.req.param("mailboxId") ?? "";
   const mailboxId = await resolveSsrMailboxId(mailboxShortId);
   if (!mailboxId) return c.redirect("/app/mail");
@@ -42,7 +44,7 @@ export default ssr<AuthContext>(async (c) => {
       c={c}
       fullPage
       workspaceSidebarCollapsible={false}
-      title={[{ title: "Start", href: "/" }, { title: "Mail", href: "/app/mail" }, { title: data.mailbox.name }]}
+      title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbMail, href: "/app/mail" }, { title: data.mailbox.name }]}
     >
       <MailWorkspace
         data={data}

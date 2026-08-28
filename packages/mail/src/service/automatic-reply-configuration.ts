@@ -1,4 +1,4 @@
-import { err, fail, isServiceError, ok, type Result, unwrap } from "@k2b/stdlib";
+import { err, fail, i18n, isServiceError, ok, type Result, unwrap } from "@k2b/stdlib";
 import { audit } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import { stringify } from "yaml";
@@ -74,22 +74,46 @@ export type AutomaticReplySetup = {
   referenceConfiguration: ConversationReferenceConfiguration | null;
 };
 
-const automaticReplyPreviewData = (params: { mailboxId: string; context: MailRequestContext; referenceValue: string | null }) => {
+const previewMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      subject: "Example customer request",
+      body: "Hello, I would like to know more.",
+      customer: "Example Customer",
+      support: "Support",
+    },
+    de: {
+      subject: "Beispielanfrage eines Kunden",
+      body: "Guten Tag, ich würde gerne mehr erfahren.",
+      customer: "Beispielkunde",
+      support: "Support",
+    },
+  },
+});
+
+const automaticReplyPreviewData = (params: {
+  mailboxId: string;
+  context: MailRequestContext;
+  referenceValue: string | null;
+  locale?: string;
+}) => {
   const actor = actorRefFromRequest(params.context);
   const occurredAt = new Date().toISOString();
+  const t = previewMessages.resolve([params.locale ?? "en"]).t;
   return {
     inputs: {
       message: {
         id: "00000000-0000-4000-8000-000000000001",
         conversationId: "00000000-0000-4000-8000-000000000002",
-        subject: "Example customer request",
-        body: "Hello, I would like to know more.",
-        bodyText: "Hello, I would like to know more.",
-        bodyHtml: "<p>Hello, I would like to know more.</p>",
+        subject: t.subject,
+        body: t.body,
+        bodyText: t.body,
+        bodyHtml: `<p>${t.body}</p>`,
         fromAddress: "customer@example.test",
         fromDomain: "example.test",
-        sender: [{ role: "from", name: "Example Customer", email: "customer@example.test" }],
-        recipients: [{ role: "to", name: "Support", email: "support@example.test" }],
+        sender: [{ role: "from", name: t.customer, email: "customer@example.test" }],
+        recipients: [{ role: "to", name: t.support, email: "support@example.test" }],
         attachments: [
           {
             id: "00000000-0000-4000-8000-000000000003",
@@ -110,7 +134,7 @@ const automaticReplyPreviewData = (params: { mailboxId: string; context: MailReq
       },
       conversation: {
         id: "00000000-0000-4000-8000-000000000002",
-        subject: "Example customer request",
+        subject: t.subject,
         assigneeUserId: null,
         workStatus: "needs_action",
         latestMessageAt: occurredAt,
@@ -147,6 +171,7 @@ export const previewAutomaticReply = async (params: {
   context: MailRequestContext;
   mailboxId: string;
   input: AutomaticReplyPreviewInput;
+  locale?: string;
 }): Promise<Result<AutomaticReplyPreview>> => {
   const parsed = internalAutomaticReplyPreviewInputSchema.safeParse(params.input);
   if (!parsed.success) return fail(err.badInput(parsed.error.issues[0]?.message ?? "Invalid automatic reply preview"));
@@ -167,6 +192,7 @@ export const previewAutomaticReply = async (params: {
     mailboxId: params.mailboxId,
     context: params.context,
     referenceValue: reference.data,
+    locale: params.locale,
   });
   const subject = renderMailLiquidTemplate(input.subject, data, "text");
   if (!subject.ok) return subject;

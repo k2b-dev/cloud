@@ -1,11 +1,12 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, Placeholder, prompts, StatusBadge, toast } from "@k2b/ui";
+import { Button, Placeholder, prompts, StatusBadge, toast, useLocale } from "@k2b/ui";
 import { createMemo, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { AttachmentLink, AttachmentLinkPage } from "../../contracts";
 import { assertCursorProgress } from "../pagination";
 import { readApiError } from "./api-response";
+import { mailSettingsMessages } from "./mail-settings-messages";
 
 const linkStatus = (link: AttachmentLink): "active" | "expired" | "exhausted" | "revoked" => {
   if (link.revokedAt) return "revoked";
@@ -15,6 +16,14 @@ const linkStatus = (link: AttachmentLink): "active" | "expired" | "exhausted" | 
 };
 
 export default function MailAttachmentLinksSettings(props: { mailboxId: string; dateConfig: DateContext }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
+  const linkStatusLabel = (status: ReturnType<typeof linkStatus>) => {
+    if (status === "active") return messages().linkStatusActive;
+    if (status === "expired") return messages().linkStatusExpired;
+    if (status === "exhausted") return messages().linkStatusExhausted;
+    return messages().linkStatusRevoked;
+  };
   const linkPages = query.createInfinite<string, AttachmentLinkPage, string>({
     source: () => props.mailboxId,
     loadPage: async (mailboxId, { cursor, abortSignal }) => {
@@ -25,7 +34,7 @@ export default function MailAttachmentLinksSettings(props: { mailboxId: string; 
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not load attachment links"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedLoadAttachmentLinks));
       const page = await response.json();
       assertCursorProgress(cursor, page.nextCursor, "attachment links");
       return page;
@@ -41,23 +50,23 @@ export default function MailAttachmentLinksSettings(props: { mailboxId: string; 
   const revoke = mutations.create<string, AttachmentLink>({
     mutation: async (link, context) => {
       const confirmed = await prompts.confirm(
-        `People using this link will no longer be able to download ${link.filename ?? "the attachment"}.`,
-        { title: "Revoke public link?", confirmText: "Revoke link", variant: "danger" },
+        messages().revokeLinkDescription({ filename: link.filename ?? messages().attachmentFallback }),
+        { title: messages().revokePublicLink, confirmText: messages().revokeLink, variant: "danger" },
       );
       if (!confirmed) return "";
       const response = await apiClient.mailboxes[":mailboxId"]["attachment-links"][":linkId"].$delete(
         { param: { mailboxId: props.mailboxId, linkId: link.id } },
         { init: { signal: context.abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not revoke attachment link"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedRevokeAttachmentLink));
       return link.id;
     },
     onSuccess: (linkId) => {
       if (!linkId) return;
-      toast.success("Public link revoked");
+      toast.success(messages().publicLinkRevoked);
       void linkPages.invalidate().catch((error) =>
-        prompts.error(error instanceof Error ? error.message : "Shared links could not be refreshed", {
-          title: "Link revoked, refresh failed",
+        prompts.error(error instanceof Error ? error.message : messages().sharedLinksRefreshFailed, {
+          title: messages().linkRevokedRefreshFailed,
         }),
       );
     },
@@ -70,21 +79,19 @@ export default function MailAttachmentLinksSettings(props: { mailboxId: string; 
 
   return (
     <section class="flex flex-col gap-2">
-      <p class="text-xs text-dimmed">
-        Public download links created from received or draft attachments. Revoking a link does not delete the attachment.
-      </p>
-      <Show when={!linkPages.loading()} fallback={<Placeholder state="loading" title="Loading shared links" />}>
+      <p class="text-xs text-dimmed">{messages().attachmentLinksDescription}</p>
+      <Show when={!linkPages.loading()} fallback={<Placeholder state="loading" title={messages().loadingSharedLinks} />}>
         <Show
           when={!linkPages.error()}
           fallback={
             <Placeholder
               variant="panel"
               icon="ti ti-alert-triangle"
-              title="Could not load shared links"
+              title={messages().couldNotLoadSharedLinks}
               description={linkPages.error()?.message}
               action={
                 <Button variant="secondary" size="sm" type="button" onClick={() => void linkPages.refresh()}>
-                  Retry
+                  {messages().retry}
                 </Button>
               }
             />
@@ -96,8 +103,8 @@ export default function MailAttachmentLinksSettings(props: { mailboxId: string; 
               <Placeholder
                 variant="panel"
                 icon="ti ti-link-off"
-                title="No shared links"
-                description="Use the link button next to an attachment in a message to create one."
+                title={messages().noSharedLinks}
+                description={messages().noSharedLinksDescription}
               />
             }
           >
@@ -111,16 +118,18 @@ export default function MailAttachmentLinksSettings(props: { mailboxId: string; 
                       <span class="min-w-0 flex-1">
                         <span class="block truncate text-sm font-medium text-primary">{link.filename ?? link.contentType}</span>
                         <span class="block text-xs text-dimmed">
-                          {link.downloadCount} download{link.downloadCount === 1 ? "" : "s"}
-                          {link.maxDownloads === null ? "" : ` of ${link.maxDownloads}`}
-                          {link.expiresAt ? ` · expires ${dates.formatDateTime(link.expiresAt, props.dateConfig)}` : " · no expiry"}
-                          {link.passwordProtected ? " · password protected" : ""}
+                          {messages().downloadCount({ count: link.downloadCount })}
+                          {link.maxDownloads === null ? "" : ` ${messages().downloadLimit({ count: link.maxDownloads })}`}
+                          {link.expiresAt
+                            ? ` · ${messages().expiresAt({ date: dates.formatDateTime(link.expiresAt, props.dateConfig) })}`
+                            : ` · ${messages().noExpiry}`}
+                          {link.passwordProtected ? ` · ${messages().passwordProtected}` : ""}
                         </span>
                       </span>
-                      <StatusBadge tone={status() === "active" ? "ok" : "neutral"} label={status()} />
+                      <StatusBadge tone={status() === "active" ? "ok" : "neutral"} label={linkStatusLabel(status())} />
                       <Show when={status() === "active"}>
                         <Button variant="ghost" size="sm" type="button" disabled={revoke.loading()} onClick={() => revoke.mutate(link)}>
-                          <i class="ti ti-link-off" aria-hidden="true" /> Revoke
+                          <i class="ti ti-link-off" aria-hidden="true" /> {messages().revoke}
                         </Button>
                       </Show>
                     </div>
@@ -136,7 +145,7 @@ export default function MailAttachmentLinksSettings(props: { mailboxId: string; 
                   disabled={linkPages.loadingMore()}
                   onClick={() => void linkPages.loadMore()}
                 >
-                  {linkPages.loadingMore() ? "Loading..." : "Load more"}
+                  {linkPages.loadingMore() ? messages().loading : messages().loadMore}
                 </Button>
               </Show>
             </div>

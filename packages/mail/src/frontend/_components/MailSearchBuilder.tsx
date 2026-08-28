@@ -13,6 +13,7 @@ import {
   Select,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, Index, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
@@ -20,16 +21,17 @@ import type { MailSearchExpression, SavedConversationViewScope } from "../../con
 import { type MailSearchState, serializeMailSearchState } from "../../search-state";
 import type { SavedConversationView } from "../../service/saved-views";
 import { readApiError } from "./api-response";
+import { mailRemainingMessages } from "./mail-remaining-messages";
 import {
   appendMailSearchExpression,
   applyMailSearchNegation,
   countMailSearchNodes,
   createMailSearchCondition,
   ensureMailSearchRootGroup,
+  MAIL_SEARCH_FIELD_GROUPS,
   type MailSearchFieldKey,
   type MailSearchNodePath,
   mailSearchExpressionDepth,
-  MAIL_SEARCH_FIELD_GROUPS,
   mailSearchFieldKey,
   mailSearchFieldOptionsFor,
   normalizeMailSearchExpression,
@@ -42,6 +44,11 @@ import {
 const MAX_SEARCH_NODES = 100;
 const MAX_SEARCH_DEPTH = 8;
 const UNASSIGNED_VALUE = "__unassigned__";
+
+const useMessages = () => {
+  const locale = useLocale();
+  return createMemo(() => mailRemainingMessages.resolve([locale()]).t);
+};
 
 export type MailSearchBuilderResult =
   | { action: "apply"; state: MailSearchState; serialized: string }
@@ -59,6 +66,7 @@ function MailSearchConditionEditor(props: {
   onAppend: (path: MailSearchNodePath, expression: MailSearchExpression) => void;
   onRemove: (path: MailSearchNodePath) => void;
 }) {
+  const messages = useMessages();
   const state = createMemo(() => unwrapMailSearchNot(props.expression));
   const node = () => state().expression;
   const group = () => {
@@ -85,16 +93,16 @@ function MailSearchConditionEditor(props: {
       },
       { init: { signal } },
     );
-    if (!response.ok) throw new Error(await readApiError(response, "Could not load mailbox users"));
+    if (!response.ok) throw new Error(await readApiError(response, messages().couldNotLoadMailboxUsers));
     const users = await response.json();
     return [
-      { id: UNASSIGNED_VALUE, label: "Unassigned", icon: "ti ti-user-off" },
+      { id: UNASSIGNED_VALUE, label: messages().unassigned, icon: "ti ti-user-off" },
       ...users.map((user) => ({ id: user.id, label: user.displayName, description: user.description, icon: "ti ti-user" })),
     ];
   };
   const fetchFolders = async (_query: string, signal: AbortSignal) => {
     const response = await apiClient.mailboxes[":mailboxId"].folders.$get({ param: { mailboxId: props.mailboxId } }, { init: { signal } });
-    if (!response.ok) throw new Error(await readApiError(response, "Could not load mailbox folders"));
+    if (!response.ok) throw new Error(await readApiError(response, messages().couldNotLoadMailboxFolders));
     return (await response.json())
       .filter((folder) => folder.selectable)
       .map((folder) => ({ id: folder.id, label: folder.name, description: folder.role, icon: "ti ti-folder" }));
@@ -104,7 +112,7 @@ function MailSearchConditionEditor(props: {
       { param: { mailboxId: props.mailboxId } },
       { init: { signal } },
     );
-    if (!response.ok) throw new Error(await readApiError(response, "Could not load mailbox tags"));
+    if (!response.ok) throw new Error(await readApiError(response, messages().couldNotLoadMailboxTags));
     const normalized = query.trim().toLocaleLowerCase();
     return (await response.json())
       .filter((tag) => !normalized || tag.name.toLocaleLowerCase().includes(normalized))
@@ -119,8 +127,8 @@ function MailSearchConditionEditor(props: {
         <IconButton
           type="button"
           class={`shrink-0 ${state().negated ? "text-red-600 dark:text-red-300" : ""}`}
-          label={state().negated ? "Include this condition" : "Exclude this condition"}
-          title={state().negated ? "Currently excluded. Click to include." : "Exclude this condition"}
+          label={state().negated ? messages().includeCondition : messages().excludeCondition}
+          title={state().negated ? messages().currentlyExcluded : messages().excludeCondition}
           disabled={!canToggleNot()}
           onClick={() => props.onToggleNot(props.path)}
         >
@@ -133,7 +141,7 @@ function MailSearchConditionEditor(props: {
             fallback={
               <div class="grid min-w-0 grid-cols-1 gap-2 xl:grid-cols-[minmax(10rem,0.7fr)_minmax(14rem,1.3fr)]">
                 <Select
-                  label="Field"
+                  label={messages().field}
                   value={() => mailSearchFieldKey(props.expression) ?? "text:any"}
                   onValueChange={(value) =>
                     props.onReplace(
@@ -141,10 +149,16 @@ function MailSearchConditionEditor(props: {
                       applyMailSearchNegation(createMailSearchCondition(value as MailSearchFieldKey), state().negated),
                     )
                   }
-                  options={mailSearchFieldOptionsFor(props.expression)}
-                  groups={MAIL_SEARCH_FIELD_GROUPS}
+                  options={mailSearchFieldOptionsFor(props.expression).map((option) => ({
+                    ...option,
+                    label: messages().searchField({ field: option.id }),
+                  }))}
+                  groups={MAIL_SEARCH_FIELD_GROUPS.map((group) => ({
+                    ...group,
+                    label: messages().searchFieldGroup({ group: group.value }),
+                  }))}
                   defaultGroup="recommended"
-                  groupsAriaLabel="Filter search fields"
+                  groupsAriaLabel={messages().filterSearchFields}
                 />
                 <SearchConditionValue
                   expression={props.expression}
@@ -159,7 +173,7 @@ function MailSearchConditionEditor(props: {
             <div class="flex flex-col gap-2">
               <div class="flex min-w-0 items-center gap-2">
                 <Select
-                  label="Match"
+                  label={messages().match}
                   value={() => group()?.type ?? null}
                   onValueChange={(value) => {
                     const current = group();
@@ -167,11 +181,13 @@ function MailSearchConditionEditor(props: {
                     replace({ type: value === "or" ? "or" : "and", expressions: current.expressions });
                   }}
                   options={[
-                    { id: "and", label: "All conditions", icon: "ti ti-list-check" },
-                    { id: "or", label: "Any condition", icon: "ti ti-list-details" },
+                    { id: "and", label: messages().allConditions, icon: "ti ti-list-check" },
+                    { id: "or", label: messages().anyCondition, icon: "ti ti-list-details" },
                   ]}
                 />
-                <span class="shrink-0 self-end pb-2 text-xs text-dimmed">{group()?.type === "and" ? "must match" : "may match"}</span>
+                <span class="shrink-0 self-end pb-2 text-xs text-dimmed">
+                  {group()?.type === "and" ? messages().mustMatch : messages().mayMatch}
+                </span>
               </div>
               <div class="flex flex-col gap-2">
                 <Index each={group()?.expressions ?? []}>
@@ -198,7 +214,7 @@ function MailSearchConditionEditor(props: {
                   disabled={!canAddCondition()}
                   onClick={() => props.onAppend(props.path, createMailSearchCondition("text:any"))}
                 >
-                  <i class="ti ti-plus" aria-hidden="true" /> Condition
+                  <i class="ti ti-plus" aria-hidden="true" /> {messages().condition}
                 </Button>
                 <Button
                   variant="ghost"
@@ -207,10 +223,10 @@ function MailSearchConditionEditor(props: {
                   disabled={!canAddGroup()}
                   onClick={() => props.onAppend(props.path, { type: "and", expressions: [createMailSearchCondition("text:any")] })}
                 >
-                  <i class="ti ti-brackets-contain" aria-hidden="true" /> Group
+                  <i class="ti ti-brackets-contain" aria-hidden="true" /> {messages().group}
                 </Button>
                 <Show when={atMaximumDepth()}>
-                  <span class="text-xs text-dimmed">Maximum nesting reached</span>
+                  <span class="text-xs text-dimmed">{messages().maximumNestingReached}</span>
                 </Show>
               </div>
             </div>
@@ -220,8 +236,8 @@ function MailSearchConditionEditor(props: {
         <IconButton
           type="button"
           class="shrink-0"
-          label="Remove condition"
-          title={props.canRemove ? "Remove condition" : "A group needs at least one condition"}
+          label={messages().removeCondition}
+          title={props.canRemove ? messages().removeCondition : messages().groupNeedsCondition}
           disabled={!props.canRemove}
           onClick={() => props.onRemove(props.path)}
         >
@@ -245,6 +261,7 @@ function SearchConditionValue(props: {
     signal: AbortSignal,
   ) => Promise<Array<{ id: string; label: string; description?: string; icon?: string; color?: string }>>;
 }) {
+  const messages = useMessages();
   const node = () => unwrapMailSearchNot(props.expression).expression;
   const textTerm = () => node() as Extract<MailSearchExpression, { type: "text" }>;
   const dateTerm = () => node() as Extract<MailSearchExpression, { type: "date" }>;
@@ -260,23 +277,23 @@ function SearchConditionValue(props: {
       <Show when={node().type === "text"}>
         <div class="grid min-w-0 grid-cols-[minmax(0,1fr)_9rem] gap-2">
           <TextInput
-            label="Search text"
-            placeholder="Enter search text"
+            label={messages().searchText}
+            placeholder={messages().enterSearchText}
             value={() => textTerm().query}
             onValueChange={(query) => props.replace({ ...textTerm(), query })}
             maxLength={500}
           />
           <Select
-            label="Match"
+            label={messages().match}
             value={() => textTerm().match}
             onValueChange={(match) =>
               props.replace({ ...textTerm(), match: match as Extract<MailSearchExpression, { type: "text" }>["match"] })
             }
             options={[
-              { id: "words", label: "All words" },
-              { id: "phrase", label: "Phrase" },
-              { id: "contains", label: "Contains" },
-              { id: "exact", label: "Exact" },
+              { id: "words", label: messages().allWords },
+              { id: "phrase", label: messages().phrase },
+              { id: "contains", label: messages().contains },
+              { id: "exact", label: messages().exact },
             ]}
           />
         </div>
@@ -284,20 +301,20 @@ function SearchConditionValue(props: {
       <Show when={node().type === "date"}>
         <div class="grid min-w-0 grid-cols-[11rem_minmax(0,1fr)] gap-2">
           <Select
-            label="Comparison"
+            label={messages().comparison}
             value={() => dateTerm().operator}
             onValueChange={(operator) =>
               props.replace({ ...dateTerm(), operator: operator as Extract<MailSearchExpression, { type: "date" }>["operator"] })
             }
             options={[
-              { id: "before", label: "Before" },
-              { id: "on_or_before", label: "On or before" },
-              { id: "after", label: "After" },
-              { id: "on_or_after", label: "On or after" },
+              { id: "before", label: messages().before },
+              { id: "on_or_before", label: messages().onOrBefore },
+              { id: "after", label: messages().after },
+              { id: "on_or_after", label: messages().onOrAfter },
             ]}
           />
           <DateTimePicker
-            label="Date and time"
+            label={messages().dateAndTime}
             value={() => dateTerm().value}
             onValueChange={(value) => {
               if (value) props.replace({ ...dateTerm(), value });
@@ -309,21 +326,21 @@ function SearchConditionValue(props: {
       <Show when={node().type === "size"}>
         <div class="grid min-w-0 grid-cols-[11rem_minmax(0,1fr)] gap-2">
           <Select
-            label="Comparison"
+            label={messages().comparison}
             value={() => sizeTerm().operator}
             onValueChange={(operator) =>
               props.replace({ ...sizeTerm(), operator: operator as Extract<MailSearchExpression, { type: "size" }>["operator"] })
             }
             options={[
-              { id: "less_than", label: "Less than" },
-              { id: "at_most", label: "At most" },
-              { id: "equal", label: "Exactly" },
-              { id: "at_least", label: "At least" },
-              { id: "greater_than", label: "Greater than" },
+              { id: "less_than", label: messages().lessThan },
+              { id: "at_most", label: messages().atMost },
+              { id: "equal", label: messages().exactly },
+              { id: "at_least", label: messages().atLeast },
+              { id: "greater_than", label: messages().greaterThan },
             ]}
           />
           <NumberInput
-            label="Size"
+            label={messages().size}
             value={() => sizeTerm().bytes / (1024 * 1024)}
             onValueChange={(megabytes) => {
               if (megabytes !== null) props.replace({ ...sizeTerm(), bytes: Math.max(0, Math.round(megabytes * 1024 * 1024)) });
@@ -338,59 +355,59 @@ function SearchConditionValue(props: {
       </Show>
       <Show when={node().type === "work_status"}>
         <Select
-          label="Work status"
+          label={messages().workStatus}
           value={() => statusTerm().value}
           onValueChange={(value) => props.replace({ ...statusTerm(), value: value as "needs_action" | "waiting" | "done" })}
           options={[
-            { id: "needs_action", label: "Needs action", icon: "ti ti-message-reply" },
-            { id: "waiting", label: "Waiting for reply", icon: "ti ti-hourglass" },
-            { id: "done", label: "Done", icon: "ti ti-checkbox" },
+            { id: "needs_action", label: messages().needsAction, icon: "ti ti-message-reply" },
+            { id: "waiting", label: messages().waitingForReply, icon: "ti ti-hourglass" },
+            { id: "done", label: messages().done, icon: "ti ti-checkbox" },
           ]}
         />
       </Show>
       <Show when={node().type === "assignee"}>
         <Select
-          label="Assignee"
+          label={messages().assignee}
           value={() => assigneeTerm().userId ?? UNASSIGNED_VALUE}
-          selectedLabel={() => (assigneeTerm().userId ? undefined : "Unassigned")}
+          selectedLabel={() => (assigneeTerm().userId ? undefined : messages().unassigned)}
           onValueChange={(value) => props.replace({ ...assigneeTerm(), userId: value === UNASSIGNED_VALUE ? null : value })}
           fetchData={props.fetchAssignableUsers}
         />
       </Show>
       <Show when={node().type === "snoozed"}>
         <Select
-          label="Snoozed state"
+          label={messages().snoozedState}
           value={() => String(snoozedTerm().value)}
           onValueChange={(value) => props.replace({ ...snoozedTerm(), value: value === "true" })}
           options={[
-            { id: "true", label: "Snoozed", icon: "ti ti-alarm-snooze" },
-            { id: "false", label: "Not snoozed", icon: "ti ti-alarm-off" },
+            { id: "true", label: messages().snoozed, icon: "ti ti-alarm-snooze" },
+            { id: "false", label: messages().notSnoozed, icon: "ti ti-alarm-off" },
           ]}
         />
       </Show>
       <Show when={node().type === "folder_id"}>
         <Select
-          label="Folder"
+          label={messages().folder}
           value={() => folderTerm().folderId}
-          selectedLabel={() => (folderTerm().folderId ? undefined : "Choose a folder")}
+          selectedLabel={() => (folderTerm().folderId ? undefined : messages().chooseFolder)}
           onValueChange={(folderId) => props.replace({ ...folderTerm(), folderId: folderId ?? "" })}
           fetchData={props.fetchFolders}
         />
       </Show>
       <Show when={node().type === "local_tag_id"}>
         <Select
-          label="Tag"
+          label={messages().tag}
           value={() => localTagTerm().tagId}
-          selectedLabel={() => (localTagTerm().tagId ? undefined : "Choose a tag")}
+          selectedLabel={() => (localTagTerm().tagId ? undefined : messages().chooseTag)}
           onValueChange={(tagId) => props.replace({ ...localTagTerm(), tagId: tagId ?? "" })}
           fetchData={props.fetchLocalTags}
         />
       </Show>
       <Show when={node().type === "assigned_to_me"}>
-        <p class="flex h-full items-center text-sm text-secondary">Uses the current viewer.</p>
+        <p class="flex h-full items-center text-sm text-secondary">{messages().usesCurrentViewer}</p>
       </Show>
       <Show when={node().type === "all"}>
-        <p class="flex h-full items-center text-sm text-secondary">Matches every visible conversation.</p>
+        <p class="flex h-full items-center text-sm text-secondary">{messages().matchesEveryConversation}</p>
       </Show>
     </>
   );
@@ -410,6 +427,7 @@ function MailSearchRootEditor(props: {
   onAppend: (path: MailSearchNodePath, expression: MailSearchExpression) => void;
   onRemove: (path: MailSearchNodePath) => void;
 }) {
+  const messages = useMessages();
   const [advancedOpen, setAdvancedOpen] = createSignal(false);
   const rootGroup = createMemo(() => {
     const node = unwrapMailSearchNot(props.expression).expression;
@@ -444,33 +462,29 @@ function MailSearchRootEditor(props: {
   return (
     <>
       <PanelDialog.Section
-        title="Filters"
-        subtitle={
-          standardFilterCount() === 0
-            ? "No filters are active."
-            : `${standardFilterCount()} filter${standardFilterCount() === 1 ? "" : "s"} active.`
-        }
+        title={messages().filters}
+        subtitle={messages().activeFilters({ count: standardFilterCount() })}
         icon="ti ti-filter"
         actions={
           <Show when={rootChildren().length > 1}>
             <div class="whitespace-nowrap">
               <SegmentedControl<"and" | "or">
-                ariaLabel="How filters are combined"
+                ariaLabel={messages().filterCombination}
                 value={() => rootGroup()?.type ?? "and"}
                 onValueChange={(type) => {
                   const current = rootGroup();
                   if (current) props.onReplace([], { type, expressions: current.expressions });
                 }}
                 options={[
-                  { value: "and", label: "Match all" },
-                  { value: "or", label: "Match any" },
+                  { value: "and", label: messages().matchAll },
+                  { value: "or", label: messages().matchAny },
                 ]}
               />
             </div>
           </Show>
         }
       >
-        <Show when={standardFilterCount() > 0} fallback={<p class="text-sm text-dimmed">Add a filter to narrow the mailbox search.</p>}>
+        <Show when={standardFilterCount() > 0} fallback={<p class="text-sm text-dimmed">{messages().addFilterHint}</p>}>
           <div class="flex flex-col gap-2">
             <Index each={rootChildren()}>
               {(child, index) => (
@@ -499,13 +513,13 @@ function MailSearchRootEditor(props: {
           disabled={!rootHasCapacity()}
           onClick={() => addRootFilter(createMailSearchCondition("text:subject"))}
         >
-          <i class="ti ti-plus" aria-hidden="true" /> Add filter
+          <i class="ti ti-plus" aria-hidden="true" /> {messages().addFilter}
         </Button>
       </PanelDialog.Section>
 
       <PanelDialog.Section
-        title="Advanced conditions"
-        subtitle="Optional logic for searches with alternative or nested groups."
+        title={messages().advancedConditions}
+        subtitle={messages().advancedConditionsDescription}
         icon="ti ti-brackets-contain"
       >
         <details
@@ -516,15 +530,13 @@ function MailSearchRootEditor(props: {
           <summary class="flex min-h-10 cursor-pointer list-none items-center gap-2 px-3 text-sm font-medium">
             <i class="ti ti-brackets-contain text-dimmed" aria-hidden="true" />
             <span class="min-w-0 flex-1">
-              {advancedGroupCount() === 0
-                ? "Add alternative or nested conditions"
-                : `${advancedGroupCount()} advanced group${advancedGroupCount() === 1 ? "" : "s"}`}
+              {advancedGroupCount() === 0 ? messages().addNestedConditions : messages().advancedGroups({ count: advancedGroupCount() })}
             </span>
-            <span class="text-xs font-normal text-dimmed">Optional</span>
+            <span class="text-xs font-normal text-dimmed">{messages().optional}</span>
             <i class="ti ti-chevron-down text-dimmed transition-transform group-open:rotate-180" aria-hidden="true" />
           </summary>
           <div class="flex flex-col gap-2 px-3 pb-3">
-            <Show when={advancedGroupCount() > 0} fallback={<p class="text-sm text-dimmed">No advanced condition groups are active.</p>}>
+            <Show when={advancedGroupCount() > 0} fallback={<p class="text-sm text-dimmed">{messages().noAdvancedGroups}</p>}>
               <Index each={rootChildren()}>
                 {(child, index) => (
                   <Show when={isMailSearchGroup(child())}>
@@ -544,7 +556,7 @@ function MailSearchRootEditor(props: {
               </Index>
             </Show>
             <Button variant="ghost" size="sm" type="button" class="self-start" disabled={!canAddGroup()} onClick={addAdvancedGroup}>
-              <i class="ti ti-plus" aria-hidden="true" /> Add condition group
+              <i class="ti ti-plus" aria-hidden="true" /> {messages().addConditionGroup}
             </Button>
           </div>
         </details>
@@ -562,6 +574,7 @@ function MailSearchBuilderDialog(props: {
   canWrite: boolean;
   close: (result?: MailSearchBuilderResult) => void;
 }) {
+  const messages = useMessages();
   const initialExpression =
     props.initialState?.expression ??
     (props.initialQuery.trim()
@@ -610,11 +623,11 @@ function MailSearchBuilderDialog(props: {
             },
             { init: { signal: abortSignal } },
           );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to save view"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedSaveView));
       return { view: await response.json(), updated: Boolean(existing) };
     },
     onSuccess: ({ view, updated }) => {
-      toast.success(updated ? "Saved view updated" : "Saved view created");
+      toast.success(updated ? messages().savedViewUpdated : messages().savedViewCreated);
       props.close({ action: "saved", view });
     },
     onError: (cause) => setError(cause.message),
@@ -626,27 +639,27 @@ function MailSearchBuilderDialog(props: {
     const serialized = serializeMailSearchState(state);
     if (!serialized.ok) return setError(serialized.error);
     const name = (details?.name ?? savedViewName()).trim();
-    if (!name) return setError("Enter a name for the saved view.");
+    if (!name) return setError(messages().enterSavedViewName);
     setError(null);
     await saveViewMutation.mutate({ existing, name, scope: details?.scope ?? savedViewScope(), state });
   };
 
   const saveAsView = async () => {
     const values = await prompts.form({
-      title: "Save search as view",
+      title: messages().saveSearchAsView,
       fields: {
-        name: { type: "text", label: "Name", required: true },
+        name: { type: "text", label: messages().name, required: true },
         scope: {
           type: "select",
-          label: "Visibility",
+          label: messages().visibility,
           default: "private",
           options: [
-            { id: "private", label: "Only me" },
-            ...(props.canWrite ? [{ id: "mailbox", label: "Everyone with mailbox access" }] : []),
+            { id: "private", label: messages().onlyMe },
+            ...(props.canWrite ? [{ id: "mailbox", label: messages().everyoneWithMailboxAccess }] : []),
           ],
         },
       },
-      confirmText: "Save view",
+      confirmText: messages().saveView,
     });
     if (!values || disposed) return;
     await saveView(null, { name: values.name, scope: values.scope === "mailbox" ? "mailbox" : "private" });
@@ -660,22 +673,24 @@ function MailSearchBuilderDialog(props: {
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title={props.mode === "saved_view" ? (props.initialSavedView ? "Edit saved view" : "New saved view") : "Search mailbox"}
-        subtitle={
+        title={
           props.mode === "saved_view"
-            ? "Choose which conversations appear in this reusable mailbox view."
-            : "Find conversations with text and filters."
+            ? props.initialSavedView
+              ? messages().editSavedView
+              : messages().newSavedView
+            : messages().searchMailbox
         }
+        subtitle={props.mode === "saved_view" ? messages().savedViewDescription : messages().searchDescription}
         icon="ti ti-adjustments-search"
         close={() => props.close()}
       />
       <PanelDialog.Body scrollPreserveKey={`mail-search-builder:${props.mailboxId}`}>
         <Show when={props.mode === "saved_view"}>
-          <PanelDialog.Section title="Saved view" subtitle="Choose how the view appears in mailbox navigation." icon="ti ti-bookmark">
+          <PanelDialog.Section title={messages().savedView} subtitle={messages().savedViewNavigationDescription} icon="ti ti-bookmark">
             <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
-              <TextInput label="Name" value={savedViewName} onValueChange={setSavedViewName} maxLength={120} required />
+              <TextInput label={messages().name} value={savedViewName} onValueChange={setSavedViewName} maxLength={120} required />
               <Select
-                label={props.initialSavedView ? "Visibility (fixed after creation)" : "Visibility"}
+                label={props.initialSavedView ? messages().fixedVisibility : messages().visibility}
                 value={savedViewScope}
                 onValueChange={(value) => setSavedViewScope(value === "mailbox" ? "mailbox" : "private")}
                 options={
@@ -683,12 +698,12 @@ function MailSearchBuilderDialog(props: {
                     ? [
                         {
                           id: props.initialSavedView.scope,
-                          label: props.initialSavedView.scope === "mailbox" ? "Everyone with mailbox access" : "Only me",
+                          label: props.initialSavedView.scope === "mailbox" ? messages().everyoneWithMailboxAccess : messages().onlyMe,
                         },
                       ]
                     : [
-                        { id: "private", label: "Only me" },
-                        ...(props.canWrite ? [{ id: "mailbox", label: "Everyone with mailbox access" }] : []),
+                        { id: "private", label: messages().onlyMe },
+                        ...(props.canWrite ? [{ id: "mailbox", label: messages().everyoneWithMailboxAccess }] : []),
                       ]
                 }
               />
@@ -713,18 +728,14 @@ function MailSearchBuilderDialog(props: {
             setError(null);
           }}
         />
-        <PanelDialog.Section
-          title="Result order"
-          subtitle="Choose whether the closest match or the newest conversation appears first."
-          icon="ti ti-sort-descending"
-        >
+        <PanelDialog.Section title={messages().resultOrder} subtitle={messages().resultOrderDescription} icon="ti ti-sort-descending">
           <Select
-            label="Sort by"
+            label={messages().sortBy}
             value={sort}
             onValueChange={(value) => setSort(value === "newest" ? "newest" : "relevance")}
             options={[
-              { id: "relevance", label: "Best match", icon: "ti ti-sparkles" },
-              { id: "newest", label: "Newest first", icon: "ti ti-calendar-down" },
+              { id: "relevance", label: messages().bestMatch, icon: "ti ti-sparkles" },
+              { id: "newest", label: messages().newestFirst, icon: "ti ti-calendar-down" },
             ]}
           />
         </PanelDialog.Section>
@@ -739,34 +750,34 @@ function MailSearchBuilderDialog(props: {
       <PanelDialog.Footer>
         <Show when={props.mode === "search"} fallback={<span />}>
           <Button variant="ghost" size="sm" type="button" onClick={() => props.close({ action: "clear" })}>
-            Clear search
+            {messages().clearSearch}
           </Button>
         </Show>
         <div class="flex items-center gap-2">
           <Button variant="secondary" size="sm" type="button" onClick={() => props.close()}>
-            Cancel
+            {messages().cancel}
           </Button>
           <Show
             when={props.mode === "search"}
             fallback={
               <Button size="sm" type="button" disabled={saving()} onClick={() => void saveView(props.initialSavedView)}>
                 <i class={`ti ${saving() ? "ti-loader-2 animate-spin" : "ti-device-floppy"}`} aria-hidden="true" />
-                {props.initialSavedView ? "Save view" : "Create view"}
+                {props.initialSavedView ? messages().saveView : messages().createView}
               </Button>
             }
           >
             <Button variant="secondary" size="sm" type="button" disabled={saving()} onClick={() => void saveAsView()}>
-              <i class="ti ti-bookmark-plus" aria-hidden="true" /> Save as view
+              <i class="ti ti-bookmark-plus" aria-hidden="true" /> {messages().saveAsView}
             </Button>
             <Show when={canUpdateInitialView() ? props.initialSavedView : null}>
               {(view) => (
                 <Button variant="secondary" size="sm" type="button" disabled={saving()} onClick={() => void saveView(view())}>
-                  <i class="ti ti-device-floppy" aria-hidden="true" /> Update view
+                  <i class="ti ti-device-floppy" aria-hidden="true" /> {messages().updateView}
                 </Button>
               )}
             </Show>
             <Button size="sm" type="button" onClick={apply}>
-              <i class="ti ti-search" aria-hidden="true" /> Search
+              <i class="ti ti-search" aria-hidden="true" /> {messages().search}
             </Button>
           </Show>
         </div>

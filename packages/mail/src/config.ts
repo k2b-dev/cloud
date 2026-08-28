@@ -14,6 +14,15 @@ export const app = defineApp({
   name: "Mail",
   icon: "ti ti-mail",
   description: "Read, search, organize, draft, and send email collaboratively.",
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: {
+        name: "Mail",
+        description: "E-Mails gemeinsam lesen, durchsuchen, organisieren, verfassen und senden.",
+      },
+    },
+  },
   appearance: { accent: "#0f766e", background: { from: "#0f766e", to: "#2563eb", angle: 135 } },
   basePath: "/app/mail",
   baseUrl: "http://app-mail:3000",

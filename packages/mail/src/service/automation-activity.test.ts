@@ -109,6 +109,20 @@ describe("Mail automation activity projection", () => {
     ).toMatchObject({ status: "canceled" });
   });
 
+  test("localizes generated backfill copy for regional German locales", () => {
+    expect(
+      projectMailBackfillActivity({
+        mailboxId: "mailbox-1",
+        span: backfillSpan(),
+        automationNames: new Map([["automation-1", "Rechnungen"]]),
+        locale: "de-CH",
+      }),
+    ).toMatchObject({
+      name: "Nachträgliche Verarbeitung · Rechnungen",
+      detail: "3 passende E-Mails verarbeitet",
+    });
+  });
+
   test("keeps detailed errors and explains older broken conflict records", () => {
     const failed = run("rule", "failed");
     failed.error = { code: "CONFLICT", message: "The message changed before the action could be applied", retryable: false };

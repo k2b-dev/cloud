@@ -1,7 +1,19 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
 import type { DateContext } from "@k2b/stdlib";
 import { timed } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, Dropdown, FilterChip, IconButton, NoticeCard, Placeholder, ScrollArea, TextInput, Tooltip } from "@k2b/ui";
+import {
+  Button,
+  ButtonLink,
+  Dropdown,
+  FilterChip,
+  IconButton,
+  NoticeCard,
+  Placeholder,
+  ScrollArea,
+  TextInput,
+  Tooltip,
+  useLocale,
+} from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import type { Mailbox } from "../../contracts";
 import {
@@ -20,18 +32,10 @@ import MailBulkActionBar from "./MailBulkActionBar";
 import MailConversationRow from "./MailConversationRow";
 import { openMailSearchBuilder } from "./MailSearchBuilder";
 import type { MailActionId } from "./mail-actions";
+import { mailConversationListMessages } from "./mail-conversation-list-messages";
 import { mailboxHealthPresentation } from "./mail-health-presentation";
 import { buildMailListHref, type MailListItem } from "./mail-navigation";
 import { summarizeMailSearchExpression } from "./mail-search-builder-model";
-
-const QUICK_SEARCH_FIELD_OPTIONS = [
-  { value: "any", label: "Everything", icon: "ti ti-search" },
-  { value: "from", label: "Sender", icon: "ti ti-user-up" },
-  { value: "recipients", label: "Recipients", icon: "ti ti-user-down" },
-  { value: "subject", label: "Subject", icon: "ti ti-letter-case" },
-  { value: "body", label: "Message body", icon: "ti ti-align-left" },
-  { value: "attachment_name", label: "Attachment names", icon: "ti ti-paperclip" },
-] satisfies Array<{ value: MailQuickSearchField; label: string; icon: string }>;
 
 const selectedQuickSearchFields = (url: URL): MailQuickSearchField[] => {
   const fields = parseMailQuickSearchFields(url);
@@ -81,6 +85,19 @@ export default function MailConversationList(props: {
   onOpenHref: (href: string, replace?: boolean) => void | Promise<void>;
   onLoadMore: (href: string) => boolean | Promise<boolean>;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailConversationListMessages.resolve([locale()]).t);
+  const quickSearchFieldOptions = createMemo(
+    () =>
+      [
+        { value: "any", label: messages().everything, icon: "ti ti-search" },
+        { value: "from", label: messages().sender, icon: "ti ti-user-up" },
+        { value: "recipients", label: messages().recipients, icon: "ti ti-user-down" },
+        { value: "subject", label: messages().subject, icon: "ti ti-letter-case" },
+        { value: "body", label: messages().messageBody, icon: "ti ti-align-left" },
+        { value: "attachment_name", label: messages().attachmentNames, icon: "ti ti-paperclip" },
+      ] satisfies Array<{ value: MailQuickSearchField; label: string; icon: string }>,
+  );
   const requestUrl = () => new URL(props.requestUrl);
   const [searchValue, setSearchValue] = createSignal(props.query);
   const [searchFields, setSearchFields] = createSignal<MailQuickSearchField[]>(selectedQuickSearchFields(requestUrl()));
@@ -101,9 +118,9 @@ export default function MailConversationList(props: {
   });
   const structuredSummary = createMemo(() => {
     const state = currentSearchState();
-    return state ? summarizeMailSearchExpression(state.expression) : null;
+    return state ? summarizeMailSearchExpression(state.expression, locale()) : null;
   });
-  const healthPresentation = createMemo(() => mailboxHealthPresentation(props.mailbox));
+  const healthPresentation = createMemo(() => mailboxHealthPresentation(props.mailbox, locale()));
   const searchActive = () => Boolean(props.query.trim() || requestUrl().searchParams.has(MAIL_SEARCH_PARAMETER) || props.activeSavedViewId);
 
   const applyQuickSearch = (query: string, fields: MailQuickSearchField[], replace: boolean) => {
@@ -159,7 +176,8 @@ export default function MailConversationList(props: {
     else quickSearch.cancel();
   };
   const searchFieldsLabel = () =>
-    QUICK_SEARCH_FIELD_OPTIONS.filter((option) => searchFields().includes(option.value))
+    quickSearchFieldOptions()
+      .filter((option) => searchFields().includes(option.value))
       .map((option) => option.label)
       .join(", ");
 
@@ -233,22 +251,27 @@ export default function MailConversationList(props: {
               <div class="min-w-0 flex-1">
                 <h1 class="truncate text-base font-semibold text-primary">{props.title}</h1>
                 <p class="flex min-w-0 items-center gap-1 overflow-hidden text-xs text-dimmed">
-                  <span class="shrink-0 whitespace-nowrap">{props.items.length} shown</span>
+                  <span class="shrink-0 whitespace-nowrap">{messages().shown({ count: props.items.length })}</span>
                   <Show when={props.loading}>
                     <i class="ti ti-loader-2 shrink-0 animate-spin" aria-hidden="true" />
-                    <span class="sr-only">Loading view</span>
+                    <span class="sr-only">{messages().loadingView}</span>
                   </Show>
                   <Show when={props.liveDegraded}>
-                    <span class="inline-flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap" title="Live updates paused">
+                    <span class="inline-flex min-w-0 items-center gap-1 overflow-hidden whitespace-nowrap" title={messages().updatesPaused}>
                       <i class="ti ti-cloud-off shrink-0" aria-hidden="true" />
-                      <span class="truncate">Updates paused</span>
+                      <span class="truncate">{messages().updatesPaused}</span>
                     </span>
                   </Show>
                 </p>
               </div>
               <Show when={props.canWrite && props.listMode === "conversations"}>
-                <Tooltip.Anchor content="Select conversations">
-                  <IconButton type="button" label="Select conversations" aria-pressed="false" onClick={props.onToggleSelectionMode}>
+                <Tooltip.Anchor content={messages().selectConversations}>
+                  <IconButton
+                    type="button"
+                    label={messages().selectConversations}
+                    aria-pressed="false"
+                    onClick={props.onToggleSelectionMode}
+                  >
                     <i class="ti ti-checkbox" aria-hidden="true" />
                   </IconButton>
                 </Tooltip.Anchor>
@@ -258,12 +281,12 @@ export default function MailConversationList(props: {
                 width="14rem"
                 items={[
                   {
-                    label: "Conversation view",
+                    label: messages().conversationView,
                     icon: props.listMode === "conversations" ? "ti ti-check" : "ti ti-messages",
                     action: () => props.onListModeChange("conversations"),
                   },
                   {
-                    label: "Message view",
+                    label: messages().messageView,
                     icon: props.listMode === "messages" ? "ti ti-check" : "ti ti-mail",
                     action: () => props.onListModeChange("messages"),
                   },
@@ -273,17 +296,17 @@ export default function MailConversationList(props: {
                   iconOnly
                   type="button"
                   variant="ghost"
-                  label="Choose list view"
-                  tooltip={props.listMode === "conversations" ? "Conversation view" : "Message view"}
+                  label={messages().chooseListView}
+                  tooltip={props.listMode === "conversations" ? messages().conversationView : messages().messageView}
                 >
                   <i class="ti ti-layout-list" aria-hidden="true" />
                 </Dropdown.Trigger>
               </Dropdown.Root>
-              <Tooltip.Anchor content="Search filters">
+              <Tooltip.Anchor content={messages().searchFilters}>
                 <IconButton
                   type="button"
                   class={structuredSummary() ? "text-[var(--app-accent)]" : undefined}
-                  label="Search filters"
+                  label={messages().searchFilters}
                   aria-pressed={Boolean(structuredSummary())}
                   onClick={openAdvancedSearch}
                 >
@@ -291,8 +314,8 @@ export default function MailConversationList(props: {
                 </IconButton>
               </Tooltip.Anchor>
               <Show when={props.selectedConversationId || props.selectedMessageId}>
-                <Tooltip.Anchor content="Hide conversation list">
-                  <IconButton type="button" class="hidden lg:inline-flex" label="Hide conversation list" onClick={props.onCollapse}>
+                <Tooltip.Anchor content={messages().hideList}>
+                  <IconButton type="button" class="hidden lg:inline-flex" label={messages().hideList} onClick={props.onCollapse}>
                     <i class="ti ti-layout-sidebar-left-collapse" aria-hidden="true" />
                   </IconButton>
                 </Tooltip.Anchor>
@@ -319,8 +342,8 @@ export default function MailConversationList(props: {
             <TextInput
               type="search"
               name="q"
-              aria-label={`Search ${props.mailbox.name}`}
-              placeholder="Search mailbox"
+              aria-label={messages().searchMailboxName({ name: props.mailbox.name })}
+              placeholder={messages().searchMailbox}
               icon="ti ti-search"
               activeIcon="ti ti-search"
               value={searchValue}
@@ -334,9 +357,9 @@ export default function MailConversationList(props: {
             />
           </div>
           <FilterChip
-            label={`Search in: ${searchFieldsLabel()}`}
+            label={messages().searchInValue({ value: searchFieldsLabel() })}
             icon="ti ti-filter-search"
-            options={[{ label: "Search in", options: QUICK_SEARCH_FIELD_OPTIONS, multiple: true }]}
+            options={[{ label: messages().searchIn, options: quickSearchFieldOptions(), multiple: true }]}
             value={searchFields()}
             defaultValue={[...DEFAULT_MAIL_QUICK_SEARCH_FIELDS]}
             isActive={!isDefaultQuickSearch(searchFields())}
@@ -355,7 +378,7 @@ export default function MailConversationList(props: {
             >
               <i class="ti ti-filter-check shrink-0 text-[var(--app-accent)]" aria-hidden="true" />
               <span class="truncate">{summary()}</span>
-              <span class="sr-only">Edit structured search</span>
+              <span class="sr-only">{messages().editStructuredSearch}</span>
             </button>
           )}
         </Show>
@@ -382,7 +405,7 @@ export default function MailConversationList(props: {
                       onClick={() => (health().action === "delivery" ? props.onOpenDeliverySettings() : props.onOpenHealth())}
                     >
                       <i class="ti ti-activity" aria-hidden="true" />
-                      <span>{health().action === "health" ? "Status" : health().actionLabel}</span>
+                      <span>{health().action === "health" ? messages().status : health().actionLabel}</span>
                     </Button>
                   </Show>
                 </div>
@@ -403,7 +426,7 @@ export default function MailConversationList(props: {
           <Placeholder
             state="error"
             variant="panel"
-            title="Could not load conversations"
+            title={messages().couldNotLoad}
             description={props.error}
             action={
               <ButtonLink
@@ -414,7 +437,7 @@ export default function MailConversationList(props: {
                 onNavigate={props.onNavigate}
                 scroll="preserve"
               >
-                Retry
+                {messages().retry}
               </ButtonLink>
             }
           />
@@ -423,9 +446,13 @@ export default function MailConversationList(props: {
             icon={searchActive() ? "ti ti-search" : "ti ti-mail-off"}
             variant="panel"
             title={
-              searchActive() ? "No matching messages" : props.listMode === "conversations" ? "No conversations here" : "No messages here"
+              searchActive()
+                ? messages().noMatchingMessages
+                : props.listMode === "conversations"
+                  ? messages().noConversations
+                  : messages().noMessages
             }
-            description={searchActive() ? "Change or clear the active search filters." : "New synchronized mail will appear in this view."}
+            description={searchActive() ? messages().changeFilters : messages().newMailAppears}
             action={
               searchActive() ? (
                 <ButtonLink
@@ -436,7 +463,7 @@ export default function MailConversationList(props: {
                   onNavigate={props.onNavigate}
                   scroll="preserve"
                 >
-                  Clear search
+                  {messages().clearSearch}
                 </ButtonLink>
               ) : undefined
             }
@@ -445,7 +472,11 @@ export default function MailConversationList(props: {
           <div
             class="flex flex-col gap-0.5"
             role="list"
-            aria-label={`${props.title} ${props.listMode === "conversations" ? "conversations" : "messages"}`}
+            aria-label={
+              props.listMode === "conversations"
+                ? messages().conversationListLabel({ title: props.title })
+                : messages().messageListLabel({ title: props.title })
+            }
           >
             <For each={props.items}>
               {(item) => (
@@ -494,7 +525,11 @@ export default function MailConversationList(props: {
                   }
                   aria-hidden="true"
                 />
-                {props.loading ? "Loading conversations" : failedLoadHref() === href() ? "Retry loading" : "More conversations"}
+                {props.loading
+                  ? messages().loadingConversations
+                  : failedLoadHref() === href()
+                    ? messages().retryLoading
+                    : messages().moreConversations}
               </ButtonLink>
             </div>
           )}

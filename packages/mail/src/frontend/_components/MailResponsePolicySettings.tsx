@@ -1,6 +1,6 @@
 import { mutation, query, timed } from "@k2b/stdlib/solid";
-import { Button, dialogCore, PanelDialog, panelDialogOptions, prompts, Switch, TextInput, toast } from "@k2b/ui";
-import { createEffect, createSignal, onCleanup, Show } from "solid-js";
+import { Button, dialogCore, PanelDialog, panelDialogOptions, prompts, Switch, TextInput, toast, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import {
   type ConversationReferencePreview,
@@ -10,6 +10,7 @@ import {
 import type { ConversationReferenceConfiguration } from "../../service/conversation-reference";
 import { readApiError } from "./api-response";
 import MailTemplateHelpDisclosure, { MailTemplateToken } from "./MailTemplateHelpDisclosure";
+import { mailSettingsMessages } from "./mail-settings-messages";
 
 type MailReferenceConfigurationDraft = PutConversationReferenceConfiguration;
 
@@ -26,6 +27,8 @@ export function MailReferenceConfigurationFields(props: {
   onChange: (value: MailReferenceConfigurationDraft) => void;
   compact?: boolean;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const update = <K extends keyof MailReferenceConfigurationDraft>(key: K, value: MailReferenceConfigurationDraft[K]) =>
     props.onChange({ ...props.value(), [key]: value });
   const [previewSource, setPreviewSource] = createSignal(props.value().pattern.trim());
@@ -40,7 +43,7 @@ export function MailReferenceConfigurationFields(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Reference preview could not be rendered"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().referencePreviewFailed));
       return { pattern, preview: await response.json() };
     },
   });
@@ -58,63 +61,63 @@ export function MailReferenceConfigurationFields(props: {
   return (
     <div class="flex flex-col gap-3">
       <TextInput
-        label="Number format"
-        description="Use exactly one unique identifier. Existing references never change when the format changes."
+        label={messages().numberFormat}
+        description={messages().numberFormatDescription}
         value={() => props.value().pattern}
         onValueChange={(value) => update("pattern", value)}
         monospace
         required
       />
-      <MailTemplateHelpDisclosure title="Format placeholders">
+      <MailTemplateHelpDisclosure title={messages().formatPlaceholders}>
         <div class="flex flex-col gap-3 text-xs">
           <section class="flex flex-col gap-1.5">
-            <h4 class="font-semibold text-primary">Recommended</h4>
+            <h4 class="font-semibold text-primary">{messages().recommended}</h4>
             <p class="flex flex-wrap items-center gap-1.5">
               <MailTemplateToken value="{{ short_id }}" />
-              <span>short, readable random ID that hides volume and allocation time</span>
+              <span>{messages().shortIdDescription}</span>
             </p>
           </section>
           <div class="grid gap-3 sm:grid-cols-2">
             <section class="flex flex-col gap-1.5">
-              <h4 class="font-semibold text-primary">Other identifiers</h4>
+              <h4 class="font-semibold text-primary">{messages().otherIdentifiers}</h4>
               <p class="flex flex-wrap items-center gap-1.5">
                 <MailTemplateToken value="{{ uuid }}" />
-                <span>opaque random UUID</span>
+                <span>{messages().uuidDescription}</span>
               </p>
               <p class="flex flex-wrap items-center gap-1.5">
                 <MailTemplateToken value="{{ uuid_v7 }}" />
-                <span>sortable UUID that includes allocation time</span>
+                <span>{messages().uuidV7Description}</span>
               </p>
               <p class="flex flex-wrap items-center gap-1.5">
                 <MailTemplateToken value="{{ ulid }}" />
-                <span>compact sortable ID that includes allocation time</span>
+                <span>{messages().ulidDescription}</span>
               </p>
               <p class="flex flex-wrap items-center gap-1.5">
                 <MailTemplateToken value="{{ sequence }}" />
-                <span>mailbox-wide counter that reveals order and volume</span>
+                <span>{messages().sequenceDescription}</span>
               </p>
               <p class="flex flex-wrap items-center gap-1.5">
                 <MailTemplateToken value="{{ sequence | pad_start: 6 }}" />
-                <span>counter padded to six digits</span>
+                <span>{messages().paddedSequenceDescription}</span>
               </p>
             </section>
             <section class="flex flex-col gap-1.5">
-              <h4 class="font-semibold text-primary">Allocation date (UTC)</h4>
+              <h4 class="font-semibold text-primary">{messages().allocationDateUtc}</h4>
               <p class="flex flex-wrap items-center gap-1.5">
                 <MailTemplateToken value="{{ year }}" />
-                <span>four-digit year</span>
+                <span>{messages().fourDigitYear}</span>
               </p>
               <p class="flex flex-wrap items-center gap-1.5">
                 <MailTemplateToken value="{{ month }}" />
-                <span>two-digit month</span>
+                <span>{messages().twoDigitMonth}</span>
               </p>
               <p class="flex flex-wrap items-center gap-1.5">
                 <MailTemplateToken value="{{ month_name }}" />
-                <span>full English month name</span>
+                <span>{messages().englishMonthName}</span>
               </p>
               <p class="flex flex-wrap items-center gap-1.5">
                 <MailTemplateToken value="{{ day }}" />
-                <span>two-digit day</span>
+                <span>{messages().twoDigitDay}</span>
               </p>
             </section>
           </div>
@@ -124,28 +127,30 @@ export function MailReferenceConfigurationFields(props: {
         <i class={`ti ${previewPending() ? "ti-loader-2 animate-spin" : "ti-eye"} shrink-0`} aria-hidden="true" />
         <Show
           when={preview()}
-          fallback={<span>{previewPending() ? "Rendering preview…" : (previewQuery.error()?.message ?? "Enter a valid format")}</span>}
+          fallback={
+            <span>{previewPending() ? messages().renderingPreview : (previewQuery.error()?.message ?? messages().enterValidFormat)}</span>
+          }
         >
           {(value) => (
             <>
-              Preview: <code>{value().value}</code>
+              {messages().preview}: <code>{value().value}</code>
             </>
           )}
         </Show>
       </p>
       <Show when={!props.compact}>
         <Switch
-          label="Allow automations to assign reference numbers"
+          label={messages().allowAutomationReferences}
           value={() => props.value().enabled}
           onValueChange={(value) => update("enabled", value)}
         />
-        <p class="-mt-2 text-xs text-dimmed">Disabling this stops new allocations but keeps existing references searchable.</p>
+        <p class="-mt-2 text-xs text-dimmed">{messages().disableAllocationsDescription}</p>
         <Switch
-          label="Include the reference in reply subjects"
+          label={messages().includeReferenceInReplies}
           value={() => props.value().includeInReplySubjects}
           onValueChange={(value) => update("includeInReplySubjects", value)}
         />
-        <p class="-mt-2 text-xs text-dimmed">New replies use Re: [REFERENCE] Original subject after a reference has been assigned.</p>
+        <p class="-mt-2 text-xs text-dimmed">{messages().replyReferenceDescription}</p>
       </Show>
     </div>
   );
@@ -157,6 +162,8 @@ export function MailReferenceConfigurationForm(props: {
   onSaved: (configuration: ConversationReferenceConfiguration) => void;
   compact?: boolean;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const [draft, setDraft] = createSignal(referenceConfigurationDraft(props.configuration));
   const save = mutation.create<ConversationReferenceConfiguration, void>({
     mutation: async (_input, { abortSignal }) => {
@@ -171,12 +178,12 @@ export function MailReferenceConfigurationForm(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to save reference number settings"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedSaveReferenceSettings));
       return response.json();
     },
     onSuccess: (configuration) => {
       props.onSaved(configuration);
-      toast.success("Reference number settings saved");
+      toast.success(messages().referenceSettingsSaved);
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -194,7 +201,7 @@ export function MailReferenceConfigurationForm(props: {
           onClick={() => save.mutate()}
         >
           <i class={`ti ${save.loading() ? "ti-loader-2 animate-spin" : "ti-device-floppy"}`} aria-hidden="true" />
-          Save reference format
+          {messages().saveReferenceFormat}
         </Button>
       </div>
     </div>
@@ -207,20 +214,18 @@ function ReferenceConfigurationEditor(props: {
   close: () => void;
   onSaved: (configuration: ConversationReferenceConfiguration) => void;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title="Reference numbers"
-        subtitle="One durable number sequence for this mailbox"
+        title={messages().referenceNumbers}
+        subtitle={messages().referenceNumbersSubtitle}
         icon="ti ti-hash"
         close={props.close}
       />
       <PanelDialog.Body>
-        <PanelDialog.Section
-          title="Number format"
-          subtitle="Every conversation receives at most one permanent reference."
-          icon="ti ti-hash"
-        >
+        <PanelDialog.Section title={messages().numberFormat} subtitle={messages().referenceNumberRule} icon="ti ti-hash">
           <MailReferenceConfigurationForm
             mailboxId={props.mailboxId}
             configuration={props.configuration}
@@ -240,6 +245,8 @@ export function MailReferenceConfigurationCard(props: {
   configuration: ConversationReferenceConfiguration | null;
   onConfigurationChange: (configuration: ConversationReferenceConfiguration) => void;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const openEditor = () =>
     dialogCore.open<void>(
       (close) => (
@@ -260,16 +267,16 @@ export function MailReferenceConfigurationCard(props: {
         </span>
         <div class="min-w-64 flex-1">
           <h2 class="text-sm font-semibold text-primary">
-            {props.configuration?.enabled ? "Reference numbers are available" : "Reference numbers are not configured"}
+            {props.configuration?.enabled ? messages().referenceNumbersAvailable : messages().referenceNumbersNotConfigured}
           </h2>
           <p class="mt-0.5 text-xs text-dimmed">
             {props.configuration
-              ? `Pattern ${props.configuration.pattern}.`
-              : "Configure a reference format before a workflow assigns durable conversation references."}
+              ? messages().referencePattern({ pattern: props.configuration.pattern })
+              : messages().configureReferenceDescription}
           </p>
         </div>
         <Button variant="secondary" size="sm" type="button" class="shrink-0" onClick={() => void openEditor()}>
-          <i class="ti ti-settings" aria-hidden="true" /> {props.configuration ? "Configure" : "Set up"}
+          <i class="ti ti-settings" aria-hidden="true" /> {props.configuration ? messages().configure : messages().setUp}
         </Button>
       </div>
     </section>

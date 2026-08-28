@@ -1,11 +1,12 @@
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, NoticeCard, Placeholder, prompts, Select } from "@k2b/ui";
+import { Button, ButtonLink, NoticeCard, Placeholder, prompts, Select, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MailDraftSeed, SenderIdentity } from "../../contracts";
 import { readApiError } from "./api-response";
-import { parseMailtoIntent } from "./mail-compose-intent";
+import { type MailComposeIntentErrorCode, parseMailtoIntent } from "./mail-compose-intent";
 import { mailDraftReturnHref, mailDraftSeedHref } from "./mail-compose-route";
+import { mailComposerMessages } from "./mail-composer-messages";
 import { storeMailDraftSeed } from "./mail-draft-seed-store";
 import { readMailSenderPreference, selectComposeSenderIdentity, writeMailSenderPreference } from "./mail-sender-preference";
 
@@ -22,7 +23,37 @@ export default function MailComposeIntentPage(props: {
   mailto: string | null;
   returnHref: string | null;
 }) {
+  const locale = useLocale();
+  const t = () => mailComposerMessages.resolve([locale()]).t;
   const parsedIntent = parseMailtoIntent(props.mailto);
+  const intentErrorMessage = (code: MailComposeIntentErrorCode): string => {
+    switch (code) {
+      case "too_large":
+        return t().emailLinkTooLarge;
+      case "invalid_link":
+        return t().emailLinkInvalid;
+      case "invalid_encoding":
+        return t().emailLinkInvalidEncoding;
+      case "duplicate_field":
+        return t().emailLinkDuplicateField;
+      case "subject_too_long":
+        return t().emailLinkSubjectTooLong;
+      case "body_too_long":
+        return t().emailLinkBodyTooLong;
+      case "too_many_to":
+        return t().emailLinkTooManyTo;
+      case "too_many_cc":
+        return t().emailLinkTooManyCc;
+      case "too_many_bcc":
+        return t().emailLinkTooManyBcc;
+      case "invalid_to":
+        return t().emailLinkInvalidTo;
+      case "invalid_cc":
+        return t().emailLinkInvalidCc;
+      case "invalid_bcc":
+        return t().emailLinkInvalidBcc;
+    }
+  };
   const [mailboxId, setMailboxId] = createSignal(props.initialMailboxId);
   const [identityId, setIdentityId] = createSignal("");
   const [autoStartFailed, setAutoStartFailed] = createSignal(false);
@@ -34,7 +65,7 @@ export default function MailComposeIntentPage(props: {
         { param: { mailboxId: selectedMailboxId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not load sending identities"));
+      if (!response.ok) throw new Error(await readApiError(response, t().identitiesLoadFailed));
       return { mailboxId: selectedMailboxId, items: (await response.json()).filter((identity) => identity.status === "verified") };
     },
   });
@@ -59,7 +90,7 @@ export default function MailComposeIntentPage(props: {
   const selectedIdentity = createMemo(() => identities().find((identity) => identity.id === identityId()) ?? null);
   const draftCreation = mutations.create<{ seed: MailDraftSeed; identityId: string }, { mailboxId: string; identity: SenderIdentity }>({
     mutation: async ({ mailboxId: selectedMailboxId, identity }, { abortSignal }) => {
-      if (!parsedIntent.ok) throw new Error(parsedIntent.message);
+      if (!parsedIntent.ok) throw new Error(intentErrorMessage(parsedIntent.code));
       const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].$post(
         {
           param: { mailboxId: selectedMailboxId },
@@ -84,7 +115,7 @@ export default function MailComposeIntentPage(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not create draft"));
+      if (!response.ok) throw new Error(await readApiError(response, t().draftCreateFailed));
       return { seed: await response.json(), identityId: identity.id };
     },
     onSuccess: ({ seed, identityId }) => {
@@ -92,8 +123,8 @@ export default function MailComposeIntentPage(props: {
       try {
         storeMailDraftSeed(localStorage, seed);
       } catch {
-        void prompts.error("The browser could not keep this message locally. Free some site storage and try again.", {
-          title: "Could not start message",
+        void prompts.error(t().localMessageFailed, {
+          title: t().startMessageFailed,
         });
         return;
       }
@@ -103,7 +134,7 @@ export default function MailComposeIntentPage(props: {
     },
     onError: (error) => {
       setAutoStartFailed(true);
-      return prompts.error(error.message, { title: "Could not start message" });
+      return prompts.error(error.message, { title: t().startMessageFailed });
     },
   });
 
@@ -139,7 +170,7 @@ export default function MailComposeIntentPage(props: {
   return (
     <div class="relative flex h-full min-h-0 items-start justify-center overflow-y-auto p-3 sm:p-6">
       <Show when={autoStartPending()}>
-        <Placeholder state="loading" variant="panel" class="absolute inset-0" title="Preparing message..." />
+        <Placeholder state="loading" variant="panel" class="absolute inset-0" title={t().preparingMessage} />
       </Show>
       <section
         class="paper mt-[8vh] flex w-full max-w-xl flex-col gap-4 p-4 sm:p-6"
@@ -152,34 +183,28 @@ export default function MailComposeIntentPage(props: {
           </span>
           <div class="min-w-0">
             <h1 id="mail-compose-intent-title" class="text-lg font-semibold text-primary">
-              New message
+              {t().newMessage}
             </h1>
-            <p class="text-sm text-secondary">Choose the mailbox and verified sender that should own this draft.</p>
+            <p class="text-sm text-secondary">{t().chooseOwnerDescription}</p>
           </div>
         </div>
 
         <Show
           when={props.mailboxes.length > 0}
-          fallback={
-            <Placeholder
-              state="empty"
-              title="No writable mailbox"
-              description="Ask a mailbox administrator for Write access before composing mail."
-            />
-          }
+          fallback={<Placeholder state="empty" title={t().noWritableMailbox} description={t().noWritableMailboxDescription} />}
         >
           <Show
             when={parsedIntent.ok}
             fallback={
               <NoticeCard tone="danger" icon={false}>
-                {!parsedIntent.ok && parsedIntent.message}
+                {!parsedIntent.ok && intentErrorMessage(parsedIntent.code)}
               </NoticeCard>
             }
           >
             <div class="flex flex-col gap-3">
               <Select
-                label="Mailbox"
-                placeholder="Choose mailbox"
+                label={t().mailbox}
+                placeholder={t().chooseMailbox}
                 value={mailboxId}
                 onValueChange={setMailboxId}
                 options={props.mailboxes.map((mailbox) => ({
@@ -190,8 +215,8 @@ export default function MailComposeIntentPage(props: {
                 disabled={draftCreation.loading()}
               />
               <Select
-                label="From"
-                placeholder={identityLoading() ? "Loading senders..." : "Choose sender"}
+                label={t().from}
+                placeholder={identityLoading() ? t().loadingSenders : t().chooseSender}
                 value={identityId}
                 onValueChange={setIdentityId}
                 options={identities().map((identity) => ({
@@ -206,24 +231,24 @@ export default function MailComposeIntentPage(props: {
                   <NoticeCard tone="danger" icon={false} bodyClass="flex items-center justify-between gap-3" role="alert">
                     <span>{message()}</span>
                     <Button variant="secondary" size="sm" type="button" onClick={() => void identityResults.refresh()}>
-                      Retry
+                      {t().retry}
                     </Button>
                   </NoticeCard>
                 )}
               </Show>
               <Show when={mailboxId() && !identityLoading() && !identityError() && identities().length === 0}>
                 <NoticeCard tone="neutral" icon={false}>
-                  This mailbox has no verified sender. Add and verify an identity in mailbox Settings before composing.
+                  {t().noVerifiedSender}
                 </NoticeCard>
               </Show>
             </div>
             <Show when={props.mailto}>
               <div class="rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-3 text-sm">
-                <p class="font-medium text-primary">Email link</p>
+                <p class="font-medium text-primary">{t().emailLink}</p>
                 <p class="mt-1 truncate text-secondary">
                   {parsedIntent.ok && parsedIntent.intent.to.length > 0
-                    ? `To ${parsedIntent.intent.to.map((recipient) => recipient.address).join(", ")}`
-                    : "No recipient supplied"}
+                    ? t().toAddresses({ value: parsedIntent.intent.to.map((recipient) => recipient.address).join(", ") })
+                    : t().noRecipientSupplied}
                 </p>
                 <Show when={parsedIntent.ok && parsedIntent.intent.subject}>
                   <p class="truncate text-secondary">{parsedIntent.ok && parsedIntent.intent.subject}</p>
@@ -232,7 +257,7 @@ export default function MailComposeIntentPage(props: {
             </Show>
             <div class="flex items-center justify-between gap-3">
               <ButtonLink variant="secondary" size="sm" href={selectedMailbox() ? `/app/mail/${selectedMailbox()!.id}` : "/app/mail"}>
-                Cancel
+                {t().cancel}
               </ButtonLink>
               <Button
                 size="sm"
@@ -241,7 +266,7 @@ export default function MailComposeIntentPage(props: {
                 onClick={createDraft}
               >
                 <i class={`ti ${draftCreation.loading() ? "ti-loader-2 animate-spin" : "ti-arrow-right"}`} aria-hidden="true" />
-                Continue
+                {t().continue}
               </Button>
             </div>
           </Show>

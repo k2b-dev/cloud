@@ -1,19 +1,12 @@
-import { CheckboxCard, DatePicker, DateRangePicker, Select, Switch, TextInput, Button, IconButton } from "@k2b/ui";
+import { Button, CheckboxCard, DatePicker, DateRangePicker, IconButton, Select, Switch, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, For, Show } from "solid-js";
 import { validateResponseScheduleDefinition } from "../../response-schedule-validation";
 import type { ResponseScheduleDefinition } from "../../service/response-schedule";
+import { mailRemainingMessages } from "./mail-remaining-messages";
 
 type WindowedResponseScheduleDefinition = Extract<ResponseScheduleDefinition, { mode: "windows" }>;
 
-const WEEKDAYS = [
-  { id: 1, label: "Monday" },
-  { id: 2, label: "Tuesday" },
-  { id: 3, label: "Wednesday" },
-  { id: 4, label: "Thursday" },
-  { id: 5, label: "Friday" },
-  { id: 6, label: "Saturday" },
-  { id: 7, label: "Sunday" },
-] as const;
+const WEEKDAYS = [1, 2, 3, 4, 5, 6, 7] as const;
 
 const timeZones = (() => {
   try {
@@ -34,7 +27,7 @@ const today = (): string => {
 };
 
 type Window = { start: string; end: string };
-type Weekday = (typeof WEEKDAYS)[number]["id"];
+type Weekday = (typeof WEEKDAYS)[number];
 const DEFAULT_WINDOW: Window = { start: "09:00", end: "17:00" };
 const FULL_DAY_WINDOW: Window = { start: "00:00", end: "24:00" };
 
@@ -42,6 +35,8 @@ const isFullDayWindow = (windows: readonly Window[]): boolean =>
   windows.length === 1 && windows[0]?.start === FULL_DAY_WINDOW.start && windows[0]?.end === FULL_DAY_WINDOW.end;
 
 function WindowEditor(props: { windows: () => Window[]; onChange: (windows: Window[]) => void; addLabel: string; compact?: boolean }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
   const update = (index: number, field: keyof Window, value: string) =>
     props.onChange(props.windows().map((window, position) => (position === index ? { ...window, [field]: value } : window)));
   return (
@@ -50,8 +45,8 @@ function WindowEditor(props: { windows: () => Window[]; onChange: (windows: Wind
         {(window, index) => (
           <div class="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_2rem] items-end gap-2">
             <TextInput
-              label={!props.compact && index() === 0 ? "From" : undefined}
-              aria-label={`Window ${index() + 1} start`}
+              label={!props.compact && index() === 0 ? messages().from : undefined}
+              aria-label={messages().windowStart({ index: index() + 1 })}
               value={() => window.start}
               onValueChange={(value) => update(index(), "start", value)}
               placeholder="09:00"
@@ -60,8 +55,8 @@ function WindowEditor(props: { windows: () => Window[]; onChange: (windows: Wind
               monospace
             />
             <TextInput
-              label={!props.compact && index() === 0 ? "Until" : undefined}
-              aria-label={`Window ${index() + 1} end`}
+              label={!props.compact && index() === 0 ? messages().until : undefined}
+              aria-label={messages().windowEnd({ index: index() + 1 })}
               value={() => window.end}
               onValueChange={(value) => update(index(), "end", value)}
               placeholder="17:00"
@@ -72,7 +67,7 @@ function WindowEditor(props: { windows: () => Window[]; onChange: (windows: Wind
             <IconButton
               type="button"
               class={props.compact ? undefined : "mb-0.5"}
-              label={`Remove window ${index() + 1}`}
+              label={messages().removeWindow({ index: index() + 1 })}
               onClick={() => props.onChange(props.windows().filter((_, position) => position !== index()))}
             >
               <i class="ti ti-x" aria-hidden="true" />
@@ -98,13 +93,14 @@ function WindowedResponseScheduleFields(props: {
   onChange: (value: WindowedResponseScheduleDefinition) => void;
   errors?: () => string[];
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
   const previousDayWindows = new Map<Weekday, Window[]>();
   const errors = createMemo(() => props.errors?.() ?? validateResponseScheduleDefinition(props.value()));
   const update = <K extends keyof WindowedResponseScheduleDefinition>(key: K, value: WindowedResponseScheduleDefinition[K]) =>
     props.onChange({ ...props.value(), [key]: value });
-  const windowsForDay = (weekday: (typeof WEEKDAYS)[number]["id"]) =>
-    props.value().weeklyWindows.filter((window) => window.weekday === weekday);
-  const setDayWindows = (weekday: (typeof WEEKDAYS)[number]["id"], windows: Window[]) =>
+  const windowsForDay = (weekday: (typeof WEEKDAYS)[number]) => props.value().weeklyWindows.filter((window) => window.weekday === weekday);
+  const setDayWindows = (weekday: (typeof WEEKDAYS)[number], windows: Window[]) =>
     update("weeklyWindows", [
       ...props.value().weeklyWindows.filter((window) => window.weekday !== weekday),
       ...windows.map((window) => ({ ...window, weekday })),
@@ -147,8 +143,8 @@ function WindowedResponseScheduleFields(props: {
         </div>
       </Show>
       <Select
-        label="Time zone"
-        description="All dates and times below are evaluated in this time zone."
+        label={messages().timeZone({ timeZone: "" }).split(":")[0]}
+        description={messages().scheduleTimeZoneDescription}
         icon="ti ti-world"
         value={() => props.value().timeZone}
         selectedLabel={() => props.value().timeZone}
@@ -166,8 +162,8 @@ function WindowedResponseScheduleFields(props: {
       <div>
         <div class="mb-2 flex items-start justify-between gap-3">
           <div>
-            <p class="text-sm font-medium text-primary">Active date ranges</p>
-            <p class="text-xs text-dimmed">Optional. Without a range, the weekly hours repeat indefinitely.</p>
+            <p class="text-sm font-medium text-primary">{messages().activeDateRanges}</p>
+            <p class="text-xs text-dimmed">{messages().activeDateRangesDescription}</p>
           </div>
           <Button
             variant="ghost"
@@ -176,16 +172,16 @@ function WindowedResponseScheduleFields(props: {
             class="shrink-0"
             onClick={() => update("activeRanges", [...props.value().activeRanges, { from: today(), to: null }])}
           >
-            <i class="ti ti-plus" aria-hidden="true" /> Add range
+            <i class="ti ti-plus" aria-hidden="true" /> {messages().addRange}
           </Button>
         </div>
-        <Show when={props.value().activeRanges.length > 0} fallback={<p class="text-xs text-dimmed">No date limit.</p>}>
+        <Show when={props.value().activeRanges.length > 0} fallback={<p class="text-xs text-dimmed">{messages().noDateLimit}</p>}>
           <div class="flex flex-col gap-2">
             <For each={props.value().activeRanges}>
               {(range, index) => (
                 <div class="grid grid-cols-[minmax(0,1fr)_2rem] items-end gap-2">
                   <DateRangePicker
-                    label={index() === 0 ? "Range" : undefined}
+                    label={index() === 0 ? messages().range : undefined}
                     value={() => ({ start: range.from, end: range.to })}
                     onValueChange={(value) =>
                       update(
@@ -201,7 +197,7 @@ function WindowedResponseScheduleFields(props: {
                   <IconButton
                     type="button"
                     class="mb-0.5"
-                    label={`Remove date range ${index() + 1}`}
+                    label={messages().removeDateRange({ index: index() + 1 })}
                     onClick={() =>
                       update(
                         "activeRanges",
@@ -221,34 +217,34 @@ function WindowedResponseScheduleFields(props: {
       <div>
         <div class="mb-2">
           <div>
-            <p class="text-sm font-medium text-primary">Weekly hours</p>
-            <p class="text-xs text-dimmed">Set each day independently. Unchecked days are disabled.</p>
+            <p class="text-sm font-medium text-primary">{messages().weeklyHours}</p>
+            <p class="text-xs text-dimmed">{messages().weeklyHoursDescription}</p>
           </div>
         </div>
         <div class="flex flex-col gap-2">
           <For each={WEEKDAYS}>
             {(day) => {
-              const windows = () => windowsForDay(day.id);
+              const windows = () => windowsForDay(day);
               const active = () => windows().length > 0;
               const allDay = () => isFullDayWindow(windows());
               const dayDescription = () => {
-                if (!active()) return "Disabled";
-                if (allDay()) return "All day";
-                return `${windows().length} ${windows().length === 1 ? "window" : "windows"}`;
+                if (!active()) return messages().disabled;
+                if (allDay()) return messages().allDay;
+                return messages().windows({ count: windows().length });
               };
               return (
                 <div class="grid gap-2 md:grid-cols-[12rem_7rem_minmax(0,1fr)] md:items-start">
                   <CheckboxCard
-                    label={day.label}
+                    label={messages().weekday({ day })}
                     description={dayDescription()}
                     icon={active() ? "ti ti-calendar-check" : "ti ti-calendar-off"}
                     variant="input"
                     value={active}
-                    onValueChange={(enabled) => setDayEnabled(day.id, enabled)}
+                    onValueChange={(enabled) => setDayEnabled(day, enabled)}
                   />
                   <Show when={active()}>
                     <div class="flex min-h-12 items-center md:justify-center">
-                      <Switch label="All day" value={allDay} onValueChange={(value) => setAllDay(day.id, value)} />
+                      <Switch label={messages().allDay} value={allDay} onValueChange={(value) => setAllDay(day, value)} />
                     </div>
                     <div class="min-w-0">
                       <Show
@@ -257,8 +253,8 @@ function WindowedResponseScheduleFields(props: {
                       >
                         <WindowEditor
                           windows={windows}
-                          onChange={(next) => setDayWindows(day.id, next)}
-                          addLabel="Add another window"
+                          onChange={(next) => setDayWindows(day, next)}
+                          addLabel={messages().addAnotherWindow}
                           compact
                         />
                       </Show>
@@ -274,8 +270,8 @@ function WindowedResponseScheduleFields(props: {
       <div>
         <div class="mb-2 flex items-start justify-between gap-3">
           <div>
-            <p class="text-sm font-medium text-primary">Date exceptions</p>
-            <p class="text-xs text-dimmed">Disable replies on a specific date or replace its normal hours.</p>
+            <p class="text-sm font-medium text-primary">{messages().dateExceptions}</p>
+            <p class="text-xs text-dimmed">{messages().dateExceptionsDescription}</p>
           </div>
           <Button
             variant="ghost"
@@ -284,10 +280,10 @@ function WindowedResponseScheduleFields(props: {
             class="shrink-0"
             onClick={() => update("exceptions", [...props.value().exceptions, { date: today(), closed: true, windows: [] }])}
           >
-            <i class="ti ti-plus" aria-hidden="true" /> Add exception
+            <i class="ti ti-plus" aria-hidden="true" /> {messages().addException}
           </Button>
         </div>
-        <Show when={props.value().exceptions.length > 0} fallback={<p class="text-xs text-dimmed">No exceptions.</p>}>
+        <Show when={props.value().exceptions.length > 0} fallback={<p class="text-xs text-dimmed">{messages().noExceptions}</p>}>
           <div class="flex flex-col gap-2">
             <For each={props.value().exceptions}>
               {(exception, index) => {
@@ -300,13 +296,13 @@ function WindowedResponseScheduleFields(props: {
                   <div class="flex flex-col gap-2 py-3">
                     <div class="grid grid-cols-[minmax(0,1fr)_auto_2rem] items-end gap-2">
                       <DatePicker
-                        label="Date"
+                        label={messages().date}
                         value={() => exception.date}
                         onValueChange={(date) => date && replace({ ...exception, date })}
                       />
                       <div class="mb-0.5 flex h-10 items-center">
                         <Switch
-                          label="Disabled"
+                          label={messages().disabled}
                           value={() => exception.closed}
                           onValueChange={(closed) =>
                             replace({
@@ -320,7 +316,7 @@ function WindowedResponseScheduleFields(props: {
                       <IconButton
                         type="button"
                         class="mb-0.5"
-                        label={`Remove exception ${index() + 1}`}
+                        label={messages().removeException({ index: index() + 1 })}
                         onClick={() =>
                           update(
                             "exceptions",
@@ -335,7 +331,7 @@ function WindowedResponseScheduleFields(props: {
                       <WindowEditor
                         windows={() => exception.windows}
                         onChange={(windows) => replace({ ...exception, windows })}
-                        addLabel="Add hours"
+                        addLabel={messages().addHours}
                       />
                     </Show>
                   </div>
@@ -365,6 +361,8 @@ export default function MailResponseScheduleFields(props: {
   onChange: (value: ResponseScheduleDefinition) => void;
   errors?: () => string[];
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
   const initialValue = props.value();
   let previousWindowedSchedule: WindowedResponseScheduleDefinition | null = initialValue.mode === "windows" ? initialValue : null;
   const windowedSchedule = (): WindowedResponseScheduleDefinition | null => {
@@ -388,8 +386,8 @@ export default function MailResponseScheduleFields(props: {
   return (
     <div class="flex flex-col gap-3">
       <CheckboxCard
-        label="Always on"
-        description="Reply at any time. No time zone, hours, or exceptions are applied."
+        label={messages().alwaysOn}
+        description={messages().alwaysOnDescription}
         icon="ti ti-clock-24"
         variant="input"
         value={() => props.value().mode === "always"}
@@ -402,10 +400,13 @@ export default function MailResponseScheduleFields(props: {
   );
 }
 
-export const responseScheduleSummary = (definition: ResponseScheduleDefinition): string => {
-  if (definition.mode === "always") return "Always on";
+export const responseScheduleSummary = (definition: ResponseScheduleDefinition, locale = "en"): string => {
+  const messages = mailRemainingMessages.resolve([locale]).t;
+  if (definition.mode === "always") return messages.alwaysOn;
   const activeDays = new Set(definition.weeklyWindows.map((window) => window.weekday)).size;
   const range = definition.activeRanges[0];
-  const rangeLabel = range ? `${range.from} to ${range.to ?? "open ended"}` : "No date limit";
-  return `${rangeLabel} · ${activeDays} active ${activeDays === 1 ? "day" : "days"} · ${definition.timeZone}`;
+  const rangeLabel = range
+    ? `${range.from} ${messages.until.toLocaleLowerCase(locale)} ${range.to ?? messages.openEnded}`
+    : messages.noDateLimit;
+  return messages.scheduleSummary({ range: rangeLabel, days: activeDays, timeZone: definition.timeZone });
 };

@@ -1,6 +1,9 @@
+import { mutation } from "@k2b/stdlib/solid";
 import {
-  NoticeCard,
+  Button,
   dialogCore,
+  IconButton,
+  NoticeCard,
   NumberInput,
   PanelDialog,
   Placeholder,
@@ -13,11 +16,9 @@ import {
   Switch,
   TextInput,
   toast,
-  Button,
-  IconButton,
+  useLocale,
 } from "@k2b/ui";
-import { mutation } from "@k2b/stdlib/solid";
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { AutomaticReplyInactiveBehavior, AutomaticReplyPreview, SenderIdentity } from "../../contracts";
 import { validateResponseScheduleDefinition } from "../../response-schedule-validation";
@@ -29,6 +30,7 @@ import { MailReferenceConfigurationFields, referenceConfigurationDraft } from ".
 import MailResponseScheduleFields, { responseScheduleSummary } from "./MailResponseScheduleFields";
 import MailTemplateHelpDisclosure, { MailTemplateToken } from "./MailTemplateHelpDisclosure";
 import { waitForMailPageTransition } from "./mail-page-transition";
+import { mailRemainingMessages } from "./mail-remaining-messages";
 
 type AutomaticReplyDraft = {
   name: string;
@@ -45,7 +47,7 @@ type AutomaticReplyDraft = {
 
 const AUTOMATIC_REPLY_VARIABLE_GROUPS = [
   {
-    label: "Message",
+    id: "message",
     variables: [
       "inputs.message.id",
       "inputs.message.conversationId",
@@ -77,7 +79,7 @@ const AUTOMATIC_REPLY_VARIABLE_GROUPS = [
     ],
   },
   {
-    label: "Conversation",
+    id: "conversation",
     variables: [
       "inputs.conversation.id",
       "inputs.conversation.subject",
@@ -87,7 +89,7 @@ const AUTOMATIC_REPLY_VARIABLE_GROUPS = [
     ],
   },
   {
-    label: "Execution",
+    id: "execution",
     variables: [
       "context.mailboxId",
       "context.actor.userId",
@@ -109,13 +111,17 @@ const REFERENCE_VARIABLES = [
 const liquidExpression = (value: string): string => `{{ ${value} }}`;
 
 function AutomaticReplyVariableHelp(props: { referenceEnabled: () => boolean }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
+  const groupLabel = (id: string) =>
+    ({ message: messages().message, conversation: messages().conversation, execution: messages().execution })[id];
   return (
-    <MailTemplateHelpDisclosure title="Available variables for subject and message">
+    <MailTemplateHelpDisclosure title={messages().availableTemplateVariables}>
       <div class="grid gap-4 md:grid-cols-2">
         <For each={AUTOMATIC_REPLY_VARIABLE_GROUPS}>
           {(group) => (
             <section>
-              <h4 class="text-xs font-semibold text-primary">{group.label}</h4>
+              <h4 class="text-xs font-semibold text-primary">{groupLabel(group.id)}</h4>
               <div class="mt-1 flex flex-wrap gap-1.5">
                 <For each={group.variables}>{(variable) => <MailTemplateToken value={liquidExpression(variable)} />}</For>
               </div>
@@ -123,11 +129,9 @@ function AutomaticReplyVariableHelp(props: { referenceEnabled: () => boolean }) 
           )}
         </For>
         <section>
-          <h4 class="text-xs font-semibold text-primary">Reference number</h4>
+          <h4 class="text-xs font-semibold text-primary">{messages().referenceNumber}</h4>
           <p class="mt-0.5 text-xs text-dimmed">
-            {props.referenceEnabled()
-              ? "Available because this reply assigns a reference number."
-              : "Available after Assign a reference number before replying is enabled."}
+            {props.referenceEnabled() ? messages().referenceAvailable : messages().referenceAvailableAfterEnable}
           </p>
           <div class="mt-1 flex flex-wrap gap-1.5">
             <For each={REFERENCE_VARIABLES}>
@@ -177,86 +181,89 @@ const workingWeek = () =>
     end: "17:00",
   }));
 
-const PRESETS: AutomaticReplyPreset[] = [
-  {
-    id: "out-of-office",
-    title: "Out of office",
-    description: "Reply during a specific absence, at most once per sender every 4 days.",
-    icon: "ti ti-beach",
-    build: (timeZone, senderIdentityId) => ({
-      name: "Out of office",
-      enabled: true,
-      senderIdentityId,
-      subject: "Re: {{ inputs.message.subject }}",
-      body: "Thank you for your message. I am currently out of the office and will reply when I return.",
-      format: "markdown",
-      ensureReference: false,
-      minimumIntervalHours: 96,
-      inactiveBehavior: "skip",
-      schedule: {
-        mode: "windows",
-        timeZone,
-        activeRanges: [{ from: localDate(), to: localDate() }],
-        weeklyWindows: fullWeek(),
-        exceptions: [],
-      },
-    }),
-  },
-  {
-    id: "office-hours",
-    title: "Office-hours acknowledgement",
-    description: "Acknowledge new messages during business hours and defer overnight mail.",
-    icon: "ti ti-building",
-    build: (timeZone, senderIdentityId) => ({
-      name: "Office-hours acknowledgement",
-      enabled: true,
-      senderIdentityId,
-      subject: "Re: {{ inputs.message.subject }}",
-      body: "Thank you for your message. We received it and will get back to you as soon as possible.",
-      format: "markdown",
-      ensureReference: false,
-      minimumIntervalHours: 24,
-      inactiveBehavior: "defer",
-      schedule: { mode: "windows", timeZone, activeRanges: [], weeklyWindows: workingWeek(), exceptions: [] },
-    }),
-  },
-  {
-    id: "reference-acknowledgement",
-    title: "Reference acknowledgement",
-    description: "Assign a permanent reference and tell the sender which number to quote.",
-    icon: "ti ti-hash",
-    build: (timeZone, senderIdentityId) => ({
-      name: "Reference acknowledgement",
-      enabled: true,
-      senderIdentityId,
-      subject: "Re: {{ inputs.message.subject }}",
-      body: "Thank you for your message. Your reference is **{{ reference.value }}**. Please include it in future correspondence.",
-      format: "markdown",
-      ensureReference: true,
-      minimumIntervalHours: 24,
-      inactiveBehavior: "defer",
-      schedule: { mode: "always" },
-    }),
-  },
-  {
-    id: "custom",
-    title: "Custom automatic reply",
-    description: "Start with a simple weekly schedule and customize every field.",
-    icon: "ti ti-adjustments",
-    build: (timeZone, senderIdentityId) => ({
-      name: "Automatic reply",
-      enabled: true,
-      senderIdentityId,
-      subject: "Re: {{ inputs.message.subject }}",
-      body: "Thank you for your message.",
-      format: "markdown",
-      ensureReference: false,
-      minimumIntervalHours: 24,
-      inactiveBehavior: "skip",
-      schedule: { mode: "windows", timeZone, activeRanges: [], weeklyWindows: workingWeek(), exceptions: [] },
-    }),
-  },
-];
+const automaticReplyPresets = (locale: string): AutomaticReplyPreset[] => {
+  const messages = mailRemainingMessages.resolve([locale]).t;
+  return [
+    {
+      id: "out-of-office",
+      title: messages.outOfOffice,
+      description: messages.outOfOfficePresetDescription,
+      icon: "ti ti-beach",
+      build: (timeZone, senderIdentityId) => ({
+        name: messages.outOfOffice,
+        enabled: true,
+        senderIdentityId,
+        subject: "Re: {{ inputs.message.subject }}",
+        body: messages.outOfOfficeBody,
+        format: "markdown",
+        ensureReference: false,
+        minimumIntervalHours: 96,
+        inactiveBehavior: "skip",
+        schedule: {
+          mode: "windows",
+          timeZone,
+          activeRanges: [{ from: localDate(), to: localDate() }],
+          weeklyWindows: fullWeek(),
+          exceptions: [],
+        },
+      }),
+    },
+    {
+      id: "office-hours",
+      title: messages.officeHoursAcknowledgement,
+      description: messages.officeHoursPresetDescription,
+      icon: "ti ti-building",
+      build: (timeZone, senderIdentityId) => ({
+        name: messages.officeHoursAcknowledgement,
+        enabled: true,
+        senderIdentityId,
+        subject: "Re: {{ inputs.message.subject }}",
+        body: messages.officeHoursBody,
+        format: "markdown",
+        ensureReference: false,
+        minimumIntervalHours: 24,
+        inactiveBehavior: "defer",
+        schedule: { mode: "windows", timeZone, activeRanges: [], weeklyWindows: workingWeek(), exceptions: [] },
+      }),
+    },
+    {
+      id: "reference-acknowledgement",
+      title: messages.referenceAcknowledgement,
+      description: messages.referencePresetDescription,
+      icon: "ti ti-hash",
+      build: (timeZone, senderIdentityId) => ({
+        name: messages.referenceAcknowledgement,
+        enabled: true,
+        senderIdentityId,
+        subject: "Re: {{ inputs.message.subject }}",
+        body: messages.referenceBody,
+        format: "markdown",
+        ensureReference: true,
+        minimumIntervalHours: 24,
+        inactiveBehavior: "defer",
+        schedule: { mode: "always" },
+      }),
+    },
+    {
+      id: "custom",
+      title: messages.customAutomaticReply,
+      description: messages.customAutomaticReplyDescription,
+      icon: "ti ti-adjustments",
+      build: (timeZone, senderIdentityId) => ({
+        name: messages.automaticReply,
+        enabled: true,
+        senderIdentityId,
+        subject: "Re: {{ inputs.message.subject }}",
+        body: messages.automaticReplyDefaultBody,
+        format: "markdown",
+        ensureReference: false,
+        minimumIntervalHours: 24,
+        inactiveBehavior: "skip",
+        schedule: { mode: "windows", timeZone, activeRanges: [], weeklyWindows: workingWeek(), exceptions: [] },
+      }),
+    },
+  ];
+};
 
 const isAutomationIdentity = (identity: SenderIdentity): boolean =>
   identity.status === "verified" && identity.authenticationPolicy.automation === "mailbox";
@@ -265,6 +272,7 @@ const initialDraft = (
   configuration: AutomaticReplyConfiguration | null,
   identities: SenderIdentity[],
   preset: AutomaticReplyPreset | null,
+  locale: string,
 ): AutomaticReplyDraft => {
   if (configuration) {
     return {
@@ -281,7 +289,7 @@ const initialDraft = (
     };
   }
   const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
-  return (preset ?? PRESETS[3]!).build(timeZone, identities.find(isAutomationIdentity)?.id ?? "");
+  return (preset ?? automaticReplyPresets(locale)[3]!).build(timeZone, identities.find(isAutomationIdentity)?.id ?? "");
 };
 
 function AutomaticReplyPresetPicker(props: {
@@ -289,17 +297,20 @@ function AutomaticReplyPresetPicker(props: {
   canConfigureReference: boolean;
   close: (preset: AutomaticReplyPreset | null) => void;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
+  const presets = createMemo(() => automaticReplyPresets(locale()));
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title="New automatic reply"
-        subtitle="Choose a starting point. Every option opens the same editor."
+        title={messages().newAutomaticReply}
+        subtitle={messages().presetPickerDescription}
         icon="ti ti-message-cog"
         close={() => props.close(null)}
       />
       <PanelDialog.Body>
         <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-          <For each={PRESETS}>
+          <For each={presets()}>
             {(preset) => {
               const unavailable = () =>
                 preset.id === "reference-acknowledgement" && !props.referenceConfigured && !props.canConfigureReference;
@@ -315,10 +326,10 @@ function AutomaticReplyPresetPicker(props: {
                   </span>
                   <span class="text-sm font-semibold text-primary">{preset.title}</span>
                   <span class="text-xs leading-relaxed text-dimmed">
-                    {unavailable() ? "A mailbox admin must configure reference numbers first." : preset.description}
+                    {unavailable() ? messages().referenceNumbersNeedAdmin : preset.description}
                   </span>
                   <span class="mt-auto inline-flex items-center gap-1 text-xs font-medium text-secondary">
-                    {unavailable() ? "Not configured" : "Continue"}
+                    {unavailable() ? messages().notConfigured : messages().continue}
                     <Show when={!unavailable()}>
                       <i class="ti ti-arrow-right" aria-hidden="true" />
                     </Show>
@@ -332,7 +343,7 @@ function AutomaticReplyPresetPicker(props: {
       <PanelDialog.Footer>
         <span />
         <Button variant="ghost" size="sm" type="button" onClick={() => props.close(null)}>
-          Cancel
+          {messages().cancel}
         </Button>
       </PanelDialog.Footer>
     </PanelDialog>
@@ -351,7 +362,9 @@ function AutomaticReplyEditor(props: {
   close: () => void;
   onSaved: (configuration: AutomaticReplyConfiguration) => void;
 }) {
-  const initial = initialDraft(props.configuration, props.identities, props.preset);
+  const locale = useLocale();
+  const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
+  const initial = initialDraft(props.configuration, props.identities, props.preset, locale());
   const [draft, setDraft] = createSignal({
     ...initial,
     enabled: props.configuration ? initial.enabled : props.canEnable,
@@ -375,7 +388,7 @@ function AutomaticReplyEditor(props: {
     if (schedule.mode === "always") return errors;
     const hasActiveWindow =
       schedule.weeklyWindows.length > 0 || schedule.exceptions.some((exception) => !exception.closed && exception.windows.length > 0);
-    return hasActiveWindow ? errors : [...errors, "Add at least one active response window"];
+    return hasActiveWindow ? errors : [...errors, messages().addActiveResponseWindow];
   };
   const update = <K extends keyof AutomaticReplyDraft>(key: K, value: AutomaticReplyDraft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
@@ -411,7 +424,7 @@ function AutomaticReplyEditor(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to prepare preview"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedPreparePreview));
       return response.json();
     },
     onSuccess: setPreview,
@@ -446,13 +459,13 @@ function AutomaticReplyEditor(props: {
             },
             { init: { signal: abortSignal } },
           );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to save automatic reply"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedSaveAutomaticReply));
       return response.json();
     },
     onSuccess: (setup) => {
       if (setup.referenceConfiguration) props.onReferenceConfigurationChange?.(setup.referenceConfiguration);
       props.onSaved(setup.automaticReply);
-      toast.success(props.configuration ? "Automatic reply updated" : "Automatic reply created");
+      toast.success(props.configuration ? messages().automaticReplyUpdated : messages().automaticReplyCreated);
       props.close();
     },
     onError: (error) => prompts.error(error.message),
@@ -465,35 +478,39 @@ function AutomaticReplyEditor(props: {
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title={props.configuration ? "Edit automatic reply" : "New automatic reply"}
-        subtitle="A guarded response, its content, and its active schedule"
+        title={props.configuration ? messages().editAutomaticReply : messages().newAutomaticReply}
+        subtitle={messages().automaticReplyEditorDescription}
         icon="ti ti-message-cog"
         close={props.close}
       />
       <PanelDialog.Body scrollPreserveKey={`mail-automatic-reply:${props.configuration?.id ?? "new"}`}>
-        <PanelDialog.Section title="Automatic reply" subtitle="Name, sender, and delivery behavior." icon="ti ti-message-cog">
+        <PanelDialog.Section
+          title={messages().automaticReply}
+          subtitle={messages().automaticReplyIdentityDescription}
+          icon="ti ti-message-cog"
+        >
           <div class="grid gap-2 md:grid-cols-2">
             <TextInput
-              label="Name"
-              description="Shown to mailbox administrators."
+              label={messages().name}
+              description={messages().shownToMailboxAdmins}
               value={() => draft().name}
               onValueChange={(value) => update("name", value)}
               required
             />
             <Select
-              label="Sender"
-              description="Only verified identities enabled for automation are available."
+              label={messages().sender}
+              description={messages().automationIdentityDescription}
               icon="ti ti-mail-forward"
               value={() => draft().senderIdentityId}
               selectedLabel={() => {
                 const identity = props.identities.find((item) => item.id === draft().senderIdentityId);
                 if (!identity) return undefined;
                 const unavailable = !automationIdentities().some((item) => item.id === identity.id);
-                return `${identity.label}${unavailable ? " (unavailable)" : ""}`;
+                return `${identity.label}${unavailable ? ` (${messages().unavailableSuffix})` : ""}`;
               }}
               options={selectableIdentities().map((identity) => ({
                 id: identity.id,
-                label: `${identity.label}${automationIdentities().some((item) => item.id === identity.id) ? "" : " (unavailable)"}`,
+                label: `${identity.label}${automationIdentities().some((item) => item.id === identity.id) ? "" : ` (${messages().unavailableSuffix})`}`,
                 description: `${identity.displayName ? `${identity.displayName} · ` : ""}${identity.fromAddress}`,
                 icon: "ti ti-mail",
               }))}
@@ -503,48 +520,41 @@ function AutomaticReplyEditor(props: {
           </div>
           <Show when={!senderAvailable()}>
             <p role="alert" class="text-xs text-danger">
-              This identity is no longer available for automatic replies. Choose a verified identity with Automatic replies enabled or
-              disable this configuration.
+              {messages().unavailableAutomationIdentity}
             </p>
           </Show>
           <div>
             <Switch
-              label="Automatic reply enabled"
+              label={messages().automaticReplyEnabled}
               value={() => draft().enabled}
               disabled={!props.canEnable && !draft().enabled}
               onValueChange={(value) => update("enabled", value)}
             />
             <p class="mt-0.5 text-xs text-dimmed">
-              {props.canEnable
-                ? "When disabled, the configuration stays saved but no new replies are created."
-                : "Another automatic reply is active. Disable it before enabling this one."}
+              {props.canEnable ? messages().disabledReplyDescription : messages().anotherReplyActive}
             </p>
           </div>
           <div>
             <Switch
-              label="Assign a reference number before replying"
+              label={messages().assignReferenceBeforeReplying}
               value={() => draft().ensureReference}
               onValueChange={(value) => update("ensureReference", value)}
             />
-            <p class="-mt-1 text-xs text-dimmed">
-              Makes the permanent reference available as <code>{"{{ reference.value }}"}</code> in the subject and message.
-            </p>
+            <p class="-mt-1 text-xs text-dimmed">{messages().referenceTemplateDescription}</p>
             <Show when={needsInlineReferenceConfiguration()}>
               <Show
                 when={props.canConfigureReference}
                 fallback={
                   <NoticeCard tone="warning" icon={false} class="mt-2" bodyClass="flex items-start gap-2">
                     <i class="ti ti-alert-triangle mt-0.5 shrink-0" aria-hidden="true" />
-                    <span>A mailbox admin must configure reference numbers before this reply can be saved.</span>
+                    <span>{messages().referenceRequiredBeforeSave}</span>
                   </NoticeCard>
                 }
               >
                 <div class="mt-2 rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] p-3">
                   <div class="mb-3">
-                    <h3 class="text-sm font-semibold text-primary">Set up reference numbers</h3>
-                    <p class="mt-0.5 text-xs text-dimmed">
-                      This stays inside the reply editor, so the response you already entered is preserved.
-                    </p>
+                    <h3 class="text-sm font-semibold text-primary">{messages().setUpReferenceNumbers}</h3>
+                    <p class="mt-0.5 text-xs text-dimmed">{messages().inlineReferenceDescription}</p>
                   </div>
                   <MailReferenceConfigurationFields
                     mailboxId={props.mailboxId}
@@ -559,38 +569,34 @@ function AutomaticReplyEditor(props: {
           <div class="grid gap-2 md:grid-cols-2">
             <Show when={draft().schedule.mode === "windows"}>
               <Select
-                label="Outside active times"
-                description="Skip is best for absences; defer sends at the next active time."
+                label={messages().outsideActiveTimes}
+                description={messages().outsideActiveTimesDescription}
                 icon="ti ti-calendar-off"
                 value={() => draft().inactiveBehavior}
-                selectedLabel={() => (draft().inactiveBehavior === "skip" ? "Do not reply" : "Reply at the next active time")}
+                selectedLabel={() => (draft().inactiveBehavior === "skip" ? messages().doNotReply : messages().replyAtNextActiveTime)}
                 options={[
-                  { id: "skip", label: "Do not reply", description: "Messages outside the schedule are ignored." },
-                  { id: "defer", label: "Reply at the next active time", description: "Messages wait until the schedule becomes active." },
+                  { id: "skip", label: messages().doNotReply, description: messages().outsideScheduleIgnored },
+                  { id: "defer", label: messages().replyAtNextActiveTime, description: messages().messagesWaitForSchedule },
                 ]}
                 onValueChange={(value) => update("inactiveBehavior", value as AutomaticReplyInactiveBehavior)}
               />
             </Show>
             <NumberInput
-              label="Repeat protection"
-              description="Minimum time before the same sender may receive another reply. The out-of-office preset uses 96 hours (4 days)."
+              label={messages().repeatProtection}
+              description={messages().repeatProtectionDescription}
               value={() => draft().minimumIntervalHours}
               onValueChange={(value) => update("minimumIntervalHours", value ?? 24)}
               min={0}
               max={8_760}
-              suffix="hours"
+              suffix={messages().hours}
             />
           </div>
         </PanelDialog.Section>
 
-        <PanelDialog.Section
-          title="Response content"
-          subtitle="The exact subject and message sent to the original sender."
-          icon="ti ti-pencil"
-        >
+        <PanelDialog.Section title={messages().responseContent} subtitle={messages().responseContentDescription} icon="ti ti-pencil">
           <TextInput
-            label="Subject"
-            description={'Use "{{ inputs.message.subject }}" to include the original subject.'}
+            label={messages().subject}
+            description={messages().originalSubjectTemplateHint}
             value={() => draft().subject}
             onValueChange={(value) => {
               update("subject", value);
@@ -600,7 +606,7 @@ function AutomaticReplyEditor(props: {
           />
           <AutomaticReplyVariableHelp referenceEnabled={() => draft().ensureReference} />
           <SegmentedControl
-            ariaLabel="Message format"
+            ariaLabel={messages().messageFormat}
             value={() => draft().format}
             onValueChange={(format) => {
               update("format", format);
@@ -609,14 +615,14 @@ function AutomaticReplyEditor(props: {
             }}
             options={[
               { value: "markdown", label: "Markdown", icon: "ti ti-markdown" },
-              { value: "plain", label: "Plain text", icon: "ti ti-file-text" },
+              { value: "plain", label: messages().plainText, icon: "ti ti-file-text" },
             ]}
           />
           <Show
             when={draft().format === "markdown"}
             fallback={
               <TextInput
-                aria-label="Automatic reply message"
+                aria-label={messages().automaticReplyMessage}
                 value={() => draft().body}
                 onValueChange={(value) => update("body", value)}
                 multiline
@@ -626,15 +632,15 @@ function AutomaticReplyEditor(props: {
             }
           >
             <PanelDialog.Tabs
-              ariaLabel="Response content view"
+              ariaLabel={messages().responseContentView}
               value={contentTab}
               onValueChange={(tab) => {
                 setContentTab(tab);
                 if (tab === "preview") requestPreview();
               }}
               options={[
-                { value: "write", label: "Write", icon: "ti ti-pencil" },
-                { value: "preview", label: "Preview", icon: "ti ti-eye" },
+                { value: "write", label: messages().write, icon: "ti ti-pencil" },
+                { value: "preview", label: messages().preview, icon: "ti ti-eye" },
               ]}
             />
             <Show
@@ -646,11 +652,13 @@ function AutomaticReplyEditor(props: {
                     fallback={
                       <div class="flex min-h-64 flex-col items-center justify-center gap-2 px-4 text-center text-sm text-dimmed">
                         <span>
-                          {loadPreview.loading() ? "Preparing preview..." : (loadPreview.error()?.message ?? "Preview unavailable")}
+                          {loadPreview.loading()
+                            ? messages().preparingPreview
+                            : (loadPreview.error()?.message ?? messages().previewUnavailable)}
                         </span>
                         <Show when={loadPreview.error()}>
                           <Button variant="secondary" size="sm" type="button" onClick={requestPreview}>
-                            Retry
+                            {messages().retry}
                           </Button>
                         </Show>
                       </div>
@@ -659,7 +667,12 @@ function AutomaticReplyEditor(props: {
                     {(content) => (
                       <>
                         <div class="bg-[var(--ui-surface-subtle)] px-3 py-2 text-sm font-medium text-primary">{content().subject}</div>
-                        <iframe title="Automatic reply preview" sandbox="" class="h-80 w-full border-0 bg-white" srcdoc={content().html} />
+                        <iframe
+                          title={messages().automaticReplyPreview}
+                          sandbox=""
+                          class="h-80 w-full border-0 bg-white"
+                          srcdoc={content().html}
+                        />
                       </>
                     )}
                   </Show>
@@ -667,7 +680,7 @@ function AutomaticReplyEditor(props: {
               }
             >
               <TextInput
-                aria-label="Automatic reply message"
+                aria-label={messages().automaticReplyMessage}
                 value={() => draft().body}
                 onValueChange={(value) => {
                   update("body", value);
@@ -681,7 +694,7 @@ function AutomaticReplyEditor(props: {
           </Show>
         </PanelDialog.Section>
 
-        <PanelDialog.Section title="Active schedule" subtitle="Dates and times when this response is allowed." icon="ti ti-calendar-time">
+        <PanelDialog.Section title={messages().activeSchedule} subtitle={messages().activeScheduleDescription} icon="ti ti-calendar-time">
           <MailResponseScheduleFields
             value={() => draft().schedule}
             onChange={(value) => update("schedule", value)}
@@ -693,7 +706,7 @@ function AutomaticReplyEditor(props: {
         <span />
         <div class="flex items-center gap-2">
           <Button variant="ghost" size="sm" type="button" onClick={props.close}>
-            Cancel
+            {messages().cancel}
           </Button>
           <Button
             size="sm"
@@ -710,7 +723,7 @@ function AutomaticReplyEditor(props: {
             onClick={() => save.mutate()}
           >
             <i class={`ti ${save.loading() ? "ti-loader-2 animate-spin" : "ti-device-floppy"}`} aria-hidden="true" />
-            Save automatic reply
+            {messages().saveAutomaticReply}
           </Button>
         </div>
       </PanelDialog.Footer>
@@ -732,6 +745,8 @@ export default function MailAutomaticReplySettings(props: {
   onPresetRequestHandled?: (nonce: number) => void;
   showHeader?: boolean;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
   const [configurations, setConfigurations] = createSignal(props.initialConfigurations);
   const automationIdentities = () => props.identities.filter(isAutomationIdentity);
   const activeConfiguration = () => configurations().find((configuration) => configuration.enabled) ?? null;
@@ -790,7 +805,7 @@ export default function MailAutomaticReplySettings(props: {
       if (disposed) return;
       props.onPresetRequestHandled?.(request.nonce);
       if (automationIdentities().length === 0) return;
-      const preset = PRESETS.find((candidate) => candidate.id === request.id);
+      const preset = automaticReplyPresets(locale()).find((candidate) => candidate.id === request.id);
       if (preset) await open(null, preset);
     })();
   });
@@ -800,8 +815,8 @@ export default function MailAutomaticReplySettings(props: {
       <div class="mb-2 flex items-start justify-between gap-3">
         <Show when={props.showHeader !== false}>
           <div>
-            <h3 class="text-sm font-semibold text-primary">Automatic replies</h3>
-            <p class="mt-0.5 text-xs text-dimmed">Guarded replies with clear content, timing, and repeat protection.</p>
+            <h3 class="text-sm font-semibold text-primary">{messages().automaticReplies}</h3>
+            <p class="mt-0.5 text-xs text-dimmed">{messages().automaticRepliesDescription}</p>
           </div>
         </Show>
         <Show when={props.showHeader === false}>
@@ -809,24 +824,20 @@ export default function MailAutomaticReplySettings(props: {
         </Show>
         <Show when={props.canManage !== false}>
           <Button size="sm" type="button" class="shrink-0" disabled={automationIdentities().length === 0} onClick={() => void open()}>
-            <i class="ti ti-plus" aria-hidden="true" /> Add automatic reply
+            <i class="ti ti-plus" aria-hidden="true" /> {messages().addAutomaticReply}
           </Button>
         </Show>
       </div>
       <Show when={automationIdentities().length === 0}>
         <div class="mb-2">
           <Placeholder
-            title="Automatic replies need a sender"
-            description={
-              configurations().length > 0
-                ? "Existing automatic replies remain available to review or disable. Open Identities and enable Automatic replies for a verified identity to create or re-enable one."
-                : "Open Identities and enable Automatic replies for a verified identity before adding a response."
-            }
+            title={messages().automaticRepliesNeedSender}
+            description={configurations().length > 0 ? messages().existingRepliesNeedSender : messages().newRepliesNeedSender}
             icon="ti ti-mail-off"
             action={
               props.onManageIdentities ? (
                 <Button variant="secondary" size="sm" type="button" onClick={props.onManageIdentities}>
-                  <i class="ti ti-at" aria-hidden="true" /> Manage identities
+                  <i class="ti ti-at" aria-hidden="true" /> {messages().manageIdentities}
                 </Button>
               ) : undefined
             }
@@ -837,8 +848,8 @@ export default function MailAutomaticReplySettings(props: {
         when={configurations().length > 0}
         fallback={
           <Placeholder
-            title="No automatic replies"
-            description="Start with an out-of-office, office-hours, or custom preset."
+            title={messages().noAutomaticReplies}
+            description={messages().noAutomaticRepliesDescription}
             icon="ti ti-message-cog"
           />
         }
@@ -850,11 +861,18 @@ export default function MailAutomaticReplySettings(props: {
                 <i class="ti ti-message-cog text-dimmed" aria-hidden="true" />
                 <div class="min-w-0 flex-1">
                   <p class="truncate text-sm font-medium text-primary">{configuration.name}</p>
-                  <p class="truncate text-xs text-dimmed">{responseScheduleSummary(configuration.schedule)}</p>
+                  <p class="truncate text-xs text-dimmed">{responseScheduleSummary(configuration.schedule, locale())}</p>
                 </div>
-                <StatusBadge tone={configuration.enabled ? "ok" : "neutral"} label={configuration.enabled ? "Enabled" : "Disabled"} />
+                <StatusBadge
+                  tone={configuration.enabled ? "ok" : "neutral"}
+                  label={configuration.enabled ? messages().enabled : messages().disabled}
+                />
                 <Show when={props.canManage !== false}>
-                  <IconButton type="button" label={`Edit ${configuration.name}`} onClick={() => void open(configuration)}>
+                  <IconButton
+                    type="button"
+                    label={messages().editNamed({ name: configuration.name })}
+                    onClick={() => void open(configuration)}
+                  >
                     <i class="ti ti-pencil" aria-hidden="true" />
                   </IconButton>
                 </Show>

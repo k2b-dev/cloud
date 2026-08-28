@@ -1,4 +1,5 @@
 import type { MailSearchExpression, MailSearchField } from "../../contracts";
+import { mailRemainingMessages } from "./mail-remaining-messages";
 
 export type MailSearchNodePath = readonly number[];
 
@@ -63,9 +64,7 @@ const LEGACY_PROVIDER_KEYWORD_OPTION = {
   groups: ["technical"],
 } as const;
 
-export const mailSearchFieldOptionsFor = (
-  expression: MailSearchExpression,
-): MailSearchFieldOption[] =>
+export const mailSearchFieldOptionsFor = (expression: MailSearchExpression): MailSearchFieldOption[] =>
   mailSearchFieldKey(expression) === "text:keyword"
     ? [...MAIL_SEARCH_FIELD_OPTIONS, LEGACY_PROVIDER_KEYWORD_OPTION]
     : MAIL_SEARCH_FIELD_OPTIONS;
@@ -208,37 +207,38 @@ export const mailSearchExpressionDepth = (expression: MailSearchExpression): num
   return 1;
 };
 
-const textFieldLabel = (field: MailSearchField): string =>
-  field === "keyword"
-    ? LEGACY_PROVIDER_KEYWORD_OPTION.label
-    : (MAIL_SEARCH_FIELD_OPTIONS.find((option) => option.id === `text:${field}`)?.label ?? field);
-
-const sizeLabel = (bytes: number): string => {
+const sizeLabel = (bytes: number, locale: string): string => {
   const megabytes = bytes / (1024 * 1024);
-  return `${Number.isInteger(megabytes) ? megabytes : megabytes.toFixed(2)} MB`;
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(megabytes)} MB`;
 };
 
-export const summarizeMailSearchExpression = (expression: MailSearchExpression): string => {
-  if (expression.type === "not") return `not (${summarizeMailSearchExpression(expression.expression)})`;
+export const summarizeMailSearchExpression = (
+  expression: MailSearchExpression,
+  locale = typeof document === "undefined" ? "en" : document.documentElement.lang,
+): string => {
+  const messages = mailRemainingMessages.resolve([locale]).t;
+  if (expression.type === "not") return `${messages.not} (${summarizeMailSearchExpression(expression.expression, locale)})`;
   if (expression.type === "and" || expression.type === "or") {
-    const separator = expression.type === "and" ? " and " : " or ";
-    return expression.expressions.map((child) => `(${summarizeMailSearchExpression(child)})`).join(separator);
+    const separator = expression.type === "and" ? ` ${messages.and} ` : ` ${messages.or} `;
+    return expression.expressions.map((child) => `(${summarizeMailSearchExpression(child, locale)})`).join(separator);
   }
-  if (expression.type === "text") return `${textFieldLabel(expression.field)} ${expression.match} “${expression.query || "…"}”`;
+  if (expression.type === "text") {
+    const field = expression.field === "keyword" ? "text:keyword" : `text:${expression.field}`;
+    return `${messages.searchField({ field })} ${messages.textOperator({ operator: expression.match })} “${expression.query || "…"}”`;
+  }
   if (expression.type === "date") {
-    return `${expression.field === "internal_date" ? "Received" : "Sent"} ${expression.operator.replaceAll("_", " ")} ${expression.value}`;
+    return `${expression.field === "internal_date" ? messages.received : messages.sent} ${messages.textOperator({ operator: expression.operator })} ${expression.value}`;
   }
   if (expression.type === "size") {
-    return `${expression.field === "message" ? "Message" : "Attachment"} size ${expression.operator.replaceAll("_", " ")} ${sizeLabel(expression.bytes)}`;
+    return `${expression.field === "message" ? messages.message : messages.attachment} ${messages.size.toLocaleLowerCase(locale)} ${messages.textOperator({ operator: expression.operator })} ${sizeLabel(expression.bytes, locale)}`;
   }
   if (expression.type === "work_status") {
-    const label = expression.value === "needs_action" ? "needs action" : expression.value === "waiting" ? "waiting for reply" : "done";
-    return `Work status is ${label}`;
+    return `${messages.workStatus}: ${messages.automationStatus({ status: expression.value })}`;
   }
-  if (expression.type === "assignee") return expression.userId ? `Assigned to ${expression.userId}` : "Unassigned";
-  if (expression.type === "snoozed") return expression.value ? "Is snoozed" : "Is not snoozed";
-  if (expression.type === "folder_id") return `In folder ${expression.folderId}`;
-  if (expression.type === "local_tag_id") return `Has tag ${expression.tagId}`;
-  if (expression.type === "assigned_to_me") return "Assigned to me";
-  return "All conversations";
+  if (expression.type === "assignee") return expression.userId ? messages.assignedTo({ id: expression.userId }) : messages.unassigned;
+  if (expression.type === "snoozed") return expression.value ? messages.isSnoozed : messages.isNotSnoozed;
+  if (expression.type === "folder_id") return messages.inFolder({ id: expression.folderId });
+  if (expression.type === "local_tag_id") return messages.hasTag({ id: expression.tagId });
+  if (expression.type === "assigned_to_me") return messages.assignedToMe;
+  return messages.searchField({ field: "all" });
 };

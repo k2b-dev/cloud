@@ -1,7 +1,7 @@
 import { Readable } from "node:stream";
 import { err, fail, ok, type Result } from "@k2b/stdlib";
 import { ErrorResponseSchema, GrantAccessSchema, UpdateAccessSchema } from "@valentinkolb/cloud/contracts";
-import { auth, jsonResponse, rateLimit, requiresAuth, respond, v } from "@valentinkolb/cloud/server";
+import { auth, getLocale, jsonResponse, rateLimit, requiresAuth, respond, v } from "@valentinkolb/cloud/server";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { describeRoute } from "hono-openapi";
@@ -20,6 +20,7 @@ import {
   spacesMailDestinationsSchema,
 } from "../app-integration-contracts";
 import { attachmentPreviewKind, attachmentPreviewSignatureMatches, baseAttachmentContentType } from "../attachment-preview-policy";
+import { localizeMailError } from "../service/error-messages";
 import {
   type AttachmentLink,
   type AttachmentLinkPage,
@@ -374,10 +375,11 @@ const respondMailboxes = <T>(c: Context<MailApiContext>, result: Result<T> | Pro
 const respondAppDependency = <T>(
   c: Context<MailApiContext>,
   result: Result<T> | { ok: false; code: string; message: string; status: 503 },
-) =>
-  !result.ok && "message" in result
-    ? respond(c, { ok: false, error: result.message, code: result.code, status: result.status })
-    : respondPublic(c, result);
+) => {
+  if (result.ok || !("message" in result)) return respondPublic(c, result);
+  const error = localizeMailError({ code: result.code, message: result.message, status: result.status }, getLocale(c));
+  return respond(c, { ok: false, error: error.message, code: error.code, status: error.status });
+};
 const respondFolders = async <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) =>
   respondPublic(c, await projectRootRelation(await result, "parentId", "folders"), "folders");
 const respondConversations = <T>(c: Context<MailApiContext>, result: Result<T> | Promise<Result<T>>) =>
@@ -479,7 +481,7 @@ const internalCommandInput = async (c: Context<MailApiContext>, input: MailComma
     case "copy":
     case "delete": {
       const messageId = await publicResources.resolveMailboxPublicId("messages", internalMailboxId(c), resolved.messageId);
-      if (!messageId) throw new HTTPException(404, { message: "Mail resource not found" });
+      if (!messageId) throw new HTTPException(404, { message: localizeMailError(err.notFound("Mail resource"), getLocale(c)).message });
       return { ...resolved, messageId };
     }
     default:
@@ -2353,6 +2355,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
           context: requestContext(c),
           ...params,
           ...(await internalInput(c, c.req.valid("json"))),
+          locale: getLocale(c),
         }),
       );
     },
@@ -2429,6 +2432,7 @@ const mailOperationsApi = new Hono<MailApiContext>()
           context: requestContext(c),
           ...params,
           expectedRevision: (await internalInput(c, c.req.valid("json"))).expectedRevision,
+          locale: getLocale(c),
         }),
       );
     },

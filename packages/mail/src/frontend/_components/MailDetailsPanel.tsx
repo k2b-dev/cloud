@@ -21,6 +21,7 @@ import {
   TextInput,
   Tooltip,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
@@ -38,6 +39,7 @@ import { openMailMessageInspector } from "./MailMessageInspectorDialog";
 import MailRelatedConversations from "./MailRelatedConversations";
 import { presentMailActivity } from "./mail-activity-presentation";
 import { mailDraftHref } from "./mail-compose-route";
+import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { listUnavailableMailDetailSections } from "./mail-detail-availability";
 import {
   applyMailCollaborationPatch,
@@ -87,6 +89,8 @@ export default function MailDetailsPanel(props: {
   onOpenHref: (href: string) => void | Promise<void>;
   onReconcile: () => void | Promise<void>;
 }) {
+  const locale = useLocale();
+  const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   const [state, setState] = createSignal(props.initialState);
   const [availableTags, setAvailableTags] = createSignal(props.initialLocalTags);
   const [tagState, setTagState] = createSignal(props.initialConversationLocalTags);
@@ -105,7 +109,7 @@ export default function MailDetailsPanel(props: {
     props.messages.flatMap((message) => message.attachments.map((attachment) => ({ ...attachment, messageId: message.id }))),
   );
   const attachmentCount = () => attachments().length;
-  const activityItems = createMemo(() => presentMailActivity(props.activity));
+  const activityItems = createMemo(() => presentMailActivity(props.activity, locale()));
   const visibleComments = createMemo(() => comments().filter((comment) => !comment.deletedAt));
   const unavailableSections = createMemo(() => listUnavailableMailDetailSections(props.detailErrors));
   const addressList = (addresses: Array<{ name: string | null; address: string }>) =>
@@ -129,7 +133,7 @@ export default function MailDetailsPanel(props: {
           { param, json: { expectedRevision: confirmedState.revision, ...operation.patch } },
           { init: { signal } },
         );
-        if (!response.ok) throw new Error(await readApiError(response, "Failed to update conversation"));
+        if (!response.ok) throw new Error(await readApiError(response, t().updateConversationFailed));
         return { kind: "collaboration", value: await response.json() };
       }
       if (operation.kind === "tags") {
@@ -137,7 +141,7 @@ export default function MailDetailsPanel(props: {
           { param, json: { expectedRevision: confirmedState.revision, tagIds: operation.tagIds } },
           { init: { signal } },
         );
-        if (!response.ok) throw new Error(await readApiError(response, "Failed to update tags"));
+        if (!response.ok) throw new Error(await readApiError(response, t().updateTagsFailed));
         return { kind: "tags", value: await response.json() };
       }
       if (operation.kind === "reminder") {
@@ -145,17 +149,17 @@ export default function MailDetailsPanel(props: {
           { param, json: { dueAt: operation.dueAt, expectedRevision: confirmedReminder?.revision ?? null } },
           { init: { signal } },
         );
-        if (!response.ok) throw new Error(await readApiError(response, "Failed to set reminder"));
+        if (!response.ok) throw new Error(await readApiError(response, t().setReminderFailed));
         return { kind: "reminder", value: await response.json() };
       }
       if (!confirmedReminder || confirmedReminder.state !== "pending") {
-        throw new Error("No pending reminder is available to cancel.");
+        throw new Error(t().noPendingReminder);
       }
       const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].reminder.$delete(
         { param, json: { expectedRevision: confirmedReminder.revision } },
         { init: { signal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to cancel reminder"));
+      if (!response.ok) throw new Error(await readApiError(response, t().cancelReminderFailed));
       return { kind: "reminder", value: await response.json() };
     },
     onSuccess: (result, _operation, queued) => {
@@ -192,7 +196,7 @@ export default function MailDetailsPanel(props: {
       setState(confirmedState);
       setTagState(confirmedTagState);
       setReminderDueAt(confirmedReminder?.state === "pending" ? confirmedReminder.dueAt : null);
-      await prompts.error(error.message, { title: "Conversation changed" });
+      await prompts.error(error.message, { title: t().conversationChanged });
       await props.onReconcile();
     },
   });
@@ -226,7 +230,7 @@ export default function MailDetailsPanel(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to create tag"));
+      if (!response.ok) throw new Error(await readApiError(response, t().createTagFailed));
       return response.json();
     },
     onSuccess: (created) => {
@@ -234,7 +238,7 @@ export default function MailDetailsPanel(props: {
       setAvailableTags((current) =>
         [...current.filter((tag) => tag.id !== created.id), created].sort((left, right) => left.name.localeCompare(right.name)),
       );
-      toast.success(`Created ${created.name}`);
+      toast.success(t().createdTag({ name: created.name }));
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -252,20 +256,20 @@ export default function MailDetailsPanel(props: {
               if (name().trim()) close({ name: name().trim(), color: color() });
             }}
           >
-            <TextInput label="Name" placeholder="Tag name" value={name} onValueChange={setName} required />
-            <ColorInput label="Color" value={color} onValueChange={setColor} />
+            <TextInput label={t().name} placeholder={t().tagName} value={name} onValueChange={setName} required />
+            <ColorInput label={t().color} value={color} onValueChange={setColor} />
             <div class="flex items-center justify-end gap-2">
               <Button variant="secondary" size="sm" type="button" onClick={() => close(null)}>
-                Cancel
+                {t().cancel}
               </Button>
               <Button size="sm" type="submit" disabled={!name().trim()}>
-                <i class="ti ti-tag-plus" aria-hidden="true" /> Create tag
+                <i class="ti ti-tag-plus" aria-hidden="true" /> {t().createTag}
               </Button>
             </div>
           </form>
         );
       },
-      { title: "Create tag", icon: "ti ti-tag-plus" },
+      { title: t().createTag, icon: "ti ti-tag-plus" },
     );
     if (values) await createTagMutation.mutate(values);
   };
@@ -284,7 +288,7 @@ export default function MailDetailsPanel(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to add comment"));
+      if (!response.ok) throw new Error(await readApiError(response, t().addCommentFailed));
       return response.json();
     },
     onSuccess: (comment) => {
@@ -304,7 +308,7 @@ export default function MailDetailsPanel(props: {
         param: { mailboxId: props.mailboxId, conversationId },
         query: { cursor, limit: "100", order: "newest" },
       });
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to load earlier comments"));
+      if (!response.ok) throw new Error(await readApiError(response, t().loadCommentsFailed));
       const page = await response.json();
       if (request !== commentsHistoryRequest || conversationId !== props.conversationId) return false;
       const seen = new Set(comments().map((comment) => comment.id));
@@ -320,9 +324,9 @@ export default function MailDetailsPanel(props: {
   const removeComment = mutations.create<string | null, ConversationComment>({
     mutation: async (comment, { abortSignal }) => {
       const conversationId = props.conversationId;
-      const confirmed = await prompts.confirm("The comment remains in the audit trail as deleted.", {
-        title: "Delete internal comment?",
-        confirmText: "Delete comment",
+      const confirmed = await prompts.confirm(t().deletedAuditTrail, {
+        title: t().deleteCommentTitle,
+        confirmText: t().deleteComment,
         variant: "danger",
       });
       if (!confirmed || abortSignal.aborted || conversationId !== props.conversationId) return null;
@@ -337,7 +341,7 @@ export default function MailDetailsPanel(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to delete comment"));
+      if (!response.ok) throw new Error(await readApiError(response, t().deleteCommentFailed));
       return comment.id;
     },
     onSuccess: (commentId) => {
@@ -351,23 +355,23 @@ export default function MailDetailsPanel(props: {
     mutation: async (comment, { abortSignal }) => {
       const conversationId = props.conversationId;
       const values = await prompts.form({
-        title: "Edit internal comment",
+        title: t().editCommentTitle,
         icon: "ti ti-pencil",
         fields: {
           body: {
             type: "text",
-            label: "Comment",
+            label: t().comment,
             default: comment.body ?? "",
             required: true,
             multiline: true,
             lines: 6,
           },
         },
-        confirmText: "Save comment",
+        confirmText: t().saveComment,
       });
       if (!values || abortSignal.aborted || conversationId !== props.conversationId) return null;
       const body = String(values.body ?? "").trim();
-      if (!body) throw new Error("Comment cannot be empty");
+      if (!body) throw new Error(t().commentEmpty);
       const response = await apiClient.mailboxes[":mailboxId"].conversations[":conversationId"].comments[":commentId"].$patch(
         {
           param: {
@@ -382,13 +386,13 @@ export default function MailDetailsPanel(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to update comment"));
+      if (!response.ok) throw new Error(await readApiError(response, t().updateCommentFailed));
       return response.json();
     },
     onSuccess: (comment) => {
       if (!comment) return;
       setComments((current) => current.map((item) => (item.id === comment.id ? comment : item)));
-      toast.success("Comment updated");
+      toast.success(t().commentUpdated);
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -485,12 +489,12 @@ export default function MailDetailsPanel(props: {
       <DetailPanel>
         <DetailPanel.Header
           icon="ti ti-mail"
-          title={props.subject || "(no subject)"}
-          subtitle={addressList(latestMessage()?.from ?? []) || "Unknown sender"}
+          title={props.subject || t().noSubject}
+          subtitle={addressList(latestMessage()?.from ?? []) || t().unknownSender}
           meta={
             <StatusBadge
               tone={state().workStatus === "done" ? "ok" : state().workStatus === "waiting" ? "neutral" : "warning"}
-              label={state().workStatus === "done" ? "Done" : state().workStatus === "waiting" ? "Waiting for reply" : "Needs action"}
+              label={state().workStatus === "done" ? t().done : state().workStatus === "waiting" ? t().waitingForReply : t().needsAction}
               icon={
                 state().workStatus === "done"
                   ? "ti ti-circle-check"
@@ -503,13 +507,13 @@ export default function MailDetailsPanel(props: {
           primaryActions={
             props.conversationHref ? (
               <ButtonLink href={props.conversationHref} size="sm" variant="secondary">
-                Open conversation <i class="ti ti-arrow-up-right" aria-hidden="true" />
+                {t().openConversation} <i class="ti ti-arrow-up-right" aria-hidden="true" />
               </ButtonLink>
             ) : undefined
           }
           actions={
-            <Tooltip.Anchor content="Close details">
-              <IconButton type="button" class="lg:hidden" label="Close conversation details" onClick={props.onClose}>
+            <Tooltip.Anchor content={t().closeDetails}>
+              <IconButton type="button" class="lg:hidden" label={t().closeConversationDetails} onClick={props.onClose}>
                 <i class="ti ti-x" aria-hidden="true" />
               </IconButton>
             </Tooltip.Anchor>
@@ -518,16 +522,16 @@ export default function MailDetailsPanel(props: {
 
         <DetailPanel.Body scrollPreserveKey="mail-conversation-detail">
           <Show when={unavailableSections().length > 0}>
-            <DetailPanel.Section title="Detail availability" icon="ti ti-alert-circle" tone="danger">
+            <DetailPanel.Section title={t().detailAvailability} icon="ti ti-alert-circle" tone="danger">
               <Placeholder
                 state="error"
                 variant="compact"
                 align="center"
-                title="Some conversation details are temporarily unavailable"
-                description={`Could not refresh ${unavailableSections().join(", ")}. Previously loaded values remain visible where available.`}
+                title={t().detailsTemporarilyUnavailable}
+                description={t().unavailableSections({ sections: unavailableSections().join(", ") })}
                 action={
                   <Button variant="secondary" size="sm" type="button" onClick={() => void props.onReconcile()}>
-                    <i class="ti ti-refresh" aria-hidden="true" /> Retry
+                    <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
                   </Button>
                 }
               />
@@ -536,15 +540,15 @@ export default function MailDetailsPanel(props: {
 
           <Show when={props.conversationSummary?.summary}>
             {(summary) => (
-              <DetailPanel.Section title="Conversation summary" icon="ti ti-sparkles" tone="accent">
+              <DetailPanel.Section title={t().conversationSummary} icon="ti ti-sparkles" tone="accent">
                 <MarkdownView markdown={summary()} headingScale="compact" class="text-sm text-primary" />
               </DetailPanel.Section>
             )}
           </Show>
 
           <CheckboxCard
-            label="Mark as done"
-            description="No further follow-up is needed."
+            label={t().markDone}
+            description={t().markDoneDescription}
             icon="ti ti-circle-check"
             value={() => state().workStatus === "done"}
             onValueChange={(done) => updateCollaboration({ completion: done ? "done" : "open" })}
@@ -553,9 +557,9 @@ export default function MailDetailsPanel(props: {
 
           <Show when={props.canWrite && props.conversationDrafts[0]}>
             {(draft) => (
-              <DetailPanel.Group label="Draft">
+              <DetailPanel.Group label={t().draft}>
                 <DetailPanel.Section
-                  title={props.conversationDrafts.length === 1 ? "Draft available" : "Drafts available"}
+                  title={t().draftsAvailable({ count: props.conversationDrafts.length })}
                   icon="ti ti-file-pencil"
                   tone="accent"
                   meta={props.conversationDrafts.length}
@@ -563,8 +567,11 @@ export default function MailDetailsPanel(props: {
                   <DetailPanel.Action
                     href={mailDraftHref(props.mailboxId, draft().id, props.requestUrl)}
                     leading={<i class="ti ti-arrow-back-up" aria-hidden="true" />}
-                    title={props.conversationDrafts.length === 1 ? "Continue draft" : "Continue newest draft"}
-                    description={`Created by ${draft().createdByDisplayName} · Updated ${dates.formatDateTimeRelative(draft().updatedAt, props.dateConfig)}`}
+                    title={t().continueDraft({ count: props.conversationDrafts.length })}
+                    description={t().draftMeta({
+                      name: draft().createdByDisplayName,
+                      updated: dates.formatDateTimeRelative(draft().updatedAt, props.dateConfig),
+                    })}
                     trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
                   />
                 </DetailPanel.Section>
@@ -572,12 +579,12 @@ export default function MailDetailsPanel(props: {
             )}
           </Show>
 
-          <DetailPanel.Group label="Workflow">
+          <DetailPanel.Group label={t().workflow}>
             <DetailPanel.Section
-              title="Workflow"
+              title={t().workflow}
               actions={
-                <Tooltip.Anchor content="Create tag">
-                  <IconButton type="button" label="Create tag" size="xs" disabled={!props.canWrite} onClick={() => void createTag()}>
+                <Tooltip.Anchor content={t().createTag}>
+                  <IconButton type="button" label={t().createTag} size="xs" disabled={!props.canWrite} onClick={() => void createTag()}>
                     <i class="ti ti-tag-plus" aria-hidden="true" />
                   </IconButton>
                 </Tooltip.Anchor>
@@ -585,7 +592,7 @@ export default function MailDetailsPanel(props: {
             >
               <div class="flex flex-col gap-2.5">
                 <MultiSelectInput
-                  label="Tags"
+                  label={t().tags}
                   value={() => tagState().tags.map((tag) => tag.id)}
                   onValueChange={updateConversationTags}
                   options={availableTags().map((tag) => ({
@@ -602,12 +609,12 @@ export default function MailDetailsPanel(props: {
                       color: tag.color,
                     }))
                   }
-                  placeholder="Select tags"
+                  placeholder={t().selectTags}
                   clearable
                   disabled={!props.canWrite}
                 />
                 <Select
-                  label="Assignee"
+                  label={t().assignee}
                   value={() => state().assignee?.id ?? null}
                   selectedLabel={() => state().assignee?.displayName}
                   onValueChange={(userId) => updateCollaboration({ assigneeUserId: userId || null })}
@@ -620,7 +627,7 @@ export default function MailDetailsPanel(props: {
                   disabled={!props.canWrite || Boolean(props.detailErrors.assignableUsers)}
                 />
                 <DateTimePicker
-                  label="Snooze until"
+                  label={t().snoozeUntil}
                   value={() => state().snoozedUntil}
                   onValueChange={(value) => updateCollaboration({ snoozedUntil: value || null })}
                   dateConfig={props.dateConfig}
@@ -629,7 +636,7 @@ export default function MailDetailsPanel(props: {
                 <div class="flex items-end gap-2">
                   <div class="min-w-0 flex-1">
                     <DateTimePicker
-                      label="Personal reminder"
+                      label={t().personalReminder}
                       value={reminderDueAt}
                       onValueChange={(value) => value && updateReminder(value)}
                       dateConfig={props.dateConfig}
@@ -645,7 +652,7 @@ export default function MailDetailsPanel(props: {
                       disabled={Boolean(props.detailErrors.reminder)}
                       onClick={clearReminder}
                     >
-                      Clear
+                      {t().clear}
                     </Button>
                   </Show>
                 </div>
@@ -653,9 +660,9 @@ export default function MailDetailsPanel(props: {
             </DetailPanel.Section>
           </DetailPanel.Group>
 
-          <DetailPanel.Group label="Conversation context">
+          <DetailPanel.Group label={t().conversationContext}>
             <Show when={props.presence.length > 0}>
-              <section aria-label="Active collaborators" class="bg-[var(--ui-surface)] p-3">
+              <section aria-label={t().activeCollaborators} class="bg-[var(--ui-surface)] p-3">
                 <div class="flex flex-col gap-2">
                   <For each={props.presence}>
                     {(participant) => (
@@ -664,7 +671,7 @@ export default function MailDetailsPanel(props: {
                         <span class="min-w-0 flex-1 truncate text-sm text-primary">{participant.displayName}</span>
                         <StatusBadge
                           tone={participant.mode === "composing" ? "running" : "neutral"}
-                          label={participant.mode === "composing" ? "Composing" : "Viewing"}
+                          label={participant.mode === "composing" ? t().composing : t().viewing}
                           icon={participant.mode === "composing" ? "ti ti-pencil" : "ti ti-eye"}
                         />
                       </div>
@@ -689,7 +696,7 @@ export default function MailDetailsPanel(props: {
             />
 
             <Show when={attachments().length > 0}>
-              <DetailPanel.Section title="Attachments" icon="ti ti-paperclip" tone="neutral" meta={attachments().length}>
+              <DetailPanel.Section title={t().attachments} icon="ti ti-paperclip" tone="neutral" meta={attachments().length}>
                 <div class="flex flex-col gap-1">
                   <For each={attachments()}>
                     {(attachment) => (
@@ -710,14 +717,14 @@ export default function MailDetailsPanel(props: {
 
           <Show when={props.conversationId} keyed>
             {(_conversationId) => (
-              <Discussion label="Team notes" icon="ti ti-messages" count={commentsCursor() ? undefined : visibleComments().length}>
+              <Discussion label={t().teamNotes} icon="ti ti-messages" count={commentsCursor() ? undefined : visibleComments().length}>
                 <Discussion.List
                   error={props.detailErrors.comments}
                   onRetry={props.onReconcile}
                   hasMore={commentsCursor() !== null}
                   loadingMore={loadingOlderComments()}
-                  loadingLabel="Loading team notes"
-                  loadMoreLabel="Load earlier team notes"
+                  loadingLabel={t().loadingTeamNotes}
+                  loadMoreLabel={t().loadEarlierTeamNotes}
                   onLoadMore={loadOlderComments}
                 >
                   <For each={visibleComments()}>
@@ -741,15 +748,20 @@ export default function MailDetailsPanel(props: {
                           actions={
                             <>
                               <Show when={comment.canEdit}>
-                                <Tooltip.Anchor content="Edit comment">
-                                  <IconButton type="button" label="Edit comment" size="xs" onClick={() => editComment.mutate(comment)}>
+                                <Tooltip.Anchor content={t().editComment}>
+                                  <IconButton type="button" label={t().editComment} size="xs" onClick={() => editComment.mutate(comment)}>
                                     <i class="ti ti-pencil" aria-hidden="true" />
                                   </IconButton>
                                 </Tooltip.Anchor>
                               </Show>
                               <Show when={comment.canDelete}>
-                                <Tooltip.Anchor content="Delete comment">
-                                  <IconButton type="button" label="Delete comment" size="xs" onClick={() => removeComment.mutate(comment)}>
+                                <Tooltip.Anchor content={t().deleteComment}>
+                                  <IconButton
+                                    type="button"
+                                    label={t().deleteComment}
+                                    size="xs"
+                                    onClick={() => removeComment.mutate(comment)}
+                                  >
                                     <i class="ti ti-trash" aria-hidden="true" />
                                   </IconButton>
                                 </Tooltip.Anchor>
@@ -766,9 +778,9 @@ export default function MailDetailsPanel(props: {
 
                 <Show when={!props.detailErrors.comments}>
                   <Discussion.Composer
-                    label="Add internal comment"
-                    placeholder="Add internal comment"
-                    submitLabel="Post comment"
+                    label={t().addInternalComment}
+                    placeholder={t().addInternalComment}
+                    submitLabel={t().postComment}
                     onSubmit={async (body) => {
                       await addComment.mutate(body);
                       return addComment.error() === null;
@@ -779,9 +791,9 @@ export default function MailDetailsPanel(props: {
             )}
           </Show>
 
-          <DetailPanel.Group label="Conversation history">
+          <DetailPanel.Group label={t().conversationHistory}>
             <Show when={props.activity.length > 0}>
-              <DetailPanel.Section title="Recent activity" icon="ti ti-history" tone="neutral" meta={activityItems().length} collapsible>
+              <DetailPanel.Section title={t().recentActivity} icon="ti ti-history" tone="neutral" meta={activityItems().length} collapsible>
                 <div class="flex flex-col gap-2">
                   <For each={activityItems()}>
                     {(event) => (
@@ -804,60 +816,60 @@ export default function MailDetailsPanel(props: {
               </DetailPanel.Section>
             </Show>
 
-            <DetailPanel.Section title="Mail details" icon="ti ti-code" tone="neutral" collapsible>
+            <DetailPanel.Section title={t().mailDetails} icon="ti ti-code" tone="neutral" collapsible>
               <DescriptionList
                 layout="rows"
                 size="sm"
                 items={[
                   {
-                    term: "Subject",
+                    term: t().subject,
                     description: (
                       <span class="block truncate" title={props.subject}>
-                        {props.subject || "(no subject)"}
+                        {props.subject || t().noSubject}
                       </span>
                     ),
                   },
                   {
-                    term: "From",
+                    term: t().from,
                     description: (
                       <span class="block truncate" title={addressList(latestMessage()?.from ?? [])}>
-                        {addressList(latestMessage()?.from ?? []) || "Unknown"}
+                        {addressList(latestMessage()?.from ?? []) || t().unknown}
                       </span>
                     ),
                   },
                   {
-                    term: "To",
+                    term: t().toLabel,
                     description: (
                       <span class="block truncate" title={addressList(latestMessage()?.to ?? [])}>
-                        {addressList(latestMessage()?.to ?? []) || "Undisclosed"}
+                        {addressList(latestMessage()?.to ?? []) || t().undisclosed}
                       </span>
                     ),
                   },
                   {
-                    term: "Thread",
-                    description: `${props.messages.length} message${props.messages.length === 1 ? "" : "s"}`,
+                    term: t().thread,
+                    description: t().messageCount({ count: props.messages.length }),
                   },
                   ...(attachmentCount() > 0
                     ? [
                         {
-                          term: "Files",
-                          description: `${attachmentCount()} attachment${attachmentCount() === 1 ? "" : "s"}`,
+                          term: t().files,
+                          description: t().attachmentCount({ count: attachmentCount() }),
                         },
                       ]
                     : []),
                   ...(latestMessage()?.messageId
                     ? [
                         {
-                          term: "Message ID",
+                          term: t().messageId,
                           description: <span class="block truncate font-mono text-xs">{latestMessage()?.messageId}</span>,
                         },
                       ]
                     : []),
                   ...(latestMessage()
                     ? [
-                        { term: "Size", description: formatFileViewSize(latestMessage()!.sizeBytes) },
-                        { term: "Content", description: latestMessage()!.contentType ?? "Unavailable" },
-                        { term: "Mirror", description: latestMessage()!.hydrationStatus },
+                        { term: t().size, description: formatFileViewSize(latestMessage()!.sizeBytes) },
+                        { term: t().content, description: latestMessage()!.contentType ?? t().unavailable },
+                        { term: t().mirror, description: latestMessage()!.hydrationStatus },
                       ]
                     : []),
                 ]}
@@ -878,7 +890,7 @@ export default function MailDetailsPanel(props: {
                         })
                       }
                     >
-                      <i class="ti ti-list-details" aria-hidden="true" /> Headers
+                      <i class="ti ti-list-details" aria-hidden="true" /> {t().headers}
                     </Button>
                     <Button
                       variant="secondary"
@@ -893,7 +905,7 @@ export default function MailDetailsPanel(props: {
                         })
                       }
                     >
-                      <i class="ti ti-code" aria-hidden="true" /> Source
+                      <i class="ti ti-code" aria-hidden="true" /> {t().source}
                     </Button>
                     <Show when={message().sourceAvailable}>
                       <ButtonLink

@@ -1,5 +1,5 @@
-import { prompts, toast } from "@k2b/ui";
 import { mutation as mutations } from "@k2b/stdlib/solid";
+import { prompts, toast } from "@k2b/ui";
 import type { Accessor, Setter } from "solid-js";
 import { createSignal, onCleanup } from "solid-js";
 import { apiClient } from "../../api/client";
@@ -7,6 +7,7 @@ import type { CreateAttachmentLinkInput, CreatedAttachmentLink, DraftAttachment,
 import { readApiError } from "./api-response";
 import { promptAttachmentLinkOptions } from "./attachment-link-ui";
 import type { MailComposerUpload } from "./MailComposerAttachments";
+import { mailComposerMessages } from "./mail-composer-messages";
 import type { createMailComposerTransition } from "./mail-composer-transition";
 
 export const createMailComposerAttachmentManager = (options: {
@@ -21,7 +22,9 @@ export const createMailComposerAttachmentManager = (options: {
   format: Accessor<"plain" | "markdown">;
   setBody: Setter<string>;
   isDisposed: () => boolean;
+  locale: Accessor<string>;
 }) => {
+  const t = () => mailComposerMessages.resolve([options.locale()]).t;
   const [uploads, setUploads] = createSignal<MailComposerUpload[]>([]);
   const uploadControllers = new Map<File, AbortController>();
   const materializedAttachmentId = (requestedId: string, currentDraft: MailDraft): string => {
@@ -47,7 +50,7 @@ export const createMailComposerAttachmentManager = (options: {
     ]);
     try {
       const saved = await options.persist();
-      if (!saved) throw new Error("Save the draft before attaching files.");
+      if (!saved) throw new Error(t().saveBeforeAttach);
       const createResponse = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["attachment-uploads"].$post(
         {
           param: { mailboxId: options.mailboxId, draftId: saved.id },
@@ -55,7 +58,7 @@ export const createMailComposerAttachmentManager = (options: {
         },
         { init: { signal: controller.signal } },
       );
-      if (!createResponse.ok) throw new Error(await readApiError(createResponse, `Failed to attach ${file.name}`));
+      if (!createResponse.ok) throw new Error(await readApiError(createResponse, t().attachFileFailed({ filename: file.name })));
       const upload = await createResponse.json();
       setUploads((current) => current.map((entry) => (entry.file === file ? { ...entry, uploadId: upload.id, draftId: saved.id } : entry)));
       for (let offset = 0; offset < file.size; offset += upload.chunkSize) {
@@ -69,7 +72,7 @@ export const createMailComposerAttachmentManager = (options: {
             signal: controller.signal,
           },
         );
-        if (!response.ok) throw new Error(await readApiError(response, `Failed to upload ${file.name}`));
+        if (!response.ok) throw new Error(await readApiError(response, t().uploadFileFailed({ filename: file.name })));
         const progress = file.size === 0 ? 100 : Math.round((Math.min(file.size, offset + chunk.size) / file.size) * 100);
         setUploads((current) => current.map((entry) => (entry.file === file ? { ...entry, progress } : entry)));
       }
@@ -84,7 +87,7 @@ export const createMailComposerAttachmentManager = (options: {
           },
           { init: { signal: controller.signal } },
         );
-        if (!finalizeResponse.ok) throw new Error(await readApiError(finalizeResponse, `Failed to finalize ${file.name}`));
+        if (!finalizeResponse.ok) throw new Error(await readApiError(finalizeResponse, t().finalizeFileFailed({ filename: file.name })));
         options.setDraft(await finalizeResponse.json());
       });
       setUploads((current) => current.filter((entry) => entry.file !== file));
@@ -100,7 +103,7 @@ export const createMailComposerAttachmentManager = (options: {
       const response = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["attachment-uploads"][":uploadId"].$delete({
         param: { mailboxId: options.mailboxId, draftId: upload.draftId, uploadId: upload.uploadId },
       });
-      if (!response.ok) throw new Error(await readApiError(response, `Failed to cancel upload for ${upload.file.name}`));
+      if (!response.ok) throw new Error(await readApiError(response, t().cancelUploadFailed({ filename: upload.file.name })));
     }
     setUploads((current) => current.filter((entry) => entry.file !== upload.file));
   };
@@ -110,7 +113,7 @@ export const createMailComposerAttachmentManager = (options: {
       await cancelUpload(upload);
       await uploadFile(upload.file);
     } catch (error) {
-      await prompts.error(error instanceof Error ? error.message : `Failed to retry ${upload.file.name}`);
+      await prompts.error(error instanceof Error ? error.message : t().retryUploadFailed({ filename: upload.file.name }));
     }
   };
 
@@ -122,7 +125,7 @@ export const createMailComposerAttachmentManager = (options: {
         if (options.isDisposed() || (error instanceof DOMException && error.name === "AbortError")) return;
         setUploads((current) =>
           current.map((entry) =>
-            entry.file === file ? { ...entry, error: error instanceof Error ? error.message : "Upload failed" } : entry,
+            entry.file === file ? { ...entry, error: error instanceof Error ? error.message : t().uploadFailed } : entry,
           ),
         );
       }
@@ -143,7 +146,7 @@ export const createMailComposerAttachmentManager = (options: {
           param: { mailboxId: options.mailboxId, draftId: currentDraft.id, attachmentId: persistedAttachmentId },
           query: { expectedRevision: String(currentDraft.revision) },
         });
-        if (!response.ok) return await prompts.error(await readApiError(response, "Failed to remove attachment"));
+        if (!response.ok) return await prompts.error(await readApiError(response, t().removeAttachmentFailed));
         options.setDraft(await response.json());
       });
     } finally {
@@ -154,7 +157,7 @@ export const createMailComposerAttachmentManager = (options: {
   const shareAttachment = mutations.create<CreatedAttachmentLink, { attachmentId: string; input: CreateAttachmentLinkInput }>({
     mutation: async ({ attachmentId, input }, { abortSignal }) => {
       const currentDraft = options.draft() ?? (await options.persist());
-      if (!currentDraft) throw new Error("Save the draft before sharing an attachment.");
+      if (!currentDraft) throw new Error(t().saveBeforeShare);
       const persistedAttachmentId = materializedAttachmentId(attachmentId, currentDraft);
       const response = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"].attachments[":attachmentId"].links.$post(
         {
@@ -163,14 +166,14 @@ export const createMailComposerAttachmentManager = (options: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to share attachment"));
+      if (!response.ok) throw new Error(await readApiError(response, t().shareAttachmentFailed));
       return response.json();
     },
     onSuccess: ({ link, url }) => {
-      const label = link.filename ?? "Download attachment";
+      const label = link.filename ?? t().downloadAttachment;
       const insertion = options.format() === "markdown" ? `[${label.replaceAll("]", "\\]")}](${url})` : url;
       options.setBody((current) => `${current}${current.endsWith("\n") || !current ? "" : "\n\n"}${insertion}`);
-      toast.success("Public attachment link inserted");
+      toast.success(t().publicLinkInserted);
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -180,7 +183,7 @@ export const createMailComposerAttachmentManager = (options: {
     const reservation = options.transition.reserve("attachment");
     if (!reservation) return;
     try {
-      const input = await promptAttachmentLinkOptions();
+      const input = await promptAttachmentLinkOptions(options.locale());
       if (input && !options.isDisposed()) await shareAttachment.mutate({ attachmentId, input });
     } finally {
       options.transition.release(reservation);

@@ -1,7 +1,8 @@
 import { type DateContext, dates } from "@k2b/stdlib";
-import { Avatar, Button, prompts } from "@k2b/ui";
+import { Avatar, Button, prompts, useLocale } from "@k2b/ui";
 import { Show } from "solid-js";
 import type { DraftLease, DraftLeaseHolder } from "../../contracts";
+import { mailComposerMessages } from "./mail-composer-messages";
 import type { MailDraftLeaseConflict } from "./mail-draft-session";
 
 export type MailDraftCollaborationChoice = "readonly" | "takeover";
@@ -15,33 +16,30 @@ const avatarSource = (lease: DraftLease | null): string | undefined =>
     ? `/api/accounts/users/${encodeURIComponent(lease.holder.id)}/avatar?rev=${encodeURIComponent(lease.holder.avatarHash)}`
     : undefined;
 
-export const mailDraftCollaborationCopy = (conflict: MailDraftLeaseConflict, currentActor: MailDraftActorRef) => {
+export const mailDraftCollaborationCopy = (conflict: MailDraftLeaseConflict, currentActor: MailDraftActorRef, requestedLocale = "en") => {
+  const t = mailComposerMessages.resolve([requestedLocale]).t;
   if (isSameActor(conflict.lease, currentActor)) {
     return {
-      title: "Draft open in another tab",
-      description:
-        conflict.reason === "lost"
-          ? "Another tab or window took over editing this draft. You can keep reading here or move editing back to this tab."
-          : "You are already editing this draft in another tab or window. Only one tab can save changes at a time.",
-      status: "You are editing this draft in another tab.",
-      takeoverLabel: "Edit in this tab",
+      title: t.draftOpenAnotherTab,
+      description: conflict.reason === "lost" ? t.sameActorLostDescription : t.sameActorHeldDescription,
+      status: t.sameActorStatus,
+      takeoverLabel: t.editInThisTab,
     };
   }
   if (conflict.lease) {
-    const name = conflict.lease.holder.displayName.trim() || "Another collaborator";
+    const name = conflict.lease.holder.displayName.trim() || t.anotherCollaborator;
     return {
-      title: `${name} is editing this draft`,
-      description: "You can read the draft now, or take over when you need to make changes. Taking over makes their editor read-only.",
-      status: `${name} is currently editing this draft.`,
-      takeoverLabel: "Take over",
+      title: t.collaboratorTitle({ name }),
+      description: t.collaboratorDescription,
+      status: t.collaboratorStatus({ name }),
+      takeoverLabel: t.takeOver,
     };
   }
   return {
-    title: "Draft open elsewhere",
-    description:
-      "Another editing session currently controls this draft, but its details are unavailable. You can keep reading or try to edit here.",
-    status: "This draft is currently being edited elsewhere.",
-    takeoverLabel: "Try editing here",
+    title: t.draftOpenElsewhere,
+    description: t.unknownSessionDescription,
+    status: t.unknownSessionStatus,
+    takeoverLabel: t.tryEditingHere,
   };
 };
 
@@ -51,7 +49,9 @@ export function MailDraftCollaborationDialog(props: {
   dateConfig: DateContext;
   close: (choice: MailDraftCollaborationChoice) => void;
 }) {
-  const copy = () => mailDraftCollaborationCopy(props.conflict, props.currentActor);
+  const locale = useLocale();
+  const t = () => mailComposerMessages.resolve([locale()]).t;
+  const copy = () => mailDraftCollaborationCopy(props.conflict, props.currentActor, locale());
   const lease = () => props.conflict.lease;
 
   return (
@@ -62,10 +62,12 @@ export function MailDraftCollaborationDialog(props: {
           <div class="flex min-w-0 items-center gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-3">
             <Avatar name={current().holder.displayName} src={avatarSource(current())} size="sm" loading="eager" />
             <div class="min-w-0">
-              <p class="truncate text-sm font-medium text-primary">{current().holder.displayName || "Another collaborator"}</p>
+              <p class="truncate text-sm font-medium text-primary">{current().holder.displayName || t().anotherCollaborator}</p>
               <p class="text-xs leading-5 text-dimmed">
-                Opened <time dateTime={current().acquiredAt}>{dates.formatDateTimeRelative(current().acquiredAt, props.dateConfig)}</time>
-                {" · "}reserved until{" "}
+                {t().opened}{" "}
+                <time dateTime={current().acquiredAt}>{dates.formatDateTimeRelative(current().acquiredAt, props.dateConfig)}</time>
+                {" · "}
+                {t().reservedUntil}{" "}
                 <time dateTime={current().expiresAt}>{dates.formatDateTime(current().expiresAt, props.dateConfig)}</time>
               </p>
             </div>
@@ -74,7 +76,7 @@ export function MailDraftCollaborationDialog(props: {
       </Show>
       <div class="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
         <Button variant="secondary" type="button" onClick={() => props.close("readonly")}>
-          View read-only
+          {t().viewReadOnly}
         </Button>
         <Button type="button" onClick={() => props.close("takeover")}>
           {copy().takeoverLabel}
@@ -88,8 +90,9 @@ export const openMailDraftCollaborationDialog = (options: {
   conflict: MailDraftLeaseConflict;
   currentActor: MailDraftActorRef;
   dateConfig: DateContext;
+  locale?: string;
 }): Promise<MailDraftCollaborationChoice | undefined> => {
-  const copy = mailDraftCollaborationCopy(options.conflict, options.currentActor);
+  const copy = mailDraftCollaborationCopy(options.conflict, options.currentActor, options.locale);
   return prompts.dialog<MailDraftCollaborationChoice>((close) => <MailDraftCollaborationDialog {...options} close={close} />, {
     title: copy.title,
     icon: "ti ti-users",

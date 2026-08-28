@@ -1,8 +1,9 @@
 import type { DateContext } from "@k2b/stdlib";
-import { type DropdownItem, Placeholder, StatusBadge } from "@k2b/ui";
+import { type DropdownItem, Placeholder, StatusBadge, useLocale } from "@k2b/ui";
 import type { CloudTheme } from "@valentinkolb/cloud/shared";
 import { createMemo, createSignal, Show } from "solid-js";
 import type { DraftDerivationKind, DraftIntent, SenderIdentity } from "../../contracts";
+import type { MailSecurityFinding } from "../../security-contracts";
 import type { MessageDetail } from "../../service/messages";
 import MailCalendarInvitation from "./MailCalendarInvitation";
 import MailMessageAttachments from "./MailMessageAttachments";
@@ -11,6 +12,7 @@ import MailMessageDeliveryControl from "./MailMessageDeliveryControl";
 import MailSenderMessageActions from "./MailSenderMessageActions";
 import { deriveReplyRecipients, formatMailAddress, forwardMessageBody } from "./mail-compose-derivation";
 import { isOutgoingMessage } from "./mail-conversation-history";
+import { mailMessageMessages } from "./mail-message-messages";
 import {
   formatMailMessageDateTime,
   type MessageBodyFormat,
@@ -57,6 +59,27 @@ export default function MailMessageCard(props: {
   context: MailMessageCardContext;
   actions: MailMessageCardActions;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailMessageMessages.resolve([locale()]).t);
+  const findingPresentation = (finding: MailSecurityFinding): { title: string; explanation: string } => {
+    const t = messages();
+    if (finding.code === "admin_deny_policy") {
+      return { title: t.blockedByOrganization, explanation: t.blockedByOrganizationExplanation };
+    }
+    if (finding.code === "authentication_failed") {
+      return { title: t.senderVerificationFailed, explanation: t.senderVerificationFailedExplanation };
+    }
+    if (finding.code === "reply_to_mismatch") {
+      return { title: t.repliesAnotherDomain, explanation: t.repliesAnotherDomainExplanation };
+    }
+    if (finding.code === "misleading_link") {
+      return { title: t.unexpectedLink, explanation: t.unexpectedLinkExplanation };
+    }
+    if (finding.code === "protected_identity_mismatch") {
+      return { title: t.senderNameImpersonated, explanation: t.senderNameImpersonatedExplanation };
+    }
+    return finding;
+  };
   let messageBody!: HTMLDivElement;
   const [bodyFormatOverride, setBodyFormatOverride] = createSignal<MessageBodyFormat | null>(null);
   const security = () =>
@@ -69,25 +92,26 @@ export default function MailMessageCard(props: {
     };
   const controllableDelivery = () => {
     const delivery = props.message.delivery;
-    return delivery && messageDeliveryControlLabel(delivery, props.context.canWrite) ? delivery : null;
+    return delivery && messageDeliveryControlLabel(delivery, props.context.canWrite, locale()) ? delivery : null;
   };
   const outgoing = () => isOutgoingMessage(props.message, props.context.identities);
   const senderLabel = () => {
-    if (outgoing()) return "You";
+    if (outgoing()) return messages().you;
     const sender = props.message.from[0];
-    return sender?.name || sender?.address || "Unknown sender";
+    return sender?.name || sender?.address || messages().unknownSender;
   };
-  const recipientLabel = () => props.message.to.map((address) => address.name || address.address).join(", ") || "undisclosed recipients";
+  const recipientLabel = () =>
+    props.message.to.map((address) => address.name || address.address).join(", ") || messages().undisclosedRecipients;
   const routeLabel = () => {
-    if (outgoing()) return `to ${recipientLabel()}`;
+    if (outgoing()) return messages().toRecipient({ recipients: recipientLabel() });
     const ownAddresses = new Set(
       props.context.identities
         .filter((identity) => identity.status === "verified")
         .map((identity) => identity.fromAddress.trim().toLowerCase()),
     );
     return props.message.to.some((recipient) => ownAddresses.has(recipient.address.trim().toLowerCase()))
-      ? "to me"
-      : `to ${recipientLabel()}`;
+      ? messages().toMe
+      : messages().toRecipient({ recipients: recipientLabel() });
   };
   const preview = () => messagePreviewText(props.message.plainText, props.message.forwardText);
   const exceptionalDelivery = () => {
@@ -108,31 +132,32 @@ export default function MailMessageCard(props: {
     props.context.canWrite && props.context.selectedConversationId && !exceptionalDelivery()
       ? [
           {
-            sectionLabel: "Respond",
+            sectionLabel: messages().respond,
             items: [
               {
-                label: "Reply",
+                label: messages().reply,
                 icon: "ti ti-arrow-back-up",
                 action: () => props.actions.compose("reply", props.message),
               },
               ...(canReplyAll()
                 ? [
                     {
-                      label: "Reply all",
+                      label: messages().replyAll,
                       icon: "ti ti-arrow-back-up-double",
                       action: () => props.actions.compose("reply_all", props.message),
                     },
                   ]
                 : []),
               {
-                label: "Forward",
+                label: messages().forward,
                 icon: "ti ti-arrow-forward-up",
-                action: () => props.actions.compose("forward", props.message, forwardMessageBody(props.message, props.context.dateConfig)),
+                action: () =>
+                  props.actions.compose("forward", props.message, forwardMessageBody(props.message, props.context.dateConfig, locale())),
               },
               ...(props.selectionAvailable
                 ? [
                     {
-                      label: "Quote selection",
+                      label: messages().quoteSelection,
                       icon: "ti ti-blockquote",
                       action: () => props.actions.quoteReply(props.message, messageBody),
                     },
@@ -147,10 +172,10 @@ export default function MailMessageCard(props: {
     const nextFormat = bodyFormat() === "html" ? "plain" : "html";
     return [
       {
-        sectionLabel: "Display",
+        sectionLabel: messages().display,
         items: [
           {
-            label: nextFormat === "html" ? "View as HTML" : "View as plain text",
+            label: nextFormat === "html" ? messages().viewHtml : messages().viewPlain,
             icon: nextFormat === "html" ? "ti ti-code" : "ti ti-align-left",
             action: () => setBodyFormatOverride(nextFormat),
           },
@@ -188,14 +213,14 @@ export default function MailMessageCard(props: {
             <span class="flex h-6 min-w-0 items-center gap-2">
               <span
                 class="inline-flex h-5 w-5 shrink-0 items-center justify-center text-secondary"
-                title={outgoing() ? "Outgoing message" : "Incoming message"}
+                title={outgoing() ? messages().outgoingMessage : messages().incomingMessage}
               >
                 <i class={`ti ${outgoing() ? "ti-arrow-up-right" : "ti-arrow-down-left"} text-sm`} aria-hidden="true" />
-                <span class="sr-only">{outgoing() ? "Outgoing message" : "Incoming message"}</span>
+                <span class="sr-only">{outgoing() ? messages().outgoingMessage : messages().incomingMessage}</span>
               </span>
               <span
                 class={`truncate text-sm font-semibold ${props.expanded || props.isLatest ? "text-primary" : "text-secondary"}`}
-                title={props.message.from.map(formatMailAddress).join(", ") || "Unknown sender"}
+                title={props.message.from.map(formatMailAddress).join(", ") || messages().unknownSender}
               >
                 {senderLabel()}
               </span>
@@ -210,8 +235,8 @@ export default function MailMessageCard(props: {
             </Show>
             <Show when={props.message.delivery}>
               {(delivery) => {
-                if (messageDeliveryControlLabel(delivery(), props.context.canWrite)) return null;
-                const status = messageDeliveryPresentation(delivery());
+                if (messageDeliveryControlLabel(delivery(), props.context.canWrite, locale())) return null;
+                const status = messageDeliveryPresentation(delivery(), locale());
                 return status ? (
                   <StatusBadge
                     tone={status.tone}
@@ -277,19 +302,18 @@ export default function MailMessageCard(props: {
                 aria-hidden="true"
               />
               <div class="min-w-0">
-                <p class="font-semibold">
-                  {security().verdict === "quarantined" ? "Blocked in the Mail reader" : "Check this message carefully"}
-                </p>
+                <p class="font-semibold">{security().verdict === "quarantined" ? messages().blockedInReader : messages().checkCarefully}</p>
                 <ul class="mt-1 list-disc space-y-0.5 pl-4 text-current/80">
-                  {security().findings.map((finding) => (
-                    <li title={finding.explanation}>{finding.title}</li>
-                  ))}
+                  {security().findings.map((finding) => {
+                    const presentation = findingPresentation(finding);
+                    return <li title={presentation.explanation}>{presentation.title}</li>;
+                  })}
                 </ul>
                 <Show when={security().linksDisabled}>
-                  <p class="mt-1 text-current/80">Links and attachments are disabled here. An administrator can review the rule.</p>
+                  <p class="mt-1 text-current/80">{messages().linksDisabled}</p>
                 </Show>
                 <a class="mt-1 inline-block font-medium underline underline-offset-2" href="/app/mail/help/mail-security">
-                  How Mail protects you
+                  {messages().securityHelp}
                 </a>
               </div>
             </div>
@@ -312,11 +336,11 @@ export default function MailMessageCard(props: {
                 )}
               </Show>
             ) : props.message.hydrationStatus === "body" || props.message.hydrationStatus === "complete" ? (
-              <Placeholder state="empty" variant="compact" title="This message has no body" />
+              <Placeholder state="empty" variant="compact" title={messages().noBody} />
             ) : props.message.hydrationStatus === "failed" ? (
-              <Placeholder state="error" variant="compact" title="The message body could not be synchronized" />
+              <Placeholder state="error" variant="compact" title={messages().bodySyncFailed} />
             ) : (
-              <Placeholder state="loading" title="Body is still synchronizing" />
+              <Placeholder state="loading" title={messages().bodySyncing} />
             )}
           </div>
           <Show when={hasCalendarInvitation() && props.context.calendarIntegrationAvailable && !security().linksDisabled}>

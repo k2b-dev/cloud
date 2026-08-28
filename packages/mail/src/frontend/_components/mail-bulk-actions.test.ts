@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { executeMailBulkAction, MAIL_BULK_CONCURRENCY } from "./mail-bulk-actions";
+import { executeMailBulkAction, MAIL_BULK_CONCURRENCY, MAIL_BULK_NO_PROVIDER_PLACEMENT } from "./mail-bulk-actions";
 
 describe("Mail bulk actions", () => {
   test("bounds concurrency and reports per-conversation partial failures", async () => {
@@ -40,6 +40,6 @@ describe("Mail bulk actions", () => {
       submit: async () => undefined,
     });
     expect(result.succeededConversationIds).toEqual([]);
-    expect(result.failures[0]?.message).toContain("No active provider placement");
+    expect(result.failures[0]?.message).toBe(MAIL_BULK_NO_PROVIDER_PLACEMENT);
   });
 });

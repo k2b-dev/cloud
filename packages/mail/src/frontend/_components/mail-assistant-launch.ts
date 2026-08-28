@@ -3,6 +3,7 @@ import { contactOpenHref } from "../../app-integration-contracts";
 import type { MailAddress } from "../../contracts";
 import { resolveContacts } from "./contact-capabilities";
 import { mailDraftHref } from "./mail-compose-route";
+import { mailRemainingMessages } from "./mail-remaining-messages";
 
 const CONTACT_EMAIL_LIMIT = 25;
 const CONTACT_RESOURCE_LIMIT = 5;
@@ -85,6 +86,8 @@ export const launchMailDraftAssistant = async (input: {
     bcc: MailAddress[];
   };
 }): Promise<AssistantLaunch> => {
+  const locale = typeof document === "undefined" ? "en" : document.documentElement.lang;
+  const messages = mailRemainingMessages.resolve([locale]).t;
   const emails = mailAssistantRecipientEmails([...input.draft.to, ...input.draft.cc, ...input.draft.bcc]);
   let contactsAvailable = false;
   let contactResources: AssistantResourcePart[] = [];
@@ -101,14 +104,14 @@ export const launchMailDraftAssistant = async (input: {
   const title = input.draft.subject.trim();
   return launchAssistant({
     launchedByAppId: "mail",
-    title: title || "Write email",
+    title: title || messages.writeEmail,
     draft: {
       content: [
-        { type: "text", text: "Help me write this email." },
+        { type: "text", text: messages.assistantWriteEmailPrompt },
         {
           type: "resource",
           ref: { type: "mail.draft", id: input.draft.id },
-          title: title || "Mail draft",
+          title: title || messages.mailDraft,
           icon: "ti ti-file-pencil",
           href: mailDraftHref(input.mailboxId, input.draft.id, input.returnHref),
         },

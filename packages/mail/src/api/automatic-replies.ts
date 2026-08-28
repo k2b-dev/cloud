@@ -1,5 +1,5 @@
 import { err, fail } from "@k2b/stdlib";
-import { v } from "@valentinkolb/cloud/server";
+import { getLocale, v } from "@valentinkolb/cloud/server";
 import { type Context, Hono } from "hono";
 import {
   automaticReplyPreviewInputSchema,
@@ -91,6 +91,7 @@ export default new Hono<MailApiContext>()
           context: requestContext(c),
           mailboxId: internalMailboxId(c),
           input,
+          locale: getLocale(c),
         }),
       );
     },

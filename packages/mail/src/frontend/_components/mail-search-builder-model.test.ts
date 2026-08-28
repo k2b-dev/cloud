@@ -39,15 +39,8 @@ describe("Mail search builder model", () => {
       "Date & size",
       "Technical",
     ]);
-    expect(MAIL_SEARCH_FIELD_OPTIONS.find((option) => option.id === "assignee")?.groups).toEqual([
-      "recommended",
-      "people",
-      "mailbox",
-    ]);
-    expect(MAIL_SEARCH_FIELD_OPTIONS.find((option) => option.id === "text:reference")?.groups).toEqual([
-      "content",
-      "technical",
-    ]);
+    expect(MAIL_SEARCH_FIELD_OPTIONS.find((option) => option.id === "assignee")?.groups).toEqual(["recommended", "people", "mailbox"]);
+    expect(MAIL_SEARCH_FIELD_OPTIONS.find((option) => option.id === "text:reference")?.groups).toEqual(["content", "technical"]);
     expect(MAIL_SEARCH_FIELD_OPTIONS.every((option) => option.groups.length > 0)).toBe(true);
   });
 
@@ -55,7 +48,7 @@ describe("Mail search builder model", () => {
     expect(mailSearchFieldOptionsFor({ type: "all" }).map((option) => option.id)).not.toContain("text:keyword");
     const keywordSearch: MailSearchExpression = { type: "text", field: "keyword", query: "Legacy", match: "words" };
     expect(mailSearchFieldOptionsFor(keywordSearch).map((option) => option.id)).toContain("text:keyword");
-    expect(summarizeMailSearchExpression(keywordSearch)).toBe("Provider keyword words “Legacy”");
+    expect(summarizeMailSearchExpression(keywordSearch)).toBe("Provider keyword contains all words “Legacy”");
   });
 
   test("updates nested nodes without mutating siblings", () => {
@@ -151,7 +144,10 @@ describe("Mail search builder model", () => {
       ],
     });
     expect(summarizeMailSearchExpression(root)).toBe(
-      "(Subject words “invoice”) and ((Work status is needs action) or (Work status is waiting for reply))",
+      "(Subject contains all words “invoice”) and ((Work status: Needs action) or (Work status: Waiting for reply))",
+    );
+    expect(summarizeMailSearchExpression(root, "de-CH")).toBe(
+      "(Betreff enthält alle Wörter “invoice”) und ((Bearbeitungsstatus: Handlungsbedarf) oder (Bearbeitungsstatus: Wartet auf Antwort))",
     );
   });
 

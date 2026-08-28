@@ -1,13 +1,15 @@
-import { type AuthContext, getDateConfig } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../../../config";
 import { calendarInvitations, drafts, type MailRequestContext, mailboxAccess, mailboxes, senderIdentities } from "../../../../service";
 import MailComposerPage from "../../../_components/MailComposerPage.island";
 import { mailDraftReturnHref } from "../../../_components/mail-compose-route";
 import { readMailComposerPanesFromCookieHeader, reconcileMailComposerPanes } from "../../../_components/mail-composer-panes";
+import { mailPageMessages } from "../../../pages-messages";
 import { projectComposeData, resolveSsrMailboxId, resolveSsrMailboxResourceId } from "../../../ssr-public-boundary";
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = mailPageMessages.resolve([getLocale(c)]);
   const mailboxShortId = c.req.param("mailboxId") ?? "";
   const draftShortId = c.req.param("draftId") ?? "";
   const mailboxId = await resolveSsrMailboxId(mailboxShortId);
@@ -49,7 +51,7 @@ export default ssr<AuthContext>(async (c) => {
       fullPage
       focusMode
       flushCanvas={popout}
-      title={[{ title: "Mail", href: returnHref }, { title: draft.data.subject || "Draft" }]}
+      title={[{ title: t.breadcrumbMail, href: returnHref }, { title: draft.data.subject || t.draft }]}
     >
       <MailComposerPage
         mailboxId={mailboxShortId}

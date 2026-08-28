@@ -13,6 +13,7 @@ import {
   StatusBadge,
   type StatusTone,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
@@ -28,89 +29,87 @@ import type {
 import { PROVIDER_LIMIT_MAX_AGE_MS } from "../../contracts";
 import { assertCursorProgress } from "../pagination";
 import { readApiError } from "./api-response";
-import { formatHealthEventAge, mailboxHealthPresentation, mailboxOperationalHealthSummary } from "./mail-health-presentation";
+import { mailSettingsMessages } from "./mail-settings-messages";
+
+type Messages = ReturnType<typeof mailSettingsMessages.resolve>["t"];
 
 const healthTone = (health: Mailbox["health"]): StatusTone => (health === "active" ? "ok" : health === "paused" ? "neutral" : "warning");
 
-const providerLimitCheckedLabel = (checkedAt: string, dateConfig: DateContext): string =>
+const providerLimitCheckedLabel = (checkedAt: string, dateConfig: DateContext, messages: Messages): string =>
   Date.parse(checkedAt) <= 0
-    ? "Not checked yet"
+    ? messages.notCheckedYet
     : Date.now() - Date.parse(checkedAt) > PROVIDER_LIMIT_MAX_AGE_MS
-      ? `Outdated · checked ${dates.formatDateTimeRelative(checkedAt, dateConfig)}`
-      : `Checked ${dates.formatDateTimeRelative(checkedAt, dateConfig)}`;
+      ? messages.limitsOutdated({ checked: dates.formatDateTimeRelative(checkedAt, dateConfig) })
+      : messages.limitsChecked({ checked: dates.formatDateTimeRelative(checkedAt, dateConfig) });
 
-const actionLabel = (kind: OperatorActionEligibility["kind"]): string =>
+const actionLabel = (kind: OperatorActionEligibility["kind"], messages: Messages): string =>
   ({
-    sync_mailbox: "Sync mailbox",
-    sync_folder: "Sync folder",
-    discover_folders: "Rediscover folders",
-    verify_binding: "Verify connection",
-    rebuild_folder: "Rebuild folder",
-    hydrate_missing: "Hydrate missing bodies",
-    rebuild_search: "Rebuild search",
-    rebuild_threads: "Repair thread projection",
-    reconcile_effect: "Reconcile effect",
-    retry_command: "Retry work",
-    cancel_command: "Cancel work",
+    sync_mailbox: messages.syncMailbox,
+    sync_folder: messages.syncFolder,
+    discover_folders: messages.rediscoverFolders,
+    verify_binding: messages.verifyConnection,
+    rebuild_folder: messages.rebuildFolder,
+    hydrate_missing: messages.hydrateMissingBodies,
+    rebuild_search: messages.rebuildSearch,
+    rebuild_threads: messages.repairThreadProjection,
+    reconcile_effect: messages.reconcileEffect,
+    retry_command: messages.retryWork,
+    cancel_command: messages.cancelWork,
   })[kind];
 
-const activityLabel = (kind: RedactedOperatorCommand["kind"]): string =>
+const activityLabel = (kind: RedactedOperatorCommand["kind"], messages: Messages): string =>
   ({
-    sync_mailbox: "Mailbox synchronization",
-    sync_folder: "Folder synchronization",
-    discover_folders: "Folder discovery",
-    verify_binding: "Connection verification",
-    rebuild_folder: "Folder rebuild",
-    hydrate_missing: "Message hydration repair",
-    rebuild_search: "Search index rebuild",
-    rebuild_threads: "Conversation repair",
-    reconcile_effect: "Provider reconciliation",
-    retry_command: "Maintenance retry",
-    cancel_command: "Maintenance cancellation",
-    set_flags: "Message flag update",
-    change_message_state: "Message state update",
-    move: "Message move",
-    copy: "Message copy",
-    delete: "Message deletion",
-    create_folder: "Folder creation",
-    rename_folder: "Folder rename",
-    delete_folder: "Folder deletion",
-    set_folder_subscription: "Folder subscription",
-    send: "Message delivery",
+    sync_mailbox: messages.mailboxSynchronization,
+    sync_folder: messages.folderSynchronization,
+    discover_folders: messages.folderDiscovery,
+    verify_binding: messages.connectionVerification,
+    rebuild_folder: messages.folderRebuild,
+    hydrate_missing: messages.messageHydrationRepair,
+    rebuild_search: messages.searchIndexRebuild,
+    rebuild_threads: messages.conversationRepair,
+    reconcile_effect: messages.providerReconciliation,
+    retry_command: messages.maintenanceRetry,
+    cancel_command: messages.maintenanceCancellation,
+    set_flags: messages.messageFlagUpdate,
+    change_message_state: messages.messageStateUpdate,
+    move: messages.messageMove,
+    copy: messages.messageCopy,
+    delete: messages.messageDeletion,
+    create_folder: messages.folderCreation,
+    rename_folder: messages.folderRename,
+    delete_folder: messages.folderDeletion,
+    set_folder_subscription: messages.folderSubscription,
+    send: messages.messageDelivery,
   })[kind];
 
-const activityState = (state: RedactedOperatorCommand["state"]): { label: string; icon: string; tone: StatusTone } => {
+const activityState = (state: RedactedOperatorCommand["state"], messages: Messages): { label: string; icon: string; tone: StatusTone } => {
   if (state === "confirmed" || state === "reconciled") {
-    return { label: "Completed", icon: "ti-circle-check", tone: "ok" };
+    return { label: messages.completed, icon: "ti-circle-check", tone: "ok" };
   }
   if (state === "failed") {
-    return { label: "Failed", icon: "ti-alert-circle", tone: "error" };
+    return { label: messages.failed, icon: "ti-alert-circle", tone: "error" };
   }
   if (state === "ambiguous" || state === "needs_attention") {
-    return { label: "Needs attention", icon: "ti-alert-triangle", tone: "warning" };
+    return { label: messages.needsReview, icon: "ti-alert-triangle", tone: "warning" };
   }
   if (state === "executing") {
-    return { label: "In progress", icon: "ti-loader-2 animate-spin", tone: "running" };
+    return { label: messages.inProgress, icon: "ti-loader-2 animate-spin", tone: "running" };
   }
   if (state === "queued") {
-    return { label: "Queued", icon: "ti-clock", tone: "neutral" };
+    return { label: messages.queued, icon: "ti-clock", tone: "neutral" };
   }
-  return { label: "Cancelled", icon: "ti-circle-minus", tone: "neutral" };
+  return { label: messages.cancelled, icon: "ti-circle-minus", tone: "neutral" };
 };
 
-const errorLabel = (code: string): string => {
-  const label = code.toLowerCase().replaceAll("_", " ");
-  return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
-};
-
-const recentActivityColumns: DataTableColumn<RedactedOperatorCommand>[] = [
-  { id: "activity", header: "Activity", value: (row) => activityLabel(row.kind) },
+const recentActivityColumns = (messages: Messages): DataTableColumn<RedactedOperatorCommand>[] => [
+  { id: "activity", header: messages.activity, value: (row) => activityLabel(row.kind, messages) },
   {
     id: "detail",
-    header: "Details",
-    value: (row) => (row.errorCode ? `Error ${row.errorCode}` : row.attempt > 1 ? `Attempt ${row.attempt}` : ""),
+    header: messages.details,
+    value: (row) =>
+      row.errorCode ? messages.errorCode({ code: row.errorCode }) : row.attempt > 1 ? messages.attempt({ attempt: row.attempt }) : "",
   },
-  { id: "updatedAt", header: "Updated", value: "updatedAt", class: "w-36" },
+  { id: "updatedAt", header: messages.updated, value: "updatedAt", class: "w-36" },
 ];
 
 export default function MailOperationalSettings(props: {
@@ -123,6 +122,8 @@ export default function MailOperationalSettings(props: {
   onReload: () => Promise<void>;
   onWorkspaceChange: () => void;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   let disposed = false;
   const [refreshingConnectionId, setRefreshingConnectionId] = createSignal<string | null>(null);
   type OperationalCommand =
@@ -134,7 +135,7 @@ export default function MailOperationalSettings(props: {
   const reconcileAfterWrite = (work: () => Promise<void>, title: string) => {
     setReconciling(true);
     void work()
-      .catch((error) => prompts.error(error instanceof Error ? error.message : "Mailbox state could not be refreshed", { title }))
+      .catch((error) => prompts.error(error instanceof Error ? error.message : messages().mailboxStateRefreshFailed, { title }))
       .finally(() => setReconciling(false));
   };
   const operatorOperations = query.createInfinite<string, MailboxOperatorOperations, string>({
@@ -144,7 +145,7 @@ export default function MailOperationalSettings(props: {
         { param: { mailboxId }, query: { attentionCursor: cursor, attentionLimit: "100" } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to load mailbox operator status"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedLoadOperatorStatus));
       const page = await response.json();
       assertCursorProgress(cursor, page.nextAttentionCursor, "mailbox operations");
       return page;
@@ -171,13 +172,14 @@ export default function MailOperationalSettings(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, syncEnabled ? "Failed to resume mailbox" : "Failed to pause mailbox"));
+      if (!response.ok)
+        throw new Error(await readApiError(response, syncEnabled ? messages().failedResumeMailbox : messages().failedPauseMailbox));
       return response.json();
     },
     onSuccess: (mailbox) => {
-      toast.success(mailbox.syncEnabled ? "Mailbox resumed" : "Mailbox paused");
+      toast.success(mailbox.syncEnabled ? messages().mailboxResumed : messages().mailboxPaused);
       props.onWorkspaceChange();
-      reconcileAfterWrite(props.onReload, "Mailbox updated, refresh failed");
+      reconcileAfterWrite(props.onReload, messages().mailboxUpdatedRefreshFailed);
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -195,21 +197,21 @@ export default function MailOperationalSettings(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to start mailbox maintenance"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedStartMaintenance));
     },
     onSuccess: () => {
       toast.success(
         lastCommand() === "sync_mailbox"
-          ? "Mailbox synchronization started"
+          ? messages().mailboxSyncStarted
           : lastCommand() === "verify_binding"
-            ? "Provider verification started"
-            : "Folder discovery started",
+            ? messages().providerVerificationStarted
+            : messages().folderDiscoveryStarted,
       );
       props.onWorkspaceChange();
       reconcileAfterWrite(async () => {
         await operatorOperations.refresh();
         await props.onReload();
-      }, "Command queued, refresh failed");
+      }, messages().commandQueuedRefreshFailed);
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -222,14 +224,14 @@ export default function MailOperationalSettings(props: {
         { init: { signal: abortSignal } },
       );
       if (!response.ok) {
-        throw new Error(await readApiError(response, "Failed to refresh provider limits"));
+        throw new Error(await readApiError(response, messages().failedRefreshProviderLimits));
       }
       return response.json();
     },
     onSuccess: () => {
-      toast.success("Provider limits refreshed");
+      toast.success(messages().providerLimitsRefreshed);
       setRefreshingConnectionId(null);
-      reconcileAfterWrite(props.onReload, "Limits refreshed, mailbox refresh failed");
+      reconcileAfterWrite(props.onReload, messages().limitsRefreshedMailboxRefreshFailed);
     },
     onError: (error) => {
       setRefreshingConnectionId(null);
@@ -246,12 +248,12 @@ export default function MailOperationalSettings(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to queue Mail operator action"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedQueueOperatorAction));
     },
     onSuccess: () => {
-      toast.success("Mail operator action queued");
+      toast.success(messages().operatorActionQueued);
       props.onWorkspaceChange();
-      reconcileAfterWrite(operatorOperations.refresh, "Operator action queued, refresh failed");
+      reconcileAfterWrite(operatorOperations.refresh, messages().operatorActionQueuedRefreshFailed);
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -264,10 +266,10 @@ export default function MailOperationalSettings(props: {
   });
 
   const pause = async () => {
-    const confirmed = await prompts.confirm(
-      "Incoming synchronization, queued provider changes, scheduled delivery, and automatic replies stop until the mailbox is resumed.",
-      { title: "Pause mailbox?", confirmText: "Pause mailbox" },
-    );
+    const confirmed = await prompts.confirm(messages().pauseMailboxDescription, {
+      title: messages().pauseMailboxQuestion,
+      confirmText: messages().pauseMailbox,
+    });
     if (!disposed && confirmed) updateSync.mutate(false);
   };
 
@@ -278,8 +280,69 @@ export default function MailOperationalSettings(props: {
   const connectedBinding = () =>
     props.bindings.find((binding) => binding.state === "active") ?? props.bindings.find((binding) => binding.state !== "revoked");
   const discoveryNeedsAttention = () => props.health.discovery.missingFolders + props.health.discovery.ambiguousFolders;
-  const healthPresentation = () => mailboxHealthPresentation({ health: props.health.health, healthReason: props.health.healthReason });
-  const healthSummary = () => mailboxOperationalHealthSummary(props.health);
+  const stateLabel = (state: string) => {
+    if (state === "active") return messages().statusActive;
+    if (state === "degraded") return messages().statusDegraded;
+    if (state === "revoked") return messages().statusRevoked;
+    if (state === "pending") return messages().statusPending;
+    if (state === "verifying") return messages().statusVerifying;
+    if (state === "missing") return messages().stateMissing;
+    if (state === "ambiguous") return messages().stateAmbiguous;
+    if (state === "current") return messages().stateCurrent;
+    if (state === "syncing") return messages().stateSyncing;
+    if (state === "rebuilding") return messages().stateRebuilding;
+    if (state === "failed") return messages().failed;
+    return state;
+  };
+  const healthMessage = () => {
+    const health = props.health.health;
+    if (health === "active") return messages().providerOperational;
+    if (health === "paused") return messages().healthPausedMessage;
+    if (health === "auth_required") return messages().healthAuthMessage;
+    if (health === "connection_required") return messages().healthConnectionRequiredMessage;
+    if (health === "disconnected") return messages().healthDisconnectedMessage;
+    if (health === "verifying") return messages().healthVerifyingMessage;
+    if (health === "bootstrapping") return messages().healthBootstrappingMessage;
+    if (health === "reconnecting") return messages().healthReconnectingMessage;
+    return messages().healthDegradedMessage;
+  };
+  const healthSummary = createMemo(() => {
+    const reviewCount = props.health.discovery.missingFolders + props.health.discovery.ambiguousFolders;
+    const degradedFolders = props.health.sync.folderStates.degraded ?? 0;
+    const currentFolders = props.health.sync.folderStates.current ?? 0;
+    const rebuildingFolders = props.health.sync.folderStates.rebuilding ?? 0;
+    const syncingFolders = props.health.sync.folderStates.syncing ?? 0;
+    const pendingFolders = props.health.sync.folderStates.pending ?? 0;
+    const accounts =
+      props.health.bindings.degraded > 0
+        ? `${props.health.bindings.active > 0 ? `${messages().connectedAccountCount({ count: props.health.bindings.active })} · ` : ""}${messages().degradedAccountCount({ count: props.health.bindings.degraded })}`
+        : props.health.bindings.active > 0
+          ? messages().connectedAccountCount({ count: props.health.bindings.active })
+          : props.health.bindings.pending > 0
+            ? messages().pendingAccountCount({ count: props.health.bindings.pending })
+            : messages().noConnectedAccount;
+    const discovery = `${messages().discoveredFolderCount({ count: props.health.discovery.activeFolders })}${reviewCount > 0 ? ` · ${messages().needsReviewCount({ count: reviewCount })}` : ""}`;
+    const synchronization =
+      props.health.sync.runningRuns > 0
+        ? messages().runningSyncCount({ count: props.health.sync.runningRuns })
+        : degradedFolders > 0
+          ? `${messages().degradedFolderCount({ count: degradedFolders })}${currentFolders > 0 ? ` · ${messages().currentFolderCount({ count: currentFolders })}` : ""}`
+          : rebuildingFolders > 0
+            ? messages().rebuildingFolderCount({ count: rebuildingFolders })
+            : syncingFolders > 0
+              ? messages().syncingFolderCount({ count: syncingFolders })
+              : currentFolders > 0
+                ? messages().currentFolderCount({ count: currentFolders })
+                : pendingFolders > 0
+                  ? messages().pendingFolderCount({ count: pendingFolders })
+                  : messages().noSynchronizedFolders;
+    return {
+      accounts,
+      discovery,
+      synchronization,
+      search: props.health.search.bm25Ready ? messages().searchAdvanced : messages().searchStandard,
+    };
+  });
 
   return (
     <div class="flex flex-col gap-5">
@@ -289,22 +352,26 @@ export default function MailOperationalSettings(props: {
         </span>
         <div class="min-w-64 flex-1">
           <div class="flex flex-wrap items-center gap-2">
-            <h3 class="text-base font-semibold text-primary">Mailbox status</h3>
-            <StatusBadge tone={healthTone(props.health.health)} label={props.health.health.replaceAll("_", " ")} />
+            <h3 class="text-base font-semibold text-primary">{messages().mailboxStatus}</h3>
+            <StatusBadge
+              tone={healthTone(props.health.health)}
+              label={
+                props.health.health === "active"
+                  ? messages().statusActive
+                  : props.health.health === "paused"
+                    ? messages().mailboxPaused
+                    : messages().needsReview
+              }
+            />
           </div>
-          <p class="mt-1 text-sm text-secondary">
-            {healthPresentation()?.message ||
-              (props.health.health === "active"
-                ? "Provider access and background synchronization are operational."
-                : "Review provider access before relying on delivery or synchronization.")}
-          </p>
+          <p class="mt-1 text-sm text-secondary">{healthMessage()}</p>
           <p class="mt-2 text-xs text-dimmed">
-            {connectedBinding()?.authenticatedPrincipal || "No connected account"}
+            {connectedBinding()?.authenticatedPrincipal || messages().noConnectedAccount}
             {" · "}
-            <Show when={props.health.sync.lastAt} fallback="No successful synchronization yet">
+            <Show when={props.health.sync.lastAt} fallback={messages().noSuccessfulSync}>
               {(lastAt) => (
                 <time datetime={lastAt()} title={dates.formatDateTime(lastAt(), props.dateConfig)}>
-                  Last successful sync {dates.formatDateTimeRelative(lastAt(), props.dateConfig)}
+                  {messages().lastSuccessfulSync({ date: dates.formatDateTimeRelative(lastAt(), props.dateConfig) })}
                 </time>
               )}
             </Show>
@@ -319,18 +386,18 @@ export default function MailOperationalSettings(props: {
             onClick={() => command.mutate({ kind: "sync_mailbox" })}
           >
             <i class={`ti ${syncLoading() ? "ti-loader-2 animate-spin" : "ti-refresh"}`} aria-hidden="true" />
-            Sync now
+            {messages().syncNow}
           </Button>
           <Show
             when={props.mailbox.syncEnabled}
             fallback={
               <Button variant="secondary" size="sm" type="button" disabled={busy()} onClick={() => updateSync.mutate(true)}>
-                <i class="ti ti-player-play" aria-hidden="true" /> Resume mailbox
+                <i class="ti ti-player-play" aria-hidden="true" /> {messages().resumeMailbox}
               </Button>
             }
           >
             <Button variant="secondary" size="sm" type="button" disabled={busy()} onClick={() => void pause()}>
-              <i class="ti ti-player-pause" aria-hidden="true" /> Pause mailbox
+              <i class="ti ti-player-pause" aria-hidden="true" /> {messages().pauseMailbox}
             </Button>
           </Show>
         </div>
@@ -357,12 +424,12 @@ export default function MailOperationalSettings(props: {
 
       <section class="flex flex-col gap-3">
         <div>
-          <h3 class="text-sm font-semibold text-primary">Provider limits</h3>
-          <p class="mt-1 text-xs text-dimmed">Mailbox usage reported by IMAP and outgoing message limits advertised by SMTP.</p>
+          <h3 class="text-sm font-semibold text-primary">{messages().providerLimits}</h3>
+          <p class="mt-1 text-xs text-dimmed">{messages().providerLimitsDescription}</p>
         </div>
         <Show
           when={props.connections.some((connection) => connection.status !== "revoked")}
-          fallback={<p class="text-xs text-secondary">Connect a mail provider to inspect its published limits.</p>}
+          fallback={<p class="text-xs text-secondary">{messages().connectProviderForLimits}</p>}
         >
           <div class="flex flex-col gap-2">
             <For each={props.connections.filter((connection) => connection.status !== "revoked")}>
@@ -383,13 +450,13 @@ export default function MailOperationalSettings(props: {
                         <p class="truncate text-xs text-dimmed">{connection.email}</p>
                       </div>
                       <span class="shrink-0 text-xs text-dimmed">
-                        {providerLimitCheckedLabel(connection.limits.checkedAt, props.dateConfig)}
+                        {providerLimitCheckedLabel(connection.limits.checkedAt, props.dateConfig, messages())}
                       </span>
                       <IconButton
                         type="button"
                         size="sm"
-                        title="Refresh provider limits"
-                        label={`Refresh limits for ${connection.name}`}
+                        title={messages().refreshProviderLimits}
+                        label={messages().refreshLimitsFor({ name: connection.name })}
                         disabled={busy()}
                         onClick={() => {
                           setRefreshingConnectionId(connection.id);
@@ -407,10 +474,10 @@ export default function MailOperationalSettings(props: {
                       fallback={
                         <p class="text-xs text-secondary">
                           {connection.limits.imap.status === "unsupported"
-                            ? "This IMAP server does not publish mailbox storage limits."
+                            ? messages().imapLimitsUnsupported
                             : connection.limits.imap.status === "supported"
-                              ? "No mailbox storage quota was reported."
-                              : "Mailbox storage usage is currently unavailable."}
+                              ? messages().noStorageQuotaReported
+                              : messages().storageUsageUnavailable}
                         </p>
                       }
                     >
@@ -420,10 +487,13 @@ export default function MailOperationalSettings(props: {
                             value={storagePercent()}
                             size="xs"
                             tone={storagePercent() >= 90 ? "danger" : "info"}
-                            label={`${connection.name} mailbox storage`}
+                            label={messages().mailboxStorageLabel({ name: connection.name })}
                           />
                           <span class="text-xs tabular-nums text-secondary">
-                            {text.pprintBytes(quota().used)} of {text.pprintBytes(quota().limit)}
+                            {messages().usedOfLimit({
+                              used: text.pprintBytes(quota().used, { locale: locale() }),
+                              limit: text.pprintBytes(quota().limit, { locale: locale() }),
+                            })}
                           </span>
                         </div>
                       )}
@@ -431,18 +501,20 @@ export default function MailOperationalSettings(props: {
                     <Show when={connection.limits.imap.messages}>
                       {(quota) => (
                         <p class="text-xs tabular-nums text-secondary">
-                          {quota().used} of {quota().limit} messages
+                          {messages().messageQuota({ used: quota().used, limit: quota().limit })}
                         </p>
                       )}
                     </Show>
                     <p class="text-xs text-secondary">
                       {connection.limits.smtp.maxMessageBytes
-                        ? `Maximum outgoing message: ${text.pprintBytes(connection.limits.smtp.maxMessageBytes)} including encoded attachments.`
+                        ? messages().maxOutgoingMessage({
+                            size: text.pprintBytes(connection.limits.smtp.maxMessageBytes, { locale: locale() }),
+                          })
                         : connection.limits.smtp.status === "unsupported"
-                          ? "This SMTP server does not publish an outgoing message limit."
+                          ? messages().smtpLimitUnsupported
                           : connection.limits.smtp.status === "supported"
-                            ? "SMTP size declarations are supported, but no maximum was published."
-                            : "The outgoing message limit is currently unavailable."}
+                            ? messages().noSmtpMaximumReported
+                            : messages().outgoingLimitUnavailable}
                     </p>
                   </div>
                 );
@@ -453,18 +525,18 @@ export default function MailOperationalSettings(props: {
       </section>
 
       <Show when={operatorOperations.loading() && !operatorStatus()}>
-        <Placeholder state="loading" variant="panel" title="Loading mailbox activity" />
+        <Placeholder state="loading" variant="panel" title={messages().loadingMailboxActivity} />
       </Show>
       <Show when={operatorOperations.error()}>
         <Placeholder
           state="error"
           variant="panel"
-          title="Could not load mailbox activity"
-          description={operatorOperations.error()?.message ?? "Try loading the mailbox status again."}
+          title={messages().couldNotLoadMailboxActivity}
+          description={operatorOperations.error()?.message ?? messages().tryLoadMailboxStatusAgain}
           action={
             <Button variant="secondary" size="sm" type="button" onClick={() => void operatorOperations.refresh()}>
               <i class="ti ti-refresh" aria-hidden="true" />
-              Retry
+              {messages().retry}
             </Button>
           }
         />
@@ -473,38 +545,38 @@ export default function MailOperationalSettings(props: {
         {(status) => (
           <section class="flex flex-col gap-3">
             <div>
-              <h3 class="text-sm font-semibold text-primary">Recent activity</h3>
-              <p class="mt-1 text-xs text-dimmed">Synchronization, discovery, and repair work for this mailbox.</p>
+              <h3 class="text-sm font-semibold text-primary">{messages().recentActivity}</h3>
+              <p class="mt-1 text-xs text-dimmed">{messages().recentActivityDescription}</p>
             </div>
             <DataTable
               rows={status().recentCommands}
-              columns={recentActivityColumns}
+              columns={recentActivityColumns(messages())}
               getRowId={(row) => row.id}
               density="compact"
               surface="paper"
               stickyHeader={false}
-              ariaLabel="Recent mailbox activity"
+              ariaLabel={messages().recentMailboxActivity}
               empty={
                 status().sync.lastAt ? (
                   <span class="inline-flex items-center gap-2">
                     <i class="ti ti-circle-check" aria-hidden="true" />
-                    Mailbox synchronized
+                    {messages().mailboxSynchronized}
                     <time class="text-dimmed" datetime={status().sync.lastAt!}>
                       {dates.formatDateTimeRelative(status().sync.lastAt!, props.dateConfig)}
                     </time>
                   </span>
                 ) : (
-                  "No maintenance activity yet."
+                  messages().noMaintenanceActivity
                 )
               }
               renderCell={({ row, col, render }) => {
                 if (col.id === "activity") {
-                  const state = activityState(row.state);
+                  const state = activityState(row.state, messages());
                   const completed = row.state === "confirmed" || row.state === "reconciled";
                   return (
                     <span class="flex min-w-0 items-center gap-2">
                       <i class={`ti ${state.icon} shrink-0`} aria-hidden="true" />
-                      <span class="truncate font-medium text-primary">{activityLabel(row.kind)}</span>
+                      <span class="truncate font-medium text-primary">{activityLabel(row.kind, messages())}</span>
                       <Show when={!completed}>
                         <StatusBadge tone={state.tone} label={state.label} />
                       </Show>
@@ -512,7 +584,11 @@ export default function MailOperationalSettings(props: {
                   );
                 }
                 if (col.id === "detail") {
-                  const detail = row.errorCode ? `Error ${row.errorCode}` : row.attempt > 1 ? `Attempt ${row.attempt}` : null;
+                  const detail = row.errorCode
+                    ? messages().errorCode({ code: row.errorCode })
+                    : row.attempt > 1
+                      ? messages().attempt({ attempt: row.attempt })
+                      : null;
                   return detail ? <span class="text-secondary">{detail}</span> : <span class="text-dimmed">—</span>;
                 }
                 if (col.id === "updatedAt") {
@@ -533,7 +609,7 @@ export default function MailOperationalSettings(props: {
         <summary class="focus-ui flex cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--ui-radius-control)] px-3 py-2.5 text-sm font-medium text-primary">
           <span class="flex items-center gap-2">
             <i class="ti ti-tool" aria-hidden="true" />
-            Advanced diagnostics and repairs
+            {messages().advancedDiagnostics}
           </span>
           <i class="ti ti-chevron-down transition-transform group-open:rotate-180" aria-hidden="true" />
         </summary>
@@ -542,11 +618,13 @@ export default function MailOperationalSettings(props: {
             {(status) => (
               <div class="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p class="text-xs font-semibold text-primary">Repair and projection coverage</p>
+                  <p class="text-xs font-semibold text-primary">{messages().repairCoverage}</p>
                   <p class="mt-1 text-xs text-dimmed">
-                    Hydration {status().coverage.hydration.covered}/{status().coverage.hydration.total}; search{" "}
-                    {status().coverage.search.covered}/{status().coverage.search.total}; threads {status().coverage.threads.covered}/
-                    {status().coverage.threads.total}
+                    {messages().coverageSummary({
+                      hydration: `${status().coverage.hydration.covered}/${status().coverage.hydration.total}`,
+                      search: `${status().coverage.search.covered}/${status().coverage.search.total}`,
+                      threads: `${status().coverage.threads.covered}/${status().coverage.threads.total}`,
+                    })}
                   </p>
                 </div>
                 <div class="flex flex-wrap gap-2">
@@ -561,10 +639,10 @@ export default function MailOperationalSettings(props: {
                         size="sm"
                         type="button"
                         disabled={busy() || !action.eligible}
-                        title={action.reason ?? actionLabel(action.kind)}
+                        title={action.reason ?? actionLabel(action.kind, messages())}
                         onClick={() => operatorCommand.mutate(action)}
                       >
-                        <i class="ti ti-tool" aria-hidden="true" /> {actionLabel(action.kind)}
+                        <i class="ti ti-tool" aria-hidden="true" /> {actionLabel(action.kind, messages())}
                       </Button>
                     )}
                   </For>
@@ -574,10 +652,10 @@ export default function MailOperationalSettings(props: {
           </Show>
 
           <div class="flex flex-col gap-2">
-            <p class="text-xs font-semibold text-primary">Connected accounts</p>
+            <p class="text-xs font-semibold text-primary">{messages().accountsAndIdentities}</p>
             <Show
               when={props.bindings.some((binding) => binding.state !== "revoked")}
-              fallback={<InlineGuidance>No connected account. Connect a provider before running discovery.</InlineGuidance>}
+              fallback={<InlineGuidance>{messages().noConnectedAccountForDiscovery}</InlineGuidance>}
             >
               <For each={props.bindings.filter((binding) => binding.state !== "revoked")}>
                 {(binding) => (
@@ -585,10 +663,10 @@ export default function MailOperationalSettings(props: {
                     <i class="ti ti-server text-lg text-dimmed" aria-hidden="true" />
                     <span class="min-w-0 flex-1">
                       <span class="block truncate text-sm font-medium text-primary">
-                        {binding.authenticatedPrincipal || "Remote mailbox"}
+                        {binding.authenticatedPrincipal || messages().remoteMailbox}
                       </span>
                       <span class="block text-xs text-dimmed">
-                        {binding.state.replaceAll("_", " ")}
+                        {stateLabel(binding.state)}
                         {binding.lastError ? ` · ${binding.lastError}` : ""}
                       </span>
                     </span>
@@ -602,7 +680,7 @@ export default function MailOperationalSettings(props: {
                           disabled={busy()}
                           onClick={() => command.mutate({ kind: "discover_folders", bindingId: binding.id })}
                         >
-                          <i class="ti ti-folders" aria-hidden="true" /> Rediscover
+                          <i class="ti ti-folders" aria-hidden="true" /> {messages().rediscoverFolders}
                         </Button>
                       }
                     >
@@ -612,7 +690,7 @@ export default function MailOperationalSettings(props: {
                         disabled={busy()}
                         onClick={() => command.mutate({ kind: "verify_binding", bindingId: binding.id })}
                       >
-                        <i class="ti ti-shield-check" aria-hidden="true" /> Verify connection
+                        <i class="ti ti-shield-check" aria-hidden="true" /> {messages().verifyConnection}
                       </Button>
                     </Show>
                   </div>
@@ -626,13 +704,10 @@ export default function MailOperationalSettings(props: {
               <>
                 <Show when={status().folders.length > 0}>
                   <div class="flex flex-col gap-2">
-                    <p class="text-xs font-semibold text-primary">Folder maintenance</p>
+                    <p class="text-xs font-semibold text-primary">{messages().folderMaintenance}</p>
                     <NoticeCard tone="neutral" icon={false} bodyClass="flex items-start gap-2">
                       <i class="ti ti-info-circle mt-0.5 shrink-0" aria-hidden="true" />
-                      <p>
-                        <strong>Sync folder</strong> fetches new and changed messages. <strong>Rebuild folder</strong> downloads the folder
-                        again from your mail provider. Try Sync first; use Rebuild when messages stay missing or outdated.
-                      </p>
+                      <p>{messages().folderMaintenanceDescription}</p>
                     </NoticeCard>
                     <For each={status().folders}>
                       {(folder) => (
@@ -640,7 +715,7 @@ export default function MailOperationalSettings(props: {
                           <span class="min-w-0 flex-1 text-xs text-secondary">
                             <span class="block truncate font-medium text-primary">{folder.name}</span>
                             <span>
-                              {folder.discoveryState.replaceAll("_", " ")} · {folder.syncStatus.replaceAll("_", " ")}
+                              {stateLabel(folder.discoveryState)} · {stateLabel(folder.syncStatus)}
                             </span>
                           </span>
                           <For each={folder.actions}>
@@ -650,10 +725,10 @@ export default function MailOperationalSettings(props: {
                                 size="sm"
                                 type="button"
                                 disabled={busy() || !action.eligible}
-                                title={action.reason ?? actionLabel(action.kind)}
+                                title={action.reason ?? actionLabel(action.kind, messages())}
                                 onClick={() => operatorCommand.mutate(action)}
                               >
-                                <i class="ti ti-tool" aria-hidden="true" /> {actionLabel(action.kind)}
+                                <i class="ti ti-tool" aria-hidden="true" /> {actionLabel(action.kind, messages())}
                               </Button>
                             )}
                           </For>
@@ -665,25 +740,25 @@ export default function MailOperationalSettings(props: {
 
                 <Show when={status().attentionCommands.length > 0}>
                   <div class="flex flex-col gap-2">
-                    <p class="text-xs font-semibold text-primary">Needs attention</p>
+                    <p class="text-xs font-semibold text-primary">{messages().needsReview}</p>
                     <For each={status().attentionCommands}>
                       {(item) => {
-                        const state = activityState(item.state);
+                        const state = activityState(item.state, messages());
                         return (
                           <div class="flex flex-wrap items-center gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] px-3 py-2.5">
                             <span class="min-w-64 flex-1">
                               <span class="flex flex-wrap items-center gap-2">
-                                <span class="text-sm font-medium text-primary">{activityLabel(item.kind)}</span>
+                                <span class="text-sm font-medium text-primary">{activityLabel(item.kind, messages())}</span>
                                 <StatusBadge tone={state.tone} label={state.label} />
                               </span>
                               <span class="mt-0.5 block text-xs text-secondary">
                                 <time datetime={item.updatedAt} title={dates.formatDateTime(item.updatedAt, props.dateConfig)}>
-                                  Updated {formatHealthEventAge(item.updatedAt)}
+                                  {messages().updatedAtRelative({ date: dates.formatDateTimeRelative(item.updatedAt, props.dateConfig) })}
                                 </time>
-                                {item.errorCode ? ` · ${errorLabel(item.errorCode)}` : ""}
+                                {item.errorCode ? ` · ${item.errorCode}` : ""}
                               </span>
                               <span class="block truncate text-[11px] text-dimmed" title={item.id}>
-                                Command {item.id}
+                                {messages().commandId({ id: item.id })}
                               </span>
                             </span>
                             <div class="flex flex-wrap gap-2">
@@ -696,7 +771,7 @@ export default function MailOperationalSettings(props: {
                                     disabled={busy()}
                                     onClick={() => operatorCommand.mutate(action)}
                                   >
-                                    {actionLabel(action.kind)}
+                                    {actionLabel(action.kind, messages())}
                                   </Button>
                                 )}
                               </For>
@@ -718,7 +793,7 @@ export default function MailOperationalSettings(props: {
                           class={operatorOperations.loadingMore() ? "ti ti-loader-2 animate-spin" : "ti ti-chevron-down"}
                           aria-hidden="true"
                         />
-                        Load more attention items
+                        {messages().loadMoreAttentionItems}
                       </Button>
                     </Show>
                   </div>

@@ -1,13 +1,15 @@
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, DataTable, type DataTableColumn, Placeholder, StatCell, StatGrid, StatusBadge, type StatusTone } from "@k2b/ui";
-import { type AuthContext, getDateConfig } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { AdminLayout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
 import { ssr } from "../config";
 import type { PlatformMailboxOperationSummary } from "../contracts";
 import { type MailRequestContext, operations, storageObservability } from "../service";
+import { localizeMailError } from "../service/error-messages";
 import MailAdminMailboxActions from "./_components/MailAdminMailboxActions.island";
 import MailAdminStorageActions from "./_components/MailAdminStorageActions.island";
+import { mailPageMessages } from "./pages-messages";
 
 const PAGE_SIZE = 50;
 
@@ -18,14 +20,17 @@ const healthTone = (health: PlatformMailboxOperationSummary["health"]): StatusTo
   return "error";
 };
 
-const formatBytes = (value: number): string => {
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+const formatBytes = (value: number, locale: string): string => {
+  const format = (number: number, maximumFractionDigits: number) => new Intl.NumberFormat(locale, { maximumFractionDigits }).format(number);
+  if (value < 1024) return `${format(value, 0)} B`;
+  if (value < 1024 * 1024) return `${format(value / 1024, 1)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${format(value / (1024 * 1024), 1)} MB`;
+  return `${format(value / (1024 * 1024 * 1024), 2)} GB`;
 };
 
 export default ssr<AuthContext>(async (c) => {
+  const locale = getLocale(c);
+  const { t } = mailPageMessages.resolve([locale]);
   const dateConfig = getDateConfig(c);
   const context: MailRequestContext = {
     actor: c.get("actor"),
@@ -49,27 +54,27 @@ export default ssr<AuthContext>(async (c) => {
     (error): error is NonNullable<typeof error> => error !== null,
   );
   const accessDenied = loadErrors.some((error) => error.code === "FORBIDDEN");
-  const loadErrorDescription = [...new Set(loadErrors.map((error) => error.message))].join(" ");
+  const loadErrorDescription = [...new Set(loadErrors.map((error) => localizeMailError(error, locale).message))].join(" ");
   const columns: DataTableColumn<PlatformMailboxOperationSummary>[] = [
-    { id: "mailbox", header: "Mailbox", value: (row) => row.mailboxName },
-    { id: "health", header: "Health", value: (row) => row.health },
-    { id: "sync", header: "Last sync", value: (row) => row.sync.lastAt ?? "" },
-    { id: "access", header: "Access", value: (row) => row.access.total },
+    { id: "mailbox", header: t.adminMailboxes, value: (row) => row.mailboxName },
+    { id: "health", header: t.health, value: (row) => row.health },
+    { id: "sync", header: t.lastSync, value: (row) => row.sync.lastAt ?? "" },
+    { id: "access", header: t.access, value: (row) => row.access.total },
     {
       id: "storage",
-      header: "Storage",
+      header: t.storage,
       value: (row) => row.storage?.logicalTotalBytes ?? -1,
       headerClass: "text-right",
       cellClass: "text-right",
     },
     {
       id: "attention",
-      header: "Attention",
+      header: t.attention,
       value: (row) => row.attentionCount,
       headerClass: "text-right",
       cellClass: "text-right",
     },
-    { id: "actions", header: "Settings", headerClass: "w-px text-right", cellClass: "text-right" },
+    { id: "actions", header: t.settings, headerClass: "w-px text-right", cellClass: "text-right" },
   ];
 
   return () => (
@@ -77,14 +82,12 @@ export default ssr<AuthContext>(async (c) => {
       <div class="app-rows" data-scroll-preserve="mail-admin">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h1 class="text-base font-semibold text-primary">Mailboxes</h1>
-            <p class="text-xs text-dimmed">
-              Recover access and inspect redacted operational status without opening message or attachment content.
-            </p>
+            <h1 class="text-base font-semibold text-primary">{t.adminMailboxes}</h1>
+            <p class="text-xs text-dimmed">{t.adminDescription}</p>
           </div>
           <div class="flex flex-wrap gap-2">
             <ButtonLink href="/admin/mail/security" variant="secondary" size="sm">
-              <i class="ti ti-shield-lock" aria-hidden="true" /> Security
+              <i class="ti ti-shield-lock" aria-hidden="true" /> {t.security}
             </ButtonLink>
             <MailAdminStorageActions />
           </div>
@@ -94,22 +97,22 @@ export default ssr<AuthContext>(async (c) => {
           <Placeholder
             state="error"
             variant="panel"
-            title="Mail administration is unavailable"
-            description={loadErrorDescription || "Cloud administration access is required"}
+            title={t.adminUnavailable}
+            description={loadErrorDescription || t.cloudAdminRequired}
           />
         ) : (
           <>
             <StatGrid columns={6}>
               <StatCell
-                label="Mailboxes"
-                value={operationsResult.ok ? operationsResult.data.mailboxCount : "Unavailable"}
-                sub="active"
+                label={t.adminMailboxes}
+                value={operationsResult.ok ? operationsResult.data.mailboxCount : t.unavailable}
+                sub={t.active}
                 accent={{ tone: "blue", icon: "ti ti-mail" }}
               />
               <StatCell
-                label="Need owner"
-                value={operationsResult.ok ? operationsResult.data.withoutAdministratorCount : "Unavailable"}
-                sub="no administrator"
+                label={t.needOwner}
+                value={operationsResult.ok ? operationsResult.data.withoutAdministratorCount : t.unavailable}
+                sub={t.noAdministrator}
                 valueClass={operationsResult.ok && operationsResult.data.withoutAdministratorCount > 0 ? "text-red-500" : "text-primary"}
                 accent={
                   operationsResult.ok && operationsResult.data.withoutAdministratorCount > 0
@@ -118,26 +121,30 @@ export default ssr<AuthContext>(async (c) => {
                 }
               />
               <StatCell
-                label="Need attention"
-                value={operationsResult.ok ? operationsResult.data.attentionCount : "Unavailable"}
-                sub="failed or ambiguous commands"
+                label={t.needAttention}
+                value={operationsResult.ok ? operationsResult.data.attentionCount : t.unavailable}
+                sub={t.failedCommands}
                 accent={{ tone: "amber", icon: "ti ti-alert-triangle" }}
               />
               <StatCell
-                label="Logical storage"
-                value={logicalStorage == null ? "Unavailable" : formatBytes(logicalStorage)}
-                sub={storage?.calculatedAt ? `updated ${dates.formatDateTimeRelative(storage.calculatedAt, dateConfig)}` : "not reconciled"}
+                label={t.logicalStorage}
+                value={logicalStorage == null ? t.unavailable : formatBytes(logicalStorage, locale)}
+                sub={
+                  storage?.calculatedAt
+                    ? t.updated({ value: dates.formatDateTimeRelative(storage.calculatedAt, dateConfig) })
+                    : t.notReconciled
+                }
                 accent={{ tone: "zinc", icon: "ti ti-database" }}
               />
               <StatCell
-                label="Mail relations"
-                value={storage ? formatBytes(storage.physicalDatabaseBytes) : "Unavailable"}
-                sub="physical database"
+                label={t.mailRelations}
+                value={storage ? formatBytes(storage.physicalDatabaseBytes, locale) : t.unavailable}
+                sub={t.physicalDatabase}
               />
               <StatCell
-                label="Blob bytes"
-                value={storage ? formatBytes(storage.physicalBlobBytes) : "Unavailable"}
-                sub="physical content store"
+                label={t.blobBytes}
+                value={storage ? formatBytes(storage.physicalBlobBytes, locale) : t.unavailable}
+                sub={t.physicalContentStore}
               />
             </StatGrid>
 
@@ -145,16 +152,16 @@ export default ssr<AuthContext>(async (c) => {
               <section class="paper overflow-hidden">
                 <div class="flex flex-col gap-2 px-3 py-3">
                   <div>
-                    <h2 class="text-xs font-semibold text-primary">Active mailboxes</h2>
+                    <h2 class="text-xs font-semibold text-primary">{t.activeMailboxes}</h2>
                     <p class="text-[10px] text-dimmed">
-                      {mailboxes.length} of {operationsResult.data.mailboxCount} mailboxes
+                      {t.mailboxCount({ count: mailboxes.length, total: operationsResult.data.mailboxCount })}
                     </p>
                   </div>
                   <SearchBar
                     action="/admin/mail"
                     value={query}
-                    placeholder="Search mailboxes by name or id..."
-                    ariaLabel="Search mailboxes"
+                    placeholder={t.searchMailboxesPlaceholder}
+                    ariaLabel={t.searchMailboxesLabel}
                   />
                 </div>
                 <DataTable
@@ -163,7 +170,7 @@ export default ssr<AuthContext>(async (c) => {
                   getRowId={(row) => row.mailboxId}
                   hoverRows
                   class="overflow-x-auto"
-                  empty={query ? `No mailboxes matching "${query}".` : "No active Mail mailboxes."}
+                  empty={query ? t.noMatchingMailboxes({ query }) : t.noActiveMailboxes}
                   renderCell={({ row, col }) => {
                     if (col.id === "mailbox")
                       return (
@@ -180,7 +187,21 @@ export default ssr<AuthContext>(async (c) => {
                         <StatusBadge
                           class="whitespace-nowrap capitalize"
                           tone={healthTone(row.health)}
-                          label={row.health.replaceAll("_", " ")}
+                          label={
+                            row.health === "active"
+                              ? t.healthActive
+                              : row.health === "paused"
+                                ? t.healthPaused
+                                : row.health === "degraded"
+                                  ? t.healthDegraded
+                                  : row.health === "reconnecting"
+                                    ? t.healthReconnecting
+                                    : row.health === "verifying"
+                                      ? t.healthVerifying
+                                      : row.health === "bootstrapping"
+                                        ? t.healthBootstrapping
+                                        : t.healthUnknown
+                          }
                         />
                       );
                     if (col.id === "sync")
@@ -193,19 +214,21 @@ export default ssr<AuthContext>(async (c) => {
                           {dates.formatDateTimeRelative(row.sync.lastAt, dateConfig)}
                         </time>
                       ) : (
-                        <span class="text-dimmed">Never</span>
+                        <span class="text-dimmed">{t.never}</span>
                       );
                     if (col.id === "access")
                       return (
                         <span
                           class={`whitespace-nowrap text-xs ${row.access.administrators === 0 ? "font-medium text-red-500" : "text-secondary"}`}
                         >
-                          {row.access.administrators} admin · {row.access.total} total
+                          {t.accessCounts({ administrators: row.access.administrators, total: row.access.total })}
                         </span>
                       );
                     if (col.id === "storage")
                       return (
-                        <span class="tabular-nums text-secondary">{row.storage ? formatBytes(row.storage.logicalTotalBytes) : "—"}</span>
+                        <span class="tabular-nums text-secondary">
+                          {row.storage ? formatBytes(row.storage.logicalTotalBytes, locale) : "—"}
+                        </span>
                       );
                     if (col.id === "attention")
                       return (
@@ -229,7 +252,7 @@ export default ssr<AuthContext>(async (c) => {
                         cursor: operationsResult.data.nextCursor,
                       }).toString()}`}
                     >
-                      Next page
+                      {t.nextPage}
                     </ButtonLink>
                   </div>
                 ) : null}
@@ -242,7 +265,7 @@ export default ssr<AuthContext>(async (c) => {
                 variant="compact"
                 surface="paper"
                 align="left"
-                title="Could not load all Mail administration data"
+                title={t.partialAdminError}
                 description={loadErrorDescription}
               />
             ) : null}

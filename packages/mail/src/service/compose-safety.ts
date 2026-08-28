@@ -1,5 +1,5 @@
 import { domainToASCII } from "node:url";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import { type SQL, sql } from "bun";
 import {
   type ComposeSafetyApproval,
@@ -26,6 +26,36 @@ type SafetyDraft = {
   body_format: "plain" | "markdown";
   attachment_names: string[] | null;
 };
+
+const safetyMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      missingAttachmentTitle: "No attachment added",
+      missingAttachmentDescription: "The message mentions an attachment, but no file is attached.",
+      recipientCount: ({ count }: { count: number }) => `${count} recipients`,
+      recipientCountDescription: "Review the recipient list. For a private bulk message, consider using Bcc.",
+      externalRecipientCount: ({ count }: { count: number }) => `${count} external recipient${count === 1 ? "" : "s"}`,
+      externalRecipientDescription: "This message leaves the internal domains configured for the mailbox.",
+      replyAllTitle: "Replying to everyone",
+      replyAllDescription: ({ count }: { count: number }) => `This reply will be sent to ${count} people. Check whether everyone needs it.`,
+      suspiciousLinkTitle: "Review message links",
+      suspiciousLinkDescription: "A link uses an unusual destination or its visible address does not match where it opens.",
+    },
+    de: {
+      missingAttachmentTitle: "Kein Anhang hinzugefügt",
+      missingAttachmentDescription: "Die E-Mail erwähnt einen Anhang, enthält aber keine Datei.",
+      recipientCount: ({ count }) => `${count} Empfänger`,
+      recipientCountDescription: "Prüfe die Empfängerliste. Verwende für eine vertrauliche Rundmail gegebenenfalls Bcc.",
+      externalRecipientCount: ({ count }) => `${count} ${count === 1 ? "externer Empfänger" : "externe Empfänger"}`,
+      externalRecipientDescription: "Diese E-Mail verlässt die für das Postfach festgelegten internen Domains.",
+      replyAllTitle: "Antwort an alle",
+      replyAllDescription: ({ count }) => `Diese Antwort wird an ${count} Personen gesendet. Prüfe, ob alle sie benötigen.`,
+      suspiciousLinkTitle: "Links in der E-Mail prüfen",
+      suspiciousLinkDescription: "Ein Link verwendet ein ungewöhnliches Ziel oder seine sichtbare Adresse stimmt nicht mit dem Ziel überein.",
+    },
+  },
+});
 
 export type ComposeSafetySource = {
   draftId: string;
@@ -106,21 +136,22 @@ const suspiciousLink = (body: string, format: "plain" | "markdown"): boolean => 
   });
 };
 
-export const evaluateComposeSafety = (source: ComposeSafetySource): ComposeSafetyReview => {
+export const evaluateComposeSafety = (source: ComposeSafetySource, locale = "en"): ComposeSafetyReview => {
+  const t = safetyMessages.resolve([locale]).t;
   const warnings: ComposeSafetyWarning[] = [];
   const recipients = uniqueRecipients(source);
   if (source.attachmentNames.length === 0 && mentionsAttachment(source.body)) {
     warnings.push({
       id: "missing_attachment",
-      title: "No attachment added",
-      description: "The message mentions an attachment, but no file is attached.",
+      title: t.missingAttachmentTitle,
+      description: t.missingAttachmentDescription,
     });
   }
   if (recipients.length >= source.config.largeRecipientThreshold) {
     warnings.push({
       id: "large_recipient_set",
-      title: `${recipients.length} recipients`,
-      description: "Review the recipient list. For a private bulk message, consider using Bcc.",
+      title: t.recipientCount({ count: recipients.length }),
+      description: t.recipientCountDescription,
     });
   }
   const internalDomains = new Set(source.config.internalDomains.map(normalizeDomain).filter((domain): domain is string => Boolean(domain)));
@@ -134,22 +165,22 @@ export const evaluateComposeSafety = (source: ComposeSafetySource): ComposeSafet
   if (externalCount > 0) {
     warnings.push({
       id: "external_recipients",
-      title: `${externalCount} external recipient${externalCount === 1 ? "" : "s"}`,
-      description: "This message leaves the internal domains configured for the mailbox.",
+      title: t.externalRecipientCount({ count: externalCount }),
+      description: t.externalRecipientDescription,
     });
   }
   if (source.intent === "reply_all" && recipients.length > 2) {
     warnings.push({
       id: "reply_all",
-      title: "Replying to everyone",
-      description: `This reply will be sent to ${recipients.length} people. Check whether everyone needs it.`,
+      title: t.replyAllTitle,
+      description: t.replyAllDescription({ count: recipients.length }),
     });
   }
   if (suspiciousLink(source.body, source.format)) {
     warnings.push({
       id: "suspicious_link",
-      title: "Review message links",
-      description: "A link uses an unusual destination or its visible address does not match where it opens.",
+      title: t.suspiciousLinkTitle,
+      description: t.suspiciousLinkDescription,
     });
   }
   const fingerprint = sha256Json({
@@ -222,6 +253,7 @@ export const reviewDraftComposeSafety = async (params: {
   mailboxId: string;
   draftId: string;
   expectedRevision: number;
+  locale?: string;
 }): Promise<Result<ComposeSafetyReview>> => {
   return sql.begin(async (tx) => {
     const allowed = await requireMailboxPermission(params.context, params.mailboxId, "write", tx);
@@ -229,7 +261,7 @@ export const reviewDraftComposeSafety = async (params: {
     const source = await loadSafetySource({ db: tx, mailboxId: params.mailboxId, draftId: params.draftId });
     if (!source.ok) return source;
     if (source.data.revision !== params.expectedRevision) return fail(err.conflict("Draft changed before safety review"));
-    return ok(evaluateComposeSafety(source.data));
+    return ok(evaluateComposeSafety(source.data, params.locale));
   });
 };
 

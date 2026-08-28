@@ -28,10 +28,31 @@ describe("MailMessageBody sizing", () => {
   });
 
   test("collapses only explicit HTML quote containers", () => {
-    const document = buildMessageDocument('<p>New content</p><blockquote type="cite">Old content</blockquote>', "test-channel");
+    const document = buildMessageDocument(
+      '<p>Neuer Inhalt</p><blockquote type="cite">Alter Inhalt</blockquote>',
+      "test-channel",
+      false,
+      "de",
+      "Zitierten Text anzeigen",
+    );
 
-    expect(document).toContain("Show quoted text");
+    expect(document).toContain('<html lang="de">');
+    expect(document).toContain('summary.textContent = "Zitierten Text anzeigen"');
     expect(document).toContain('blockquote[type="cite"], .gmail_quote, .yahoo_quoted');
+  });
+
+  test("escapes iframe language and quote labels at their output boundaries", () => {
+    const document = buildMessageDocument(
+      "<p>Safe content</p>",
+      "test-channel",
+      false,
+      'de\" onload=\"alert(1)',
+      "</script><script>alert(1)</script>",
+    );
+
+    expect(document).toContain('<html lang="de&quot; onload=&quot;alert(1)">');
+    expect(document).toContain('summary.textContent = "\\u003c/script>\\u003cscript>alert(1)\\u003c/script>"');
+    expect(document).not.toContain('summary.textContent = "</script>');
   });
 
   test("allows only the app-owned iframe bridge script", () => {

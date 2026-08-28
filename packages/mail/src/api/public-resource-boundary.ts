@@ -1,10 +1,11 @@
 import { err, fail, type Result, type ServiceError } from "@k2b/stdlib";
-import { type ApiErrorResponse, type AuthContext, respond } from "@valentinkolb/cloud/server";
+import { type ApiErrorResponse, type AuthContext, getLocale, respond } from "@valentinkolb/cloud/server";
 import type { Context, Next, TypedResponse } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { ResourceShortIdSchema } from "../contracts";
 import { publicResources } from "../service";
+import { localizeMailError } from "../service/error-messages";
 
 export type MailApiContext = AuthContext & {
   Variables: AuthContext["Variables"] & Partial<Record<InternalVariable, string>>;
@@ -156,7 +157,7 @@ export const resolvePublicRelations = async <T>(mailboxId: string, value: T): Pr
 
 export const internalInput = async <T>(c: Context<MailApiContext>, value: T): Promise<T> => {
   const resolved = await resolvePublicRelations(internalMailboxId(c), value);
-  if (!resolved) throw new HTTPException(404, { message: "Mail resource not found" });
+  if (!resolved) throw new HTTPException(404, { message: localizeMailError(err.notFound("Mail resource"), getLocale(c)).message });
   return resolved;
 };
 
@@ -333,7 +334,8 @@ export async function respondPublic<T>(
   result: Result<T> | Promise<Result<T>>,
   rootTable?: RelationTable,
 ): Promise<PublicSuccessResponse<T> | ApiErrorResponse> {
-  return respond<T, ServiceError>(c, await projectPublicResult(await result, rootTable));
+  const projected = await projectPublicResult(await result, rootTable);
+  return respond<T, ServiceError>(c, projected.ok ? projected : { ok: false, error: localizeMailError(projected.error, getLocale(c)) });
 }
 
 const requiredInternalId = (c: Context<MailApiContext>, variable: InternalVariable): string => {
@@ -355,7 +357,7 @@ export const internalParams = <T extends Record<string, unknown>>(c: Context<Mai
 export const resolveMailboxParam = async (c: Context<MailApiContext>, next: Next) => {
   const shortId = c.req.param("mailboxId");
   const mailboxId = shortId ? await publicResources.resolvePublicId("mailboxes", shortId) : null;
-  if (!mailboxId) return respond(c, fail(err.notFound("Mailbox")));
+  if (!mailboxId) return respondPublic(c, fail(err.notFound("Mailbox")));
   c.set("internalMailboxId", mailboxId);
   await next();
 };
@@ -365,7 +367,7 @@ export const resolveMailboxResourceParam =
   async (c: Context<MailApiContext>, next: Next) => {
     const shortId = c.req.param(param);
     const id = shortId ? await publicResources.resolveMailboxPublicId(table, internalMailboxId(c), shortId) : null;
-    if (!id) return respond(c, fail(err.notFound(label)));
+    if (!id) return respondPublic(c, fail(err.notFound(label)));
     c.set(resolvedParamVariables[param], id);
     await next();
   };
@@ -373,7 +375,7 @@ export const resolveMailboxResourceParam =
 export const resolveReminderNotificationSourceParam = async (c: Context<MailApiContext>, next: Next) => {
   const shortId = c.req.param("sourceId");
   const id = shortId ? await publicResources.resolveReminderNotificationSourceId(internalMailboxId(c), shortId) : null;
-  if (!id) return respond(c, fail(err.notFound("Reminder")));
+  if (!id) return respondPublic(c, fail(err.notFound("Reminder")));
   c.set("internalReminderId", id);
   await next();
 };

@@ -1,8 +1,9 @@
+import { IconButton, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { suggestContacts } from "./contact-capabilities";
+import { mailComposerMessages } from "./mail-composer-messages";
 import { commitMailRecipient, shouldCommitMailRecipient } from "./mail-recipient";
 
-import { IconButton } from "@k2b/ui";
 type RecipientSuggestion = { label: string; address: string; context: string | null };
 
 export default function MailRecipientInput(props: {
@@ -11,6 +12,8 @@ export default function MailRecipientInput(props: {
   placeholder: string;
   disabled?: boolean;
 }) {
+  const locale = useLocale();
+  const t = () => mailComposerMessages.resolve([locale()]).t;
   const errorId = `${props.placeholder.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-")}-recipient-error`;
   const [query, setQuery] = createSignal("");
   const [suggestions, setSuggestions] = createSignal<RecipientSuggestion[]>([]);
@@ -26,7 +29,7 @@ export default function MailRecipientInput(props: {
   const add = (raw: string) => {
     const next = commitMailRecipient(props.value(), raw, editingIndex());
     if (!next) {
-      setValidationError("Enter a valid email address.");
+      setValidationError(t().enterValidEmail);
       return;
     }
     props.onChange(next);
@@ -168,8 +171,8 @@ export default function MailRecipientInput(props: {
                     }}
                     type="button"
                     class="mail-recipient-pill min-w-0 flex-1 truncate rounded text-left"
-                    aria-label={`Edit ${recipient}`}
-                    title={`${recipient} — click or press Enter to edit`}
+                    aria-label={t().editRecipient({ recipient })}
+                    title={t().editRecipientHint({ recipient })}
                     disabled={props.disabled}
                     onClick={() => edit(index())}
                     onKeyDown={(event) => handlePillKeyDown(event, index())}
@@ -179,7 +182,7 @@ export default function MailRecipientInput(props: {
                   <IconButton
                     type="button"
                     class="!h-5 !w-5 !p-0"
-                    label={`Remove ${recipient}`}
+                    label={t().removeRecipient({ recipient })}
                     disabled={props.disabled}
                     onClick={() => remove(index())}
                   >
@@ -193,7 +196,7 @@ export default function MailRecipientInput(props: {
                 class="mail-recipient-edit h-7 min-w-40 max-w-72 rounded-[var(--ui-radius-control)] px-2 text-xs outline-none"
                 value={query()}
                 disabled={props.disabled}
-                aria-label={`Edit ${recipient}`}
+                aria-label={t().editRecipient({ recipient })}
                 aria-invalid={Boolean(validationError())}
                 aria-describedby={validationError() ? errorId : undefined}
                 autocomplete="off"
@@ -223,7 +226,7 @@ export default function MailRecipientInput(props: {
             ref={input}
             class="h-7 min-w-32 flex-1 bg-transparent px-1 text-sm outline-none"
             value={query()}
-            placeholder={props.value().length === 0 ? props.placeholder : "Add recipient"}
+            placeholder={props.value().length === 0 ? props.placeholder : t().addAnotherRecipient}
             disabled={props.disabled}
             aria-label={props.placeholder}
             aria-invalid={Boolean(validationError())}

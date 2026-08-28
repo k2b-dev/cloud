@@ -15,6 +15,7 @@ const timestamp = (value: string): number => {
 export const buildMailConversationTimeline = <T extends TimelineMessage>(
   messages: readonly T[],
   activity: readonly MailActivityEvent[],
+  locale = "en",
 ): MailConversationTimelineItem<T>[] => {
   const items: MailConversationTimelineItem<T>[] = [
     ...messages.map((message) => ({
@@ -27,7 +28,7 @@ export const buildMailConversationTimeline = <T extends TimelineMessage>(
       kind: "activity" as const,
       id: `activity:${event.id}`,
       occurredAt: event.createdAt,
-      activity: presentMailActivity([event])[0]!,
+      activity: presentMailActivity([event], locale)[0]!,
     })),
   ].sort((left, right) => timestamp(right.occurredAt) - timestamp(left.occurredAt) || right.id.localeCompare(left.id));
 

@@ -15,6 +15,7 @@ import {
   type StatusTone,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
@@ -23,6 +24,7 @@ import type { DiscoveredMailConfiguration } from "../../service/onboarding-disco
 import { readApiError } from "./api-response";
 import { connectionEditorDialogOptions, type ProviderSettingsProps } from "./mail-provider-settings-shared";
 import { deriveDefaultSenderSetupState } from "./mail-provider-setup";
+import { mailSettingsMessages } from "./mail-settings-messages";
 
 const connectionStatusTone = (status: ProviderConnection["status"]): StatusTone => {
   if (status === "active") return "ok";
@@ -31,6 +33,17 @@ const connectionStatusTone = (status: ProviderConnection["status"]): StatusTone 
 };
 
 export function MailConnectionSettings(props: ProviderSettingsProps) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
+  const connectionStateLabel = (state: ProviderConnection["status"] | "pending" | "verifying" | "expiring" | "reconnect_required") => {
+    if (state === "active") return messages().statusActive;
+    if (state === "degraded") return messages().statusDegraded;
+    if (state === "revoked") return messages().statusRevoked;
+    if (state === "pending") return messages().statusPending;
+    if (state === "verifying") return messages().statusVerifying;
+    if (state === "expiring") return messages().statusExpiring;
+    return messages().statusReconnectRequired;
+  };
   const [editing, setEditing] = createSignal(false);
   const [replacingConnectionId, setReplacingConnectionId] = createSignal<string | null>(null);
   const [name, setName] = createSignal(props.mailbox.name);
@@ -139,15 +152,15 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not discover provider settings"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedDiscoverProviderSettings));
       return response.json();
     },
     onSuccess: (candidates) => {
       const candidate = candidates[0];
       if (!candidate) {
         setDiscoverySource(null);
-        return void toast("No provider configuration was published. Enter the server settings manually.", {
-          title: "No settings found",
+        return void toast(messages().noProviderConfiguration, {
+          title: messages().noSettingsFound,
         });
       }
       setUsername(candidate.username);
@@ -160,7 +173,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
       setAuth(candidate.authentication.includes("password") ? "password" : "oauth2");
       setOAuthProviderId(candidate.oauthProviderId);
       setDiscoverySource(candidate.source.replaceAll("_", " "));
-      toast.success("Provider settings found");
+      toast.success(messages().providerSettingsFound);
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -207,7 +220,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
         { param: { mailboxId: props.mailbox.id }, json },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not start browser OAuth"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedStartOAuth));
       const result = await response.json();
       if (abortSignal.aborted) return;
       window.location.assign(result.authorizationUrl);
@@ -223,7 +236,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
       },
       { init: { signal: abortSignal } },
     );
-    if (!response.ok) throw new Error(await readApiError(response, "Default identity setup failed"));
+    if (!response.ok) throw new Error(await readApiError(response, messages().defaultIdentitySetupFailed));
     return response.json();
   };
 
@@ -240,10 +253,10 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
       { init: { signal: abortSignal } },
     );
     if (!bindingResponse.ok) {
-      const reason = await readApiError(bindingResponse, "Folder discovery failed");
+      const reason = await readApiError(bindingResponse, messages().folderDiscoveryFailed);
       return {
         senderCreated: false,
-        setupError: `Account connected, but incoming mail setup still needs attention. ${reason}`,
+        setupError: messages().incomingSetupNeedsAttention({ reason }),
       };
     }
     const binding = await bindingResponse.json();
@@ -254,7 +267,9 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
     } catch (error) {
       return {
         senderCreated: false,
-        setupError: `Receiving is active, but sending still needs setup. ${error instanceof Error ? error.message : "Default identity setup failed"}`,
+        setupError: messages().sendingSetupNeedsAttention({
+          reason: error instanceof Error ? error.message : messages().defaultIdentitySetupFailed,
+        }),
       };
     }
   };
@@ -286,7 +301,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
             },
             { init: { signal: abortSignal } },
           );
-      if (!connectionResponse.ok) throw new Error(await readApiError(connectionResponse, "Provider verification failed"));
+      if (!connectionResponse.ok) throw new Error(await readApiError(connectionResponse, messages().providerVerificationFailed));
       const created = await connectionResponse.json();
       if (replacementId) return { senderCreated: false, setupError: null, replaced: true };
       return { ...(await attachConnection(created.connection.id, createSender(), abortSignal)), replaced: false };
@@ -295,10 +310,10 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
       if (!result.setupError) {
         toast.success(
           result.replaced
-            ? "Connected account updated"
+            ? messages().connectedAccountUpdated
             : result.senderCreated
-              ? "Provider and default identity connected"
-              : "Provider connected",
+              ? messages().providerAndIdentityConnected
+              : messages().providerConnected,
         );
       }
       closeConnectionDialog?.();
@@ -318,21 +333,22 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
 
   const revoke = mutation.create<boolean, string>({
     mutation: async (connectionId, { abortSignal }) => {
-      const confirmed = await prompts.confirm(
-        "This permanently removes the encrypted credential, disconnects the remote mailbox, and stops provider operations until another connection is configured.",
-        { title: "Remove provider connection?", confirmText: "Remove connection", variant: "danger" },
-      );
+      const confirmed = await prompts.confirm(messages().removeProviderConnectionDescription, {
+        title: messages().removeProviderConnection,
+        confirmText: messages().removeConnection,
+        variant: "danger",
+      });
       if (!confirmed || abortSignal.aborted) return false;
       const response = await apiClient.mailboxes[":mailboxId"].connections[":connectionId"].$delete(
         { param: { mailboxId: props.mailbox.id, connectionId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to remove provider connection"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedRemoveProviderConnection));
       return true;
     },
     onSuccess: async (revoked) => {
       if (!revoked) return;
-      toast.success("Provider connection removed");
+      toast.success(messages().providerConnectionRemoved);
       props.onWorkspaceChange();
       await props.onReload();
     },
@@ -342,7 +358,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
   const finishSetup = mutation.create<{ senderCreated: boolean; setupError: string | null }, string>({
     mutation: (connectionId, { abortSignal }) => attachConnection(connectionId, false, abortSignal),
     onSuccess: (result) => {
-      if (!result.setupError) toast.success(result.senderCreated ? "Provider and default identity connected" : "Provider connected");
+      if (!result.setupError) toast.success(result.senderCreated ? messages().providerAndIdentityConnected : messages().providerConnected);
       props.onWorkspaceChange();
       void props.onReload();
       if (result.setupError) void prompts.error(result.setupError);
@@ -353,11 +369,11 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
   const setupSender = mutation.create<SenderIdentity, string>({
     mutation: (bindingId, { abortSignal }) => requestDefaultSenderSetup(bindingId, abortSignal),
     onSuccess: (identity) => {
-      toast.success(`${identity.fromAddress} is ready to send`);
+      toast.success(messages().readyToSend({ address: identity.fromAddress }));
       props.onWorkspaceChange();
       void props.onReload();
     },
-    onError: (error) => prompts.error(`Receiving remains active. ${error.message}`),
+    onError: (error) => prompts.error(messages().receivingRemainsActive({ reason: error.message })),
   });
   onCleanup(() => {
     discover.abort();
@@ -376,17 +392,17 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
         return (
           <PanelDialog>
             <PanelDialog.Header
-              title={replacingConnectionId() ? "Edit connected account" : "Connect account"}
-              subtitle="Verify incoming and outgoing mail before saving"
+              title={replacingConnectionId() ? messages().editConnectedAccount : messages().connectAccount}
+              subtitle={messages().verifyMailBeforeSaving}
               icon="ti ti-server-cog"
               close={() => void closeEditor()}
             />
             <PanelDialog.Body>
-              <PanelDialog.Section title="Account" subtitle="The mailbox address and provider login." icon="ti ti-at">
+              <PanelDialog.Section title={messages().account} subtitle={messages().accountSubtitle} icon="ti ti-at">
                 <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <TextInput
-                    label="Label"
-                    description="The private name shown to mailbox administrators."
+                    label={messages().label}
+                    description={messages().accountLabelDescription}
                     value={name}
                     onValueChange={setName}
                     required
@@ -394,8 +410,8 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                   <div class="flex items-end gap-2">
                     <div class="min-w-0 flex-1">
                       <TextInput
-                        label="Email address"
-                        description="Used to find the provider's server settings."
+                        label={messages().emailAddress}
+                        description={messages().providerEmailDescription}
                         type="email"
                         value={email}
                         onValueChange={setEmail}
@@ -411,36 +427,44 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                       onClick={() => discover.mutate()}
                     >
                       <i class={`ti ${discover.loading() ? "ti-loader-2 animate-spin" : "ti-wand"}`} aria-hidden="true" />
-                      Find settings
+                      {messages().findSettings}
                     </Button>
                   </div>
                 </div>
                 <Show when={discoverySource()}>
                   {(source) => (
                     <NoticeCard tone="success" icon={false} role="status">
-                      Server settings were filled from {source()}. Review them, then enter the account secret.
+                      {messages().settingsFilledFrom({ source: source() })}
                     </NoticeCard>
                   )}
                 </Show>
                 <TextInput
-                  label="Username"
-                  description="The login name used for incoming and outgoing mail."
+                  label={messages().username}
+                  description={messages().usernameDescription}
                   value={username}
                   onValueChange={setUsername}
                   required
                 />
               </PanelDialog.Section>
 
-              <PanelDialog.Section
-                title="Server settings"
-                subtitle="Automatic discovery fills these values when the provider publishes them."
-                icon="ti ti-server"
-              >
+              <PanelDialog.Section title={messages().serverSettings} subtitle={messages().serverSettingsDescription} icon="ti ti-server">
                 <div>
-                  <p class="mb-1 text-xs font-semibold text-primary">Incoming mail</p>
+                  <p class="mb-1 text-xs font-semibold text-primary">{messages().incomingMail}</p>
                   <div class="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_8rem_11rem]">
-                    <TextInput label="IMAP host" placeholder="imap.example.com" value={imapHost} onValueChange={setImapHost} required />
-                    <NumberInput label="Port" value={imapPort} onValueChange={(value) => setImapPort(value ?? 993)} min={1} max={65_535} />
+                    <TextInput
+                      label={messages().imapHost}
+                      placeholder="imap.example.com"
+                      value={imapHost}
+                      onValueChange={setImapHost}
+                      required
+                    />
+                    <NumberInput
+                      label={messages().port}
+                      value={imapPort}
+                      onValueChange={(value) => setImapPort(value ?? 993)}
+                      min={1}
+                      max={65_535}
+                    />
                     <Select
                       label="TLS"
                       value={imapTls}
@@ -453,10 +477,22 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                   </div>
                 </div>
                 <div>
-                  <p class="mb-1 text-xs font-semibold text-primary">Outgoing mail</p>
+                  <p class="mb-1 text-xs font-semibold text-primary">{messages().outgoingMail}</p>
                   <div class="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_8rem_11rem]">
-                    <TextInput label="SMTP host" placeholder="smtp.example.com" value={smtpHost} onValueChange={setSmtpHost} required />
-                    <NumberInput label="Port" value={smtpPort} onValueChange={(value) => setSmtpPort(value ?? 587)} min={1} max={65_535} />
+                    <TextInput
+                      label={messages().smtpHost}
+                      placeholder="smtp.example.com"
+                      value={smtpHost}
+                      onValueChange={setSmtpHost}
+                      required
+                    />
+                    <NumberInput
+                      label={messages().port}
+                      value={smtpPort}
+                      onValueChange={(value) => setSmtpPort(value ?? 587)}
+                      min={1}
+                      max={65_535}
+                    />
                     <Select
                       label="TLS"
                       value={smtpTls}
@@ -471,12 +507,8 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
               </PanelDialog.Section>
 
               <PanelDialog.Section
-                title="Authentication"
-                subtitle={
-                  replacingConnectionId()
-                    ? "Enter the complete credential again. It is verified before the saved account is updated."
-                    : "The credential is encrypted after verification and never shown again."
-                }
+                title={messages().authentication}
+                subtitle={replacingConnectionId() ? messages().replaceCredentialDescription : messages().credentialDescription}
                 icon="ti ti-key"
               >
                 <Show when={oauthProviderId()}>
@@ -503,24 +535,24 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                       }
                     >
                       <i class={startOAuth.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-login-2"} aria-hidden="true" />
-                      Continue with {providerId() === "google" ? "Google" : "Microsoft"}
+                      {messages().continueWith({ provider: providerId() === "google" ? "Google" : "Microsoft" })}
                     </Button>
                   )}
                 </Show>
                 <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <Select
-                    label="Authentication"
-                    description="Choose how Mail signs in to the provider."
+                    label={messages().authentication}
+                    description={messages().authenticationDescription}
                     value={auth}
                     onValueChange={(value) => setAuth(value === "oauth2" ? "oauth2" : "password")}
                     options={[
-                      { id: "password", label: "Password" },
-                      { id: "oauth2", label: "OAuth2 access token" },
+                      { id: "password", label: messages().password },
+                      { id: "oauth2", label: messages().oauthAccessToken },
                     ]}
                   />
                   <TextInput
-                    label={auth() === "oauth2" ? "Access token" : "Password"}
-                    description="Encrypted after verification and never shown again."
+                    label={auth() === "oauth2" ? messages().accessToken : messages().password}
+                    description={messages().secretDescription}
                     value={secret}
                     onValueChange={setSecret}
                     password
@@ -531,16 +563,16 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                 <Show when={!replacingConnectionId()}>
                   <div class="flex flex-col gap-2">
                     <CheckboxCard
-                      label="Use this address for sending"
-                      description="Creates and verifies the default sending identity after incoming mail is connected."
+                      label={messages().useAddressForSending}
+                      description={messages().useAddressForSendingDescription}
                       icon="ti ti-at"
                       value={createSender}
                       onValueChange={setCreateSender}
                     />
                     <Show when={createSender()}>
                       <CheckboxCard
-                        label="Provider saves sent mail automatically"
-                        description="Turn this on if your provider already adds sent messages to Sent. Otherwise Mail saves a copy."
+                        label={messages().providerSavesSent}
+                        description={messages().providerSavesSentDescription}
                         value={savesSentAutomatically}
                         onValueChange={setSavesSentAutomatically}
                       />
@@ -553,11 +585,11 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
               <span />
               <div class="flex items-center gap-2">
                 <Button variant="ghost" size="sm" type="button" disabled={connect.loading()} onClick={() => void closeEditor()}>
-                  Cancel
+                  {messages().cancel}
                 </Button>
                 <Button size="sm" type="button" disabled={!canSubmit() || connect.loading()} onClick={() => connect.mutate()}>
                   <i class={connect.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plug-connected"} aria-hidden="true" />
-                  {replacingConnectionId() ? "Verify and save" : "Verify and connect"}
+                  {replacingConnectionId() ? messages().verifyAndSave : messages().verifyAndConnect}
                 </Button>
               </div>
             </PanelDialog.Footer>
@@ -576,8 +608,8 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
         when={currentConnection()}
         fallback={
           <Placeholder
-            title="No connected account"
-            description="Connect an IMAP and SMTP account to synchronize mail."
+            title={messages().noConnectedAccount}
+            description={messages().noConnectedAccountDescription}
             icon="ti ti-plug-off"
             action={
               <Button
@@ -590,7 +622,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                 }}
               >
                 <i class="ti ti-plus" aria-hidden="true" />
-                Connect account
+                {messages().connectAccount}
               </Button>
             }
           />
@@ -605,14 +637,17 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
               <span class="block truncate text-sm font-medium text-primary">{connection().name}</span>
               <span class="block truncate text-xs text-dimmed">
                 {connection().email} · {connection().imap.host}
-                <Show when={connection().oauth}> {` · ${connection().oauth?.state.replaceAll("_", " ")}`}</Show>
-                <Show when={currentBinding()}> {` · mailbox ${currentBinding()?.state.replaceAll("_", " ")}`}</Show>
+                <Show when={connection().oauth}> {` · ${connectionStateLabel(connection().oauth!.state)}`}</Show>
+                <Show when={currentBinding()}>
+                  {" "}
+                  {` · ${messages().mailboxBindingState({ state: connectionStateLabel(currentBinding()!.state) })}`}
+                </Show>
               </span>
             </span>
             <StatusBadge
               class="capitalize"
               tone={connectionStatusTone(connection().status)}
-              label={connection().status.replaceAll("_", " ")}
+              label={connectionStateLabel(connection().status)}
             />
             <Show when={!currentBinding()}>
               <Button
@@ -623,14 +658,14 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                 onClick={() => finishSetup.mutate(connection().id)}
               >
                 <i class={finishSetup.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-plug-connected"} aria-hidden="true" />
-                Finish setup
+                {messages().finishSetup}
               </Button>
             </Show>
             <Dropdown.Root
               position="bottom-left"
               items={[
                 {
-                  label: "Edit account",
+                  label: messages().editAccount,
                   icon: "ti ti-pencil",
                   action: () => {
                     prepareEdit();
@@ -640,7 +675,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                 ...(connection().oauth
                   ? [
                       {
-                        label: "Reconnect account",
+                        label: messages().reconnectAccount,
                         icon: "ti ti-refresh",
                         action: () =>
                           startOAuth.mutate({
@@ -651,10 +686,10 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                     ]
                   : []),
                 {
-                  sectionLabel: "Danger zone",
+                  sectionLabel: messages().dangerZone,
                   items: [
                     {
-                      label: "Remove account",
+                      label: messages().removeAccount,
                       icon: "ti ti-trash",
                       variant: "danger" as const,
                       action: () => revoke.mutate(connection().id),
@@ -668,7 +703,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                 type="button"
                 variant="ghost"
                 class="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
-                label="Connected account actions"
+                label={messages().connectedAccountActions}
                 disabled={props.reloading || revoke.loading() || startOAuth.loading()}
               >
                 <i class="ti ti-dots" aria-hidden="true" />
@@ -683,17 +718,15 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
             align="left"
             state={state().kind === "needs-verification" ? "error" : "empty"}
             icon={state().kind === "needs-verification" ? "ti ti-alert-circle" : "ti ti-send-off"}
-            title={state().kind === "needs-verification" ? "Sending needs verification" : "Sending is not configured"}
+            title={state().kind === "needs-verification" ? messages().sendingNeedsVerification : messages().sendingNotConfigured}
             description={
-              state().kind === "needs-verification"
-                ? "Receiving is active. Retry the default identity setup without reconnecting the account."
-                : "This account currently receives mail only. You can add the default sending identity at any time."
+              state().kind === "needs-verification" ? messages().retrySendingSetupDescription : messages().receivingOnlyDescription
             }
             action={
               <div class="flex flex-wrap items-center gap-2">
                 <CheckboxCard
-                  label="Provider saves sent mail automatically"
-                  description="Turn this on if your provider already adds sent messages to Sent. Otherwise Mail saves a copy."
+                  label={messages().providerSavesSent}
+                  description={messages().providerSavesSentDescription}
                   value={savesSentAutomatically}
                   onValueChange={setSavesSentAutomatically}
                   disabled={setupSender.loading()}
@@ -709,7 +742,7 @@ export function MailConnectionSettings(props: ProviderSettingsProps) {
                   }}
                 >
                   <i class={setupSender.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-send"} aria-hidden="true" />
-                  Set up sending
+                  {messages().setUpSending}
                 </Button>
               </div>
             }

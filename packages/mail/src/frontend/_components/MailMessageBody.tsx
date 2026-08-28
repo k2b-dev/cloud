@@ -1,10 +1,11 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, NoticeCard, prompts } from "@k2b/ui";
+import { Button, NoticeCard, prompts, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MessageRemoteContent, RemoteContentRule } from "../../service/remote-content";
 import { readApiError } from "./api-response";
 import { buildMessageDocument, estimateInitialMessageBodyHeight, normalizeMessageBodyHeight } from "./mail-message-document";
+import { mailMessageMessages } from "./mail-message-messages";
 import {
   type MessageBodyFormat,
   normalizeContentId,
@@ -52,6 +53,9 @@ export default function MailMessageBody(props: {
   linksDisabled?: boolean;
   onSelectionChange: (value: string) => void;
 }) {
+  const locale = useLocale();
+  const localization = createMemo(() => mailMessageMessages.resolve([locale()]));
+  const messages = createMemo(() => localization().t);
   // These values are serialized into the SSR markup. Keep them deterministic
   // so hydration preserves the already-rendered message frame.
   const channel = `mail-message-${props.messageId}`;
@@ -74,7 +78,14 @@ export default function MailMessageBody(props: {
   const remoteImagesRemaining = createMemo(() => remoteImageIds().filter((id) => !remoteUrls().has(id)).length);
   const documentSource = createMemo(() => {
     const withCidImages = rewriteCidSources(props.format === "html" ? (props.html ?? "") : "", cidUrls());
-    return buildMessageDocument(rewriteRemoteImageSources(withCidImages, remoteUrls()), channel, props.linksDisabled);
+    const localized = localization();
+    return buildMessageDocument(
+      rewriteRemoteImageSources(withCidImages, remoteUrls()),
+      channel,
+      props.linksDisabled,
+      localized.locale,
+      localized.t.showQuotedText,
+    );
   });
   let plainBody: HTMLDivElement | undefined;
 
@@ -146,9 +157,9 @@ export default function MailMessageBody(props: {
       await Promise.all(Array.from({ length: Math.min(REMOTE_IMAGE_WORKERS, pending.length) }, worker));
       flushLoaded();
       if (loadedCount === 0 && !disposed && !controller.signal.aborted) {
-        void prompts.error("The remote images could not be loaded safely.");
+        void prompts.error(messages().remoteImagesFailed);
       } else if (budgetExhausted && !disposed && !controller.signal.aborted) {
-        void prompts.error("Some remote images were not loaded because this message exceeds the safe image limit.");
+        void prompts.error(messages().remoteImagesLimited);
       }
     } finally {
       if (remoteController === controller) remoteController = null;
@@ -165,7 +176,7 @@ export default function MailMessageBody(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not save the remote image preference"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().remotePreferenceFailed));
       return response.json();
     },
     onSuccess: () => void loadRemoteImages(),
@@ -256,7 +267,7 @@ export default function MailMessageBody(props: {
                 segment.kind === "quote" ? (
                   <details class="text-secondary">
                     <summary class="w-fit cursor-pointer select-none rounded-[var(--ui-radius-control)] px-2 py-1 text-xs font-medium hover:bg-[var(--ui-hover)]">
-                      Show quoted text
+                      {messages().showQuotedText}
                     </summary>
                     <pre class="mt-2 whitespace-pre-wrap break-words border-l-2 border-default pl-3 font-sans text-sm">
                       <PlainText value={segment.text} linksDisabled={props.linksDisabled} />
@@ -277,10 +288,10 @@ export default function MailMessageBody(props: {
         <Show when={remoteImagesRemaining() > 0}>
           <NoticeCard tone="neutral" icon={false} bodyClass="flex flex-wrap items-center gap-2">
             <i class="ti ti-photo-shield shrink-0" aria-hidden="true" />
-            <span class="min-w-48 flex-1">Remote images are blocked to protect your privacy.</span>
+            <span class="min-w-48 flex-1">{messages().remoteImagesBlocked}</span>
             <Button variant="secondary" size="xs" type="button" disabled={remoteLoading()} onClick={() => void loadRemoteImages()}>
               <i class={`ti ${remoteLoading() ? "ti-loader-2 animate-spin" : "ti-photo"}`} aria-hidden="true" />
-              Load images
+              {messages().loadImages}
             </Button>
             <Show when={props.remoteContent.sender}>
               {(sender) => (
@@ -291,7 +302,7 @@ export default function MailMessageBody(props: {
                   disabled={remoteLoading() || allowRemoteContent.loading()}
                   onClick={() => void allowRemoteContent.mutate({ scope: "sender", value: sender() })}
                 >
-                  Always for sender
+                  {messages().alwaysForSender}
                 </Button>
               )}
             </Show>
@@ -304,7 +315,7 @@ export default function MailMessageBody(props: {
                   disabled={remoteLoading() || allowRemoteContent.loading()}
                   onClick={() => void allowRemoteContent.mutate({ scope: "domain", value: domain() })}
                 >
-                  Always for domain
+                  {messages().alwaysForDomain}
                 </Button>
               )}
             </Show>
@@ -312,7 +323,7 @@ export default function MailMessageBody(props: {
         </Show>
         <iframe
           ref={frame}
-          title="Email message content"
+          title={messages().messageContent}
           class="block w-full overflow-hidden rounded-[var(--ui-radius-surface)] border-0 bg-white"
           style={{ height: `${height()}px` }}
           sandbox="allow-scripts allow-popups"

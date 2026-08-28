@@ -1,3 +1,4 @@
+import { i18n } from "@k2b/stdlib";
 import type { Mailbox, MailboxHealth, MailboxOperationalHealth } from "../../contracts";
 
 type MailboxHealthPresentation = {
@@ -11,82 +12,173 @@ type MailboxHealthPresentation = {
 const timedOut = (reason: string | null): boolean =>
   reason?.toLowerCase().includes("failed to establish connection in required time") === true;
 
-export const mailboxHealthPresentation = (mailbox: Pick<Mailbox, "health" | "healthReason">): MailboxHealthPresentation | null => {
+const healthMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      pausedTitle: "Mail sync is paused",
+      pausedMessage: "New mail will not appear until synchronization is resumed.",
+      resumeSync: "Resume sync",
+      timeoutTitle: "Mail is taking longer to connect",
+      timeoutMessage: "The saved account is valid, but the latest synchronization timed out. Mail will retry automatically.",
+      degradedTitle: "Mail could not synchronize",
+      degradedMessage: "The saved account is still connected. Review the connection status for details and recovery actions.",
+      viewStatus: "View status",
+      authTitle: "Mail needs you to sign in again",
+      authMessage: "Reconnect the account before new messages can be synchronized or sent.",
+      reconnectAccount: "Reconnect account",
+      connectTitle: "Connect a mail account",
+      connectionRequiredMessage: "This mailbox has no usable provider connection.",
+      disconnectedMessage: "This mailbox is not connected to a mail provider yet.",
+      openDeliverySettings: "Open delivery settings",
+      verifyingTitle: "Checking the mail account",
+      verifyingMessage: "Mail is verifying the provider connection. This usually takes only a moment.",
+      bootstrappingTitle: "Mail is finishing setup",
+      bootstrappingMessage: "Messages are being synchronized for the first time and may appear gradually.",
+      reconnectingTitle: "Mail is reconnecting",
+      reconnectingMessage: "New messages may take a moment to appear while the provider connection recovers.",
+      connectedAccounts: ({ count }: { count: number }) => `${count} connected account${count === 1 ? "" : "s"}`,
+      degradedAccounts: ({ count }: { count: number }) => `${count} degraded account${count === 1 ? "" : "s"}`,
+      pendingAccounts: ({ count }: { count: number }) => `${count} ${count === 1 ? "account" : "accounts"} pending`,
+      noConnectedAccount: "No connected account",
+      discoveredFolders: ({ count }: { count: number }) => `${count} discovered folder${count === 1 ? "" : "s"}`,
+      foldersNeedReview: ({ count }: { count: number }) => `${count} ${count === 1 ? "needs" : "need"} review`,
+      synchronizationsRunning: ({ count }: { count: number }) => `${count} synchronization${count === 1 ? "" : "s"} running`,
+      degradedFolders: ({ count }: { count: number }) => `${count} degraded folder${count === 1 ? "" : "s"}`,
+      currentFolders: ({ count }: { count: number }) => `${count} current folder${count === 1 ? "" : "s"}`,
+      rebuildingFolders: ({ count }: { count: number }) => `${count} folder${count === 1 ? "" : "s"} rebuilding`,
+      synchronizingFolders: ({ count }: { count: number }) => `${count} folder${count === 1 ? "" : "s"} synchronizing`,
+      pendingFolders: ({ count }: { count: number }) => `${count} folder${count === 1 ? "" : "s"} pending`,
+      noSynchronizedFolders: "No synchronized folders",
+      searchAdvanced: "Search available · advanced",
+      searchStandard: "Search available · standard",
+      justNow: "just now",
+      noReceivingAddress: "No receiving address configured",
+    },
+    de: {
+      pausedTitle: "E-Mail-Synchronisierung ist pausiert",
+      pausedMessage: "Neue E-Mails erscheinen erst, wenn die Synchronisierung fortgesetzt wird.",
+      resumeSync: "Synchronisierung fortsetzen",
+      timeoutTitle: "Die Verbindung dauert länger als erwartet",
+      timeoutMessage:
+        "Das gespeicherte Konto ist gültig, aber die letzte Synchronisierung ist abgelaufen. Mail versucht es automatisch erneut.",
+      degradedTitle: "E-Mails konnten nicht synchronisiert werden",
+      degradedMessage: "Das gespeicherte Konto ist weiterhin verbunden. Prüfe den Verbindungsstatus für Details und mögliche Maßnahmen.",
+      viewStatus: "Status anzeigen",
+      authTitle: "Erneute Anmeldung erforderlich",
+      authMessage: "Verbinde das Konto erneut, bevor neue Nachrichten synchronisiert oder gesendet werden können.",
+      reconnectAccount: "Konto erneut verbinden",
+      connectTitle: "E-Mail-Konto verbinden",
+      connectionRequiredMessage: "Dieses Postfach hat keine verwendbare Anbieterverbindung.",
+      disconnectedMessage: "Dieses Postfach ist noch nicht mit einem E-Mail-Anbieter verbunden.",
+      openDeliverySettings: "Versandeinstellungen öffnen",
+      verifyingTitle: "E-Mail-Konto wird geprüft",
+      verifyingMessage: "Mail prüft die Anbieterverbindung. Das dauert normalerweise nur einen Moment.",
+      bootstrappingTitle: "Mail schließt die Einrichtung ab",
+      bootstrappingMessage: "Nachrichten werden erstmals synchronisiert und können nach und nach erscheinen.",
+      reconnectingTitle: "Mail stellt die Verbindung wieder her",
+      reconnectingMessage: "Neue Nachrichten können kurz verzögert erscheinen, während die Anbieterverbindung wiederhergestellt wird.",
+      connectedAccounts: ({ count }) => `${count} ${count === 1 ? "verbundenes Konto" : "verbundene Konten"}`,
+      degradedAccounts: ({ count }) => `${count} ${count === 1 ? "beeinträchtigtes Konto" : "beeinträchtigte Konten"}`,
+      pendingAccounts: ({ count }) => `${count} ${count === 1 ? "ausstehendes Konto" : "ausstehende Konten"}`,
+      noConnectedAccount: "Kein verbundenes Konto",
+      discoveredFolders: ({ count }) => `${count} ${count === 1 ? "erkannter Ordner" : "erkannte Ordner"}`,
+      foldersNeedReview: ({ count }) => `${count} ${count === 1 ? "muss" : "müssen"} geprüft werden`,
+      synchronizationsRunning: ({ count }) => `${count} ${count === 1 ? "Synchronisierung läuft" : "Synchronisierungen laufen"}`,
+      degradedFolders: ({ count }) => `${count} ${count === 1 ? "beeinträchtigter Ordner" : "beeinträchtigte Ordner"}`,
+      currentFolders: ({ count }) => `${count} ${count === 1 ? "aktueller Ordner" : "aktuelle Ordner"}`,
+      rebuildingFolders: ({ count }) => `${count} ${count === 1 ? "Ordner wird" : "Ordner werden"} neu aufgebaut`,
+      synchronizingFolders: ({ count }) => `${count} ${count === 1 ? "Ordner wird" : "Ordner werden"} synchronisiert`,
+      pendingFolders: ({ count }) => `${count} ${count === 1 ? "Ordner ausstehend" : "Ordner ausstehend"}`,
+      noSynchronizedFolders: "Keine synchronisierten Ordner",
+      searchAdvanced: "Suche verfügbar · erweitert",
+      searchStandard: "Suche verfügbar · standard",
+      justNow: "gerade eben",
+      noReceivingAddress: "Keine Empfangsadresse konfiguriert",
+    },
+  },
+});
+
+export const mailboxHealthPresentation = (
+  mailbox: Pick<Mailbox, "health" | "healthReason">,
+  locale = "en",
+): MailboxHealthPresentation | null => {
+  const t = healthMessages.resolve([locale]).t;
   const presentations: Record<MailboxHealth, MailboxHealthPresentation | null> = {
     active: null,
     paused: {
-      title: "Mail sync is paused",
-      message: "New mail will not appear until synchronization is resumed.",
+      title: t.pausedTitle,
+      message: t.pausedMessage,
       tone: "warning",
       action: "health",
-      actionLabel: "Resume sync",
+      actionLabel: t.resumeSync,
     },
     degraded: timedOut(mailbox.healthReason)
       ? {
-          title: "Mail is taking longer to connect",
-          message: "The saved account is valid, but the latest synchronization timed out. Mail will retry automatically.",
+          title: t.timeoutTitle,
+          message: t.timeoutMessage,
           tone: "warning",
           action: "health",
-          actionLabel: "View status",
+          actionLabel: t.viewStatus,
         }
       : {
-          title: "Mail could not synchronize",
-          message: "The saved account is still connected. Review the connection status for details and recovery actions.",
+          title: t.degradedTitle,
+          message: t.degradedMessage,
           tone: "warning",
           action: "health",
-          actionLabel: "View status",
+          actionLabel: t.viewStatus,
         },
     auth_required: {
-      title: "Mail needs you to sign in again",
-      message: "Reconnect the account before new messages can be synchronized or sent.",
+      title: t.authTitle,
+      message: t.authMessage,
       tone: "warning",
       action: "delivery",
-      actionLabel: "Reconnect account",
+      actionLabel: t.reconnectAccount,
     },
     connection_required: {
-      title: "Connect a mail account",
-      message: "This mailbox has no usable provider connection.",
+      title: t.connectTitle,
+      message: t.connectionRequiredMessage,
       tone: "warning",
       action: "delivery",
-      actionLabel: "Open delivery settings",
+      actionLabel: t.openDeliverySettings,
     },
     disconnected: {
-      title: "Connect a mail account",
-      message: "This mailbox is not connected to a mail provider yet.",
+      title: t.connectTitle,
+      message: t.disconnectedMessage,
       tone: "warning",
       action: "delivery",
-      actionLabel: "Open delivery settings",
+      actionLabel: t.openDeliverySettings,
     },
     verifying: {
-      title: "Checking the mail account",
-      message: "Mail is verifying the provider connection. This usually takes only a moment.",
+      title: t.verifyingTitle,
+      message: t.verifyingMessage,
       tone: "info",
       action: "health",
-      actionLabel: "View status",
+      actionLabel: t.viewStatus,
     },
     bootstrapping: {
-      title: "Mail is finishing setup",
-      message: "Messages are being synchronized for the first time and may appear gradually.",
+      title: t.bootstrappingTitle,
+      message: t.bootstrappingMessage,
       tone: "info",
       action: "health",
-      actionLabel: "View status",
+      actionLabel: t.viewStatus,
     },
     reconnecting: {
-      title: "Mail is reconnecting",
-      message: "New messages may take a moment to appear while the provider connection recovers.",
+      title: t.reconnectingTitle,
+      message: t.reconnectingMessage,
       tone: "info",
       action: "health",
-      actionLabel: "View status",
+      actionLabel: t.viewStatus,
     },
   };
   return presentations[mailbox.health];
 };
 
-const countLabel = (count: number, singular: string, plural = `${singular}s`): string => `${count} ${count === 1 ? singular : plural}`;
-
 export const mailboxOperationalHealthSummary = (
   health: MailboxOperationalHealth,
+  locale = "en",
 ): { accounts: string; discovery: string; synchronization: string; search: string } => {
+  const t = healthMessages.resolve([locale]).t;
   const reviewCount = health.discovery.missingFolders + health.discovery.ambiguousFolders;
   const degradedFolders = health.sync.folderStates.degraded ?? 0;
   const currentFolders = health.sync.folderStates.current ?? 0;
@@ -96,40 +188,38 @@ export const mailboxOperationalHealthSummary = (
 
   const accounts =
     health.bindings.degraded > 0
-      ? `${health.bindings.active > 0 ? `${countLabel(health.bindings.active, "connected account")} · ` : ""}${countLabel(
-          health.bindings.degraded,
-          "degraded account",
-        )}`
+      ? `${health.bindings.active > 0 ? `${t.connectedAccounts({ count: health.bindings.active })} · ` : ""}${t.degradedAccounts({ count: health.bindings.degraded })}`
       : health.bindings.active > 0
-        ? countLabel(health.bindings.active, "connected account")
+        ? t.connectedAccounts({ count: health.bindings.active })
         : health.bindings.pending > 0
-          ? countLabel(health.bindings.pending, "account pending", "accounts pending")
-          : "No connected account";
-  const discovery = `${countLabel(health.discovery.activeFolders, "discovered folder")}${
-    reviewCount > 0 ? ` · ${countLabel(reviewCount, "needs review", "need review")}` : ""
+          ? t.pendingAccounts({ count: health.bindings.pending })
+          : t.noConnectedAccount;
+  const discovery = `${t.discoveredFolders({ count: health.discovery.activeFolders })}${
+    reviewCount > 0 ? ` · ${t.foldersNeedReview({ count: reviewCount })}` : ""
   }`;
   const synchronization =
     health.sync.runningRuns > 0
-      ? countLabel(health.sync.runningRuns, "synchronization running", "synchronizations running")
+      ? t.synchronizationsRunning({ count: health.sync.runningRuns })
       : degradedFolders > 0
-        ? `${countLabel(degradedFolders, "degraded folder")}${currentFolders > 0 ? ` · ${countLabel(currentFolders, "current folder")}` : ""}`
+        ? `${t.degradedFolders({ count: degradedFolders })}${currentFolders > 0 ? ` · ${t.currentFolders({ count: currentFolders })}` : ""}`
         : rebuildingFolders > 0
-          ? countLabel(rebuildingFolders, "folder rebuilding", "folders rebuilding")
+          ? t.rebuildingFolders({ count: rebuildingFolders })
           : syncingFolders > 0
-            ? countLabel(syncingFolders, "folder synchronizing", "folders synchronizing")
+            ? t.synchronizingFolders({ count: syncingFolders })
             : currentFolders > 0
-              ? countLabel(currentFolders, "current folder")
+              ? t.currentFolders({ count: currentFolders })
               : pendingFolders > 0
-                ? countLabel(pendingFolders, "folder pending", "folders pending")
-                : "No synchronized folders";
-  const search = health.search.bm25Ready ? "Search available · advanced" : "Search available · standard";
+                ? t.pendingFolders({ count: pendingFolders })
+                : t.noSynchronizedFolders;
+  const search = health.search.bm25Ready ? t.searchAdvanced : t.searchStandard;
 
   return { accounts, discovery, synchronization, search };
 };
 
-export const formatHealthEventAge = (input: string, base: Date = new Date()): string => {
+export const formatHealthEventAge = (input: string, base: Date = new Date(), locale = "en"): string => {
+  const resolved = healthMessages.resolve([locale]);
   const elapsedMs = Math.max(0, base.getTime() - Date.parse(input));
-  if (elapsedMs < 5_000) return "just now";
+  if (elapsedMs < 5_000) return resolved.t.justNow;
 
   const units = [
     [24 * 60 * 60 * 1_000, "day"],
@@ -138,5 +228,14 @@ export const formatHealthEventAge = (input: string, base: Date = new Date()): st
     [1_000, "second"],
   ] as const;
   const [unitMs, unit] = units.find(([threshold]) => elapsedMs >= threshold) ?? units.at(-1)!;
-  return new Intl.RelativeTimeFormat("en", { numeric: "always" }).format(-Math.floor(elapsedMs / unitMs), unit);
+  return new Intl.RelativeTimeFormat(resolved.locale, { numeric: "always" }).format(-Math.floor(elapsedMs / unitMs), unit);
+};
+
+export const mailboxOverviewSubtitle = (
+  mailbox: Pick<Mailbox, "health" | "healthReason"> & { receivingAddress: string | null },
+  locale = "en",
+): string => {
+  const address = mailbox.receivingAddress ?? healthMessages.resolve([locale]).t.noReceivingAddress;
+  const health = mailboxHealthPresentation(mailbox, locale);
+  return health ? `${address} · ${health.title}` : address;
 };

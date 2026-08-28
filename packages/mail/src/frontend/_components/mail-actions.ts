@@ -2,6 +2,7 @@ import type { ConversationTriageInput } from "../../contracts";
 
 export const MAIL_ACTION_IDS = ["mark_read", "mark_unread", "flag", "unflag", "archive", "junk", "not_spam", "trash", "move"] as const;
 export type MailActionId = (typeof MAIL_ACTION_IDS)[number];
+export const MAIL_ACTION_MISSING_DESTINATION = "mail_action_missing_destination";
 
 type MailActionDescriptor = {
   id: MailActionId;
@@ -88,7 +89,7 @@ export const buildMailActionInput = (params: {
   correlationId: string;
 }): ConversationTriageInput => {
   if (params.actionId === "move") {
-    if (!params.destinationFolderId) throw new Error("Choose a destination folder before moving conversations.");
+    if (!params.destinationFolderId) throw new Error(MAIL_ACTION_MISSING_DESTINATION);
     return {
       kind: "move_to_folder",
       sourceFolderId: params.sourceFolderId,

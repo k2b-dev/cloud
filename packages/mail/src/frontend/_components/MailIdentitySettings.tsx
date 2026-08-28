@@ -14,6 +14,7 @@ import {
   type StatusTone,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
@@ -22,6 +23,7 @@ import { readApiError } from "./api-response";
 import MailRecipientInput from "./MailRecipientInput";
 import { EditorHeading, type ProviderSettingsProps } from "./mail-provider-settings-shared";
 import { formatMailRecipients, parseMailRecipients } from "./mail-recipient";
+import { mailSettingsMessages } from "./mail-settings-messages";
 
 type IdentityEditor = { kind: "create" } | { kind: "edit"; identity: SenderIdentity } | { kind: "verify"; identity: SenderIdentity };
 
@@ -33,6 +35,8 @@ const identityStatusTone = (status: SenderIdentity["status"]): StatusTone => {
 };
 
 export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSignatures: ComposeTemplate[] }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const [editor, setEditor] = createSignal<IdentityEditor | null>(null);
   const [identities, setIdentities] = createSignal(props.admin.identities);
   const [label, setLabel] = createSignal("");
@@ -124,7 +128,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
     );
 
   const openCreate = () => {
-    setLabel(props.admin.connections[0]?.name ?? props.admin.connections[0]?.email ?? "New identity");
+    setLabel(props.admin.connections[0]?.name ?? props.admin.connections[0]?.email ?? messages().newIdentity);
     setDisplayName("");
     setAddress(props.admin.connections[0]?.email ?? props.currentUserEmail ?? "");
     setReplyTo("");
@@ -216,12 +220,12 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to add identity"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedAddIdentity));
       return response.json();
     },
     onSuccess: (identity) => {
       replaceIdentity(identity);
-      toast.success("Identity added");
+      toast.success(messages().identityAdded);
       setEditor(null);
       setEditorBaseline("");
       props.onWorkspaceChange();
@@ -233,7 +237,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
   const updateIdentity = mutation.create<SenderIdentity, void>({
     mutation: async (_input, { abortSignal }) => {
       const current = editor();
-      if (!current || current.kind !== "edit") throw new Error("No identity selected");
+      if (!current || current.kind !== "edit") throw new Error(messages().noIdentitySelected);
       const response = await apiClient.mailboxes[":mailboxId"]["sender-identities"][":senderIdentityId"].$patch(
         {
           param: { mailboxId: props.mailbox.id, senderIdentityId: current.identity.id },
@@ -259,12 +263,12 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to update identity"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedUpdateIdentity));
       return response.json();
     },
     onSuccess: (identity) => {
       replaceIdentity(identity);
-      toast.success("Identity updated");
+      toast.success(messages().identityUpdated);
       setEditor(null);
       setEditorBaseline("");
       props.onWorkspaceChange();
@@ -286,12 +290,12 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
   const saveCustomSmtp = mutation.create<SenderIdentityTransport, void>({
     mutation: async (_input, { abortSignal }) => {
       const current = editor();
-      if (!current || current.kind !== "edit") throw new Error("Save the identity before configuring a custom SMTP server");
+      if (!current || current.kind !== "edit") throw new Error(messages().saveIdentityBeforeCustomSmtp);
       if (!customSmtpHost().trim() || !customSmtpUsername().trim()) {
-        throw new Error("SMTP host and username are required");
+        throw new Error(messages().smtpHostAndUsernameRequired);
       }
       if (current.identity.transport.mode !== "custom" && !customSmtpPassword()) {
-        throw new Error("Enter the SMTP password");
+        throw new Error(messages().enterSmtpPassword);
       }
       const response = await apiClient.mailboxes[":mailboxId"]["sender-identities"][":senderIdentityId"].transport.$put(
         {
@@ -307,12 +311,12 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "SMTP server could not be saved"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedSaveSmtp));
       return response.json();
     },
     onSuccess: (transport) => {
       replaceTransport(transport);
-      toast.success("SMTP server verified and saved");
+      toast.success(messages().smtpVerifiedAndSaved);
       props.onWorkspaceChange();
     },
     onError: (error) => prompts.error(error.message),
@@ -321,10 +325,10 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
   const removeCustomSmtp = mutation.create<SenderIdentityTransport | null, void>({
     mutation: async (_input, { abortSignal }) => {
       const current = editor();
-      if (!current || current.kind !== "edit") throw new Error("No identity selected");
-      const confirmed = await prompts.confirm("New messages using this identity will be sent through the mailbox connection.", {
-        title: "Use the mailbox SMTP server?",
-        confirmText: "Use mailbox SMTP",
+      if (!current || current.kind !== "edit") throw new Error(messages().noIdentitySelected);
+      const confirmed = await prompts.confirm(messages().useMailboxSmtpDescription, {
+        title: messages().useMailboxSmtpQuestion,
+        confirmText: messages().useMailboxSmtp,
       });
       if (!confirmed || abortSignal.aborted) return null;
       const response = await apiClient.mailboxes[":mailboxId"]["sender-identities"][":senderIdentityId"].transport.$delete(
@@ -334,7 +338,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Custom SMTP server could not be removed"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedRemoveCustomSmtp));
       return response.json();
     },
     onSuccess: (transport) => {
@@ -343,7 +347,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
       setCustomSmtpEnabled(false);
       setCustomSmtpHost("");
       setCustomSmtpUsername("");
-      toast.success("Mailbox SMTP server selected");
+      toast.success(messages().mailboxSmtpSelected);
       props.onWorkspaceChange();
     },
     onError: (error) => prompts.error(error.message),
@@ -351,16 +355,17 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
 
   const disableIdentity = mutation.create<{ disabled: boolean; identity: SenderIdentity }, SenderIdentity>({
     mutation: async (identity, { abortSignal }) => {
-      const confirmed = await prompts.confirm(
-        "Existing sent mail remains unchanged. This address can no longer be selected for new messages or automatic replies.",
-        { title: `Disable ${identity.label}?`, confirmText: "Disable identity", variant: "danger" },
-      );
+      const confirmed = await prompts.confirm(messages().disableIdentityDescription, {
+        title: messages().disableNamedIdentity({ name: identity.label }),
+        confirmText: messages().disableIdentity,
+        variant: "danger",
+      });
       if (!confirmed || abortSignal.aborted) return { disabled: false, identity };
       const response = await apiClient.mailboxes[":mailboxId"]["sender-identities"][":senderIdentityId"].$delete(
         { param: { mailboxId: props.mailbox.id, senderIdentityId: identity.id } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to disable identity"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedDisableIdentity));
       return { disabled: true, identity };
     },
     onSuccess: async ({ disabled, identity }) => {
@@ -368,7 +373,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
       setIdentities((current) => current.filter((item) => item.id !== identity.id));
       setEditor(null);
       setEditorBaseline("");
-      toast.success("Identity disabled");
+      toast.success(messages().identityDisabled);
       props.onWorkspaceChange();
       await props.onReload();
     },
@@ -378,7 +383,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
   const verifyIdentity = mutation.create<SenderIdentity, void>({
     mutation: async (_input, { abortSignal }) => {
       const current = editor();
-      if (!current || current.kind !== "verify") throw new Error("No identity selected");
+      if (!current || current.kind !== "verify") throw new Error(messages().noIdentitySelected);
       const response = await apiClient.mailboxes[":mailboxId"]["sender-identities"][":senderIdentityId"].verify.$post(
         {
           param: { mailboxId: props.mailbox.id, senderIdentityId: current.identity.id },
@@ -386,12 +391,12 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Sender verification failed"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().senderVerificationFailed));
       return response.json();
     },
     onSuccess: (identity) => {
       replaceIdentity(identity);
-      toast.success("Identity verified");
+      toast.success(messages().identityVerified);
       setEditor(null);
       setEditorBaseline("");
       props.onWorkspaceChange();
@@ -413,13 +418,13 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
       when={editor()}
       fallback={
         <SettingsCollection
-          title="Sending identities"
-          description="Names, addresses, defaults, and signatures available while writing."
-          empty="No sending identities yet."
+          title={messages().sendingIdentities}
+          description={messages().sendingIdentitiesDescription}
+          empty={messages().noSendingIdentities}
         >
           <SettingsCollection.Action>
             <Button variant="secondary" size="sm" type="button" disabled={props.reloading} onClick={openCreate}>
-              <i class="ti ti-plus" aria-hidden="true" /> Add identity
+              <i class="ti ti-plus" aria-hidden="true" /> {messages().addIdentity}
             </Button>
           </SettingsCollection.Action>
           <For each={identities()}>
@@ -431,15 +436,21 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
               >
                 <SettingsCollection.Item.Status>
                   <Show when={identity.isDefault}>
-                    <StatusBadge tone="neutral" label="Default" icon={null} />
+                    <StatusBadge tone="neutral" label={messages().default} icon={null} />
                   </Show>
                   <StatusBadge
                     class="capitalize"
                     tone={identityStatusTone(identity.status)}
-                    label={identity.status === "verified" ? "Ready" : identity.status.replaceAll("_", " ")}
+                    label={
+                      identity.status === "verified"
+                        ? messages().ready
+                        : identity.status === "unverified"
+                          ? messages().statusUnverified
+                          : messages().statusRejected
+                    }
                   />
                   <Show when={identity.authenticationPolicy.automation === "mailbox"}>
-                    <StatusBadge tone="neutral" label="Automatic replies" icon={null} />
+                    <StatusBadge tone="neutral" label={messages().automaticReplies} icon={null} />
                   </Show>
                 </SettingsCollection.Item.Status>
                 <SettingsCollection.Item.Actions>
@@ -451,10 +462,10 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                       disabled={activeBindings().length === 0 || props.reloading}
                       onClick={() => openVerify(identity)}
                     >
-                      Verify
+                      {messages().verify}
                     </Button>
                   </Show>
-                  <IconButton type="button" label={`Edit ${identity.label}`} onClick={() => openEdit(identity)}>
+                  <IconButton type="button" label={messages().editNamed({ name: identity.label })} onClick={() => openEdit(identity)}>
                     <i class="ti ti-edit" aria-hidden="true" />
                   </IconButton>
                 </SettingsCollection.Item.Actions>
@@ -471,34 +482,33 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
             fallback={
               <>
                 <EditorHeading
-                  title="Verify identity"
-                  description={`Confirm that the provider accepts messages sent with ${(currentEditor() as Extract<IdentityEditor, { kind: "verify" }>).identity.label}.`}
+                  title={messages().verifyIdentity}
+                  description={messages().verifyIdentityDescription({
+                    name: (currentEditor() as Extract<IdentityEditor, { kind: "verify" }>).identity.label,
+                  })}
                   onBack={closeEditor}
                 />
                 <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
                   <i class="ti ti-info-circle mt-0.5 shrink-0" aria-hidden="true" />
-                  <p>
-                    Mail sends a real test message through this provider. The identity is ready to use only after the provider accepts its
-                    From address and delivery settings.
-                  </p>
+                  <p>{messages().verifyIdentityNotice}</p>
                 </NoticeCard>
                 <Select
-                  label="Connected account"
+                  label={messages().connectedAccount}
                   value={bindingId}
                   onValueChange={setBindingId}
                   options={activeBindings().map((binding) => ({ id: binding.id, label: binding.authenticatedPrincipal ?? binding.id }))}
                   required
                 />
-                <TextInput label="Verification recipient" type="email" value={recipient} onValueChange={setRecipient} required />
+                <TextInput label={messages().verificationRecipient} type="email" value={recipient} onValueChange={setRecipient} required />
                 <CheckboxCard
-                  label="Provider saves sent mail automatically"
-                  description="Turn this on if your provider already adds sent messages to Sent. Otherwise Mail saves a copy."
+                  label={messages().providerSavesSent}
+                  description={messages().providerSavesSentDescription}
                   value={savesSent}
                   onValueChange={setSavesSent}
                 />
                 <div class="sticky bottom-0 flex justify-end gap-2 bg-[var(--ui-surface)] py-2">
                   <Button variant="ghost" size="sm" type="button" disabled={verifyIdentity.loading()} onClick={() => void closeEditor()}>
-                    Cancel
+                    {messages().cancel}
                   </Button>
                   <Button
                     size="sm"
@@ -507,15 +517,15 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                     onClick={() => verifyIdentity.mutate()}
                   >
                     <i class={verifyIdentity.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-shield-check"} aria-hidden="true" />
-                    Send verification
+                    {messages().sendVerification}
                   </Button>
                 </div>
               </>
             }
           >
             <EditorHeading
-              title={currentEditor().kind === "edit" ? "Edit identity" : "Add identity"}
-              description="Configure one selectable sending context for collaborators."
+              title={currentEditor().kind === "edit" ? messages().editIdentity : messages().addIdentity}
+              description={messages().identityEditorDescription}
               onBack={closeEditor}
             />
             <Show when={editingIdentity()}>
@@ -526,9 +536,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                     <NoticeCard tone="warning" icon={false} bodyClass="flex items-center justify-between gap-3" role="status">
                       <span class="flex min-w-0 items-start gap-2">
                         <i class="ti ti-alert-circle mt-0.5 shrink-0" aria-hidden="true" />
-                        <span>
-                          This identity is not ready to send. Verify that the provider accepts its From address and delivery settings.
-                        </span>
+                        <span>{messages().identityNotReady}</span>
                       </span>
                       <Button
                         variant="secondary"
@@ -538,30 +546,35 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                         disabled={activeBindings().length === 0 || props.reloading}
                         onClick={() => openVerify(identity())}
                       >
-                        Verify identity
+                        {messages().verifyIdentity}
                       </Button>
                     </NoticeCard>
                   }
                 >
                   <NoticeCard tone="success" icon={false} bodyClass="flex items-start gap-2" role="status">
                     <i class="ti ti-circle-check mt-0.5 shrink-0" aria-hidden="true" />
-                    <p>Ready to send. The provider accepted a test message with this identity.</p>
+                    <p>{messages().identityReady}</p>
                   </NoticeCard>
                 </Show>
               )}
             </Show>
             <TextInput
-              label="Identity label"
-              description="The private name collaborators see in identity pickers."
+              label={messages().identityLabel}
+              description={messages().identityLabelDescription}
               value={label}
               onValueChange={setLabel}
               required
             />
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              <TextInput label="Display name" description="The name recipients see." value={displayName} onValueChange={setDisplayName} />
               <TextInput
-                label="From address"
-                description="The address recipients see."
+                label={messages().displayName}
+                description={messages().displayNameDescription}
+                value={displayName}
+                onValueChange={setDisplayName}
+              />
+              <TextInput
+                label={messages().fromAddress}
+                description={messages().fromAddressDescription}
                 type="email"
                 value={address}
                 onValueChange={setAddress}
@@ -569,33 +582,29 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
               />
             </div>
             <TextInput
-              label="Reply-to address"
-              description="Optional address for recipient replies."
+              label={messages().replyToAddress}
+              description={messages().replyToDescription}
               type="email"
               value={replyTo}
               onValueChange={setReplyTo}
             />
             <div>
-              <p class="text-sm font-medium text-primary">Default Cc</p>
-              <p class="mb-1 text-xs text-dimmed">
-                Added to new interactive drafts that use this identity. Writers can remove recipients before sending.
-              </p>
+              <p class="text-sm font-medium text-primary">{messages().defaultCc}</p>
+              <p class="mb-1 text-xs text-dimmed">{messages().defaultCcDescription}</p>
               <MailRecipientInput
                 value={defaultCc}
                 onChange={setDefaultCc}
-                placeholder="Add default Cc recipient"
+                placeholder={messages().addDefaultCc}
                 disabled={createIdentity.loading() || updateIdentity.loading()}
               />
             </div>
             <div>
-              <p class="text-sm font-medium text-primary">Default Bcc</p>
-              <p class="mb-1 text-xs text-dimmed">
-                Added privately to new interactive drafts. Other recipients do not see these addresses.
-              </p>
+              <p class="text-sm font-medium text-primary">{messages().defaultBcc}</p>
+              <p class="mb-1 text-xs text-dimmed">{messages().defaultBccDescription}</p>
               <MailRecipientInput
                 value={defaultBcc}
                 onChange={setDefaultBcc}
-                placeholder="Add default Bcc recipient"
+                placeholder={messages().addDefaultBcc}
                 disabled={createIdentity.loading() || updateIdentity.loading()}
               />
             </div>
@@ -603,14 +612,14 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
               <summary class="focus-ui flex cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--ui-radius-control)] px-3 py-2.5 text-sm font-medium text-primary">
                 <span class="flex items-center gap-2">
                   <i class="ti ti-pencil" aria-hidden="true" />
-                  Writing defaults
+                  {messages().writingDefaults}
                 </span>
                 <i class="ti ti-chevron-down transition-transform group-open:rotate-180" aria-hidden="true" />
               </summary>
               <div class="flex flex-col gap-2 px-3 pb-3">
                 <Select
-                  label="Default signature"
-                  description="Inserted into new messages unless a writer has a personal override."
+                  label={messages().defaultSignature}
+                  description={messages().defaultSignatureDescription}
                   value={defaultSignatureTemplateId}
                   onValueChange={setDefaultSignatureTemplateId}
                   options={mailboxSignatures().map((template) => ({ id: template.id, label: template.name }))}
@@ -618,24 +627,24 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                 />
                 <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <Select
-                    label="Message format"
-                    description="Writers can change this for each draft."
+                    label={messages().messageFormat}
+                    description={messages().messageFormatDescription}
                     value={defaultFormat}
                     onValueChange={(value) => setDefaultFormat(value === "plain" ? "plain" : "markdown")}
                     options={[
                       { id: "markdown", label: "Markdown", icon: "ti ti-markdown" },
-                      { id: "plain", label: "Plain text", icon: "ti ti-align-left" },
+                      { id: "plain", label: messages().plainText, icon: "ti ti-align-left" },
                     ]}
                   />
                   <Select
-                    label="Priority"
-                    description="Normal is appropriate for most messages."
+                    label={messages().priority}
+                    description={messages().priorityDescription}
                     value={defaultPriority}
                     onValueChange={(value) => setDefaultPriority(value === "high" ? "high" : value === "low" ? "low" : "normal")}
                     options={[
-                      { id: "normal", label: "Normal" },
-                      { id: "high", label: "High", icon: "ti ti-arrow-up" },
-                      { id: "low", label: "Low", icon: "ti ti-arrow-down" },
+                      { id: "normal", label: messages().normal },
+                      { id: "high", label: messages().high, icon: "ti ti-arrow-up" },
+                      { id: "low", label: messages().low, icon: "ti ti-arrow-down" },
                     ]}
                   />
                 </div>
@@ -643,15 +652,15 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
             </details>
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <CheckboxCard
-                label="Default identity"
-                description="Preselected when Mail cannot determine a more specific identity."
+                label={messages().defaultIdentity}
+                description={messages().defaultIdentityDescription}
                 icon="ti ti-star"
                 value={isDefault}
                 onValueChange={setIsDefault}
               />
               <CheckboxCard
-                label="Allow automatic replies"
-                description="Rules may use this identity. No message is sent until a rule is explicitly enabled."
+                label={messages().allowAutomaticReplies}
+                description={messages().allowAutomaticRepliesDescription}
                 icon="ti ti-message-reply"
                 value={allowAutomation}
                 onValueChange={setAllowAutomation}
@@ -661,23 +670,23 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
               <summary class="focus-ui flex cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--ui-radius-control)] px-3 py-2.5 text-sm font-medium text-primary">
                 <span class="flex items-center gap-2">
                   <i class="ti ti-adjustments" aria-hidden="true" />
-                  Advanced delivery
+                  {messages().advancedDelivery}
                 </span>
                 <i class="ti ti-chevron-down transition-transform group-open:rotate-180" aria-hidden="true" />
               </summary>
               <div class="flex flex-col gap-2 px-3 pb-3">
                 <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <CheckboxCard
-                    label="Request delivery receipts"
-                    description="Ask the sending server for delivery or failure reports. Servers may ignore the request."
+                    label={messages().requestDeliveryReceipts}
+                    description={messages().requestDeliveryReceiptsDescription}
                     icon="ti ti-mail-check"
                     variant="input"
                     value={defaultDeliveryReceipt}
                     onValueChange={setDefaultDeliveryReceipt}
                   />
                   <CheckboxCard
-                    label="Request read receipts"
-                    description="Ask recipients for a read receipt. This is never proof that a message was read."
+                    label={messages().requestReadReceipts}
+                    description={messages().requestReadReceiptsDescription}
                     icon="ti ti-eye-check"
                     variant="input"
                     value={defaultReadReceipt}
@@ -685,23 +694,23 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                   />
                 </div>
                 <TextInput
-                  label="Return-path address"
-                  description="Optional technical address for delivery failures. Leave empty unless your mail provider requires a separate bounce address."
+                  label={messages().returnPathAddress}
+                  description={messages().returnPathDescription}
                   type="email"
                   value={envelopeSender}
                   onValueChange={setEnvelopeSender}
                 />
                 <Select
-                  label="Sent folder"
-                  description="Required when the provider does not save submitted mail automatically."
+                  label={messages().sentFolder}
+                  description={messages().sentFolderDescription}
                   value={sentFolderId}
                   onValueChange={setSentFolderId}
                   options={selectableFolders().map((folder) => ({ id: folder.id, label: folder.name, icon: "ti ti-folder" }))}
                   clearable
                 />
                 <Select
-                  label="Drafts folder"
-                  description="Provider folder used for projected drafts."
+                  label={messages().draftsFolder}
+                  description={messages().draftsFolderDescription}
                   value={draftsFolderId}
                   onValueChange={setDraftsFolderId}
                   options={selectableFolders().map((folder) => ({ id: folder.id, label: folder.name, icon: "ti ti-folder" }))}
@@ -711,32 +720,32 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                   when={vcard()}
                   fallback={
                     <FileDropzone
-                      label="Contact card"
-                      description="Optionally attach one .vcf contact card to messages sent with this identity."
+                      label={messages().contactCard}
+                      description={messages().contactCardDescription}
                       accept=".vcf,text/vcard,text/x-vcard"
                       multiple={false}
                       icon="ti ti-address-book"
-                      title="Choose a vCard"
-                      subtitle="VCF, up to 256 KB"
+                      title={messages().chooseVcard}
+                      subtitle={messages().vcardLimit}
                       class="min-h-20 py-3"
                       error={vcardError}
                       onDrop={async ([file]) => {
                         setVcardError(null);
                         if (!file) return;
                         if (file.size > 256 * 1024) {
-                          setVcardError("Choose a vCard smaller than 256 KB");
+                          setVcardError(messages().vcardTooLarge);
                           return;
                         }
                         try {
                           const value = await file.text();
                           const normalized = value.replaceAll("\r\n", "\n").trim();
                           if (!normalized.startsWith("BEGIN:VCARD\n") || !normalized.endsWith("\nEND:VCARD")) {
-                            setVcardError("Choose a complete vCard file");
+                            setVcardError(messages().incompleteVcard);
                             return;
                           }
                           setVcard(value);
                         } catch {
-                          setVcardError("The vCard could not be read");
+                          setVcardError(messages().vcardReadFailed);
                         }
                       }}
                     />
@@ -745,10 +754,10 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                   <div class="flex items-center gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] px-3 py-2">
                     <i class="ti ti-address-book shrink-0 text-secondary" aria-hidden="true" />
                     <span class="min-w-0 flex-1">
-                      <span class="block text-sm font-medium text-primary">Contact card attached</span>
-                      <span class="block text-xs text-dimmed">A vCard is added to every message from this identity.</span>
+                      <span class="block text-sm font-medium text-primary">{messages().contactCardAttached}</span>
+                      <span class="block text-xs text-dimmed">{messages().contactCardAttachedDescription}</span>
                     </span>
-                    <IconButton type="button" label="Remove contact card" onClick={() => setVcard(null)}>
+                    <IconButton type="button" label={messages().removeContactCard} onClick={() => setVcard(null)}>
                       <i class="ti ti-x" aria-hidden="true" />
                     </IconButton>
                   </div>
@@ -757,8 +766,8 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                   {(identity) => (
                     <div class="flex flex-col gap-2 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] p-3">
                       <CheckboxCard
-                        label="Use a separate SMTP server"
-                        description="Only sending uses this server. Mailbox sync and sent-message storage continue through the connected account."
+                        label={messages().useSeparateSmtp}
+                        description={messages().useSeparateSmtpDescription}
                         icon="ti ti-server"
                         variant="input"
                         value={customSmtpEnabled}
@@ -766,9 +775,9 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                       />
                       <Show when={customSmtpEnabled()}>
                         <div class="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_8rem]">
-                          <TextInput label="SMTP host" value={customSmtpHost} onValueChange={setCustomSmtpHost} required />
+                          <TextInput label={messages().smtpHost} value={customSmtpHost} onValueChange={setCustomSmtpHost} required />
                           <NumberInput
-                            label="Port"
+                            label={messages().port}
                             value={customSmtpPort}
                             onValueChange={setCustomSmtpPort}
                             min={1}
@@ -778,7 +787,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                         </div>
                         <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                           <Select
-                            label="Connection security"
+                            label={messages().connectionSecurity}
                             value={customSmtpTlsMode}
                             onValueChange={(value) => setCustomSmtpTlsMode(value === "implicit" ? "implicit" : "starttls")}
                             options={[
@@ -786,14 +795,17 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                               { id: "implicit", label: "TLS" },
                             ]}
                           />
-                          <TextInput label="Username" value={customSmtpUsername} onValueChange={setCustomSmtpUsername} required />
+                          <TextInput
+                            label={messages().username}
+                            value={customSmtpUsername}
+                            onValueChange={setCustomSmtpUsername}
+                            required
+                          />
                         </div>
                         <TextInput
-                          label="Password"
+                          label={messages().password}
                           description={
-                            identity().transport.mode === "custom"
-                              ? "Leave empty to keep the stored password."
-                              : "Encrypted and never shown again."
+                            identity().transport.mode === "custom" ? messages().keepStoredPassword : messages().passwordEncrypted
                           }
                           password
                           value={customSmtpPassword}
@@ -814,7 +826,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                             onClick={() => saveCustomSmtp.mutate()}
                           >
                             <i class={saveCustomSmtp.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-shield-check"} aria-hidden="true" />
-                            Verify and save SMTP
+                            {messages().verifyAndSaveSmtp}
                           </Button>
                         </div>
                       </Show>
@@ -828,7 +840,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                             onClick={() => removeCustomSmtp.mutate()}
                           >
                             <i class={removeCustomSmtp.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-server-off"} aria-hidden="true" />
-                            Use mailbox SMTP
+                            {messages().useMailboxSmtp}
                           </Button>
                         </div>
                       </Show>
@@ -848,7 +860,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                     onClick={() => disableIdentity.mutate(identity())}
                   >
                     <i class={disableIdentity.loading() ? "ti ti-loader-2 animate-spin" : "ti ti-trash"} aria-hidden="true" />
-                    Disable identity
+                    {messages().disableIdentity}
                   </Button>
                 )}
               </Show>
@@ -860,7 +872,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                   disabled={createIdentity.loading() || updateIdentity.loading()}
                   onClick={() => void closeEditor()}
                 >
-                  Cancel
+                  {messages().cancel}
                 </Button>
                 <Button
                   size="sm"
@@ -880,7 +892,7 @@ export function MailIdentitySettings(props: ProviderSettingsProps & { mailboxSig
                     }
                     aria-hidden="true"
                   />
-                  {currentEditor().kind === "edit" ? "Save identity" : "Add identity"}
+                  {currentEditor().kind === "edit" ? messages().saveIdentity : messages().addIdentity}
                 </Button>
               </span>
             </div>

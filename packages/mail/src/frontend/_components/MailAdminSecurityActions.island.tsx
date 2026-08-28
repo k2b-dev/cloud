@@ -1,8 +1,10 @@
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, IconButton, NoticeCard, prompts } from "@k2b/ui";
+import { Button, IconButton, NoticeCard, prompts, useLocale } from "@k2b/ui";
+import { createMemo } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MailProtectedIdentity, MailSecurityPolicy, MailSecurityReport } from "../../security-contracts";
 import { readApiError } from "./api-response";
+import { mailSettingsMessages } from "./mail-settings-messages";
 
 const refresh = () => window.location.reload();
 
@@ -18,52 +20,50 @@ type AuthenticationForm = { servers?: string[] };
 type ResolutionForm = { note?: string };
 
 function MailAdminSecurityToolbar(props: { trustedAuthservIds: string[] | null }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const createPolicy = mutation.create<boolean, void>({
     mutation: async (_, { abortSignal }) => {
       const values = (await prompts.form({
-        title: "Add Mail security rule",
+        title: messages().addSecurityRule,
         icon: "ti ti-shield-plus",
         fields: {
           guidance: {
             type: "info",
             content: () => (
-              <NoticeCard
-                tone="info"
-                title="Rules affect every mailbox"
-                detail="Block only a known bad address or domain. Trust only a known sender whose visible domain also passes authentication from a configured receiving server; trust never overrides a block."
-              />
+              <NoticeCard tone="info" title={messages().rulesAffectEveryMailbox} detail={messages().securityRuleScopeDescription} />
             ),
           },
           disposition: {
             type: "select",
-            label: "Rule",
+            label: messages().rule,
             required: true,
             default: "deny",
             options: [
-              { id: "deny", label: "Block" },
-              { id: "trust", label: "Trust authenticated sender" },
+              { id: "deny", label: messages().block },
+              { id: "trust", label: messages().trustAuthenticatedSender },
             ],
           },
           target: {
             type: "select",
-            label: "Match",
+            label: messages().match,
             required: true,
             default: "sender_domain",
             options: [
-              { id: "sender_address", label: "Sender address" },
-              { id: "sender_domain", label: "Sender domain" },
-              { id: "link_domain", label: "Link destination domain (block only)" },
+              { id: "sender_address", label: messages().senderAddress },
+              { id: "sender_domain", label: messages().senderDomain },
+              { id: "link_domain", label: messages().linkDomainBlockOnly },
             ],
           },
-          value: { type: "text", label: "Address or domain", required: true },
+          value: { type: "text", label: messages().addressOrDomain, required: true },
           note: {
             type: "text",
             multiline: true,
-            label: "Reason",
-            description: "Optional internal context for other administrators.",
+            label: messages().reason,
+            description: messages().administratorContext,
           },
         },
-        confirmText: "Add rule",
+        confirmText: messages().addRule,
       })) as PolicyForm | null;
       if (!values || abortSignal.aborted) return false;
       const response = await apiClient.admin.security.policies.$post(
@@ -78,7 +78,7 @@ function MailAdminSecurityToolbar(props: { trustedAuthservIds: string[] | null }
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not add the Mail security rule"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedAddSecurityRule));
       return true;
     },
     onSuccess: (changed) => changed && refresh(),
@@ -87,37 +87,33 @@ function MailAdminSecurityToolbar(props: { trustedAuthservIds: string[] | null }
   const createIdentity = mutation.create<boolean, void>({
     mutation: async (_, { abortSignal }) => {
       const values = (await prompts.form({
-        title: "Protect a sender identity",
+        title: messages().protectSenderIdentity,
         icon: "ti ti-user-shield",
         fields: {
           guidance: {
             type: "info",
             content: () => (
-              <NoticeCard
-                tone="info"
-                title="Visible sender names can be copied"
-                detail="Enter the exact name readers normally see and the domains that may legitimately use it. Mail warns on a mismatch but does not delete or move the message."
-              />
+              <NoticeCard tone="info" title={messages().visibleNamesCanBeCopied} detail={messages().protectedIdentityDescription} />
             ),
           },
-          name: { type: "text", label: "Visible sender name", required: true },
+          name: { type: "text", label: messages().visibleSenderName, required: true },
           domains: {
             type: "tags",
-            label: "Allowed sending domains",
-            description: "A warning appears when this exact visible name arrives from another domain.",
+            label: messages().allowedSendingDomains,
+            description: messages().allowedSendingDomainsDescription,
             required: true,
             maxTags: 20,
           },
-          note: { type: "text", multiline: true, label: "Reason" },
+          note: { type: "text", multiline: true, label: messages().reason },
         },
-        confirmText: "Protect identity",
+        confirmText: messages().protectIdentity,
       })) as ProtectedIdentityForm | null;
       if (!values || abortSignal.aborted) return false;
       const response = await apiClient.admin.security["protected-identities"].$post(
         { json: { name: values.name, allowedDomains: values.domains, note: values.note?.trim() || null, enabled: true } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not protect this identity"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedProtectIdentity));
       return true;
     },
     onSuccess: (changed) => changed && refresh(),
@@ -126,35 +122,31 @@ function MailAdminSecurityToolbar(props: { trustedAuthservIds: string[] | null }
   const editAuthentication = mutation.create<boolean, void>({
     mutation: async (_, { abortSignal }) => {
       const values = (await prompts.form({
-        title: "Trusted authentication results",
+        title: messages().trustedAuthenticationResults,
         icon: "ti ti-certificate",
         fields: {
           guidance: {
             type: "info",
             content: () => (
-              <NoticeCard
-                tone="info"
-                title="These are receiving-server names, not sender domains"
-                detail="Add only the Authentication-Results server names confirmed by your mail administrator. Mail uses only passed checks aligned with the visible sender domain."
-              />
+              <NoticeCard tone="info" title={messages().authServerNamesNotDomains} detail={messages().trustedAuthDescription} />
             ),
           },
           servers: {
             type: "tags",
-            label: "Authentication server names",
-            description: "Leave empty unless your receiving mail system writes Authentication-Results headers with a stable server name.",
+            label: messages().authenticationServerNames,
+            description: messages().authenticationServerNamesDescription,
             default: props.trustedAuthservIds ?? [],
             maxTags: 20,
           },
         },
-        confirmText: "Save",
+        confirmText: messages().save,
       })) as AuthenticationForm | null;
       if (!values || abortSignal.aborted) return false;
       const response = await apiClient.admin.security.settings.$patch(
         { json: { trustedAuthservIds: values.servers ?? [] } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not save trusted authentication results"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedSaveTrustedAuthentication));
       return true;
     },
     onSuccess: (changed) => changed && refresh(),
@@ -164,32 +156,39 @@ function MailAdminSecurityToolbar(props: { trustedAuthservIds: string[] | null }
   return (
     <div class="flex flex-wrap gap-2">
       <Button size="sm" variant="secondary" disabled={busy()} onClick={() => createPolicy.mutate()}>
-        <i class="ti ti-shield-plus" aria-hidden="true" /> Add rule
+        <i class="ti ti-shield-plus" aria-hidden="true" /> {messages().addRule}
       </Button>
       <Button size="sm" variant="secondary" disabled={busy()} onClick={() => createIdentity.mutate()}>
-        <i class="ti ti-user-shield" aria-hidden="true" /> Protect identity
+        <i class="ti ti-user-shield" aria-hidden="true" /> {messages().protectIdentity}
       </Button>
       <Button
         size="sm"
         variant="subtle"
         disabled={busy() || props.trustedAuthservIds === null}
-        title={props.trustedAuthservIds === null ? "Authentication settings could not be loaded" : undefined}
+        title={props.trustedAuthservIds === null ? messages().authenticationSettingsLoadFailed : undefined}
         onClick={() => editAuthentication.mutate()}
       >
-        <i class="ti ti-certificate" aria-hidden="true" /> Authentication
+        <i class="ti ti-certificate" aria-hidden="true" /> {messages().authentication}
       </Button>
     </div>
   );
 }
 
 function MailAdminReportActions(props: { report: MailSecurityReport }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const resolve = mutation.create<boolean, MailSecurityReport["status"]>({
     mutation: async (status, { abortSignal }) => {
       const values = (await prompts.form({
-        title: status === "confirmed" ? "Confirm phishing report" : status === "dismissed" ? "Dismiss phishing report" : "Review report",
+        title:
+          status === "confirmed"
+            ? messages().confirmPhishingReport
+            : status === "dismissed"
+              ? messages().dismissPhishingReport
+              : messages().reviewReport,
         icon: status === "confirmed" ? "ti ti-shield-check" : "ti ti-shield-search",
-        fields: { note: { type: "text", multiline: true, label: "Internal note", default: props.report.resolutionNote ?? "" } },
-        confirmText: status === "confirmed" ? "Confirm" : status === "dismissed" ? "Dismiss" : "Start review",
+        fields: { note: { type: "text", multiline: true, label: messages().internalNote, default: props.report.resolutionNote ?? "" } },
+        confirmText: status === "confirmed" ? messages().confirm : status === "dismissed" ? messages().dismiss : messages().startReview,
       })) as ResolutionForm | null;
       if (!values || abortSignal.aborted) return false;
       const response = await apiClient.admin.security.reports[":reportId"].$patch(
@@ -199,7 +198,7 @@ function MailAdminReportActions(props: { report: MailSecurityReport }) {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not update the report"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedUpdateReport));
       return true;
     },
     onSuccess: (changed) => changed && refresh(),
@@ -208,14 +207,11 @@ function MailAdminReportActions(props: { report: MailSecurityReport }) {
   const blockSender = mutation.create<boolean, void>({
     mutation: async (_, { abortSignal }) => {
       if (!props.report.senderAddress) return false;
-      const confirmed = await prompts.confirm(
-        "New and existing matching messages are contained in the Mail reader. Authentication trust never overrides this exact block.",
-        {
-          title: `Block ${props.report.senderAddress}?`,
-          confirmText: "Block sender",
-          variant: "danger",
-        },
-      );
+      const confirmed = await prompts.confirm(messages().blockReportedSenderDescription, {
+        title: messages().blockSenderQuestion({ address: props.report.senderAddress }),
+        confirmText: messages().blockSender,
+        variant: "danger",
+      });
       if (!confirmed || abortSignal.aborted) return false;
       const response = await apiClient.admin.security.policies.$post(
         {
@@ -223,13 +219,13 @@ function MailAdminReportActions(props: { report: MailSecurityReport }) {
             disposition: "deny",
             target: "sender_address",
             value: props.report.senderAddress,
-            note: `Phishing report ${props.report.id}`,
+            note: messages().phishingReportNote({ id: props.report.id }),
             enabled: true,
           },
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not block the reported sender"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedBlockReportedSender));
       return true;
     },
     onSuccess: (changed) => changed && refresh(),
@@ -239,19 +235,19 @@ function MailAdminReportActions(props: { report: MailSecurityReport }) {
   return (
     <div class="flex justify-end gap-1">
       {props.report.status === "new" ? (
-        <IconButton size="sm" label="Start review" disabled={busy()} onClick={() => resolve.mutate("in_review")}>
+        <IconButton size="sm" label={messages().startReview} disabled={busy()} onClick={() => resolve.mutate("in_review")}>
           <i class="ti ti-shield-search" aria-hidden="true" />
         </IconButton>
       ) : null}
       {props.report.senderAddress ? (
-        <IconButton size="sm" label="Block reported sender" disabled={busy()} onClick={() => blockSender.mutate()}>
+        <IconButton size="sm" label={messages().blockReportedSender} disabled={busy()} onClick={() => blockSender.mutate()}>
           <i class="ti ti-user-x" aria-hidden="true" />
         </IconButton>
       ) : null}
-      <IconButton size="sm" label="Confirm phishing" disabled={busy()} onClick={() => resolve.mutate("confirmed")}>
+      <IconButton size="sm" label={messages().confirmPhishing} disabled={busy()} onClick={() => resolve.mutate("confirmed")}>
         <i class="ti ti-shield-check" aria-hidden="true" />
       </IconButton>
-      <IconButton size="sm" label="Dismiss report" disabled={busy()} onClick={() => resolve.mutate("dismissed")}>
+      <IconButton size="sm" label={messages().dismissReport} disabled={busy()} onClick={() => resolve.mutate("dismissed")}>
         <i class="ti ti-shield-off" aria-hidden="true" />
       </IconButton>
     </div>
@@ -259,12 +255,14 @@ function MailAdminReportActions(props: { report: MailSecurityReport }) {
 }
 
 function MailAdminPolicyActions(props: { policy: MailSecurityPolicy }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const update = mutation.create<boolean, "toggle" | "delete">({
     mutation: async (operation, { abortSignal }) => {
       if (operation === "delete") {
-        const confirmed = await prompts.confirm("Messages are re-evaluated without this rule the next time they are opened.", {
-          title: `Delete ${props.policy.value}?`,
-          confirmText: "Delete rule",
+        const confirmed = await prompts.confirm(messages().deleteRuleDescription, {
+          title: messages().deleteRuleQuestion({ value: props.policy.value }),
+          confirmText: messages().deleteRule,
           variant: "danger",
         });
         if (!confirmed) return false;
@@ -272,13 +270,13 @@ function MailAdminPolicyActions(props: { policy: MailSecurityPolicy }) {
           { param: { policyId: props.policy.id } },
           { init: { signal: abortSignal } },
         );
-        if (!response.ok) throw new Error(await readApiError(response, "Could not delete the rule"));
+        if (!response.ok) throw new Error(await readApiError(response, messages().failedDeleteRule));
       } else {
         const response = await apiClient.admin.security.policies[":policyId"].$patch(
           { param: { policyId: props.policy.id }, json: { enabled: !props.policy.enabled } },
           { init: { signal: abortSignal } },
         );
-        if (!response.ok) throw new Error(await readApiError(response, "Could not update the rule"));
+        if (!response.ok) throw new Error(await readApiError(response, messages().failedUpdateRule));
       }
       return true;
     },
@@ -287,10 +285,14 @@ function MailAdminPolicyActions(props: { policy: MailSecurityPolicy }) {
   });
   return (
     <div class="flex justify-end gap-1">
-      <IconButton size="sm" label={props.policy.enabled ? "Disable rule" : "Enable rule"} onClick={() => update.mutate("toggle")}>
+      <IconButton
+        size="sm"
+        label={props.policy.enabled ? messages().disableRule : messages().enableRule}
+        onClick={() => update.mutate("toggle")}
+      >
         <i class={`ti ${props.policy.enabled ? "ti-player-pause" : "ti-player-play"}`} aria-hidden="true" />
       </IconButton>
-      <IconButton size="sm" label="Delete rule" onClick={() => update.mutate("delete")}>
+      <IconButton size="sm" label={messages().deleteRule} onClick={() => update.mutate("delete")}>
         <i class="ti ti-trash" aria-hidden="true" />
       </IconButton>
     </div>
@@ -298,11 +300,13 @@ function MailAdminPolicyActions(props: { policy: MailSecurityPolicy }) {
 }
 
 function MailAdminProtectedIdentityActions(props: { identity: MailProtectedIdentity }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const remove = mutation.create<boolean, void>({
     mutation: async (_, { abortSignal }) => {
-      const confirmed = await prompts.confirm("Mail will stop checking this visible sender name.", {
-        title: `Stop protecting ${props.identity.name}?`,
-        confirmText: "Remove",
+      const confirmed = await prompts.confirm(messages().stopProtectingDescription, {
+        title: messages().stopProtectingQuestion({ name: props.identity.name }),
+        confirmText: messages().remove,
         variant: "danger",
       });
       if (!confirmed) return false;
@@ -310,14 +314,14 @@ function MailAdminProtectedIdentityActions(props: { identity: MailProtectedIdent
         { param: { identityId: props.identity.id } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not remove the protected identity"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedRemoveProtectedIdentity));
       return true;
     },
     onSuccess: (changed) => changed && refresh(),
     onError: (error) => prompts.error(error.message),
   });
   return (
-    <IconButton size="sm" label="Remove protected identity" onClick={() => remove.mutate()}>
+    <IconButton size="sm" label={messages().removeProtectedIdentity} onClick={() => remove.mutate()}>
       <i class="ti ti-trash" aria-hidden="true" />
     </IconButton>
   );

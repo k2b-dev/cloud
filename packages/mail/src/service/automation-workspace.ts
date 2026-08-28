@@ -100,6 +100,7 @@ const loadActivityItems = async (
   mailboxId: string,
   replies: AutomaticReplyConfiguration[],
   limit = 200,
+  locale = "en",
 ): Promise<MailAutomationActivityItem[]> => {
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1_000);
   const [runs, backfills] = await Promise.all([
@@ -134,8 +135,10 @@ const loadActivityItems = async (
     ...automations.map((automation) => [automation.workflowId, automation.name] as const),
   ]);
   return [
-    ...runs.map((run) => projectMailWorkflowActivity({ mailboxId, run, replyWorkflowIds, incomingAutomationWorkflowIds, workflowNames })),
-    ...backfills.spans.map((span) => projectMailBackfillActivity({ mailboxId, span, automationNames })),
+    ...runs.map((run) =>
+      projectMailWorkflowActivity({ mailboxId, run, replyWorkflowIds, incomingAutomationWorkflowIds, workflowNames, locale }),
+    ),
+    ...backfills.spans.map((span) => projectMailBackfillActivity({ mailboxId, span, automationNames, locale })),
   ]
     .toSorted((left, right) => right.occurredAt.localeCompare(left.occurredAt))
     .slice(0, limit);
@@ -144,6 +147,7 @@ const loadActivityItems = async (
 export const loadMailAutomationOverview = async (
   context: MailRequestContext,
   mailboxId: string,
+  locale = "en",
 ): Promise<Result<MailAutomationOverviewData>> => {
   const accessResult = await loadAccess(context, mailboxId);
   if (!accessResult.ok) return accessResult;
@@ -170,7 +174,7 @@ export const loadMailAutomationOverview = async (
   ]);
   if (!automationResult.ok) return fail(automationResult.error);
   if (!workflowResult.ok) return fail(workflowResult.error);
-  const recentActivity = await loadActivityItems(context, mailboxId, replyResult.data, 8).catch((error) => {
+  const recentActivity = await loadActivityItems(context, mailboxId, replyResult.data, 8, locale).catch((error) => {
     log.warn("Failed to load recent Mail automation activity", {
       mailboxId,
       error: error instanceof Error ? error.message : String(error),
@@ -255,6 +259,7 @@ export const loadMailWorkflowsWorkspace = async (
 export const loadMailAutomationActivity = async (
   context: MailRequestContext,
   mailboxId: string,
+  locale = "en",
 ): Promise<Result<MailAutomationActivityData>> => {
   const accessResult = await loadAdminAccess(context, mailboxId);
   if (!accessResult.ok) return accessResult;
@@ -262,7 +267,7 @@ export const loadMailAutomationActivity = async (
   if (!replyResult.ok) return fail(replyResult.error);
   let items: MailAutomationActivityItem[];
   try {
-    items = await loadActivityItems(context, mailboxId, replyResult.data);
+    items = await loadActivityItems(context, mailboxId, replyResult.data, 200, locale);
   } catch (error) {
     log.error("Failed to load Mail automation activity", {
       mailboxId,

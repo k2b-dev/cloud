@@ -1,26 +1,28 @@
+import { fileIcons } from "@k2b/stdlib";
+import { mutation as mutations } from "@k2b/stdlib/solid";
 import {
+  Button,
   canPreviewFile,
   dialogCore,
   FileView,
   type FileViewContent,
   formatFileViewSize,
   getFileViewPreviewKind,
+  IconButton,
+  IconButtonLink,
   PanelDialog,
   panelDialogWorkspaceOptions,
   prompts,
   Tooltip,
   toast,
-  Button,
-  IconButton,
-  IconButtonLink,
+  useLocale,
 } from "@k2b/ui";
-import { fileIcons } from "@k2b/stdlib";
-import { mutation as mutations } from "@k2b/stdlib/solid";
-import { For, onCleanup, Show } from "solid-js";
+import { createMemo, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { CreateAttachmentLinkInput, CreatedAttachmentLink } from "../../contracts";
 import { readApiError } from "./api-response";
 import { promptAttachmentLinkOptions } from "./attachment-link-ui";
+import { mailMessageMessages } from "./mail-message-messages";
 import { attachmentPreviewKind } from "./mail-message-presentation";
 
 type Attachment = {
@@ -48,10 +50,12 @@ const canPreviewAttachment = (attachment: Attachment): boolean => {
 };
 
 function MailAttachmentPreviewDialog(props: { attachment: Attachment; downloadHref: string; previewHref: string; close: () => void }) {
-  const filename = () => props.attachment.filename ?? "Attachment";
+  const locale = useLocale();
+  const messages = createMemo(() => mailMessageMessages.resolve([locale()]).t);
+  const filename = () => props.attachment.filename ?? messages().attachment;
   const load = async (): Promise<FileViewContent> => {
     const response = await fetch(props.previewHref, { credentials: "same-origin" });
-    if (!response.ok) throw new Error(await readApiError(response, "Could not preview attachment"));
+    if (!response.ok) throw new Error(await readApiError(response, messages().previewAttachmentFailed));
     return {
       encoding: "utf8",
       content: await response.text(),
@@ -70,10 +74,10 @@ function MailAttachmentPreviewDialog(props: { attachment: Attachment; downloadHr
           mimeType: props.attachment.contentType,
         })}`}
         actions={
-          <Tooltip.Anchor content="Download attachment">
-            <IconButtonLink href={props.downloadHref} download={filename()} label={`Download ${filename()}`}>
+          <Tooltip.Anchor content={messages().downloadAttachment}>
+            <IconButtonLink href={props.downloadHref} download={filename()} label={messages().downloadNamed({ name: filename() })}>
               <i class="ti ti-download" aria-hidden="true" />
-              <span class="sr-only">Download {filename()}</span>
+              <span class="sr-only">{messages().downloadNamed({ name: filename() })}</span>
             </IconButtonLink>
           </Tooltip.Anchor>
         }
@@ -106,6 +110,8 @@ export default function MailMessageAttachments(props: {
   attachments: Attachment[];
   canShare?: boolean;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailMessageMessages.resolve([locale()]).t);
   let disposed = false;
   const baseUrl = (attachment: Attachment) =>
     `/api/mail/mailboxes/${props.mailboxId}/messages/${props.messageId}/attachments/${attachment.id}`;
@@ -119,15 +125,15 @@ export default function MailMessageAttachments(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not create attachment link"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().createLinkFailed));
       return response.json();
     },
     onSuccess: async ({ url }) => {
       try {
         await navigator.clipboard.writeText(url);
-        toast.success("Public link copied");
+        toast.success(messages().publicLinkCopied);
       } catch {
-        await prompts.alert(url, { title: "Public attachment link" });
+        await prompts.alert(url, { title: messages().publicAttachmentLink });
       }
     },
     onError: (error) => prompts.error(error.message),
@@ -138,13 +144,13 @@ export default function MailMessageAttachments(props: {
   });
 
   const shareAttachment = async (attachment: Attachment) => {
-    const input = await promptAttachmentLinkOptions();
+    const input = await promptAttachmentLinkOptions(locale());
     if (!disposed && input) createLink.mutate({ attachment, input });
   };
 
   return (
     <div class="mt-4">
-      <p class="mb-1.5 text-xs font-medium text-dimmed">Attachments</p>
+      <p class="mb-1.5 text-xs font-medium text-dimmed">{messages().attachments}</p>
       <div class="flex flex-col gap-1.5">
         <For each={props.attachments}>
           {(attachment) => {
@@ -165,14 +171,14 @@ export default function MailMessageAttachments(props: {
                     onClick={() => void openAttachmentPreview(attachment, downloadHref, previewHref)}
                   >
                     <i class="ti ti-eye" aria-hidden="true" />
-                    Preview
+                    {messages().preview}
                   </Button>
                 </Show>
                 <Show when={props.canShare}>
                   <IconButton
                     type="button"
                     class="!h-7 !w-7 !p-0 text-sm"
-                    label={`Share ${attachment.filename ?? "attachment"}`}
+                    label={messages().shareNamed({ name: attachment.filename ?? messages().attachment.toLowerCase() })}
                     disabled={createLink.loading()}
                     onClick={() => void shareAttachment(attachment)}
                   >
@@ -182,10 +188,12 @@ export default function MailMessageAttachments(props: {
                 <IconButtonLink
                   class="!h-7 !w-7 !p-0 text-sm"
                   href={downloadHref}
-                  label={`Download ${attachment.filename ?? "attachment"}`}
+                  label={messages().downloadNamed({ name: attachment.filename ?? messages().attachment.toLowerCase() })}
                 >
                   <i class="ti ti-download" aria-hidden="true" />
-                  <span class="sr-only">Download {attachment.filename ?? "attachment"}</span>
+                  <span class="sr-only">
+                    {messages().downloadNamed({ name: attachment.filename ?? messages().attachment.toLowerCase() })}
+                  </span>
                 </IconButtonLink>
               </div>
             );

@@ -1,11 +1,12 @@
 import { documentNavigate } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, Placeholder, prompts, Select, StatusBadge, toast } from "@k2b/ui";
+import { Button, ButtonLink, Placeholder, prompts, Select, StatusBadge, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { readApiError } from "./api-response";
 import { mailDraftHref } from "./mail-compose-route";
+import { mailRemainingMessages } from "./mail-remaining-messages";
 
 export default function MailCalendarInvitation(props: {
   mailboxId: string;
@@ -14,6 +15,8 @@ export default function MailCalendarInvitation(props: {
   canWrite: boolean;
   dateConfig: DateContext;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
   const [selectedSpaceId, setSelectedSpaceId] = createSignal<string | null>(null);
   const [pendingResponse, setPendingResponse] = createSignal<"accepted" | "tentative" | "declined" | null>(null);
   let responseIdempotencyKeys = new Map<"accepted" | "tentative" | "declined", string>();
@@ -52,7 +55,7 @@ export default function MailCalendarInvitation(props: {
         { param: { mailboxId: props.mailboxId, messageId: props.messageId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not read this calendar invitation"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().couldNotReadInvitation));
       return response.json();
     },
   });
@@ -64,7 +67,7 @@ export default function MailCalendarInvitation(props: {
         { param: { mailboxId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not load calendar destinations"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().couldNotLoadCalendarDestinations));
       return response.json();
     },
   });
@@ -81,20 +84,20 @@ export default function MailCalendarInvitation(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not add this event to Spaces"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().couldNotAddEvent));
       const result = await response.json();
       toast.success(
         result.outcome === "created"
-          ? "Event added to Spaces"
+          ? messages().eventAdded
           : result.outcome === "unchanged"
-            ? "Event is already up to date"
-            : "Event updated in Spaces",
+            ? messages().eventUpToDate
+            : messages().eventUpdated,
       );
       try {
         await previewQuery.invalidate();
       } catch (error) {
-        void prompts.error(error instanceof Error ? error.message : "The invitation could not be refreshed", {
-          title: "Event imported, refresh failed",
+        void prompts.error(error instanceof Error ? error.message : messages().invitationRefreshFailed, {
+          title: messages().eventImportedRefreshFailed,
         });
       }
     },
@@ -114,7 +117,7 @@ export default function MailCalendarInvitation(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not create the calendar response"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().couldNotCreateCalendarResponse));
       const draft = await response.json();
       documentNavigate(mailDraftHref(props.mailboxId, draft.id, props.requestUrl));
     },
@@ -147,12 +150,12 @@ export default function MailCalendarInvitation(props: {
           <Placeholder
             state={previewQuery.error() ? "error" : "loading"}
             variant="compact"
-            title={previewQuery.error() ? "Calendar invitation unavailable" : "Reading calendar invitation"}
+            title={previewQuery.error() ? messages().invitationUnavailable : messages().readingInvitation}
             description={previewQuery.error()?.message}
             action={
               previewQuery.error() ? (
                 <Button variant="secondary" size="sm" type="button" onClick={() => void previewQuery.refresh()}>
-                  Retry
+                  {messages().retry}
                 </Button>
               ) : undefined
             }
@@ -169,7 +172,7 @@ export default function MailCalendarInvitation(props: {
                 <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <h3 class="truncate text-sm font-semibold text-primary">{value().invitation.title}</h3>
                   <Show when={isCancelled()}>
-                    <StatusBadge tone="error" label="Cancelled" />
+                    <StatusBadge tone="error" label={messages().cancelled} />
                   </Show>
                 </div>
                 <p class="mt-0.5 text-xs text-secondary">
@@ -185,18 +188,24 @@ export default function MailCalendarInvitation(props: {
                   )}
                 </Show>
                 <Show when={value().invitation.organizer}>
-                  {(organizer) => <p class="mt-0.5 truncate text-xs text-dimmed">Organized by {organizer().name ?? organizer().address}</p>}
+                  {(organizer) => (
+                    <p class="mt-0.5 truncate text-xs text-dimmed">
+                      {messages().organizedBy({ organizer: organizer().name ?? organizer().address })}
+                    </p>
+                  )}
                 </Show>
                 <Show when={value().response}>
                   {(response) => (
                     <p class="mt-1 text-xs text-secondary">
                       <i class="ti ti-edit mr-1" aria-hidden="true" />
-                      {response().participationStatus === "accepted"
-                        ? "Acceptance"
-                        : response().participationStatus === "tentative"
-                          ? "Tentative response"
-                          : "Decline"}{" "}
-                      draft prepared in Mail
+                      {messages().responseDraftPrepared({
+                        response:
+                          response().participationStatus === "accepted"
+                            ? messages().acceptance
+                            : response().participationStatus === "tentative"
+                              ? messages().tentativeResponse
+                              : messages().decline,
+                      })}
                     </p>
                   )}
                 </Show>
@@ -208,11 +217,11 @@ export default function MailCalendarInvitation(props: {
                 <Show when={!value().existing && destinationOptions().length > 1}>
                   <div class="min-w-48 flex-1">
                     <Select
-                      aria-label="Destination Space"
+                      aria-label={messages().destinationSpace}
                       value={() => selectedSpaceId() ?? null}
                       onValueChange={chooseSpace}
                       options={destinationOptions()}
-                      placeholder="Choose a Space"
+                      placeholder={messages().chooseSpace}
                     />
                   </div>
                 </Show>
@@ -224,19 +233,19 @@ export default function MailCalendarInvitation(props: {
                       size="sm"
                       type="button"
                       loading={importEvent.loading()}
-                      loadingLabel="Adding to Spaces"
+                      loadingLabel={messages().addingToSpaces}
                       disabled={!selectedSpaceId()}
                       onClick={() => importEvent.mutate()}
                     >
                       <i class="ti ti-calendar-plus" aria-hidden="true" />
-                      Add to Spaces
+                      {messages().addToSpaces}
                     </Button>
                   }
                 >
                   {(existing) => (
                     <ButtonLink variant="secondary" size="sm" href={existing().href} target="_blank" rel="noreferrer">
                       <i class="ti ti-external-link" aria-hidden="true" />
-                      Open in Spaces
+                      {messages().openInSpaces}
                     </ButtonLink>
                   )}
                 </Show>
@@ -246,33 +255,33 @@ export default function MailCalendarInvitation(props: {
                       size="sm"
                       type="button"
                       loading={respond.loading() && pendingResponse() === "accepted"}
-                      loadingLabel="Preparing acceptance"
+                      loadingLabel={messages().preparingAcceptance}
                       disabled={respond.loading() || importEvent.loading()}
                       onClick={() => respond.mutate("accepted")}
                     >
-                      <i class="ti ti-check" aria-hidden="true" /> Accept
+                      <i class="ti ti-check" aria-hidden="true" /> {messages().accept}
                     </Button>
                     <Button
                       variant="secondary"
                       size="sm"
                       type="button"
                       loading={respond.loading() && pendingResponse() === "tentative"}
-                      loadingLabel="Preparing tentative response"
+                      loadingLabel={messages().preparingTentativeResponse}
                       disabled={respond.loading() || importEvent.loading()}
                       onClick={() => respond.mutate("tentative")}
                     >
-                      Maybe
+                      {messages().maybe}
                     </Button>
                     <Button
                       variant="secondary"
                       size="sm"
                       type="button"
                       loading={respond.loading() && pendingResponse() === "declined"}
-                      loadingLabel="Preparing decline"
+                      loadingLabel={messages().preparingDecline}
                       disabled={respond.loading() || importEvent.loading()}
                       onClick={() => respond.mutate("declined")}
                     >
-                      Decline
+                      {messages().decline}
                     </Button>
                   </div>
                 </Show>
@@ -284,24 +293,24 @@ export default function MailCalendarInvitation(props: {
               </p>
             </Show>
             <Show when={props.canWrite && destinationQuery.loading()}>
-              <Placeholder state="loading" variant="compact" align="left" title="Loading writable Spaces" />
+              <Placeholder state="loading" variant="compact" align="left" title={messages().loadingWritableSpaces} />
             </Show>
             <Show when={props.canWrite && destinationQuery.error()}>
               <Placeholder
                 state="error"
                 variant="compact"
                 align="left"
-                title="Writable Spaces unavailable"
+                title={messages().writableSpacesUnavailable}
                 description={destinationQuery.error()?.message}
                 action={
                   <Button variant="secondary" size="sm" type="button" onClick={() => void destinationQuery.refresh()}>
-                    Retry
+                    {messages().retry}
                   </Button>
                 }
               />
             </Show>
             <Show when={props.canWrite && value().existing && destinations() && !linkedSpaceIsWritable()}>
-              <p class="text-xs text-dimmed">This event is linked to a Space where you do not have write access.</p>
+              <p class="text-xs text-dimmed">{messages().linkedSpaceNotWritable}</p>
             </Show>
             <Show when={props.canWrite && destinations() && destinationOptions().length === 0}>
               <Placeholder
@@ -309,8 +318,8 @@ export default function MailCalendarInvitation(props: {
                 variant="compact"
                 align="left"
                 icon="ti ti-calendar-off"
-                title="No writable Space"
-                description="Ask a Space owner for write access."
+                title={messages().noWritableSpace}
+                description={messages().askSpaceOwner}
               />
             </Show>
           </div>

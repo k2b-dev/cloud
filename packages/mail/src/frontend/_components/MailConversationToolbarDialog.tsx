@@ -1,16 +1,19 @@
-import { CheckboxCard, prompts, Button } from "@k2b/ui";
-import { createSignal, For } from "solid-js";
+import { Button, CheckboxCard, prompts, useLocale } from "@k2b/ui";
+import { createMemo, createSignal, For } from "solid-js";
 import {
-  MAIL_CONVERSATION_TOOLBAR_SECTIONS,
+  getMailConversationToolbarSections,
   MAX_MAIL_CONVERSATION_TOOLBAR_ACTIONS,
   type MailConversationToolbarActionId,
   normalizeMailConversationToolbarActions,
 } from "./mail-conversation-toolbar";
+import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 
 export const openMailConversationToolbarDialog = (
   current: readonly MailConversationToolbarActionId[],
-): Promise<MailConversationToolbarActionId[] | undefined> =>
-  prompts.dialog<MailConversationToolbarActionId[]>(
+): Promise<MailConversationToolbarActionId[] | undefined> => {
+  const locale = useLocale();
+  const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
+  return prompts.dialog<MailConversationToolbarActionId[]>(
     (close) => {
       const [selected, setSelected] = createSignal(normalizeMailConversationToolbarActions(current));
       const toggle = (actionId: MailConversationToolbarActionId, enabled: boolean) => {
@@ -24,15 +27,11 @@ export const openMailConversationToolbarDialog = (
       return (
         <div class="flex min-h-0 flex-col gap-4">
           <div>
-            <p class="text-sm text-secondary">
-              Choose up to {MAX_MAIL_CONVERSATION_TOOLBAR_ACTIONS} direct actions. Every action remains available in the overflow menu.
-            </p>
-            <p class="mt-1 text-xs text-dimmed">
-              Actions appear in the order shown here. Unavailable actions stay hidden for the current conversation.
-            </p>
+            <p class="text-sm text-secondary">{t().toolbarHint({ count: MAX_MAIL_CONVERSATION_TOOLBAR_ACTIONS })}</p>
+            <p class="mt-1 text-xs text-dimmed">{t().toolbarOrderHint}</p>
           </div>
           <div class="flex min-h-0 flex-col gap-4 overflow-y-auto">
-            <For each={MAIL_CONVERSATION_TOOLBAR_SECTIONS}>
+            <For each={getMailConversationToolbarSections(locale())}>
               {(section) => (
                 <section class="flex flex-col gap-2">
                   <p class="section-label">{section.label}</p>
@@ -59,19 +58,20 @@ export const openMailConversationToolbarDialog = (
           </div>
           <div class="flex items-center justify-between gap-2">
             <span class="text-xs tabular-nums text-dimmed">
-              {selected().length} of {MAX_MAIL_CONVERSATION_TOOLBAR_ACTIONS} selected
+              {t().selectedCount({ selected: selected().length, total: MAX_MAIL_CONVERSATION_TOOLBAR_ACTIONS })}
             </span>
             <div class="flex items-center gap-2">
               <Button variant="secondary" size="sm" type="button" onClick={() => close(undefined)}>
-                Cancel
+                {t().cancel}
               </Button>
               <Button size="sm" type="button" onClick={() => close(selected())}>
-                Save toolbar
+                {t().saveToolbar}
               </Button>
             </div>
           </div>
         </div>
       );
     },
-    { title: "Customize toolbar", icon: "ti ti-adjustments-horizontal", size: "large" },
+    { title: t().customizeToolbar, icon: "ti ti-adjustments-horizontal", size: "large" },
   );
+};

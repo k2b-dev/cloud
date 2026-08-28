@@ -10,12 +10,14 @@ import {
   SegmentedControl,
   Select,
   TextInput,
+  useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { CalendarEvent } from "../../app-integration-contracts";
 import type { MailDraft } from "../../contracts";
 import { readApiError } from "./api-response";
+import { mailComposerMessages } from "./mail-composer-messages";
 
 type CalendarDestination = { id: string; name: string; color: string };
 
@@ -32,6 +34,8 @@ function MailComposerCalendarDialog(props: {
   dateConfig: DateContext;
   close: (value: MailDraft | null) => void;
 }) {
+  const locale = useLocale();
+  const t = () => mailComposerMessages.resolve([locale()]).t;
   const defaults = defaultRange();
   const [mode, setMode] = createSignal<"existing" | "create">("existing");
   const [destinations, setDestinations] = createSignal<CalendarDestination[]>([]);
@@ -52,7 +56,7 @@ function MailComposerCalendarDialog(props: {
         { param: { mailboxId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Spaces could not be loaded"));
+      if (!response.ok) throw new Error(await readApiError(response, t().spacesLoadFailed));
       return response.json();
     },
   });
@@ -71,7 +75,7 @@ function MailComposerCalendarDialog(props: {
         { param: { mailboxId: props.mailboxId }, query: { spaceId: nextSpaceId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Events could not be loaded"));
+      if (!response.ok) throw new Error(await readApiError(response, t().eventsLoadFailed));
       return response.json();
     },
   });
@@ -93,12 +97,12 @@ function MailComposerCalendarDialog(props: {
   };
 
   const validationError = createMemo(() => {
-    if (props.recipientCount === 0) return "Add at least one To or Cc recipient first.";
-    if (!spaceId()) return "Choose a writable Space.";
-    if (mode() === "existing") return eventId() ? null : "Choose an event.";
-    if (!title().trim()) return "Enter an event title.";
-    if (!startsAt() || !endsAt()) return "Choose a start and end time.";
-    if (new Date(endsAt()!) <= new Date(startsAt()!)) return "End time must be after start time.";
+    if (props.recipientCount === 0) return t().addToOrCc;
+    if (!spaceId()) return t().chooseWritableSpace;
+    if (mode() === "existing") return eventId() ? null : t().chooseEvent;
+    if (!title().trim()) return t().enterEventTitle;
+    if (!startsAt() || !endsAt()) return t().chooseEventTimes;
+    if (new Date(endsAt()!) <= new Date(startsAt()!)) return t().endAfterStart;
     return null;
   });
 
@@ -122,7 +126,7 @@ function MailComposerCalendarDialog(props: {
             },
             { init: { signal: abortSignal } },
           );
-          if (!response.ok) throw new Error(await readApiError(response, "Event could not be created"));
+          if (!response.ok) throw new Error(await readApiError(response, t().eventCreateFailed));
           itemId = (await response.json()).id;
           setCreatedEventId(itemId);
         }
@@ -134,7 +138,7 @@ function MailComposerCalendarDialog(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Invitation could not be attached"));
+      if (!response.ok) throw new Error(await readApiError(response, t().invitationAttachFailed));
       return response.json();
     },
     onSuccess: (draft) => props.close(draft),
@@ -159,21 +163,17 @@ function MailComposerCalendarDialog(props: {
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title="Add calendar invitation"
-        subtitle="Attach an existing event or create one in Spaces"
+        title={t().addCalendarInvitation}
+        subtitle={t().calendarSubtitle}
         icon="ti ti-calendar-plus"
         close={closeDialog}
         closeDisabled={saving()}
       />
       <PanelDialog.Body>
-        <PanelDialog.Section
-          title="Event"
-          subtitle="To and Cc recipients become attendees. Bcc recipients stay private."
-          icon="ti ti-calendar-event"
-        >
+        <PanelDialog.Section title={t().event} subtitle={t().attendeesDescription} icon="ti ti-calendar-event">
           <div class="flex flex-col gap-3">
             <SegmentedControl<"existing" | "create">
-              ariaLabel="Calendar event source"
+              ariaLabel={t().calendarSource}
               value={mode}
               onValueChange={(value) => {
                 setMode(value);
@@ -182,13 +182,13 @@ function MailComposerCalendarDialog(props: {
               }}
               disabled={saving() || Boolean(createdEventId())}
               options={[
-                { value: "existing", label: "Existing event", icon: "ti ti-calendar" },
-                { value: "create", label: "New event", icon: "ti ti-calendar-plus" },
+                { value: "existing", label: t().existingEvent, icon: "ti ti-calendar" },
+                { value: "create", label: t().newEvent, icon: "ti ti-calendar-plus" },
               ]}
             />
             <Show
               when={!destinationQuery.loading()}
-              fallback={<Placeholder state="loading" variant="compact" align="left" title="Loading writable Spaces" />}
+              fallback={<Placeholder state="loading" variant="compact" align="left" title={t().loadingWritableSpaces} />}
             >
               <Show
                 when={!destinationQuery.error()}
@@ -197,11 +197,11 @@ function MailComposerCalendarDialog(props: {
                     state="error"
                     variant="compact"
                     align="left"
-                    title="Writable Spaces unavailable"
+                    title={t().writableSpacesUnavailable}
                     description={destinationQuery.error()?.message}
                     action={
                       <Button variant="secondary" size="sm" type="button" onClick={() => void destinationQuery.refresh()}>
-                        Retry
+                        {t().retry}
                       </Button>
                     }
                   />
@@ -215,14 +215,14 @@ function MailComposerCalendarDialog(props: {
                       variant="compact"
                       align="left"
                       icon="ti ti-calendar-off"
-                      title="No writable Spaces"
-                      description="Create a Space or ask for write access first."
+                      title={t().noWritableSpaces}
+                      description={t().noWritableSpacesDescription}
                     />
                   }
                 >
                   <Select
-                    label="Space"
-                    placeholder="Choose a Space"
+                    label={t().space}
+                    placeholder={t().chooseSpace}
                     value={spaceId}
                     onValueChange={selectSpace}
                     options={destinations().map((space) => ({ id: space.id, label: space.name, color: space.color }))}
@@ -234,7 +234,7 @@ function MailComposerCalendarDialog(props: {
                       <div class="grid gap-3 sm:grid-cols-2">
                         <div class="sm:col-span-2">
                           <TextInput
-                            label="Title"
+                            label={t().title}
                             value={title}
                             onValueChange={setTitle}
                             maxLength={200}
@@ -243,7 +243,7 @@ function MailComposerCalendarDialog(props: {
                         </div>
                         <div class="sm:col-span-2">
                           <TextInput
-                            label="Location"
+                            label={t().location}
                             value={location}
                             onValueChange={setLocation}
                             maxLength={500}
@@ -251,14 +251,14 @@ function MailComposerCalendarDialog(props: {
                           />
                         </div>
                         <DateTimePicker
-                          label="Starts"
+                          label={t().starts}
                           value={startsAt}
                           onValueChange={setStartsAt}
                           dateConfig={props.dateConfig}
                           disabled={saving() || Boolean(createdEventId())}
                         />
                         <DateTimePicker
-                          label="Ends"
+                          label={t().ends}
                           value={endsAt}
                           onValueChange={setEndsAt}
                           dateConfig={props.dateConfig}
@@ -269,7 +269,7 @@ function MailComposerCalendarDialog(props: {
                   >
                     <Show
                       when={!eventQuery.loading()}
-                      fallback={<Placeholder state="loading" variant="compact" align="left" title="Loading events" />}
+                      fallback={<Placeholder state="loading" variant="compact" align="left" title={t().loadingEvents} />}
                     >
                       <Show
                         when={!eventQuery.error()}
@@ -278,11 +278,11 @@ function MailComposerCalendarDialog(props: {
                             state="error"
                             variant="compact"
                             align="left"
-                            title="Events unavailable"
+                            title={t().eventsUnavailable}
                             description={eventQuery.error()?.message}
                             action={
                               <Button variant="secondary" size="sm" type="button" onClick={() => void eventQuery.refresh()}>
-                                Retry
+                                {t().retry}
                               </Button>
                             }
                           />
@@ -296,14 +296,14 @@ function MailComposerCalendarDialog(props: {
                               variant="compact"
                               align="left"
                               icon="ti ti-calendar-off"
-                              title="No events in this Space"
-                              description="Choose New event to create one."
+                              title={t().noEvents}
+                              description={t().noEventsDescription}
                             />
                           }
                         >
                           <Select
-                            label="Event"
-                            placeholder="Choose an event"
+                            label={t().event}
+                            placeholder={t().chooseEvent}
                             value={eventId}
                             onValueChange={setEventId}
                             options={events().map((event) => ({
@@ -329,25 +329,25 @@ function MailComposerCalendarDialog(props: {
               )}
             </Show>
             <Show when={createdEventId() && error()}>
-              <p class="text-xs text-dimmed">The event was created in Spaces. Retry to attach the same invitation.</p>
+              <p class="text-xs text-dimmed">{t().eventCreatedRetry}</p>
             </Show>
           </div>
         </PanelDialog.Section>
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <Button variant="secondary" size="sm" type="button" disabled={saving()} onClick={closeDialog}>
-          Cancel
+          {t().cancel}
         </Button>
         <Button
           size="sm"
           type="button"
           loading={saving()}
-          loadingLabel="Attaching invitation"
+          loadingLabel={t().attachingInvitation}
           disabled={loading() || !spaceId() || Boolean(destinationQuery.error()) || (mode() === "existing" && Boolean(eventQuery.error()))}
           onClick={() => void attach()}
         >
           <i class="ti ti-paperclip" aria-hidden="true" />
-          Attach invitation
+          {t().attachInvitation}
         </Button>
       </PanelDialog.Footer>
     </PanelDialog>

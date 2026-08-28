@@ -29,7 +29,7 @@ export const mailDraftSeedHref = (mailboxId: string, seedId: string, returnHref:
 
 export const mailtoHandlerTemplate = (origin: string): string => `${origin.replace(/\/+$/, "")}/app/mail/compose?mailto=%s`;
 
-type MailtoRegistrationResult = { kind: "requested" } | { kind: "unsupported" } | { kind: "failed"; message: string };
+type MailtoRegistrationResult = { kind: "requested" } | { kind: "unsupported" } | { kind: "failed" };
 
 export const registerMailtoHandler = (
   navigatorValue: Pick<Navigator, "registerProtocolHandler"> | Record<string, never>,
@@ -41,10 +41,7 @@ export const registerMailtoHandler = (
   try {
     navigatorValue.registerProtocolHandler("mailto", mailtoHandlerTemplate(origin));
     return { kind: "requested" };
-  } catch (error) {
-    return {
-      kind: "failed",
-      message: error instanceof Error ? error.message : "The browser did not allow email link registration.",
-    };
+  } catch {
+    return { kind: "failed" };
   }
 };

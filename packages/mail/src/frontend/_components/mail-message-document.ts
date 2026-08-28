@@ -29,12 +29,22 @@ export const estimateInitialMessageBodyHeight = (plainText: string | null, html:
   );
 };
 
-export const buildMessageDocument = (html: string, channel: string, linksDisabled = false): string => {
+const escapeHtmlAttribute = (value: string): string =>
+  value.replaceAll("&", "&amp;").replaceAll('"', "&quot;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+
+export const buildMessageDocument = (
+  html: string,
+  channel: string,
+  linksDisabled = false,
+  locale = "en",
+  quotedTextLabel = "Show quoted text",
+): string => {
   const channelLiteral = JSON.stringify(channel).replaceAll("<", "\\u003c");
+  const quotedTextLabelLiteral = JSON.stringify(quotedTextLabel).replaceAll("<", "\\u003c");
   const linksDisabledLiteral = linksDisabled ? "true" : "false";
   const scriptNonce = channel.replace(/[^a-zA-Z0-9]/gu, "") || "mailbridge";
   return `<!doctype html>
-<html>
+<html lang="${escapeHtmlAttribute(locale)}">
 <head>
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob:; style-src 'unsafe-inline'; script-src 'nonce-${scriptNonce}'; form-action 'none'; base-uri 'none'; object-src 'none'">
@@ -69,7 +79,7 @@ export const buildMessageDocument = (html: string, channel: string, linksDisable
         const details = document.createElement("details");
         details.className = "mail-quoted-history";
         const summary = document.createElement("summary");
-        summary.textContent = "Show quoted text";
+        summary.textContent = ${quotedTextLabelLiteral};
         node.replaceWith(details);
         details.append(summary, node);
       }

@@ -103,6 +103,17 @@ describe("mail message presentation", () => {
     expect(messageDeliveryControlLabel("undo_window", false)).toBeNull();
   });
 
+  test("localizes delivery badges and actions for German, de-CH, and unknown-locale fallback", () => {
+    expect(messageDeliveryPresentation("sending", "de")).toMatchObject({ label: "Wird gesendet", tone: "running" });
+    expect(messageDeliveryPresentation("failed", "de-CH")).toMatchObject({
+      label: "Konnte nicht gesendet werden",
+      tone: "error",
+    });
+    expect(messageDeliveryControlLabel("undo_window", true, "de-CH")).toBe("Senden rückgängig machen");
+    expect(messageDeliveryPresentation("unknown", "fr")?.label).toBe("Delivery status unclear");
+    expect(messageDeliveryControlLabel("scheduled", true, "fr")).toBe("Scheduled");
+  });
+
   test("distinguishes retries, partial sending, sent-copy trouble, and an unclear outcome", () => {
     const delivery = {
       submissionId: "delivery",

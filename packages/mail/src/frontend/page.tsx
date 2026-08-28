@@ -1,12 +1,14 @@
-import { type AuthContext, getDateConfig } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../config";
 import { mailFocusViewSchema, ResourceShortIdSchema } from "../contracts";
 import type { MailRequestContext } from "../service";
 import { focus, mailboxes } from "../service";
+import { localizeMailError } from "../service/error-messages";
 import { loadMailboxConversationDetail } from "../service/workspace";
 import { readMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
 import MailOverview from "./MailOverview.island";
+import { mailPageMessages } from "./pages-messages";
 import {
   projectMailConversationDetail,
   projectSsrFocusPage,
@@ -16,6 +18,8 @@ import {
 } from "./ssr-public-boundary";
 
 export default ssr<AuthContext>(async (c) => {
+  const locale = getLocale(c);
+  const { t } = mailPageMessages.resolve([locale]);
   const actor = c.get("actor");
   const user = actor.kind === "user" ? actor.user : actor.delegatedUser;
   if (!user) return c.redirect("/");
@@ -63,13 +67,13 @@ export default ssr<AuthContext>(async (c) => {
     ? await projectSsrFocusPage(focusResult.data)
     : { items: [], counts: { mine: 0, unassigned: 0, waiting: 0, all: 0 }, mailboxCounts: [], nextCursor: null };
   return () => (
-    <Layout c={c} title={[{ title: "Start", href: "/" }, { title: "Mail" }]}>
+    <Layout c={c} title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbMail }]}>
       <MailOverview
         mailboxes={publicMailboxes}
         deletedMailboxes={deletedMailboxes}
         initialDeletedCursor={deletedResult.ok ? deletedResult.data.nextCursor : null}
         initialFocus={initialFocus}
-        initialFocusError={focusResult.ok ? null : focusResult.error.message}
+        initialFocusError={focusResult.ok ? null : localizeMailError(focusResult.error, locale).message}
         initialView={view}
         initialSelection={initialSelection}
         initialDetail={initialDetail}

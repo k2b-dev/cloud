@@ -26,6 +26,14 @@ describe("compose safety", () => {
     );
   });
 
+  test("localizes warnings for regional German locales", () => {
+    expect(evaluateComposeSafety(source({ body: "Im Anhang findest du den Bericht." }), "de-CH").warnings[0]).toEqual({
+      id: "missing_attachment",
+      title: "Kein Anhang hinzugefügt",
+      description: "Die E-Mail erwähnt einen Anhang, enthält aber keine Datei.",
+    });
+  });
+
   test("deduplicates recipients before applying the threshold", () => {
     const review = evaluateComposeSafety(
       source({

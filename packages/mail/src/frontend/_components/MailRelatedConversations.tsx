@@ -1,13 +1,11 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
-import { Button, DetailPanel, Placeholder } from "@k2b/ui";
-import { For, Show } from "solid-js";
+import { Button, DetailPanel, Placeholder, useLocale } from "@k2b/ui";
+import { createMemo, For, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { RelatedConversationSummary } from "../../contracts";
 import { readApiError } from "./api-response";
-
-const reasonLabel = (reason: RelatedConversationSummary["reasons"][number]): string =>
-  reason.kind === "subject" ? "Same subject" : `Also with ${reason.value}`;
+import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 
 export function MailRelatedConversationsView(props: {
   mailboxId: string;
@@ -17,12 +15,13 @@ export function MailRelatedConversationsView(props: {
   dateConfig: DateContext;
   onRetry: () => void;
 }) {
+  const locale = useLocale();
+  const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
+  const reasonLabel = (reason: RelatedConversationSummary["reasons"][number]): string =>
+    reason.kind === "subject" ? t().sameSubject : t().alsoWith({ value: reason.value });
   return (
-    <DetailPanel.Section title="Related mail" icon="ti ti-mail-search" tone="neutral" meta={props.items?.length}>
-      <Show
-        when={!props.loading}
-        fallback={<Placeholder state="loading" variant="compact" align="center" title="Finding related mail..." />}
-      >
+    <DetailPanel.Section title={t().relatedMail} icon="ti ti-mail-search" tone="neutral" meta={props.items?.length}>
+      <Show when={!props.loading} fallback={<Placeholder state="loading" variant="compact" align="center" title={t().findingRelated} />}>
         <Show
           when={!props.error}
           fallback={
@@ -30,11 +29,11 @@ export function MailRelatedConversationsView(props: {
               state="error"
               variant="compact"
               align="center"
-              title="Related mail unavailable"
+              title={t().relatedUnavailable}
               description={props.error ?? undefined}
               action={
                 <Button variant="secondary" size="sm" type="button" onClick={props.onRetry}>
-                  Retry
+                  {t().retry}
                 </Button>
               }
             />
@@ -48,8 +47,8 @@ export function MailRelatedConversationsView(props: {
                 variant="compact"
                 align="center"
                 icon="ti ti-mail-off"
-                title="No related mail"
-                description="No other conversation shares a participant or this subject."
+                title={t().noRelated}
+                description={t().noRelatedDescription}
               />
             }
           >
@@ -59,7 +58,7 @@ export function MailRelatedConversationsView(props: {
                   <DetailPanel.Action
                     href={`/app/mail/${encodeURIComponent(props.mailboxId)}?conversation=${encodeURIComponent(item.id)}`}
                     leading={<i class="ti ti-mail" aria-hidden="true" />}
-                    title={item.subject.trim() || "(No subject)"}
+                    title={item.subject.trim() || t().noSubject}
                     description={`${item.reasons.map(reasonLabel).join(" · ")} · ${dates.formatDateTimeRelative(item.latestMessageAt, props.dateConfig)}`}
                     trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
                   />
@@ -79,6 +78,8 @@ export default function MailRelatedConversations(props: {
   active: boolean;
   dateConfig: DateContext;
 }) {
+  const locale = useLocale();
+  const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   const related = query.create<readonly [string, string], RelatedConversationSummary[]>({
     source: () => [props.mailboxId, props.conversationId] as const,
     enabled: () => props.active,
@@ -90,7 +91,7 @@ export default function MailRelatedConversations(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not load related mail"));
+      if (!response.ok) throw new Error(await readApiError(response, t().loadRelatedFailed));
       return response.json();
     },
   });

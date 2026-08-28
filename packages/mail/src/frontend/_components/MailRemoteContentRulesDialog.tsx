@@ -12,14 +12,18 @@ import {
   StatusBadge,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
-import { createSignal, For, onCleanup, Show } from "solid-js";
+import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { RemoteContentRuleScope } from "../../contracts";
 import type { RemoteContentRule } from "../../service/remote-content";
 import { readApiError } from "./api-response";
+import { mailSettingsMessages } from "./mail-settings-messages";
 
 function MailRemoteContentRulesDialog(props: { mailboxId: string; close: () => void }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const [scope, setScope] = createSignal<RemoteContentRuleScope>("sender");
   const [value, setValue] = createSignal("");
 
@@ -30,7 +34,7 @@ function MailRemoteContentRulesDialog(props: { mailboxId: string; close: () => v
         { param: { mailboxId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not load remote image preferences"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedLoadRemoteImagePreferences));
       return response.json();
     },
   });
@@ -44,15 +48,15 @@ function MailRemoteContentRulesDialog(props: { mailboxId: string; close: () => v
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not save the remote image preference"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedSaveRemoteImagePreference));
       return response.json();
     },
     onSuccess: () => {
       setValue("");
-      toast.success("Remote image preference saved");
+      toast.success(messages().remoteImagePreferenceSaved);
       void rules.invalidate().catch((error) =>
-        prompts.error(error instanceof Error ? error.message : "The preferences could not be refreshed", {
-          title: "Preference saved, refresh failed",
+        prompts.error(error instanceof Error ? error.message : messages().preferencesRefreshFailed, {
+          title: messages().preferenceSavedRefreshFailed,
         }),
       );
     },
@@ -65,13 +69,13 @@ function MailRemoteContentRulesDialog(props: { mailboxId: string; close: () => v
         { param: { mailboxId: props.mailboxId, ruleId: rule.id } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not remove the remote image preference"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedRemoveRemoteImagePreference));
       return rule.id;
     },
     onSuccess: () =>
       void rules.invalidate().catch((error) =>
-        prompts.error(error instanceof Error ? error.message : "The preferences could not be refreshed", {
-          title: "Preference removed, refresh failed",
+        prompts.error(error instanceof Error ? error.message : messages().preferencesRefreshFailed, {
+          title: messages().preferenceRemovedRefreshFailed,
         }),
       ),
     onError: (error) => prompts.error(error.message),
@@ -85,21 +89,21 @@ function MailRemoteContentRulesDialog(props: { mailboxId: string; close: () => v
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title="Remote images"
-        subtitle="Choose senders whose external images may load automatically"
+        title={messages().remoteImages}
+        subtitle={messages().remoteImagesSubtitle}
         icon="ti ti-photo-shield"
         close={props.close}
       />
       <PanelDialog.Body>
         <div class="flex flex-col gap-5">
           <NoticeCard tone="neutral" icon={false}>
-            Remote images can tell a sender when you opened a message. Mail blocks them unless you load them or allow a sender here.
+            {messages().remoteImagesPrivacy}
           </NoticeCard>
           <Show when={rules.data() && rules.error()}>
             <NoticeCard tone="warning" icon={false}>
-              The shown preferences could not be refreshed. Retry before making another change.
+              {messages().remoteImagePreferencesStale}
               <Button variant="ghost" size="xs" type="button" class="ml-2" onClick={() => void rules.refresh()}>
-                Retry
+                {messages().retry}
               </Button>
             </NoticeCard>
           </Show>
@@ -111,19 +115,19 @@ function MailRemoteContentRulesDialog(props: { mailboxId: string; close: () => v
               if (value().trim()) void create.mutate();
             }}
           >
-            <h3 class="text-sm font-semibold text-primary">Always load images</h3>
+            <h3 class="text-sm font-semibold text-primary">{messages().alwaysLoadImages}</h3>
             <div class="grid grid-cols-1 gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_auto] sm:items-end">
               <Select
-                label="Match"
+                label={messages().match}
                 value={scope}
                 onValueChange={(next) => setScope(next as RemoteContentRuleScope)}
                 options={[
-                  { id: "sender", label: "Sender", icon: "ti ti-user" },
-                  { id: "domain", label: "Domain", icon: "ti ti-world" },
+                  { id: "sender", label: messages().sender, icon: "ti ti-user" },
+                  { id: "domain", label: messages().domain, icon: "ti ti-world" },
                 ]}
               />
               <TextInput
-                label={scope() === "sender" ? "Email address" : "Domain"}
+                label={scope() === "sender" ? messages().emailAddress : messages().domain}
                 placeholder={scope() === "sender" ? "name@example.com" : "example.com"}
                 value={value}
                 onValueChange={setValue}
@@ -132,7 +136,7 @@ function MailRemoteContentRulesDialog(props: { mailboxId: string; close: () => v
               />
               <Button size="sm" type="submit" disabled={create.loading() || Boolean(rules.error()) || !value().trim()}>
                 <i class={`ti ${create.loading() ? "ti-loader-2 animate-spin" : "ti-plus"}`} aria-hidden="true" />
-                Add
+                {messages().add}
               </Button>
             </div>
           </form>
@@ -142,17 +146,17 @@ function MailRemoteContentRulesDialog(props: { mailboxId: string; close: () => v
             fallback={
               <Show
                 when={rules.error()}
-                fallback={<Placeholder state="loading" variant="panel" title="Loading remote image preferences" />}
+                fallback={<Placeholder state="loading" variant="panel" title={messages().loadingRemoteImagePreferences} />}
               >
                 {(error) => (
                   <Placeholder
                     state="error"
                     variant="panel"
-                    title="Could not load remote image preferences"
+                    title={messages().couldNotLoadRemoteImagePreferences}
                     description={error().message}
                     action={
                       <Button variant="secondary" size="sm" type="button" onClick={() => void rules.refresh()}>
-                        Retry
+                        {messages().retry}
                       </Button>
                     }
                   />
@@ -166,8 +170,8 @@ function MailRemoteContentRulesDialog(props: { mailboxId: string; close: () => v
                 fallback={
                   <Placeholder
                     icon="ti ti-photo-shield"
-                    title="No automatic image loading"
-                    description="Remote images stay blocked until you choose to load them in a message."
+                    title={messages().noAutomaticImageLoading}
+                    description={messages().noAutomaticImageLoadingDescription}
                   />
                 }
               >
@@ -177,12 +181,12 @@ function MailRemoteContentRulesDialog(props: { mailboxId: string; close: () => v
                       <div class="flex min-w-0 items-center gap-3 rounded-[var(--ui-radius-control)] px-2 py-2 hover:bg-[var(--ui-hover)]">
                         <i class={`ti ${rule.scope === "sender" ? "ti-user" : "ti-world"} shrink-0 text-secondary`} aria-hidden="true" />
                         <span class="min-w-0 flex-1 truncate text-sm text-primary">{rule.value}</span>
-                        <StatusBadge tone="neutral" label={rule.scope === "sender" ? "Sender" : "Domain"} icon={null} />
+                        <StatusBadge tone="neutral" label={rule.scope === "sender" ? messages().sender : messages().domain} icon={null} />
                         <IconButton
                           type="button"
                           size="sm"
-                          label={`Remove ${rule.value}`}
-                          title="Remove preference"
+                          label={messages().removeValue({ value: rule.value })}
+                          title={messages().removePreference}
                           disabled={remove.loading() || Boolean(rules.error())}
                           onClick={() => void remove.mutate(rule)}
                         >

@@ -1,6 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
-import { Button, NoticeCard, Placeholder, ScrollArea } from "@k2b/ui";
+import { Button, NoticeCard, Placeholder, ScrollArea, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { SenderIdentity } from "../../contracts";
@@ -10,12 +10,15 @@ import { readApiError } from "./api-response";
 import MailMessageAttachments from "./MailMessageAttachments";
 import MailMessageBody from "./MailMessageBody";
 import { formatMailAddress } from "./mail-compose-derivation";
+import { mailComposerMessages } from "./mail-composer-messages";
 import { isOutgoingMessage, mergeLatestMessagePages } from "./mail-conversation-history";
 import { formatMailMessageDateTime } from "./mail-message-presentation";
 
 type MessagePage = { items: MessageSummary[]; nextCursor: string | null };
 
 const MailComposerHistoryBody = (props: { mailboxId: string; message: MessageSummary; expanded: boolean }) => {
+  const locale = useLocale();
+  const t = () => mailComposerMessages.resolve([locale()]).t;
   const detail = query.create<string, MessageDetail>({
     source: () => props.message.id,
     enabled: () => props.expanded,
@@ -24,7 +27,7 @@ const MailComposerHistoryBody = (props: { mailboxId: string; message: MessageSum
         { param: { mailboxId: props.mailboxId, messageId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not load this message"));
+      if (!response.ok) throw new Error(await readApiError(response, t().messageLoadFailed));
       return response.json();
     },
   });
@@ -39,16 +42,16 @@ const MailComposerHistoryBody = (props: { mailboxId: string; message: MessageSum
         <Show
           when={current()}
           fallback={
-            <Show when={detail.error()} fallback={<Placeholder state="loading" variant="compact" title="Loading message..." />}>
+            <Show when={detail.error()} fallback={<Placeholder state="loading" variant="compact" title={t().loadingMessage} />}>
               {(error) => (
                 <Placeholder
                   state="error"
                   variant="compact"
-                  title="Could not load this message"
+                  title={t().messageLoadFailed}
                   description={error().message}
                   action={
                     <Button variant="secondary" size="sm" type="button" onClick={() => void detail.refresh()}>
-                      Retry
+                      {t().retry}
                     </Button>
                   }
                 />
@@ -63,7 +66,7 @@ const MailComposerHistoryBody = (props: { mailboxId: string; message: MessageSum
               <div class="flex flex-col gap-3">
                 <Show when={message().security && message().security?.risk !== "none"}>
                   <NoticeCard tone="warning" icon="ti ti-shield-exclamation">
-                    This message may be unsafe. Links and attachments follow the same protections as in the Mail reader.
+                    {t().unsafeMessage}
                   </NoticeCard>
                 </Show>
                 <Show
@@ -72,9 +75,7 @@ const MailComposerHistoryBody = (props: { mailboxId: string; message: MessageSum
                     <Placeholder
                       state={message().hydrationStatus === "failed" ? "error" : "empty"}
                       variant="compact"
-                      title={
-                        message().hydrationStatus === "failed" ? "The message body could not be synchronized" : "This message has no body"
-                      }
+                      title={message().hydrationStatus === "failed" ? t().bodySyncFailed : t().noMessageBody}
                     />
                   }
                 >
@@ -116,6 +117,8 @@ export default function MailComposerHistory(props: {
   dateConfig: DateContext;
   active: () => boolean;
 }) {
+  const locale = useLocale();
+  const t = () => mailComposerMessages.resolve([locale()]).t;
   const history = query.createInfinite<string, MessagePage, string>({
     source: () => props.conversationId,
     enabled: props.active,
@@ -127,7 +130,7 @@ export default function MailComposerHistory(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not load conversation history"));
+      if (!response.ok) throw new Error(await readApiError(response, t().historyLoadFailed));
       const page = await response.json();
       assertCursorProgress(cursor, page.nextCursor, "conversation history");
       return page;
@@ -156,9 +159,9 @@ export default function MailComposerHistory(props: {
   };
 
   return (
-    <section class="flex h-full min-h-72 flex-col overflow-hidden bg-[var(--ui-surface)]" aria-label="Conversation history">
+    <section class="flex h-full min-h-72 flex-col overflow-hidden bg-[var(--ui-surface)]" aria-label={t().conversationHistory}>
       <ScrollArea class="flex-1">
-        <Show when={!history.loading()} fallback={<Placeholder state="loading" variant="panel" title="Loading conversation history..." />}>
+        <Show when={!history.loading()} fallback={<Placeholder state="loading" variant="panel" title={t().loadingHistory} />}>
           <Show
             when={messages().length > 0}
             fallback={
@@ -169,8 +172,8 @@ export default function MailComposerHistory(props: {
                     state="empty"
                     variant="panel"
                     icon="ti ti-history-off"
-                    title="No earlier messages"
-                    description="This conversation does not contain any delivered messages yet."
+                    title={t().noEarlierMessages}
+                    description={t().noEarlierMessagesDescription}
                   />
                 }
               >
@@ -178,11 +181,11 @@ export default function MailComposerHistory(props: {
                   <Placeholder
                     state="error"
                     variant="panel"
-                    title="Could not load conversation history"
+                    title={t().historyLoadFailed}
                     description={error().message}
                     action={
                       <Button variant="secondary" size="sm" type="button" onClick={() => void history.refresh()}>
-                        Retry
+                        {t().retry}
                       </Button>
                     }
                   />
@@ -195,7 +198,7 @@ export default function MailComposerHistory(props: {
                 <NoticeCard tone="warning" icon="ti ti-refresh-alert" class="m-3">
                   <span>{error().message}</span>{" "}
                   <button type="button" class="font-semibold underline" onClick={() => void history.refresh()}>
-                    Retry
+                    {t().retry}
                   </button>
                 </NoticeCard>
               )}
@@ -205,8 +208,8 @@ export default function MailComposerHistory(props: {
                 {(message) => {
                   const expanded = () => expandedMessageIds().has(message.id);
                   const outgoing = () => isOutgoingMessage(message, props.identities);
-                  const sender = () => message.from.map(formatMailAddress).join(", ") || "Unknown sender";
-                  const recipients = () => message.to.map(formatMailAddress).join(", ") || "undisclosed recipients";
+                  const sender = () => message.from.map(formatMailAddress).join(", ") || t().unknownSender;
+                  const recipients = () => message.to.map(formatMailAddress).join(", ") || t().undisclosedRecipients;
                   return (
                     <article>
                       <button
@@ -221,10 +224,10 @@ export default function MailComposerHistory(props: {
                               class={`ti ${outgoing() ? "ti-arrow-up-right" : "ti-arrow-down-left"} shrink-0 text-dimmed`}
                               aria-hidden="true"
                             />
-                            <span class="truncate text-sm font-semibold text-primary">{outgoing() ? "You" : sender()}</span>
-                            <span class="truncate text-xs text-dimmed">{outgoing() ? `to ${recipients()}` : "to me"}</span>
+                            <span class="truncate text-sm font-semibold text-primary">{outgoing() ? t().you : sender()}</span>
+                            <span class="truncate text-xs text-dimmed">{outgoing() ? t().toNamed({ value: recipients() }) : t().toMe}</span>
                           </span>
-                          <span class="mt-0.5 block truncate text-xs text-secondary">{message.subject || "(no subject)"}</span>
+                          <span class="mt-0.5 block truncate text-xs text-secondary">{message.subject || t().noSubject}</span>
                         </span>
                         <span class="flex items-center gap-2 text-xs text-dimmed">
                           <time dateTime={message.internalDate} title={dates.formatDateTime(message.internalDate, props.dateConfig)}>
@@ -249,7 +252,7 @@ export default function MailComposerHistory(props: {
                   disabled={history.loadingMore()}
                   onClick={() => void history.loadMore()}
                 >
-                  Load earlier messages
+                  {t().loadEarlier}
                 </Button>
               </div>
             </Show>

@@ -1,9 +1,9 @@
 import { text } from "@k2b/stdlib";
+import { IconButton, useLocale } from "@k2b/ui";
 import type { Accessor } from "solid-js";
 import { For, Show } from "solid-js";
 import type { MailDraft } from "../../contracts";
-
-import { IconButton } from "@k2b/ui";
+import { mailComposerMessages } from "./mail-composer-messages";
 export type MailComposerUpload = {
   file: File;
   progress: number;
@@ -23,9 +23,11 @@ export default function MailComposerAttachments(props: {
   onRetryUpload: (upload: MailComposerUpload) => void;
   onCancelUpload: (upload: MailComposerUpload) => void;
 }) {
+  const locale = useLocale();
+  const t = () => mailComposerMessages.resolve([locale()]).t;
   return (
     <Show when={props.attachments().length > 0 || props.uploads().length > 0}>
-      <div class="flex shrink-0 flex-wrap gap-2 py-2" aria-label="Attached files" role="list">
+      <div class="flex shrink-0 flex-wrap gap-2 py-2" aria-label={t().attachedFiles} role="list">
         <For each={props.attachments()}>
           {(attachment) => (
             <span class="chip max-w-full" role="listitem">
@@ -35,7 +37,7 @@ export default function MailComposerAttachments(props: {
               <Show when={props.canShare}>
                 <IconButton
                   type="button"
-                  label={`Insert public link for ${attachment.filename}`}
+                  label={t().insertPublicLink({ filename: attachment.filename })}
                   disabled={!props.editable() || props.shareLoading()}
                   onClick={() => props.onInsertLink(attachment.id)}
                 >
@@ -44,7 +46,7 @@ export default function MailComposerAttachments(props: {
               </Show>
               <IconButton
                 type="button"
-                label={`Remove ${attachment.filename}`}
+                label={t().removeFile({ filename: attachment.filename })}
                 disabled={!props.editable()}
                 onClick={() => props.onRemove(attachment.id)}
               >
@@ -62,7 +64,7 @@ export default function MailComposerAttachments(props: {
               <Show when={upload.error}>
                 <IconButton
                   type="button"
-                  label={`Retry ${upload.file.name}`}
+                  label={t().retryFile({ filename: upload.file.name })}
                   disabled={!props.editable()}
                   onClick={() => props.onRetryUpload(upload)}
                 >
@@ -71,7 +73,7 @@ export default function MailComposerAttachments(props: {
               </Show>
               <IconButton
                 type="button"
-                label={`Cancel ${upload.file.name}`}
+                label={t().cancelFile({ filename: upload.file.name })}
                 disabled={!props.editable()}
                 onClick={() => props.onCancelUpload(upload)}
               >

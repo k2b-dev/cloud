@@ -1,9 +1,11 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
+import { mutation } from "@k2b/stdlib/solid";
+import { IconButton, prompts, Tooltip, useLocale } from "@k2b/ui";
 import { PermissionEditor } from "@valentinkolb/cloud/access/ui";
 import type { AccessEntry } from "@valentinkolb/cloud/contracts";
-import { prompts, Tooltip, IconButton } from "@k2b/ui";
-import { mutation } from "@k2b/stdlib/solid";
+import { createMemo } from "solid-js";
 import { apiClient } from "../../api/client";
+import { mailSettingsMessages } from "./mail-settings-messages";
 
 type MailAdminMailboxActionsProps = {
   mailboxId: string;
@@ -19,17 +21,19 @@ const readErrorMessage = async (response: Response, fallback: string): Promise<s
   }
 };
 
-const loadAccess = async (mailboxId: string): Promise<AccessEntry[]> => {
+type Messages = ReturnType<typeof mailSettingsMessages.resolve>["t"];
+
+const loadAccess = async (mailboxId: string, messages: Messages): Promise<AccessEntry[]> => {
   const response = await apiClient.admin.mailboxes[":mailboxId"].access.$get({ param: { mailboxId } });
-  if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to load mailbox permissions."));
+  if (!response.ok) throw new Error(await readErrorMessage(response, messages.failedLoadMailboxPermissions));
   return response.json();
 };
 
-const openPermissionDialog = async (props: MailAdminMailboxActionsProps, entries: AccessEntry[]) => {
+const openPermissionDialog = async (props: MailAdminMailboxActionsProps, entries: AccessEntry[], messages: Messages) => {
   await prompts.dialog<void>(
     () => (
       <div class="flex w-full max-w-full flex-col gap-3">
-        <p class="text-xs text-dimmed">Repair access without opening mailbox content. A mailbox must keep at least one administrator.</p>
+        <p class="text-xs text-dimmed">{messages.mailboxAccessRepairDescription}</p>
         <PermissionEditor
           initialEntries={entries}
           canEdit
@@ -40,7 +44,7 @@ const openPermissionDialog = async (props: MailAdminMailboxActionsProps, entries
               param: { mailboxId: props.mailboxId },
               json: { principal, permission },
             });
-            if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to grant mailbox access."));
+            if (!response.ok) throw new Error(await readErrorMessage(response, messages.failedGrantMailboxAccess));
             return response.json();
           }}
           updateAccess={async (accessId, permission) => {
@@ -48,35 +52,37 @@ const openPermissionDialog = async (props: MailAdminMailboxActionsProps, entries
               param: { mailboxId: props.mailboxId, accessId },
               json: { permission },
             });
-            if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to update mailbox access."));
+            if (!response.ok) throw new Error(await readErrorMessage(response, messages.failedUpdateMailboxAccess));
           }}
           revokeAccess={async (accessId) => {
             const response = await apiClient.admin.mailboxes[":mailboxId"].access[":accessId"].$delete({
               param: { mailboxId: props.mailboxId, accessId },
             });
-            if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to revoke mailbox access."));
+            if (!response.ok) throw new Error(await readErrorMessage(response, messages.failedRevokeMailboxAccess));
           }}
         />
       </div>
     ),
-    { title: `${props.mailboxName} permissions`, icon: "ti ti-shield" },
+    { title: messages.mailboxPermissions({ name: props.mailboxName }), icon: "ti ti-shield" },
   );
   refreshCurrentPath();
 };
 
 export default function MailAdminMailboxActions(props: MailAdminMailboxActionsProps) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const accessMutation = mutation.create<AccessEntry[], void>({
-    mutation: () => loadAccess(props.mailboxId),
-    onSuccess: (entries) => void openPermissionDialog(props, entries),
+    mutation: () => loadAccess(props.mailboxId, messages()),
+    onSuccess: (entries) => void openPermissionDialog(props, entries, messages()),
     onError: (error) => void prompts.error(error.message),
   });
 
   return (
-    <Tooltip.Anchor content="Manage permissions">
+    <Tooltip.Anchor content={messages().managePermissions}>
       <IconButton
         type="button"
         class="h-7 w-7"
-        label={`Manage permissions for ${props.mailboxName}`}
+        label={messages().managePermissionsFor({ name: props.mailboxName })}
         disabled={accessMutation.loading()}
         onClick={() => accessMutation.mutate(undefined)}
       >

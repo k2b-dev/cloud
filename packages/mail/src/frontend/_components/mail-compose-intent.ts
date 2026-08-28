@@ -13,7 +13,21 @@ type MailComposeIntent = {
   body: string;
 };
 
-type MailComposeIntentResult = { ok: true; intent: MailComposeIntent } | { ok: false; message: string };
+export type MailComposeIntentErrorCode =
+  | "too_large"
+  | "invalid_link"
+  | "invalid_encoding"
+  | "duplicate_field"
+  | "subject_too_long"
+  | "body_too_long"
+  | "too_many_to"
+  | "too_many_cc"
+  | "too_many_bcc"
+  | "invalid_to"
+  | "invalid_cc"
+  | "invalid_bcc";
+
+type MailComposeIntentResult = { ok: true; intent: MailComposeIntent } | { ok: false; code: MailComposeIntentErrorCode };
 
 const decode = (value: string): string | null => {
   try {
@@ -29,11 +43,14 @@ const splitRecipients = (values: string[]): string[] =>
     .map((value) => value.trim())
     .filter(Boolean);
 
-const parseRecipients = (values: string[], label: string): MailAddress[] | string => {
+const parseRecipients = (
+  values: string[],
+  codes: { tooMany: MailComposeIntentErrorCode; invalid: MailComposeIntentErrorCode },
+): MailAddress[] | MailComposeIntentErrorCode => {
   const recipients = splitRecipients(values);
-  if (recipients.length > MAX_RECIPIENTS) return `${label} contains too many recipients.`;
+  if (recipients.length > MAX_RECIPIENTS) return codes.tooMany;
   const parsed = recipients.map(parseMailRecipient);
-  if (parsed.some((recipient) => recipient === null)) return `${label} contains an invalid email address.`;
+  if (parsed.some((recipient) => recipient === null)) return codes.invalid;
   const unique = new Map<string, MailAddress>();
   for (const recipient of parsed as MailAddress[]) unique.set(recipient.address.toLowerCase(), recipient);
   return [...unique.values()];
@@ -60,29 +77,31 @@ const parseHeaders = (rawQuery: string): { ok: true; headers: Map<string, string
   return { ok: true, headers };
 };
 
-const parseContent = (headers: Map<string, string[]>): { ok: true; subject: string; body: string } | { ok: false; message: string } => {
+const parseContent = (
+  headers: Map<string, string[]>,
+): { ok: true; subject: string; body: string } | { ok: false; code: MailComposeIntentErrorCode } => {
   const subject = singleHeader(headers, "subject");
   const body = singleHeader(headers, "body");
   if (subject === undefined || body === undefined) {
-    return { ok: false, message: "This email link repeats a field that may only appear once." };
+    return { ok: false, code: "duplicate_field" };
   }
   const normalizedSubject = (subject ?? "").replaceAll(/[\r\n]+/g, " ").trim();
   const normalizedBody = (body ?? "").replaceAll("\r\n", "\n").replaceAll("\r", "\n");
-  if (normalizedSubject.length > 998) return { ok: false, message: "The subject in this email link is too long." };
-  if (normalizedBody.length > MAX_BODY_LENGTH) return { ok: false, message: "The message in this email link is too long." };
+  if (normalizedSubject.length > 998) return { ok: false, code: "subject_too_long" };
+  if (normalizedBody.length > MAX_BODY_LENGTH) return { ok: false, code: "body_too_long" };
   return { ok: true, subject: normalizedSubject, body: normalizedBody };
 };
 
 const parseRecipientFields = (
   path: string,
   headers: Map<string, string[]>,
-): { ok: true; to: MailAddress[]; cc: MailAddress[]; bcc: MailAddress[] } | { ok: false; message: string } => {
-  const to = parseRecipients([path, ...(headers.get("to") ?? [])], "To");
-  const cc = parseRecipients(headers.get("cc") ?? [], "Cc");
-  const bcc = parseRecipients(headers.get("bcc") ?? [], "Bcc");
-  if (typeof to === "string") return { ok: false, message: to };
-  if (typeof cc === "string") return { ok: false, message: cc };
-  if (typeof bcc === "string") return { ok: false, message: bcc };
+): { ok: true; to: MailAddress[]; cc: MailAddress[]; bcc: MailAddress[] } | { ok: false; code: MailComposeIntentErrorCode } => {
+  const to = parseRecipients([path, ...(headers.get("to") ?? [])], { tooMany: "too_many_to", invalid: "invalid_to" });
+  const cc = parseRecipients(headers.get("cc") ?? [], { tooMany: "too_many_cc", invalid: "invalid_cc" });
+  const bcc = parseRecipients(headers.get("bcc") ?? [], { tooMany: "too_many_bcc", invalid: "invalid_bcc" });
+  if (typeof to === "string") return { ok: false, code: to };
+  if (typeof cc === "string") return { ok: false, code: cc };
+  if (typeof bcc === "string") return { ok: false, code: bcc };
   return { ok: true, to, cc, bcc };
 };
 
@@ -96,18 +115,18 @@ const emptyMailComposeIntent = (): MailComposeIntent => ({
 
 export const parseMailtoIntent = (value: string | null | undefined): MailComposeIntentResult => {
   if (!value) return { ok: true, intent: emptyMailComposeIntent() };
-  if (value.length > MAX_MAILTO_LENGTH) return { ok: false, message: "This email link is too large to open safely." };
-  if (!value.toLowerCase().startsWith("mailto:")) return { ok: false, message: "This is not a valid email link." };
+  if (value.length > MAX_MAILTO_LENGTH) return { ok: false, code: "too_large" };
+  if (!value.toLowerCase().startsWith("mailto:")) return { ok: false, code: "invalid_link" };
 
   const source = value.slice("mailto:".length);
   const separator = source.indexOf("?");
   const rawPath = separator === -1 ? source : source.slice(0, separator);
   const rawQuery = separator === -1 ? "" : source.slice(separator + 1);
   const path = decode(rawPath);
-  if (path === null) return { ok: false, message: "This email link contains invalid encoding." };
+  if (path === null) return { ok: false, code: "invalid_encoding" };
 
   const parsedHeaders = parseHeaders(rawQuery);
-  if (!parsedHeaders.ok) return { ok: false, message: "This email link contains invalid encoding." };
+  if (!parsedHeaders.ok) return { ok: false, code: "invalid_encoding" };
   const content = parseContent(parsedHeaders.headers);
   if (!content.ok) return content;
   const recipients = parseRecipientFields(path, parsedHeaders.headers);

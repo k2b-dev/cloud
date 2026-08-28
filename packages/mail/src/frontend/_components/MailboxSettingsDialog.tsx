@@ -1,10 +1,11 @@
 import { query } from "@k2b/stdlib/solid";
-import { Button, IconButton, Placeholder, prompts } from "@k2b/ui";
-import { createEffect, createSignal, Show } from "solid-js";
+import { Button, IconButton, Placeholder, prompts, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MailboxSettingsContext } from "../../settings-context";
 import { readApiError } from "./api-response";
 import MailboxSettings from "./MailboxSettings";
+import { mailSettingsMessages } from "./mail-settings-messages";
 
 const settingsDialogFrameClass = "dialog-fixed-frame flex min-h-0 flex-col overflow-hidden";
 
@@ -24,6 +25,8 @@ type MailboxSettingsDialogProps = {
 };
 
 function MailboxSettingsDialog(props: MailboxSettingsDialogProps) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const [context, setContext] = createSignal<MailboxSettingsContext | null>(null);
   const settings = query.create<string, MailboxSettingsContext>({
     source: () => props.mailboxId,
@@ -32,9 +35,9 @@ function MailboxSettingsDialog(props: MailboxSettingsDialogProps) {
         { param: { mailboxId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to load mailbox settings"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedLoadMailboxSettings));
       const loaded = await response.json();
-      if (!loaded) throw new Error("The server returned no mailbox settings");
+      if (!loaded) throw new Error(messages().missingMailboxSettings);
       return loaded;
     },
   });
@@ -50,23 +53,25 @@ function MailboxSettingsDialog(props: MailboxSettingsDialogProps) {
       when={currentContext()}
       fallback={
         <div class={`paper relative ${settingsDialogFrameClass} rounded-[var(--ui-radius-frame)] [box-shadow:var(--ui-shadow-float)]`}>
-          <IconButton type="button" class="absolute right-4 top-4 z-10" label="Close settings" onClick={() => props.close()}>
+          <IconButton type="button" class="absolute right-4 top-4 z-10" label={messages().closeSettings} onClick={() => props.close()}>
             <i class="ti ti-x" aria-hidden="true" />
           </IconButton>
           <Show
             when={!settings.loading()}
-            fallback={<Placeholder state="loading" variant="panel" title="Loading mailbox settings" class="flex-1 justify-center" />}
+            fallback={
+              <Placeholder state="loading" variant="panel" title={messages().loadingMailboxSettings} class="flex-1 justify-center" />
+            }
           >
             <Placeholder
               state="error"
               variant="panel"
-              title="Could not load mailbox settings"
-              description={settings.error()?.message ?? "The server returned no mailbox settings"}
+              title={messages().couldNotLoadMailboxSettings}
+              description={settings.error()?.message ?? messages().missingMailboxSettings}
               class="flex-1"
               action={
                 <Button variant="secondary" size="sm" type="button" onClick={() => void settings.refresh()}>
                   <i class="ti ti-refresh" aria-hidden="true" />
-                  Retry
+                  {messages().retry}
                 </Button>
               }
             />
@@ -82,7 +87,7 @@ function MailboxSettingsDialog(props: MailboxSettingsDialogProps) {
                 <p class="text-xs text-danger">
                   {error().message}{" "}
                   <button type="button" class="underline" onClick={() => void settings.refresh()}>
-                    Retry
+                    {messages().retry}
                   </button>
                 </p>
               </div>

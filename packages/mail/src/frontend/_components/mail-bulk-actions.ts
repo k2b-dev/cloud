@@ -1,6 +1,8 @@
 import type { MailActionId } from "./mail-actions";
 
 export const MAIL_BULK_CONCURRENCY = 4;
+export const MAIL_BULK_NO_PROVIDER_PLACEMENT = "mail_bulk_no_provider_placement";
+export const MAIL_BULK_QUEUE_FAILED = "mail_bulk_queue_failed";
 
 export type MailBulkTarget = {
   conversationId: string;
@@ -41,7 +43,7 @@ export const executeMailBulkAction = async (params: {
       if (!target) return;
       let submittedPlacements = 0;
       try {
-        if (target.sourceFolderIds.length === 0) throw new Error("No active provider placement is available.");
+        if (target.sourceFolderIds.length === 0) throw new Error(MAIL_BULK_NO_PROVIDER_PLACEMENT);
         for (const sourceFolderId of target.sourceFolderIds) {
           await params.submit(target, sourceFolderId);
           submittedPlacements += 1;
@@ -64,7 +66,7 @@ export const executeMailBulkAction = async (params: {
     failures.push({
       conversationId: result.target.conversationId,
       label: result.target.label,
-      message: result.error instanceof Error ? result.error.message : "The action could not be queued.",
+      message: result.error instanceof Error ? result.error.message : MAIL_BULK_QUEUE_FAILED,
       submittedPlacements: result.submittedPlacements,
     });
   }

@@ -1,11 +1,29 @@
 import { afterEach, describe, expect, mock, spyOn, test } from "bun:test";
-import { ok } from "@k2b/stdlib";
+import { err, fail, ok } from "@k2b/stdlib";
+import { Hono } from "hono";
 import { publicResources } from "../service";
-import { projectPublicRelations, projectPublicResult, projectResourcePaths } from "./public-resource-boundary";
+import {
+  type MailApiContext,
+  projectPublicRelations,
+  projectPublicResult,
+  projectResourcePaths,
+  respondPublic,
+} from "./public-resource-boundary";
 
 afterEach(() => mock.restore());
 
 describe("Mail public response projection", () => {
+  test("localizes final API errors from the request locale", async () => {
+    const app = new Hono<MailApiContext>().get("/", (c) => respondPublic(c, fail(err.notFound("Mailbox"))));
+    const response = await app.request("/", { headers: { "Accept-Language": "de-CH,de;q=0.9" } });
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      code: "NOT_FOUND",
+      message: "Das Postfach wurde nicht gefunden",
+    });
+  });
+
   test("preserves already-public resource IDs", async () => {
     const value = { mailboxId: "aB3dE6", conversationId: "fG7hI8" };
     expect(await projectPublicRelations(value)).toEqual(value);

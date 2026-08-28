@@ -1,11 +1,12 @@
 import type { DateContext } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
-import { Button, dialogCore, NoticeCard, PanelDialog, Placeholder, panelDialogFixedOptions } from "@k2b/ui";
-import { Show } from "solid-js";
+import { Button, dialogCore, NoticeCard, PanelDialog, Placeholder, panelDialogFixedOptions, useLocale } from "@k2b/ui";
+import { createMemo, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { Mailbox, MailboxOperationalHealth, ProviderBinding, ProviderConnection } from "../../contracts";
 import { readApiError } from "./api-response";
 import MailOperationalSettings from "./MailOperationalSettings";
+import { mailSettingsMessages } from "./mail-settings-messages";
 
 type MailboxHealthData = {
   mailbox: Mailbox;
@@ -15,6 +16,8 @@ type MailboxHealthData = {
 };
 
 function MailboxHealthDialog(props: { mailboxId: string; dateConfig: DateContext; close: () => void; onWorkspaceChange: () => void }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const health = query.create<string, MailboxHealthData>({
     source: () => props.mailboxId,
     load: async (mailboxId, { abortSignal }) => {
@@ -25,10 +28,10 @@ function MailboxHealthDialog(props: { mailboxId: string; dateConfig: DateContext
         apiClient.mailboxes[":mailboxId"].bindings.$get({ param: { mailboxId } }, request),
         apiClient.mailboxes[":mailboxId"].connections.$get({ param: { mailboxId } }, request),
       ]);
-      if (!mailboxResponse.ok) throw new Error(await readApiError(mailboxResponse, "Could not load the mailbox"));
-      if (!healthResponse.ok) throw new Error(await readApiError(healthResponse, "Could not load mailbox health"));
-      if (!bindingsResponse.ok) throw new Error(await readApiError(bindingsResponse, "Could not load the connected account"));
-      if (!connectionsResponse.ok) throw new Error(await readApiError(connectionsResponse, "Could not load provider limits"));
+      if (!mailboxResponse.ok) throw new Error(await readApiError(mailboxResponse, messages().failedLoadMailbox));
+      if (!healthResponse.ok) throw new Error(await readApiError(healthResponse, messages().failedLoadMailboxHealth));
+      if (!bindingsResponse.ok) throw new Error(await readApiError(bindingsResponse, messages().failedLoadConnectedAccount));
+      if (!connectionsResponse.ok) throw new Error(await readApiError(connectionsResponse, messages().failedLoadProviderLimits));
       return {
         mailbox: await mailboxResponse.json(),
         health: await healthResponse.json(),
@@ -41,8 +44,8 @@ function MailboxHealthDialog(props: { mailboxId: string; dateConfig: DateContext
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title="Mailbox health"
-        subtitle="Connection, synchronization, and repair status"
+        title={messages().mailboxHealth}
+        subtitle={messages().mailboxHealthSubtitle}
         icon="ti ti-heartbeat"
         close={props.close}
       />
@@ -50,12 +53,12 @@ function MailboxHealthDialog(props: { mailboxId: string; dateConfig: DateContext
         <Show
           when={health.data()}
           fallback={
-            <Show when={health.error()} fallback={<Placeholder state="loading" variant="panel" title="Loading mailbox health" />}>
+            <Show when={health.error()} fallback={<Placeholder state="loading" variant="panel" title={messages().loadingMailboxHealth} />}>
               {(error) => (
                 <Placeholder
                   state="error"
                   variant="panel"
-                  title="Could not load mailbox health"
+                  title={messages().failedLoadMailboxHealth}
                   description={error().message}
                   action={
                     <Button
@@ -66,7 +69,7 @@ function MailboxHealthDialog(props: { mailboxId: string; dateConfig: DateContext
                       onClick={() => void health.refresh()}
                     >
                       <i class={health.refreshing() ? "ti ti-loader-2 animate-spin" : "ti ti-refresh"} aria-hidden="true" />
-                      Retry
+                      {messages().retry}
                     </Button>
                   }
                 />
@@ -88,7 +91,7 @@ function MailboxHealthDialog(props: { mailboxId: string; dateConfig: DateContext
                       disabled={health.refreshing()}
                       onClick={() => void health.refresh()}
                     >
-                      Retry
+                      {messages().retry}
                     </Button>
                   </NoticeCard>
                 )}

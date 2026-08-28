@@ -18,6 +18,7 @@ import {
   Switch,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, Index, onCleanup, onMount, Show } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
@@ -44,16 +45,29 @@ import {
   type AutomationActionKind,
   createMailAutomationAction,
   initialMailAutomationAction,
-  mailAutomationActionKindLabels,
   mailAutomationActionKindsFor,
-  mailAutomationActionLabel,
 } from "./mail-automation-actions";
 import { waitForMailPageTransition } from "./mail-page-transition";
+import { mailRemainingMessages } from "./mail-remaining-messages";
 
 export type IncomingAutomationPreset = "blank" | "ai-route" | "ai-tag" | "ai-draft";
 
 const stepId = (): string => crypto.randomUUID();
+const browserLocale = (): string => (typeof document === "undefined" ? "en" : document.documentElement.lang);
+const browserMessages = () => mailRemainingMessages.resolve([browserLocale()]).t;
+const useMessages = () => {
+  const locale = useLocale();
+  return { locale, messages: createMemo(() => mailRemainingMessages.resolve([locale()]).t) };
+};
 const choice = (name: string, description: string) => ({ name, description });
+const localizedPresetChoiceDescription = (description: string, locale: string): string => {
+  const english = mailRemainingMessages.resolve(["en"]).t;
+  const german = mailRemainingMessages.resolve(["de"]).t;
+  const messages = mailRemainingMessages.resolve([locale]).t;
+  if (description === english.importantDescription || description === german.importantDescription) return messages.importantDescription;
+  if (description === english.routineDescription || description === german.routineDescription) return messages.routineDescription;
+  return description;
+};
 const mailActionStep = (action: MailAutomationAction): MailAutomationStep => ({ id: stepId(), kind: "mail_action", action });
 const directActionOrder: readonly AutomationActionKind[] = [
   "mark_read",
@@ -100,33 +114,44 @@ const customTextSource = (): AutomationTextSource => ({ kind: "custom", value: "
 const outputTextSource = (sourceStepId: string): AutomationTextSource => ({ kind: "step_output", sourceStepId });
 const customTextSourceId = "custom";
 const textSourceValue = (source: AutomationTextSource): string => (source.kind === "custom" ? customTextSourceId : source.sourceStepId);
-const textSourceOptions = (outputs: AutomationOutput[]) => [
-  { id: customTextSourceId, label: "Custom text" },
+const textSourceOptions = (outputs: AutomationOutput[], locale = browserLocale()) => [
+  { id: customTextSourceId, label: mailRemainingMessages.resolve([locale]).t.customText },
   ...outputs.filter((output) => output.type === "text").map((output) => ({ id: output.id, label: output.label })),
 ];
 const selectTextSource = (source: AutomationTextSource, value: string | null): AutomationTextSource => {
   if (!value || value === customTextSourceId) return source.kind === "custom" ? source : customTextSource();
   return outputTextSource(value);
 };
-const textSourceLabel = (source: AutomationTextSource, outputs: AutomationOutput[]): string =>
-  source.kind === "custom"
-    ? "Uses custom text"
-    : `Uses ${outputs.find((output) => output.id === source.sourceStepId)?.label ?? "missing output"}`;
+const textSourceLabel = (source: AutomationTextSource, outputs: AutomationOutput[], locale = browserLocale()): string => {
+  const messages = mailRemainingMessages.resolve([locale]).t;
+  if (source.kind === "custom") return messages.usesCustomText;
+  return messages.usesOutput({
+    output: outputs.find((output) => output.id === source.sourceStepId)?.label ?? messages.missingOutput,
+  });
+};
 
-const outputForStep = (step: MailAutomationStep, index: number): AutomationOutput | null => {
-  if (step.kind === "ai_generate_text") return { id: step.id, label: `Generated text · step ${index + 1}`, type: "text", choices: [] };
+const outputForStep = (step: MailAutomationStep, index: number, locale = browserLocale()): AutomationOutput | null => {
+  const messages = mailRemainingMessages.resolve([locale]).t;
+  if (step.kind === "ai_generate_text")
+    return { id: step.id, label: messages.generatedTextStep({ step: index + 1 }), type: "text", choices: [] };
   if (step.kind === "ai_classify") {
-    return { id: step.id, label: `Classification · step ${index + 1}`, type: "text", choices: step.choices.map((item) => item.name) };
+    return {
+      id: step.id,
+      label: messages.classificationStep({ step: index + 1 }),
+      type: "text",
+      choices: step.choices.map((item) => item.name),
+    };
   }
   if (step.kind === "ai_classify_many") {
     return {
       id: step.id,
-      label: `Classifications · step ${index + 1}`,
+      label: messages.classificationsStep({ step: index + 1 }),
       type: "text_array",
       choices: step.choices.map((item) => item.name),
     };
   }
-  if (step.kind === "ai_extract_event") return { id: step.id, label: `Event data · step ${index + 1}`, type: "event", choices: [] };
+  if (step.kind === "ai_extract_event")
+    return { id: step.id, label: messages.eventDataStep({ step: index + 1 }), type: "event", choices: [] };
   return null;
 };
 
@@ -172,28 +197,27 @@ const classificationSteps = (
   many: boolean,
   catalog: MailWorkflowCatalogSnapshot,
   actions: MailAutomationAction[] = [],
+  locale = browserLocale(),
 ): MailAutomationStep[] => {
+  const messages = mailRemainingMessages.resolve([locale]).t;
   const available = mailAutomationActionKindsFor({ actions, catalog });
   const fallbackAction = nextMailAction(actions, catalog, branchActionOrder);
-  const choices = [
-    choice("Important", "Needs personal attention or a timely response"),
-    choice("Routine", "Can be handled as routine mail"),
-  ];
+  const choices = [choice(messages.important, messages.importantDescription), choice(messages.routine, messages.routineDescription)];
   const classifier: MailAutomationStep = many
     ? {
         id: stepId(),
         kind: "ai_classify_many",
-        instructions: "Choose the categories that best apply to this message.",
+        instructions: messages.classifyManyInstructions,
         choices,
         maxChoices: 2,
       }
     : {
         id: stepId(),
         kind: "ai_classify",
-        instructions: "Choose the single best category for this message.",
+        instructions: messages.classifyOneInstructions,
         choices,
       };
-  const output = outputForStep(classifier, 0)!;
+  const output = outputForStep(classifier, 0, locale)!;
   const primaryAction = available.includes("set_status")
     ? mailActionStep({ kind: "set_status", status: "needs_action" })
     : fallbackAction
@@ -204,10 +228,10 @@ const classificationSteps = (
   return [classifier, ifStep(output, choices[0]!.name, [primaryAction], otherwise)];
 };
 
-const generatedTextStep = (): Extract<MailAutomationStep, { kind: "ai_generate_text" }> => ({
+const generatedTextStep = (locale = browserLocale()): Extract<MailAutomationStep, { kind: "ai_generate_text" }> => ({
   id: stepId(),
   kind: "ai_generate_text",
-  instructions: "Write concise, useful text based on the incoming message. Do not invent facts or commitments.",
+  instructions: mailRemainingMessages.resolve([locale]).t.generateTextInstructions,
   maxOutputChars: 4_000,
 });
 
@@ -237,8 +261,13 @@ const summaryStep = (sourceStepId?: string): Extract<MailAutomationStep, { kind:
   body: sourceStepId ? outputTextSource(sourceStepId) : customTextSource(),
 });
 
-const presetSteps = (preset: IncomingAutomationPreset, catalog: MailWorkflowCatalogSnapshot): MailAutomationStep[] => {
-  if (preset === "ai-route") return classificationSteps(false, catalog);
+const presetSteps = (
+  preset: IncomingAutomationPreset,
+  catalog: MailWorkflowCatalogSnapshot,
+  locale = browserLocale(),
+): MailAutomationStep[] => {
+  const messages = mailRemainingMessages.resolve([locale]).t;
+  if (preset === "ai-route") return classificationSteps(false, catalog, [], locale);
   if (preset === "ai-tag") {
     const tags = (catalog.localTags ?? []).slice(0, 4);
     if (tags.length >= 2) {
@@ -246,19 +275,19 @@ const presetSteps = (preset: IncomingAutomationPreset, catalog: MailWorkflowCata
       const classifier: MailAutomationStep = {
         id: stepId(),
         kind: "ai_classify_many",
-        instructions: "Choose the matching tags for this message.",
-        choices: tags.map((tag) => choice(tag.name, `The message belongs to the ${tag.name} category`)),
+        instructions: messages.chooseTagsInstructions,
+        choices: tags.map((tag) => choice(tag.name, messages.tagChoiceDescription({ tag: tag.name }))),
         maxChoices,
       };
-      const output = outputForStep(classifier, 0)!;
+      const output = outputForStep(classifier, 0, locale)!;
       return [classifier, ...tags.map((tag) => ifStep(output, tag.name, [mailActionStep({ kind: "add_local_tag", tagId: tag.id })]))];
     }
     return [];
   }
   if (preset === "ai-draft") {
     const generated: Extract<MailAutomationStep, { kind: "ai_generate_text" }> = {
-      ...generatedTextStep(),
-      instructions: "Write a concise, helpful reply in the language of the incoming message. Do not invent facts or commitments.",
+      ...generatedTextStep(locale),
+      instructions: messages.draftReplyInstructions,
     };
     const draft = replyDraftStep(catalog, generated.id);
     return draft ? [generated, draft] : [];
@@ -322,20 +351,22 @@ const maxAiCalls = (steps: readonly MailAutomationStep[]): number =>
     if (step.kind === "if") return total + Math.max(maxAiCalls(step.then), maxAiCalls(step.else));
     return total;
   }, 0);
-const scopeLabel = (scope: MailAutomationScope): string => {
-  if (scope.mode === "all") return "All incoming mail";
-  if (scope.conditions.items.length === 1) return mailAutomationConditionLabel(scope.conditions.items[0]!);
-  return `${scope.conditions.mode === "all" ? "All" : "Any"} of ${scope.conditions.items.length} conditions`;
+const scopeLabel = (scope: MailAutomationScope, locale: string): string => {
+  const messages = mailRemainingMessages.resolve([locale]).t;
+  if (scope.mode === "all") return messages.allIncomingMail;
+  if (scope.conditions.items.length === 1) return mailAutomationConditionLabel(scope.conditions.items[0]!, locale);
+  return messages.conditionsSummary({ mode: scope.conditions.mode, count: scope.conditions.items.length });
 };
 
-const flowLabel = (automation: IncomingAutomation, catalog: MailWorkflowCatalogSnapshot): string => {
+const flowLabel = (automation: IncomingAutomation, _catalog: MailWorkflowCatalogSnapshot, locale: string): string => {
+  const messages = mailRemainingMessages.resolve([locale]).t;
   const steps = flattenSteps(automation.steps);
   const firstAction = steps.find((step): step is Extract<MailAutomationStep, { kind: "mail_action" }> => step.kind === "mail_action");
   const aiCalls = steps.filter((step) => step.kind.startsWith("ai_")).length;
   const parts = [
-    `${steps.length} step${steps.length === 1 ? "" : "s"}`,
-    aiCalls > 0 ? `${aiCalls} AI call${aiCalls === 1 ? "" : "s"}` : null,
-    firstAction ? mailAutomationActionLabel(firstAction.action, catalog) : null,
+    messages.stepCount({ count: steps.length }),
+    aiCalls > 0 ? messages.aiCallCount({ count: aiCalls }) : null,
+    firstAction ? messages.automationAction({ kind: firstAction.action.kind }) : null,
   ].filter(Boolean);
   return parts.join(" · ");
 };
@@ -348,6 +379,7 @@ function ChoiceEditor(props: {
     change?: { kind: "rename"; previous: string; next: string } | { kind: "remove"; name: string },
   ) => void;
 }) {
+  const { locale, messages } = useMessages();
   const remove = (index: number) => {
     const removed = props.step.choices[index];
     if (!removed) return;
@@ -378,15 +410,15 @@ function ChoiceEditor(props: {
           <div class="rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
             <div class="grid gap-2 md:grid-cols-[minmax(8rem,0.6fr)_minmax(12rem,1fr)_auto]">
               <TextInput
-                label={`Choice ${index + 1}`}
+                label={messages().choiceLabel({ index: index + 1 })}
                 value={() => candidate().name}
                 onValueChange={(name) => replace(index, { name })}
                 maxLength={80}
                 required
               />
               <TextInput
-                label="Meaning"
-                value={() => candidate().description}
+                label={messages().meaning}
+                value={() => localizedPresetChoiceDescription(candidate().description, locale())}
                 onValueChange={(description) => replace(index, { description })}
                 maxLength={500}
                 required
@@ -395,7 +427,7 @@ function ChoiceEditor(props: {
                 <IconButton
                   type="button"
                   size="sm"
-                  label={`Remove choice ${index + 1}${props.context ? ` from ${props.context}` : ""}`}
+                  label={messages().removeChoice({ index: index + 1, context: props.context })}
                   disabled={props.step.choices.length <= 2}
                   onClick={() => remove(index)}
                 >
@@ -415,11 +447,14 @@ function ChoiceEditor(props: {
           onClick={() =>
             props.onChange({
               ...props.step,
-              choices: [...props.step.choices, choice(`Choice ${props.step.choices.length + 1}`, "Describe when this choice applies")],
+              choices: [
+                ...props.step.choices,
+                choice(messages().choiceLabel({ index: props.step.choices.length + 1 }), messages().describeChoice),
+              ],
             })
           }
         >
-          <i class="ti ti-plus" aria-hidden="true" /> Add choice
+          <i class="ti ti-plus" aria-hidden="true" /> {messages().addChoice}
         </Button>
       </Show>
     </div>
@@ -439,6 +474,7 @@ function AutomationStepsEditor(props: {
   labelContext?: string;
   onChange: (steps: MailAutomationStep[]) => void;
 }) {
+  const { locale, messages } = useMessages();
   const [expandedStepIds, setExpandedStepIds] = createSignal(new Set(props.steps.slice(0, 1).map((step) => step.id)));
   const actionsBefore = (index: number): MailAutomationAction[] => [
     ...props.availableActions,
@@ -447,7 +483,7 @@ function AutomationStepsEditor(props: {
   const outputsBefore = (index: number): AutomationOutput[] => [
     ...(props.availableOutputs ?? []),
     ...props.steps.slice(0, index).flatMap((step, stepIndex) => {
-      const output = outputForStep(step, stepIndex);
+      const output = outputForStep(step, stepIndex, locale());
       return output ? [output] : [];
     }),
   ];
@@ -462,7 +498,7 @@ function AutomationStepsEditor(props: {
         step.id,
       )
     ) {
-      void prompts.error("Change or remove the later steps that use this output before removing its source.");
+      void prompts.error(messages().outputStillUsed);
       return;
     }
     props.onChange(props.steps.filter((_, candidateIndex) => candidateIndex !== index));
@@ -484,13 +520,12 @@ function AutomationStepsEditor(props: {
   const expand = (id: string) => setExpandedStepIds((current) => new Set(current).add(id));
   const capacityIssueFor = (shape: { localSteps: number; totalSteps: number; aiCalls: number; branchDepth: number }): string | null => {
     if (props.steps.length + shape.localSteps > (props.maxSteps ?? 20)) {
-      return `This ${props.labelContext ? "branch" : "flow"} can contain at most ${props.maxSteps ?? 20} steps.`;
+      return messages().localStepLimit({ branch: Boolean(props.labelContext), count: props.maxSteps ?? 20 });
     }
     const workflowSteps = props.workflowSteps ?? props.steps;
-    if (flattenSteps(workflowSteps).length + shape.totalSteps > 40)
-      return "An automation can contain at most 40 steps across all branches.";
-    if (aiCallCount(workflowSteps) + shape.aiCalls > 10) return "An automation can contain at most 10 AI calls.";
-    if ((props.depth ?? 0) + shape.branchDepth > 4) return "Automation branches can be nested at most 4 levels.";
+    if (flattenSteps(workflowSteps).length + shape.totalSteps > 40) return messages().totalStepLimit;
+    if (aiCallCount(workflowSteps) + shape.aiCalls > 10) return messages().aiCallLimit;
+    if ((props.depth ?? 0) + shape.branchDepth > 4) return messages().branchDepthLimit;
     return null;
   };
   const capacityIssue = (steps: readonly MailAutomationStep[]): string | null =>
@@ -550,19 +585,7 @@ function AutomationStepsEditor(props: {
       else next.delete(id);
       return next;
     });
-  const stepLabel = (step: MailAutomationStep): string => {
-    if (step.kind === "mail_action") return "Mail action";
-    if (step.kind === "ai_generate_text") return "AI generate text";
-    if (step.kind === "ai_classify") return "AI classify";
-    if (step.kind === "ai_classify_many") return "AI classify many";
-    if (step.kind === "ai_extract_event") return "AI extract event data";
-    if (step.kind === "link_space_item") return "Link Spaces item";
-    if (step.kind === "create_space_event") return "Create Spaces event";
-    if (step.kind === "create_reply_draft") return "Create reply draft";
-    if (step.kind === "add_comment") return "Add internal comment";
-    if (step.kind === "set_summary") return "Set conversation summary";
-    return "If";
-  };
+  const stepLabel = (step: MailAutomationStep): string => messages().incomingStepKind({ kind: step.kind });
   const chooseSpaceItem = async (): Promise<string | null> => {
     const selected = await prompts.search<{ id: string; title: string }>(
       async ({ query, abortSignal }) => {
@@ -571,7 +594,7 @@ function AutomationStepsEditor(props: {
           { param: { mailboxId: props.mailboxId }, query: { query } },
           { init: { signal: abortSignal } },
         );
-        if (!response.ok) throw new Error(await readApiError(response, "Could not search Spaces"));
+        if (!response.ok) throw new Error(await readApiError(response, messages().couldNotSearchSpaces));
         return spacesItemSearchDataSchema.parse(await response.json()).map((item) => ({
           value: { id: item.ref.id, title: item.title },
           label: item.title,
@@ -580,11 +603,11 @@ function AutomationStepsEditor(props: {
         }));
       },
       {
-        title: "Link Spaces item",
+        title: messages().linkSpaceItem,
         icon: "ti ti-link",
-        placeholder: "Search writable tasks and events...",
+        placeholder: messages().searchTasksAndEvents,
         minQueryLength: 1,
-        noResultsText: "No writable Space items found.",
+        noResultsText: messages().noWritableSpaceItems,
         size: "small",
       },
     );
@@ -598,7 +621,7 @@ function AutomationStepsEditor(props: {
     const destinationsResponse = await apiClient.mailboxes[":mailboxId"]["incoming-automations"].spaces.destinations.$get({
       param: { mailboxId: props.mailboxId },
     });
-    if (!destinationsResponse.ok) throw new Error(await readApiError(destinationsResponse, "Could not load Spaces"));
+    if (!destinationsResponse.ok) throw new Error(await readApiError(destinationsResponse, messages().couldNotLoadSpaces));
     const destinations = spacesMailDestinationsSchema.parse(await destinationsResponse.json());
     const selected = await prompts.search<(typeof destinations)[number]>(
       ({ query }) =>
@@ -612,11 +635,11 @@ function AutomationStepsEditor(props: {
             })),
         ),
       {
-        title: "Choose Space",
+        title: messages().chooseSpaceTitle,
         icon: "ti ti-layout-kanban",
-        placeholder: "Search writable Spaces...",
+        placeholder: messages().searchWritableSpaces,
         minQueryLength: 0,
-        noResultsText: "No writable Spaces found.",
+        noResultsText: messages().noWritableSpacesFound,
         size: "small",
       },
     );
@@ -624,7 +647,7 @@ function AutomationStepsEditor(props: {
     const spaceResponse = await apiClient.mailboxes[":mailboxId"]["incoming-automations"].spaces[":spaceId"].$get({
       param: { mailboxId: props.mailboxId, spaceId: selected.value.id },
     });
-    if (!spaceResponse.ok) throw new Error(await readApiError(spaceResponse, "Could not load Space kanbans"));
+    if (!spaceResponse.ok) throw new Error(await readApiError(spaceResponse, messages().couldNotLoadSpaceKanbans));
     const columns = spaceDetailSchema.parse(await spaceResponse.json()).columns.filter((column) => !column.isDone);
     const column = await prompts.search<(typeof columns)[number]>(
       ({ query }) =>
@@ -634,11 +657,11 @@ function AutomationStepsEditor(props: {
             .map((entry) => ({ value: entry, label: entry.name, icon: "ti ti-columns" })),
         ),
       {
-        title: "Choose kanban",
+        title: messages().chooseKanban,
         icon: "ti ti-columns",
-        placeholder: "Search open kanbans...",
+        placeholder: messages().searchOpenKanbans,
         minQueryLength: 0,
-        noResultsText: "No open kanban found.",
+        noResultsText: messages().noOpenKanbanFound,
         size: "small",
       },
     );
@@ -651,7 +674,7 @@ function AutomationStepsEditor(props: {
       const extractor: Extract<MailAutomationStep, { kind: "ai_extract_event" }> = {
         id: stepId(),
         kind: "ai_extract_event",
-        instructions: "Extract only event details stated in the incoming message.",
+        instructions: messages().extractEventInstructions,
         timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
       };
       appendMany([
@@ -659,7 +682,7 @@ function AutomationStepsEditor(props: {
         { id: stepId(), kind: "create_space_event", ...destination, event: { kind: "step_output", sourceStepId: extractor.id } },
       ]);
     } catch (error) {
-      void prompts.error(error instanceof Error ? error.message : "Could not configure Spaces event");
+      void prompts.error(error instanceof Error ? error.message : messages().couldNotConfigureSpacesEvent);
     }
   };
   const changeEventDestination = async (index: number, step: Extract<MailAutomationStep, { kind: "create_space_event" }>) => {
@@ -667,11 +690,11 @@ function AutomationStepsEditor(props: {
       const destination = await chooseEventDestination();
       if (destination) replace(index, { ...step, ...destination });
     } catch (error) {
-      void prompts.error(error instanceof Error ? error.message : "Could not configure Spaces event");
+      void prompts.error(error instanceof Error ? error.message : messages().couldNotConfigureSpacesEvent);
     }
   };
   const accessibleStepLabel = (step: MailAutomationStep, index: number): string =>
-    `${stepLabel(step)} step ${index + 1}${props.labelContext ? ` in ${props.labelContext}` : ""}`;
+    messages().accessibleStep({ label: stepLabel(step), step: index + 1, context: props.labelContext });
   const addItems = () => {
     const actions = actionsBefore(props.steps.length);
     const outputs = outputsBefore(props.steps.length);
@@ -679,8 +702,8 @@ function AutomationStepsEditor(props: {
     const availableMailActions = mailAutomationActionKindsFor({ actions, catalog: props.catalog });
     const replyDraft = replyDraftStep(props.catalog);
     const remaining = (props.maxSteps ?? 20) - props.steps.length;
-    const classification = classificationSteps(false, props.catalog, actions);
-    const multiClassification = classificationSteps(true, props.catalog, actions);
+    const classification = classificationSteps(false, props.catalog, actions, locale());
+    const multiClassification = classificationSteps(true, props.catalog, actions, locale());
     return [
       ...directActionOrder
         .filter((kind) => availableMailActions.includes(kind))
@@ -688,45 +711,45 @@ function AutomationStepsEditor(props: {
         .map((kind) => {
           const action = createMailAutomationAction({ kind, actions, catalog: props.catalog });
           return {
-            label: `Mail action · ${mailAutomationActionKindLabels[kind]}`,
+            label: `${messages().mailAction} · ${messages().automationAction({ kind })}`,
             icon: "ti ti-mail-forward",
             action: () => action && append(mailActionStep(action)),
           };
         }),
       ...(canInsertShape({ localSteps: 1 })
-        ? [{ label: "Link Spaces item", icon: "ti ti-link", action: () => void appendSpaceItem() }]
+        ? [{ label: messages().linkSpaceItem, icon: "ti ti-link", action: () => void appendSpaceItem() }]
         : []),
       ...(canInsertShape({ localSteps: 2, aiCalls: 1 })
-        ? [{ label: "AI extract event + create Spaces event", icon: "ti ti-calendar-plus", action: () => void appendAiEventFlow() }]
+        ? [{ label: messages().aiEventFlow, icon: "ti ti-calendar-plus", action: () => void appendAiEventFlow() }]
         : []),
       ...(replyDraft && canInsert([replyDraft])
         ? [
             {
-              label: "Create reply draft",
+              label: messages().createReplyDraft,
               icon: "ti ti-message-reply",
               action: () => append(replyDraft),
             },
           ]
         : []),
       ...(canInsertShape({ localSteps: 1 })
-        ? [{ label: "Add internal comment", icon: "ti ti-message-plus", action: () => append(commentStep()) }]
+        ? [{ label: messages().addInternalComment, icon: "ti ti-message-plus", action: () => append(commentStep()) }]
         : []),
       ...(canInsertShape({ localSteps: 1 })
-        ? [{ label: "Set conversation summary", icon: "ti ti-notes", action: () => append(summaryStep()) }]
+        ? [{ label: messages().setConversationSummary, icon: "ti ti-notes", action: () => append(summaryStep()) }]
         : []),
       ...(canInsertShape({ localSteps: 1, aiCalls: 1 })
-        ? [{ label: "AI generate text", icon: "ti ti-sparkles", action: () => append(generatedTextStep()) }]
+        ? [{ label: messages().aiGenerateText, icon: "ti ti-sparkles", action: () => append(generatedTextStep(locale())) }]
         : []),
       ...(classification.length <= remaining && canInsert(classification)
-        ? [{ label: "AI classify", icon: "ti ti-list-check", action: () => appendMany(classification) }]
+        ? [{ label: messages().aiClassify, icon: "ti ti-list-check", action: () => appendMany(classification) }]
         : []),
       ...(multiClassification.length <= remaining && canInsert(multiClassification)
-        ? [{ label: "AI classify many", icon: "ti ti-tags", action: () => appendMany(multiClassification) }]
+        ? [{ label: messages().aiClassifyMany, icon: "ti ti-tags", action: () => appendMany(multiClassification) }]
         : []),
       ...(latestOutput && latestOutput.type !== "event" && canInsertShape({ localSteps: 1, branchDepth: 1 })
         ? [
             {
-              label: "If output matches",
+              label: messages().ifOutputMatches,
               icon: "ti ti-git-branch",
               action: () => append(ifStep(latestOutput, latestOutput.choices[0] ?? "value")),
             },
@@ -747,7 +770,11 @@ function AutomationStepsEditor(props: {
                 <IconButton
                   type="button"
                   size="sm"
-                  label={`${expandedStepIds().has(step.id) ? "Collapse" : "Expand"} ${accessibleStepLabel(step, index())}`}
+                  label={
+                    expandedStepIds().has(step.id)
+                      ? messages().collapseStep({ label: accessibleStepLabel(step, index()) })
+                      : messages().expandStep({ label: accessibleStepLabel(step, index()) })
+                  }
                   onClick={() => setExpanded(step.id, !expandedStepIds().has(step.id))}
                 >
                   <i class={`ti ${expandedStepIds().has(step.id) ? "ti-chevron-down" : "ti-chevron-right"}`} aria-hidden="true" />
@@ -785,28 +812,32 @@ function AutomationStepsEditor(props: {
                   <strong class="block truncate text-xs text-primary">{stepLabel(step)}</strong>
                   <span class="block truncate text-[11px] text-dimmed">
                     {step.kind === "mail_action"
-                      ? mailAutomationActionLabel(step.action, props.catalog)
+                      ? messages().automationAction({ kind: step.action.kind })
                       : step.kind === "ai_generate_text"
-                        ? "Produces text"
+                        ? messages().producesText
                         : step.kind === "ai_classify"
-                          ? `Produces one of ${step.choices.length} choices`
+                          ? messages().producesOneChoice({ count: step.choices.length })
                           : step.kind === "ai_classify_many"
-                            ? `Produces up to ${step.maxChoices} choices`
+                            ? messages().producesChoices({ count: step.maxChoices })
                             : step.kind === "ai_extract_event"
-                              ? `Produces validated event data in ${step.timeZone}`
+                              ? messages().producesEventData({ timeZone: step.timeZone })
                               : step.kind === "link_space_item"
-                                ? `Links item ${step.itemId}`
+                                ? messages().linksItem({ id: step.itemId })
                                 : step.kind === "create_space_event"
-                                  ? `Creates an event in ${step.spaceId}`
+                                  ? messages().createsEventIn({ id: step.spaceId })
                                   : step.kind === "create_reply_draft" || step.kind === "add_comment" || step.kind === "set_summary"
-                                    ? textSourceLabel(step.body, outputsBefore(index()))
-                                    : `Uses ${outputsBefore(index()).find((output) => output.id === step.condition.sourceStepId)?.label ?? "missing output"}`}
+                                    ? textSourceLabel(step.body, outputsBefore(index()), locale())
+                                    : messages().usesOutput({
+                                        output:
+                                          outputsBefore(index()).find((output) => output.id === step.condition.sourceStepId)?.label ??
+                                          messages().missingOutput,
+                                      })}
                   </span>
                 </div>
                 <IconButton
                   type="button"
                   size="sm"
-                  label={`Move ${accessibleStepLabel(step, index())} up`}
+                  label={messages().moveStepUp({ label: accessibleStepLabel(step, index()) })}
                   disabled={!canMove(index(), -1)}
                   onClick={() => move(index(), -1)}
                 >
@@ -815,7 +846,7 @@ function AutomationStepsEditor(props: {
                 <IconButton
                   type="button"
                   size="sm"
-                  label={`Move ${accessibleStepLabel(step, index())} down`}
+                  label={messages().moveStepDown({ label: accessibleStepLabel(step, index()) })}
                   disabled={!canMove(index(), 1)}
                   onClick={() => move(index(), 1)}
                 >
@@ -824,7 +855,7 @@ function AutomationStepsEditor(props: {
                 <IconButton
                   type="button"
                   size="sm"
-                  label={`Remove ${accessibleStepLabel(step, index())}`}
+                  label={messages().removeStep({ label: accessibleStepLabel(step, index()) })}
                   disabled={!props.allowEmpty && props.steps.length === 1}
                   onClick={() => remove(index())}
                 >
@@ -847,8 +878,8 @@ function AutomationStepsEditor(props: {
                     <div class="flex flex-col gap-3">
                       <div class="flex flex-col gap-2">
                         <TextInput
-                          label="Instructions"
-                          description="The incoming message and current conversation summary are supplied as untrusted context. Say exactly what text should be created."
+                          label={messages().instructions}
+                          description={messages().generateTextDescription}
                           value={() => (step.kind === "ai_generate_text" ? step.instructions : "")}
                           onValueChange={(instructions) => step.kind === "ai_generate_text" && replace(index(), { ...step, instructions })}
                           maxLength={4_000}
@@ -858,7 +889,7 @@ function AutomationStepsEditor(props: {
                         />
                         <div class="max-w-56">
                           <NumberInput
-                            label="Maximum characters"
+                            label={messages().maximumCharacters}
                             value={() => (step.kind === "ai_generate_text" ? step.maxOutputChars : 4_000)}
                             onValueChange={(maxOutputChars) =>
                               step.kind === "ai_generate_text" && replace(index(), { ...step, maxOutputChars: maxOutputChars ?? 4_000 })
@@ -872,8 +903,8 @@ function AutomationStepsEditor(props: {
                       <div class="flex items-center gap-3 rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
                         <i class="ti ti-variable text-dimmed" aria-hidden="true" />
                         <div class="min-w-0 flex-1">
-                          <strong class="block text-xs text-primary">Output · Text</strong>
-                          <span class="block text-[11px] text-dimmed">Later compatible steps can reference this workflow output.</span>
+                          <strong class="block text-xs text-primary">{messages().outputText}</strong>
+                          <span class="block text-[11px] text-dimmed">{messages().outputReferenceDescription}</span>
                         </div>
                         <Dropdown.Root
                           position="bottom-right"
@@ -882,7 +913,7 @@ function AutomationStepsEditor(props: {
                             ...((props.catalog.senderIdentities ?? []).length > 0
                               ? [
                                   {
-                                    label: "Create reply draft",
+                                    label: messages().createReplyDraft,
                                     icon: "ti ti-message-reply",
                                     action: () => {
                                       if (step.kind !== "ai_generate_text") return;
@@ -893,12 +924,12 @@ function AutomationStepsEditor(props: {
                                 ]
                               : []),
                             {
-                              label: "Add internal comment",
+                              label: messages().addInternalComment,
                               icon: "ti ti-message-plus",
                               action: () => step.kind === "ai_generate_text" && insertAfterOutput(index(), step.id, commentStep(step.id)),
                             },
                             {
-                              label: "Set conversation summary",
+                              label: messages().setConversationSummary,
                               icon: "ti ti-notes",
                               action: () => step.kind === "ai_generate_text" && insertAfterOutput(index(), step.id, summaryStep(step.id)),
                             },
@@ -929,8 +960,8 @@ function AutomationStepsEditor(props: {
                         <div class="flex flex-col gap-3">
                           <div class="grid gap-2 md:grid-cols-[minmax(0,1fr)_10rem]">
                             <TextInput
-                              label="Instructions"
-                              description="Define the classification goal. Choice descriptions below define the decision boundary."
+                              label={messages().instructions}
+                              description={messages().classificationDescription}
                               value={() => classifier.instructions}
                               onValueChange={(instructions) => replace(index(), { ...classifier, instructions })}
                               maxLength={4_000}
@@ -940,7 +971,7 @@ function AutomationStepsEditor(props: {
                             />
                             <Show when={classifier.kind === "ai_classify_many"}>
                               <NumberInput
-                                label="Maximum matches"
+                                label={messages().maximumMatches}
                                 value={() => (classifier.kind === "ai_classify_many" ? classifier.maxChoices : 1)}
                                 onValueChange={(maxChoices) =>
                                   classifier.kind === "ai_classify_many" && replace(index(), { ...classifier, maxChoices: maxChoices ?? 1 })
@@ -952,10 +983,12 @@ function AutomationStepsEditor(props: {
                           </div>
                           <ChoiceEditor
                             step={classifier}
-                            context={[props.labelContext, `${stepLabel(step)} step ${index() + 1}`].filter(Boolean).join(", ")}
+                            context={[props.labelContext, messages().accessibleStep({ label: stepLabel(step), step: index() + 1 })]
+                              .filter(Boolean)
+                              .join(", ")}
                             onChange={(next, change) => {
                               if (change?.kind === "remove" && referencesChoice(props.steps, classifier.id, change.name)) {
-                                void prompts.error("Change or remove the conditions that use this choice before removing it.");
+                                void prompts.error(messages().choiceStillUsed);
                                 return;
                               }
                               const changed = props.steps.map((candidate, candidateIndex) =>
@@ -972,9 +1005,9 @@ function AutomationStepsEditor(props: {
                             <i class="ti ti-variable text-dimmed" aria-hidden="true" />
                             <div class="min-w-0 flex-1">
                               <strong class="block text-xs text-primary">
-                                Output · {classifier.kind === "ai_classify_many" ? "Choice list" : "Choice"}
+                                {classifier.kind === "ai_classify_many" ? messages().outputChoiceList : messages().outputChoice}
                               </strong>
-                              <span class="block text-[11px] text-dimmed">Conditions reference this normal workflow output.</span>
+                              <span class="block text-[11px] text-dimmed">{messages().conditionOutputDescription}</span>
                             </div>
                             <Button
                               type="button"
@@ -983,12 +1016,12 @@ function AutomationStepsEditor(props: {
                               disabled={!canInsertShape({ localSteps: 1, branchDepth: 1 })}
                               title={capacityIssueFor({ localSteps: 1, totalSteps: 1, aiCalls: 0, branchDepth: 1 }) ?? undefined}
                               onClick={() => {
-                                const output = outputForStep(classifier, index());
+                                const output = outputForStep(classifier, index(), locale());
                                 if (output)
                                   insertAfterOutput(index(), classifier.id, ifStep(output, classifier.choices[0]?.name ?? "value"));
                               }}
                             >
-                              <i class="ti ti-plus" aria-hidden="true" /> Add condition
+                              <i class="ti ti-plus" aria-hidden="true" /> {messages().addCondition}
                             </Button>
                           </div>
                         </div>
@@ -999,8 +1032,8 @@ function AutomationStepsEditor(props: {
                   <Show when={step.kind === "ai_extract_event"}>
                     <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_14rem]">
                       <TextInput
-                        label="Instructions"
-                        description="Mail supplies the incoming message and receipt time as untrusted input. Missing or ambiguous required dates stop event creation."
+                        label={messages().instructions}
+                        description={messages().eventExtractionDescription}
                         value={() => (step.kind === "ai_extract_event" ? step.instructions : "")}
                         onValueChange={(instructions) => step.kind === "ai_extract_event" && replace(index(), { ...step, instructions })}
                         maxLength={4_000}
@@ -1009,8 +1042,8 @@ function AutomationStepsEditor(props: {
                         required
                       />
                       <TextInput
-                        label="Time zone"
-                        description="IANA time zone for relative dates."
+                        label={messages().timeZone({ timeZone: "" }).split(":")[0]}
+                        description={messages().ianaTimeZoneDescription}
                         value={() => (step.kind === "ai_extract_event" ? step.timeZone : "")}
                         onValueChange={(timeZone) => step.kind === "ai_extract_event" && replace(index(), { ...step, timeZone })}
                         maxLength={80}
@@ -1023,8 +1056,8 @@ function AutomationStepsEditor(props: {
                     <div class="flex flex-wrap items-end gap-2">
                       <div class="min-w-48 flex-1">
                         <TextInput
-                          label="Spaces item"
-                          description="The selected writable task or event."
+                          label={messages().spacesItem}
+                          description={messages().selectedSpaceItemDescription}
                           value={() => (step.kind === "link_space_item" ? step.itemId : "")}
                           readOnly
                         />
@@ -1045,8 +1078,12 @@ function AutomationStepsEditor(props: {
 
                   <Show when={step.kind === "create_space_event"}>
                     <div class="grid gap-3 md:grid-cols-2">
-                      <TextInput label="Space" value={() => (step.kind === "create_space_event" ? step.spaceId : "")} readOnly />
-                      <TextInput label="Kanban" value={() => (step.kind === "create_space_event" ? step.columnId : "")} readOnly />
+                      <TextInput label={messages().space} value={() => (step.kind === "create_space_event" ? step.spaceId : "")} readOnly />
+                      <TextInput
+                        label={messages().kanban}
+                        value={() => (step.kind === "create_space_event" ? step.columnId : "")}
+                        readOnly
+                      />
                       <div class="flex flex-wrap items-center justify-between gap-2 md:col-span-2">
                         <p class="min-w-48 flex-1 text-[11px] text-dimmed">
                           Uses the earlier AI event-data output. Event creation stops when required data is missing or ambiguous and is safe
@@ -1058,7 +1095,7 @@ function AutomationStepsEditor(props: {
                           variant="input"
                           onClick={() => step.kind === "create_space_event" && void changeEventDestination(index(), step)}
                         >
-                          <i class="ti ti-search" aria-hidden="true" /> Change destination
+                          <i class="ti ti-search" aria-hidden="true" /> {messages().changeDestination}
                         </Button>
                       </div>
                     </div>
@@ -1067,15 +1104,15 @@ function AutomationStepsEditor(props: {
                   <Show when={step.kind === "create_reply_draft"}>
                     <div class="grid gap-3 md:grid-cols-2">
                       <Select
-                        label="Text source"
+                        label={messages().textSource}
                         value={() => (step.kind === "create_reply_draft" ? textSourceValue(step.body) : customTextSourceId)}
                         onValueChange={(value) =>
                           step.kind === "create_reply_draft" && replace(index(), { ...step, body: selectTextSource(step.body, value) })
                         }
-                        options={textSourceOptions(outputsBefore(index()))}
+                        options={textSourceOptions(outputsBefore(index()), locale())}
                       />
                       <Select
-                        label="From address"
+                        label={messages().fromAddress}
                         value={() => (step.kind === "create_reply_draft" ? step.senderIdentityId : "")}
                         onValueChange={(senderIdentityId) =>
                           step.kind === "create_reply_draft" && replace(index(), { ...step, senderIdentityId: senderIdentityId ?? "" })
@@ -1085,8 +1122,8 @@ function AutomationStepsEditor(props: {
                       <Show when={step.kind === "create_reply_draft" && step.body.kind === "custom"}>
                         <div class="md:col-span-2">
                           <TextInput
-                            label="Reply text"
-                            description="Write the draft body directly. Mail template variables are supported."
+                            label={messages().replyText}
+                            description={messages().replyTextDescription}
                             value={() => (step.kind === "create_reply_draft" && step.body.kind === "custom" ? step.body.value : "")}
                             onValueChange={(value) =>
                               step.kind === "create_reply_draft" &&
@@ -1099,24 +1136,24 @@ function AutomationStepsEditor(props: {
                           />
                         </div>
                       </Show>
-                      <p class="text-[11px] text-dimmed md:col-span-2">Creates a reply draft for human review and never sends it.</p>
+                      <p class="text-[11px] text-dimmed md:col-span-2">{messages().replyDraftSafety}</p>
                     </div>
                   </Show>
 
                   <Show when={step.kind === "add_comment"}>
                     <div class="flex flex-col gap-3">
                       <Select
-                        label="Text source"
+                        label={messages().textSource}
                         value={() => (step.kind === "add_comment" ? textSourceValue(step.body) : customTextSourceId)}
                         onValueChange={(value) =>
                           step.kind === "add_comment" && replace(index(), { ...step, body: selectTextSource(step.body, value) })
                         }
-                        options={textSourceOptions(outputsBefore(index()))}
+                        options={textSourceOptions(outputsBefore(index()), locale())}
                       />
                       <Show when={step.kind === "add_comment" && step.body.kind === "custom"}>
                         <TextInput
-                          label="Comment"
-                          description="Write the internal conversation comment directly. Mail template variables are supported."
+                          label={messages().comment}
+                          description={messages().commentDescription}
                           value={() => (step.kind === "add_comment" && step.body.kind === "custom" ? step.body.value : "")}
                           onValueChange={(value) =>
                             step.kind === "add_comment" &&
@@ -1135,17 +1172,17 @@ function AutomationStepsEditor(props: {
                   <Show when={step.kind === "set_summary"}>
                     <div class="flex flex-col gap-3">
                       <Select
-                        label="Text source"
+                        label={messages().textSource}
                         value={() => (step.kind === "set_summary" ? textSourceValue(step.body) : customTextSourceId)}
                         onValueChange={(value) =>
                           step.kind === "set_summary" && replace(index(), { ...step, body: selectTextSource(step.body, value) })
                         }
-                        options={textSourceOptions(outputsBefore(index()))}
+                        options={textSourceOptions(outputsBefore(index()), locale())}
                       />
                       <Show when={step.kind === "set_summary" && step.body.kind === "custom"}>
                         <TextInput
-                          label="Summary"
-                          description="Replace the current conversation summary with this text. Mail template variables are supported."
+                          label={messages().summary}
+                          description={messages().summaryDescription}
                           value={() => (step.kind === "set_summary" && step.body.kind === "custom" ? step.body.value : "")}
                           onValueChange={(value) =>
                             step.kind === "set_summary" &&
@@ -1158,7 +1195,7 @@ function AutomationStepsEditor(props: {
                           required
                         />
                       </Show>
-                      <p class="text-[11px] text-dimmed">Replaces the editable summary. It does not send or modify any message.</p>
+                      <p class="text-[11px] text-dimmed">{messages().summarySafety}</p>
                     </div>
                   </Show>
 
@@ -1167,12 +1204,12 @@ function AutomationStepsEditor(props: {
                       const conditionStep = step as Extract<MailAutomationStep, { kind: "if" }>;
                       const outputs = () => outputsBefore(index()).filter((output) => output.type !== "event");
                       const source = () => outputs().find((output) => output.id === conditionStep.condition.sourceStepId) ?? outputs()[0];
-                      const context = [props.labelContext, `If step ${index() + 1}`].filter(Boolean).join(", ");
+                      const context = [props.labelContext, messages().ifStep({ step: index() + 1 })].filter(Boolean).join(", ");
                       return (
                         <div class="flex flex-col gap-3">
                           <div class="grid gap-3 md:grid-cols-2">
                             <Select
-                              label="Output"
+                              label={messages().output}
                               value={() => conditionStep.condition.sourceStepId}
                               onValueChange={(sourceStepId) => {
                                 const nextSource = outputs().find((output) => output.id === sourceStepId);
@@ -1192,7 +1229,7 @@ function AutomationStepsEditor(props: {
                               when={(source()?.choices.length ?? 0) > 0}
                               fallback={
                                 <TextInput
-                                  label="Equals"
+                                  label={messages().equals}
                                   value={() => conditionStep.condition.value}
                                   onValueChange={(value) =>
                                     replace(index(), { ...conditionStep, condition: { ...conditionStep.condition, value } })
@@ -1203,7 +1240,7 @@ function AutomationStepsEditor(props: {
                               }
                             >
                               <Select
-                                label={conditionStep.condition.operator === "includes" ? "Contains" : "Equals"}
+                                label={conditionStep.condition.operator === "includes" ? messages().contains : messages().equals}
                                 value={() => conditionStep.condition.value}
                                 onValueChange={(value) =>
                                   value && replace(index(), { ...conditionStep, condition: { ...conditionStep.condition, value } })
@@ -1213,7 +1250,7 @@ function AutomationStepsEditor(props: {
                             </Show>
                           </div>
                           <div class="rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-                            <strong class="mb-2 block text-xs text-primary">Then</strong>
+                            <strong class="mb-2 block text-xs text-primary">{messages().then}</strong>
                             <AutomationStepsEditor
                               mailboxId={props.mailboxId}
                               steps={conditionStep.then}
@@ -1221,7 +1258,7 @@ function AutomationStepsEditor(props: {
                               availableActions={actions()}
                               availableOutputs={outputs()}
                               catalog={props.catalog}
-                              labelContext={`${context}, Then`}
+                              labelContext={`${context}, ${messages().then}`}
                               allowEmpty
                               maxSteps={12}
                               depth={(props.depth ?? 0) + 1}
@@ -1229,7 +1266,7 @@ function AutomationStepsEditor(props: {
                             />
                           </div>
                           <div class="rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-                            <strong class="mb-2 block text-xs text-primary">Else</strong>
+                            <strong class="mb-2 block text-xs text-primary">{messages().else}</strong>
                             <AutomationStepsEditor
                               mailboxId={props.mailboxId}
                               steps={conditionStep.else}
@@ -1237,7 +1274,7 @@ function AutomationStepsEditor(props: {
                               availableActions={actions()}
                               availableOutputs={outputs()}
                               catalog={props.catalog}
-                              labelContext={`${context}, Else`}
+                              labelContext={`${context}, ${messages().else}`}
                               allowEmpty
                               maxSteps={12}
                               depth={(props.depth ?? 0) + 1}
@@ -1268,7 +1305,7 @@ function AutomationStepsEditor(props: {
       >
         <Dropdown.Root position="bottom-right" width="18rem" items={menuItems()}>
           <Dropdown.Trigger type="button" variant="secondary" size="sm" class="self-start">
-            <i class="ti ti-plus" aria-hidden="true" /> Add step
+            <i class="ti ti-plus" aria-hidden="true" /> {messages().addStep}
           </Dropdown.Trigger>
         </Dropdown.Root>
       </Show>
@@ -1288,10 +1325,11 @@ function IncomingAutomationEditor(props: {
   onSaved: (automation: IncomingAutomation) => void;
   onBackfillStarted: (backfill: IncomingAutomationBackfill) => void;
 }) {
+  const { locale, messages } = useMessages();
   const initialSteps = () => {
     if (props.automation) return props.automation.steps;
     if (props.initialAction) return [mailActionStep(initialMailAutomationAction(props.initialAction, props.catalog))];
-    return presetSteps(props.preset, props.catalog);
+    return presetSteps(props.preset, props.catalog, locale());
   };
   const initialName = props.automation?.name ?? props.initialName ?? "";
   const initialEnabled = props.automation?.enabled ?? false;
@@ -1333,17 +1371,17 @@ function IncomingAutomationEditor(props: {
           { param: { mailboxId: props.mailboxId }, json: { scope: input.scope } },
           { init: { signal: abortSignal } },
         );
-        if (!previewResponse.ok) throw new Error(await readApiError(previewResponse, "Could not preview existing messages"));
+        if (!previewResponse.ok) throw new Error(await readApiError(previewResponse, messages().couldNotPreviewExisting));
         const preview: IncomingAutomationMatchPreview = await previewResponse.json();
         if (preview.messageCount === 0) {
-          toast("No existing messages match this automation", { title: "Automation applies to future mail" });
+          toast(messages().noExistingMatches, { title: messages().futureMailOnly });
           shouldBackfill = false;
         } else {
           const confirmed = await prompts.confirm(
             preview.exact
-              ? `${preview.messageCount} existing message${preview.messageCount === 1 ? "" : "s"} in ${preview.conversationCount} conversation${preview.conversationCount === 1 ? "" : "s"} match.`
-              : `${preview.messageCount} existing incoming message${preview.messageCount === 1 ? "" : "s"} will be scanned and evaluated.`,
-            { title: "Apply automation to existing mail?", confirmText: "Save and start backfill" },
+              ? messages().exactPreviewSummary({ messages: preview.messageCount, conversations: preview.conversationCount })
+              : messages().scanPreviewSummary({ messages: preview.messageCount }),
+            { title: messages().applyExistingMail, confirmText: messages().saveAndStartBackfill },
           );
           if (!confirmed || abortSignal.aborted) return null;
         }
@@ -1360,7 +1398,7 @@ function IncomingAutomationEditor(props: {
             { param: { mailboxId: props.mailboxId }, json: input },
             { init: { signal: abortSignal } },
           );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not save incoming automation"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().couldNotSaveIncomingAutomation));
       const automation = await response.json();
       if (!shouldBackfill) return { automation, backfill: null, backfillError: null };
       const backfillResponse = await apiClient.mailboxes[":mailboxId"]["incoming-automations"][":automationId"].backfills.$post(
@@ -1374,7 +1412,7 @@ function IncomingAutomationEditor(props: {
         return {
           automation,
           backfill: null,
-          backfillError: await readApiError(backfillResponse, "Could not start existing-message backfill"),
+          backfillError: await readApiError(backfillResponse, messages().couldNotStartExistingBackfill),
         };
       }
       return { automation, backfill: await backfillResponse.json(), backfillError: null };
@@ -1383,9 +1421,9 @@ function IncomingAutomationEditor(props: {
       if (!result) return;
       props.onSaved(result.automation);
       if (result.backfill) props.onBackfillStarted(result.backfill);
-      toast.success(props.automation ? "Incoming automation updated" : "Incoming automation created");
+      toast.success(props.automation ? messages().incomingAutomationUpdated : messages().incomingAutomationCreated);
       props.close();
-      if (result.backfillError) void prompts.error(`The automation was saved, but its backfill did not start: ${result.backfillError}`);
+      if (result.backfillError) void prompts.error(messages().savedButBackfillFailed({ error: result.backfillError }));
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -1398,31 +1436,36 @@ function IncomingAutomationEditor(props: {
     if (result.success) return null;
     const issue = result.error.issues.find((candidate) => candidate.path[0] === field);
     if (!issue) return null;
-    if (field === "name") return name().trim() ? "Use 120 characters or fewer." : "Enter a name.";
+    if (field === "name") return name().trim() ? messages().nameTooLong : messages().enterName;
     if (field === "scope") {
       const conditionIndex = typeof issue.path[3] === "number" ? issue.path[3] : null;
-      const prefix = conditionIndex === null ? "Condition" : `Condition ${conditionIndex + 1}`;
-      return issue.code === "custom" ? `${prefix}: ${issue.message}.` : `${prefix}: Enter a value.`;
+      const prefix = conditionIndex === null ? messages().condition : messages().conditionLabel({ index: conditionIndex + 1 });
+      return issue.code === "custom" ? `${prefix}: ${issue.message}.` : `${prefix}: ${messages().enterValue}`;
     }
     const stepIndex = typeof issue.path[1] === "number" ? issue.path[1] : null;
     if (stepIndex === null) {
       if (issue.code === "custom") return `${issue.message}.`;
-      return steps().length === 0 ? "Add at least one step." : "Use at most 20 top-level steps.";
+      return steps().length === 0 ? messages().addAtLeastOneStep : messages().topLevelStepLimit;
     }
-    const location = [`Step ${stepIndex + 1}`];
+    const location = [messages().stepLocation({ step: stepIndex + 1 })];
     for (let index = 2; index < issue.path.length; index += 1) {
       if (issue.path[index] === "choices" && typeof issue.path[index + 1] === "number") {
-        location.push(`choice ${(issue.path[index + 1] as number) + 1}`);
+        location.push(messages().choiceLocation({ choice: (issue.path[index + 1] as number) + 1 }));
         index += 1;
         continue;
       }
       if ((issue.path[index] === "then" || issue.path[index] === "else") && typeof issue.path[index + 1] === "number") {
-        location.push(`${issue.path[index] === "then" ? "Then" : "Else"} step ${(issue.path[index + 1] as number) + 1}`);
+        location.push(
+          messages().branchStepLocation({
+            branch: issue.path[index] === "then" ? messages().then : messages().else,
+            step: (issue.path[index + 1] as number) + 1,
+          }),
+        );
         index += 1;
         continue;
       }
       if (issue.path[index] === "steps" && typeof issue.path[index + 1] === "number") {
-        location.push(`step ${(issue.path[index + 1] as number) + 1}`);
+        location.push(messages().stepLocation({ step: (issue.path[index + 1] as number) + 1 }));
         index += 1;
       }
     }
@@ -1431,20 +1474,20 @@ function IncomingAutomationEditor(props: {
       issue.code === "custom"
         ? issue.message
         : fieldName === "instructions"
-          ? "Enter instructions"
+          ? messages().enterInstructions
           : fieldName === "name"
-            ? "Enter a choice name"
+            ? messages().enterChoiceName
             : fieldName === "description"
-              ? "Describe when this choice applies"
+              ? messages().describeChoice
               : fieldName === "senderIdentityId"
-                ? "Select a from address"
+                ? messages().selectFromAddress
                 : fieldName === "sourceStepId"
-                  ? "Select an earlier compatible output"
+                  ? messages().selectEarlierOutput
                   : fieldName === "value"
                     ? issue.path.includes("body")
-                      ? "Enter text"
-                      : "Enter a value to compare"
-                    : "Complete the required fields";
+                      ? messages().enterText
+                      : messages().enterCompareValue
+                    : messages().completeRequiredFields;
     return `${location.join(", ")}: ${message}.`;
   };
   const usesAi = () => hasAi(steps());
@@ -1457,20 +1500,16 @@ function IncomingAutomationEditor(props: {
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title={props.automation ? "Edit incoming automation" : "Create incoming automation"}
-        subtitle="Mix mail and AI building blocks in one top-to-bottom flow."
+        title={props.automation ? messages().editIncomingAutomation : messages().createIncomingAutomation}
+        subtitle={messages().incomingEditorDescription}
         icon="ti ti-mailbox"
         close={() => void closeSafely()}
         closeDisabled={save.loading()}
       />
       <PanelDialog.Body>
-        <PanelDialog.Section
-          title="Basics"
-          subtitle="New automations start inactive so you can review them safely."
-          icon="ti ti-adjustments"
-        >
+        <PanelDialog.Section title={messages().basics} subtitle={messages().basicsDescription} icon="ti ti-adjustments">
           <TextInput
-            label="Name"
+            label={messages().name}
             value={name}
             onValueChange={setName}
             onBlur={() => setNameTouched(true)}
@@ -1479,17 +1518,17 @@ function IncomingAutomationEditor(props: {
             required
           />
         </PanelDialog.Section>
-        <PanelDialog.Section title="When" subtitle="Run for every incoming message or only when conditions match." icon="ti ti-filter">
+        <PanelDialog.Section title={messages().when} subtitle={messages().whenDescription} icon="ti ti-filter">
           <Select
-            label="Incoming messages"
+            label={messages().incomingMessages}
             value={() => scope().mode}
             onValueChange={(mode) => {
               setScopeTouched(true);
               setScope(mode === "all" ? { mode: "all" } : { mode: "matching", conditions: matchingConditions() });
             }}
             options={[
-              { id: "all", label: "All incoming mail", icon: "ti ti-mailbox" },
-              { id: "matching", label: "Mail matching conditions", icon: "ti ti-filter" },
+              { id: "all", label: messages().allIncomingMail, icon: "ti ti-mailbox" },
+              { id: "matching", label: messages().matchingMail, icon: "ti ti-filter" },
             ]}
           />
           <Show when={scope().mode === "matching"}>
@@ -1525,17 +1564,13 @@ function IncomingAutomationEditor(props: {
             </p>
           )}
         </Show>
-        <PanelDialog.Section
-          title="Safety"
-          subtitle="Review execution scope and enable the automation when it is ready."
-          icon="ti ti-shield-check"
-        >
+        <PanelDialog.Section title={messages().safety} subtitle={messages().safetyDescription} icon="ti ti-shield-check">
           <Show
             when={usesAi()}
             fallback={
               <Switch
-                label="Also apply to existing matching mail after saving"
-                description="A resumable backfill is previewed before it starts."
+                label={messages().applyExistingAfterSave}
+                description={messages().backfillPreviewDescription}
                 value={applyExisting}
                 onValueChange={setApplyExisting}
                 disabled={!enabled()}
@@ -1544,45 +1579,34 @@ function IncomingAutomationEditor(props: {
           >
             <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
               <i class="ti ti-sparkles mt-0.5 shrink-0" aria-hidden="true" />
-              <span>
-                This flow makes up to {maxAiCalls(steps())} AI call{maxAiCalls(steps()) === 1 ? "" : "s"} per matching message. AI flows
-                only process future mail. AI can be wrong; reply drafts always remain drafts for human review.
-              </span>
+              <span>{messages().aiFlowNotice({ count: maxAiCalls(steps()) })}</span>
             </NoticeCard>
           </Show>
           <Switch
-            label="Automation active"
+            label={messages().automationActive}
             value={enabled}
             onValueChange={(value) => {
               setEnabled(value);
               if (!value) setApplyExisting(false);
             }}
           />
-          <p class="text-[11px] text-dimmed">
-            If a later step fails, effects from completed earlier steps remain. This automation never sends mail automatically.
-          </p>
+          <p class="text-[11px] text-dimmed">{messages().completedEffectsRemain}</p>
         </PanelDialog.Section>
         <Show when={props.automation?.workflowSource}>
-          <PanelDialog.Section
-            title="Generated workflow"
-            subtitle="This canonical source is regenerated from the guided flow whenever you save."
-            icon="ti ti-code"
-          >
-            <CodeDisplay code={props.automation!.workflowSource} title="Canonical YAML" language="text" lineNumbers={false} />
+          <PanelDialog.Section title={messages().generatedWorkflow} subtitle={messages().generatedWorkflowDescription} icon="ti ti-code">
+            <CodeDisplay code={props.automation!.workflowSource} title={messages().canonicalYaml} language="text" lineNumbers={false} />
           </PanelDialog.Section>
         </Show>
       </PanelDialog.Body>
       <PanelDialog.Footer>
-        <span class="min-w-0 flex-1 text-xs text-dimmed">
-          {enabled() ? "Applies to newly received messages." : "Saved inactive for review."}
-        </span>
+        <span class="min-w-0 flex-1 text-xs text-dimmed">{enabled() ? messages().appliesToNewMessages : messages().savedInactive}</span>
         <div class="flex items-center gap-2">
           <Button type="button" size="sm" variant="secondary" disabled={save.loading()} onClick={() => void closeSafely()}>
-            Cancel
+            {messages().cancel}
           </Button>
           <Button type="button" size="sm" disabled={!validation().success || save.loading()} onClick={() => save.mutate()}>
             <i class={`ti ${save.loading() ? "ti-loader-2 animate-spin" : "ti-check"}`} aria-hidden="true" />
-            {props.automation ? "Save changes" : "Create automation"}
+            {props.automation ? messages().saveChanges : messages().createAutomation}
           </Button>
         </div>
       </PanelDialog.Footer>
@@ -1602,23 +1626,24 @@ export const openIncomingAutomationEditor = (params: {
   onBackfillStarted?: (backfill: IncomingAutomationBackfill) => void;
 }) => {
   const open = async () => {
+    const messages = browserMessages();
     let catalog = params.catalog;
     if (!catalog) {
       const response = await apiClient.mailboxes[":mailboxId"]["incoming-automations"].catalog.$get({
         param: { mailboxId: params.mailboxId },
       });
       if (!response.ok) {
-        await prompts.error(await readApiError(response, "Could not load automation actions"));
+        await prompts.error(await readApiError(response, messages.couldNotLoadAutomationActions));
         return;
       }
       catalog = await response.json();
     }
     if (params.preset === "ai-draft" && (catalog.senderIdentities ?? []).length === 0) {
-      await prompts.error("Verify a sender identity and allow mailbox automation before creating AI reply drafts.");
+      await prompts.error(messages.verifyAutomationIdentity);
       return;
     }
     if (params.preset === "ai-tag" && (catalog.localTags ?? []).length < 2) {
-      await prompts.error("Create at least two local tags before using AI to add relevant tags.");
+      await prompts.error(messages.createTwoTags);
       return;
     }
     return dialogCore.open<void>(
@@ -1649,6 +1674,8 @@ export default function MailIncomingAutomationSettings(props: {
   openPreset?: IncomingAutomationPreset | null;
   onOpenPresetHandled?: () => void;
 }) {
+  const { locale, messages } = useMessages();
+  const formatNumber = (value: number) => new Intl.NumberFormat(locale()).format(value);
   const [automations, setAutomations] = createSignal(props.initialAutomations);
   const [backfills, setBackfills] = createSignal<Record<string, IncomingAutomationBackfill>>({});
   const [loadedBackfills, setLoadedBackfills] = createSignal<Set<string>>(new Set());
@@ -1690,7 +1717,7 @@ export default function MailIncomingAutomationSettings(props: {
             { init: { signal: abortSignal } },
           );
           if (response.status === 404) return { automationId: operation.automationId, status: "missing" };
-          if (!response.ok) throw new Error(await readApiError(response, "Could not refresh backfill status"));
+          if (!response.ok) throw new Error(await readApiError(response, messages().couldNotRefreshBackfill));
           return { automationId: operation.automationId, status: "found", backfill: await response.json() };
         }),
       ),
@@ -1719,7 +1746,7 @@ export default function MailIncomingAutomationSettings(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not change incoming automation"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().couldNotChangeIncomingAutomation));
       return response.json();
     },
     onSuccess: upsert,
@@ -1728,10 +1755,11 @@ export default function MailIncomingAutomationSettings(props: {
 
   const remove = mutation.create<IncomingAutomation | null, IncomingAutomation>({
     mutation: async (automation, { abortSignal }) => {
-      const confirmed = await prompts.confirm(
-        `Delete “${automation.name}”? Future messages will no longer be processed. Existing message changes remain.`,
-        { title: "Delete incoming automation?", confirmText: "Delete automation", variant: "danger" },
-      );
+      const confirmed = await prompts.confirm(messages().deleteIncomingDescription({ name: automation.name }), {
+        title: messages().deleteIncomingAutomation,
+        confirmText: messages().deleteAutomation,
+        variant: "danger",
+      });
       if (!confirmed || abortSignal.aborted) return null;
       const response = await apiClient.mailboxes[":mailboxId"]["incoming-automations"][":automationId"].$delete(
         {
@@ -1740,13 +1768,13 @@ export default function MailIncomingAutomationSettings(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not delete incoming automation"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().couldNotDeleteIncomingAutomation));
       return response.json();
     },
     onSuccess: (automation) => {
       if (!automation) return;
       setAutomations((current) => current.filter((candidate) => candidate.id !== automation.id));
-      toast.success("Incoming automation deleted");
+      toast.success(messages().incomingAutomationDeleted);
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -1754,21 +1782,21 @@ export default function MailIncomingAutomationSettings(props: {
   const startBackfill = mutation.create<IncomingAutomationBackfill | null, IncomingAutomation, { operationId: string }>({
     onBefore: () => ({ operationId: crypto.randomUUID() }),
     mutation: async (automation, { abortSignal, operationId }) => {
-      if (hasAi(automation.steps)) throw new Error("Flows with AI only process future mail");
+      if (hasAi(automation.steps)) throw new Error(messages().aiFutureOnly);
       const previewResponse = await apiClient.mailboxes[":mailboxId"]["incoming-automations"].preview.$post(
         { param: { mailboxId: props.mailboxId }, json: { scope: automation.scope } },
         { init: { signal: abortSignal } },
       );
-      if (!previewResponse.ok) throw new Error(await readApiError(previewResponse, "Could not preview existing messages"));
+      if (!previewResponse.ok) throw new Error(await readApiError(previewResponse, messages().couldNotPreviewExisting));
       const preview = await previewResponse.json();
       if (preview.messageCount === 0) {
-        toast("No existing messages match this automation", { title: "Nothing to backfill" });
+        toast(messages().noExistingMatches, { title: messages().nothingToBackfill });
         return null;
       }
-      const confirmed = await prompts.confirm(
-        `${preview.messageCount} existing incoming message${preview.messageCount === 1 ? "" : "s"} will be processed. Completed effects remain if a later step fails.`,
-        { title: "Apply automation to existing mail?", confirmText: "Start backfill" },
-      );
+      const confirmed = await prompts.confirm(messages().backfillConfirmation({ count: preview.messageCount }), {
+        title: messages().applyExistingMail,
+        confirmText: messages().startBackfill,
+      });
       if (!confirmed || abortSignal.aborted) return null;
       const response = await apiClient.mailboxes[":mailboxId"]["incoming-automations"][":automationId"].backfills.$post(
         {
@@ -1777,22 +1805,22 @@ export default function MailIncomingAutomationSettings(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not start backfill"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().couldNotStartBackfill));
       return response.json();
     },
     onSuccess: (backfill) => {
       if (!backfill) return;
       rememberBackfill(backfill);
-      toast.success("Backfill started");
+      toast.success(messages().backfillStarted);
     },
     onError: (error) => prompts.error(error.message),
   });
 
   const cancelBackfill = mutation.create<IncomingAutomationBackfill | null, IncomingAutomationBackfill>({
     mutation: async (backfill, { abortSignal }) => {
-      const confirmed = await prompts.confirm("Stop this backfill? Already completed steps remain and you can safely run it again later.", {
-        title: "Cancel backfill?",
-        confirmText: "Cancel backfill",
+      const confirmed = await prompts.confirm(messages().stopBackfillDescription, {
+        title: messages().cancelBackfillTitle,
+        confirmText: messages().cancelBackfill,
         variant: "danger",
       });
       if (!confirmed || abortSignal.aborted) return null;
@@ -1802,7 +1830,7 @@ export default function MailIncomingAutomationSettings(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not cancel backfill"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().couldNotCancelBackfill));
       return response.json();
     },
     onSuccess: (backfill) => {
@@ -1836,23 +1864,26 @@ export default function MailIncomingAutomationSettings(props: {
     cancelBackfill.abort();
   });
 
-  const columns: DataTableColumn<IncomingAutomation>[] = [
-    { id: "name", header: "Automation", value: (automation) => automation.name },
-    { id: "scope", header: "When", value: (automation) => scopeLabel(automation.scope) },
-    { id: "flow", header: "Flow", value: (automation) => flowLabel(automation, props.catalog) },
-    { id: "backfill", header: "Backfill", value: (automation) => backfills()[automation.id]?.state ?? "not_run", cellClass: "w-44" },
-    { id: "enabled", header: "Active", value: (automation) => automation.enabled, cellClass: "w-32" },
+  const columns = createMemo<DataTableColumn<IncomingAutomation>[]>(() => [
+    { id: "name", header: messages().automation, value: (automation) => automation.name },
+    { id: "scope", header: messages().when, value: (automation) => scopeLabel(automation.scope, locale()) },
+    { id: "flow", header: messages().flow, value: (automation) => flowLabel(automation, props.catalog, locale()) },
+    {
+      id: "backfill",
+      header: messages().backfill,
+      value: (automation) => backfills()[automation.id]?.state ?? "not_run",
+      cellClass: "w-44",
+    },
+    { id: "enabled", header: messages().active, value: (automation) => automation.enabled, cellClass: "w-32" },
     { id: "menu", header: "", value: (automation) => automation.id, cellClass: "w-12", headerClass: "w-12" },
-  ];
+  ]);
 
   return (
     <section class="paper overflow-hidden">
       <div class="flex flex-wrap items-start justify-between gap-3 px-3 py-3">
         <div>
-          <h2 class="text-xs font-semibold text-primary">Incoming automations</h2>
-          <p class="mt-0.5 text-[11px] text-dimmed">
-            {automations().length} guided flow{automations().length === 1 ? "" : "s"}
-          </p>
+          <h2 class="text-xs font-semibold text-primary">{messages().incomingAutomations}</h2>
+          <p class="mt-0.5 text-[11px] text-dimmed">{messages().guidedFlowCount({ count: automations().length })}</p>
         </div>
         <Button
           size="sm"
@@ -1866,25 +1897,27 @@ export default function MailIncomingAutomationSettings(props: {
             })
           }
         >
-          <i class="ti ti-plus" aria-hidden="true" /> Create automation
+          <i class="ti ti-plus" aria-hidden="true" /> {messages().createAutomation}
         </Button>
       </div>
       <DataTable
         rows={automations()}
-        columns={columns}
+        columns={columns()}
         getRowId={(automation) => automation.id}
         class="overflow-x-auto"
         tableClass={automations().length > 0 ? "w-full min-w-[48rem] text-xs" : "w-full text-xs"}
         hoverRows
-        empty="No incoming automations. Create one flow and mix direct mail actions with AI where useful."
+        empty={messages().noIncomingAutomations}
         renderCell={({ row, col, render }) => {
           if (col.id === "enabled") {
             return (
               <Switch
                 label={
                   <>
-                    <span aria-hidden="true">{row.enabled ? "Enabled" : "Disabled"}</span>
-                    <span class="sr-only">{`${row.enabled ? "Disable" : "Enable"} ${row.name}`}</span>
+                    <span aria-hidden="true">{row.enabled ? messages().active : messages().inactive}</span>
+                    <span class="sr-only">
+                      {row.enabled ? messages().disableNamed({ name: row.name }) : messages().enableNamed({ name: row.name })}
+                    </span>
                   </>
                 }
                 value={() => row.enabled}
@@ -1894,18 +1927,25 @@ export default function MailIncomingAutomationSettings(props: {
             );
           }
           if (col.id === "backfill") {
-            if (hasAi(row.steps)) return <span class="text-dimmed">Future only</span>;
+            if (hasAi(row.steps)) return <span class="text-dimmed">{messages().futureOnly}</span>;
             const backfill = backfills()[row.id];
-            if (row.latestBackfillOperationId && !loadedBackfills().has(row.id)) return <span class="text-dimmed">Loading…</span>;
-            if (row.latestBackfillOperationId && !backfill) return <span class="text-dimmed">History expired</span>;
-            if (!backfill) return <span class="text-dimmed">Not run</span>;
+            if (row.latestBackfillOperationId && !loadedBackfills().has(row.id))
+              return <span class="text-dimmed">{messages().loading}</span>;
+            if (row.latestBackfillOperationId && !backfill) return <span class="text-dimmed">{messages().historyExpired}</span>;
+            if (!backfill) return <span class="text-dimmed">{messages().notRun}</span>;
             const accepted = backfill.alreadyAcceptedCount + backfill.newlyAcceptedCount;
             if (activeBackfillStates.has(backfill.state)) {
-              return <StatusBadge tone="running" label={`Backfill · ${accepted}/${backfill.candidateCount}`} />;
+              return (
+                <StatusBadge
+                  tone="running"
+                  label={messages().backfillProgress({ accepted: formatNumber(accepted), total: formatNumber(backfill.candidateCount) })}
+                />
+              );
             }
-            if (backfill.state === "completed") return <StatusBadge tone="ok" label={`Completed · ${backfill.newlyAcceptedCount} new`} />;
-            if (backfill.state === "failed") return <StatusBadge tone="warning" label="Failed" />;
-            return <StatusBadge tone="neutral" label="Canceled" />;
+            if (backfill.state === "completed")
+              return <StatusBadge tone="ok" label={messages().completedNew({ count: formatNumber(backfill.newlyAcceptedCount) })} />;
+            if (backfill.state === "failed") return <StatusBadge tone="warning" label={messages().failed} />;
+            return <StatusBadge tone="neutral" label={messages().canceled} />;
           }
           if (col.id === "menu") {
             const backfill = backfills()[row.id];
@@ -1917,7 +1957,7 @@ export default function MailIncomingAutomationSettings(props: {
                   ...(!active
                     ? [
                         {
-                          label: "Edit automation",
+                          label: messages().editAutomation,
                           icon: "ti ti-pencil",
                           action: () =>
                             void openIncomingAutomationEditor({
@@ -1933,7 +1973,7 @@ export default function MailIncomingAutomationSettings(props: {
                   ...(row.enabled && !hasAi(row.steps) && !active
                     ? [
                         {
-                          label: backfill || row.latestBackfillOperationId ? "Run backfill again" : "Apply to existing mail",
+                          label: backfill || row.latestBackfillOperationId ? messages().runBackfillAgain : messages().applyToExistingMail,
                           icon: "ti ti-database-import",
                           action: () => startBackfill.mutate(row),
                         },
@@ -1942,7 +1982,7 @@ export default function MailIncomingAutomationSettings(props: {
                   ...(backfill && active
                     ? [
                         {
-                          label: "Cancel backfill",
+                          label: messages().cancelBackfill,
                           icon: "ti ti-player-stop",
                           variant: "danger" as const,
                           action: () => cancelBackfill.mutate(backfill),
@@ -1952,7 +1992,7 @@ export default function MailIncomingAutomationSettings(props: {
                   ...(!active
                     ? [
                         {
-                          label: "Delete automation",
+                          label: messages().deleteAutomation,
                           icon: "ti ti-trash",
                           variant: "danger" as const,
                           action: () => remove.mutate(row),
@@ -1961,7 +2001,7 @@ export default function MailIncomingAutomationSettings(props: {
                     : []),
                 ]}
               >
-                <Dropdown.Trigger iconOnly size="sm" type="button" variant="ghost" label={`Actions for ${row.name}`}>
+                <Dropdown.Trigger iconOnly size="sm" type="button" variant="ghost" label={messages().actionsFor({ name: row.name })}>
                   <i class="ti ti-dots" aria-hidden="true" />
                 </Dropdown.Trigger>
               </Dropdown.Root>

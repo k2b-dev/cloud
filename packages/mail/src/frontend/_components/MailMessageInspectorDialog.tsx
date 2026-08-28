@@ -11,22 +11,16 @@ import {
   panelDialogWorkspaceOptions,
   Select,
   Tooltip,
+  useLocale,
 } from "@k2b/ui";
-import { createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { type MessageInspector, type MessageSourcePreview, messageInspectorSchema, messageSourcePreviewSchema } from "../../contracts";
 import type { MessageDetail } from "../../service/messages";
 import { readApiError } from "./api-response";
+import { mailRemainingMessages } from "./mail-remaining-messages";
 
 type InspectorTab = "overview" | "headers" | "source";
-
-const inspectorTabs = [
-  { value: "overview", label: "Overview", icon: "ti ti-info-circle" },
-  { value: "headers", label: "Headers", icon: "ti ti-list-details" },
-  { value: "source", label: "Source", icon: "ti ti-code" },
-] as const;
-
-const messageOptionLabel = (message: MessageDetail, index: number): string => `${index + 1}. ${message.subject.trim() || "(no subject)"}`;
 
 const sourceHref = (mailboxId: string, messageId: string): string => `/api/mail/mailboxes/${mailboxId}/messages/${messageId}/source`;
 
@@ -40,6 +34,18 @@ function MailMessageInspectorDialog(props: {
   initialTab: InspectorTab;
   close: () => void;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
+  const inspectorTabs = createMemo(
+    () =>
+      [
+        { value: "overview", label: messages().overview, icon: "ti ti-info-circle" },
+        { value: "headers", label: messages().headers, icon: "ti ti-list-details" },
+        { value: "source", label: messages().source, icon: "ti ti-code" },
+      ] as const,
+  );
+  const messageOptionLabel = (message: MessageDetail, index: number): string =>
+    `${index + 1}. ${message.subject.trim() || messages().noSubject}`;
   const [selectedMessageId, setSelectedMessageId] = createSignal(props.initialMessageId);
   const [tab, setTab] = createSignal<InspectorTab>(props.initialTab);
   const inspector = query.create<string, MessageInspector>({
@@ -49,7 +55,7 @@ function MailMessageInspectorDialog(props: {
         { param: { mailboxId: props.mailboxId, messageId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not inspect this message"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().couldNotInspectMessage));
       return messageInspectorSchema.parse(await response.json());
     },
   });
@@ -66,7 +72,7 @@ function MailMessageInspectorDialog(props: {
         { param: { mailboxId: props.mailboxId, messageId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not load the message source"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().couldNotLoadMessageSource));
       return messageSourcePreviewSchema.parse(await response.json());
     },
   });
@@ -81,19 +87,19 @@ function MailMessageInspectorDialog(props: {
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title="Message inspector"
-        subtitle="Delivery metadata, headers, and the exact stored message"
+        title={messages().messageInspector}
+        subtitle={messages().messageInspectorDescription}
         icon="ti ti-file-search"
         actions={
           <Show when={currentInspector()?.source.available}>
-            <Tooltip.Anchor content="Download original message">
+            <Tooltip.Anchor content={messages().downloadOriginalMessage}>
               <IconButtonLink
                 href={sourceHref(props.mailboxId, selectedMessageId())}
                 download={downloadName()}
-                label="Download original message"
+                label={messages().downloadOriginalMessage}
               >
                 <i class="ti ti-download" aria-hidden="true" />
-                <span class="sr-only">Download original message</span>
+                <span class="sr-only">{messages().downloadOriginalMessage}</span>
               </IconButtonLink>
             </Tooltip.Anchor>
           </Show>
@@ -104,28 +110,31 @@ function MailMessageInspectorDialog(props: {
         <div class="flex min-h-full flex-col gap-2">
           <Show when={props.messages.length > 1}>
             <Select
-              label="Message"
+              label={messages().message}
               icon="ti ti-mail"
               value={selectedMessageId}
               options={props.messages.map((message, index) => ({
                 id: message.id,
                 label: messageOptionLabel(message, index),
-                description: message.from.map((address) => address.name || address.address).join(", ") || "Unknown sender",
+                description: message.from.map((address) => address.name || address.address).join(", ") || messages().unknownSender,
               }))}
               onValueChange={setSelectedMessageId}
             />
           </Show>
-          <PanelDialog.Tabs options={inspectorTabs} value={tab} onValueChange={setTab} ariaLabel="Message inspection view" />
+          <PanelDialog.Tabs options={inspectorTabs()} value={tab} onValueChange={setTab} ariaLabel={messages().messageInspectionView} />
 
           <Show
             when={currentInspector()}
             fallback={
-              <Show when={inspector.error()} fallback={<Placeholder state="loading" variant="panel" title="Loading message details" />}>
+              <Show
+                when={inspector.error()}
+                fallback={<Placeholder state="loading" variant="panel" title={messages().loadingMessageDetails} />}
+              >
                 {(error) => (
                   <Placeholder
                     state="error"
                     variant="panel"
-                    title="Could not inspect this message"
+                    title={messages().couldNotInspectMessage}
                     description={error().message}
                     action={
                       <Button
@@ -135,7 +144,7 @@ function MailMessageInspectorDialog(props: {
                         disabled={inspector.refreshing()}
                         onClick={() => void inspector.refresh()}
                       >
-                        <i class="ti ti-refresh" aria-hidden="true" /> Retry
+                        <i class="ti ti-refresh" aria-hidden="true" /> {messages().retry}
                       </Button>
                     }
                   />
@@ -154,39 +163,41 @@ function MailMessageInspectorDialog(props: {
                 <Show when={tab() === "overview"}>
                   <div class="grid gap-2 lg:grid-cols-2">
                     <section class="detail-section">
-                      <p class="detail-section-label">Message</p>
+                      <p class="detail-section-label">{messages().message}</p>
                       <dl class="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
-                        <dt class="text-dimmed">Message ID</dt>
-                        <dd class="break-all font-mono text-secondary">{current().messageId ?? "Unavailable"}</dd>
-                        <dt class="text-dimmed">In reply to</dt>
-                        <dd class="break-all font-mono text-secondary">{current().inReplyTo ?? "None"}</dd>
-                        <dt class="text-dimmed">Received</dt>
-                        <dd class="text-primary">{new Date(current().internalDate).toLocaleString()}</dd>
-                        <dt class="text-dimmed">Sent</dt>
-                        <dd class="text-primary">{current().sentAt ? new Date(current().sentAt ?? "").toLocaleString() : "Unavailable"}</dd>
-                        <dt class="text-dimmed">Size</dt>
+                        <dt class="text-dimmed">{messages().messageId}</dt>
+                        <dd class="break-all font-mono text-secondary">{current().messageId ?? messages().unavailable}</dd>
+                        <dt class="text-dimmed">{messages().inReplyTo}</dt>
+                        <dd class="break-all font-mono text-secondary">{current().inReplyTo ?? messages().none}</dd>
+                        <dt class="text-dimmed">{messages().received}</dt>
+                        <dd class="text-primary">{new Date(current().internalDate).toLocaleString(locale())}</dd>
+                        <dt class="text-dimmed">{messages().sent}</dt>
+                        <dd class="text-primary">
+                          {current().sentAt ? new Date(current().sentAt ?? "").toLocaleString(locale()) : messages().unavailable}
+                        </dd>
+                        <dt class="text-dimmed">{messages().size}</dt>
                         <dd class="text-primary">{formatFileViewSize(current().sizeBytes)}</dd>
-                        <dt class="text-dimmed">Content type</dt>
-                        <dd class="break-all text-primary">{current().contentType ?? "Unavailable"}</dd>
-                        <dt class="text-dimmed">Hydration</dt>
+                        <dt class="text-dimmed">{messages().contentType}</dt>
+                        <dd class="break-all text-primary">{current().contentType ?? messages().unavailable}</dd>
+                        <dt class="text-dimmed">{messages().hydration}</dt>
                         <dd class="text-primary">{current().hydrationStatus}</dd>
                       </dl>
                     </section>
 
                     <section class="detail-section">
-                      <p class="detail-section-label">Stored source</p>
+                      <p class="detail-section-label">{messages().storedSource}</p>
                       <dl class="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
-                        <dt class="text-dimmed">Available</dt>
-                        <dd class="text-primary">{current().source.available ? "Exact original" : "No"}</dd>
-                        <dt class="text-dimmed">Size</dt>
+                        <dt class="text-dimmed">{messages().available}</dt>
+                        <dd class="text-primary">{current().source.available ? messages().exactOriginal : messages().no}</dd>
+                        <dt class="text-dimmed">{messages().size}</dt>
                         <dd class="text-primary">
-                          {current().source.byteLength === null ? "Unavailable" : formatFileViewSize(current().source.byteLength!)}
+                          {current().source.byteLength === null ? messages().unavailable : formatFileViewSize(current().source.byteLength!)}
                         </dd>
-                        <dt class="text-dimmed">MIME parts</dt>
+                        <dt class="text-dimmed">{messages().mimeParts}</dt>
                         <dd class="text-primary">{current().parts.length}</dd>
-                        <dt class="text-dimmed">Attachments</dt>
+                        <dt class="text-dimmed">{messages().attachments}</dt>
                         <dd class="text-primary">{current().attachments.length}</dd>
-                        <dt class="text-dimmed">Placements</dt>
+                        <dt class="text-dimmed">{messages().placements}</dt>
                         <dd class="text-primary">{current().placements.length}</dd>
                       </dl>
                       <Show when={current().source.available}>
@@ -197,7 +208,7 @@ function MailMessageInspectorDialog(props: {
                           href={sourceHref(props.mailboxId, current().id)}
                           download={downloadName()}
                         >
-                          <i class="ti ti-download" aria-hidden="true" /> Download .eml
+                          <i class="ti ti-download" aria-hidden="true" /> {messages().downloadEml}
                         </ButtonLink>
                       </Show>
                     </section>
@@ -208,7 +219,7 @@ function MailMessageInspectorDialog(props: {
                       <section class="detail-section">
                         <div class="flex flex-wrap items-start justify-between gap-3">
                           <div class="min-w-0">
-                            <p class="detail-section-label">Mailing list</p>
+                            <p class="detail-section-label">{messages().mailingList}</p>
                             <p class="truncate text-sm font-medium text-primary">{list().name}</p>
                             <Show when={list().name.toLowerCase() !== list().address.toLowerCase()}>
                               <p class="truncate text-xs text-dimmed">{list().address}</p>
@@ -216,20 +227,20 @@ function MailMessageInspectorDialog(props: {
                           </div>
                           <ButtonLink variant="secondary" size="sm" href={subscriptionsHref(props.mailboxId, list().listKey)}>
                             <i class="ti ti-settings" aria-hidden="true" />
-                            Manage subscription
+                            {messages().manageSubscription}
                           </ButtonLink>
                         </div>
                         <div class="mt-3 flex flex-wrap items-center gap-2">
                           <Show when={list().postHref}>
                             <ButtonLink variant="ghost" size="sm" href={list().postHref!}>
                               <i class="ti ti-send" aria-hidden="true" />
-                              Write to list
+                              {messages().writeToList}
                             </ButtonLink>
                           </Show>
                           <Show when={list().archiveHref}>
                             <ButtonLink variant="ghost" size="sm" href={list().archiveHref!} target="_blank" rel="noopener noreferrer">
                               <i class="ti ti-world" aria-hidden="true" />
-                              List archive
+                              {messages().listArchive}
                             </ButtonLink>
                           </Show>
                         </div>
@@ -239,33 +250,31 @@ function MailMessageInspectorDialog(props: {
 
                   <Show when={current().spam.flag || current().spam.status || current().spam.score}>
                     <section class="detail-section">
-                      <p class="detail-section-label">Spam diagnostics</p>
-                      <p class="mb-3 text-xs text-dimmed">
-                        These values come from headers added by the mail provider. Cloud does not calculate a spam score.
-                      </p>
+                      <p class="detail-section-label">{messages().spamDiagnostics}</p>
+                      <p class="mb-3 text-xs text-dimmed">{messages().spamDiagnosticsDescription}</p>
                       <dl class="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
-                        <dt class="text-dimmed">Flag</dt>
-                        <dd class="break-all text-primary">{current().spam.flag ?? "Unavailable"}</dd>
-                        <dt class="text-dimmed">Status</dt>
-                        <dd class="break-all text-primary">{current().spam.status ?? "Unavailable"}</dd>
-                        <dt class="text-dimmed">Score</dt>
-                        <dd class="break-all text-primary">{current().spam.score ?? "Unavailable"}</dd>
+                        <dt class="text-dimmed">{messages().flag}</dt>
+                        <dd class="break-all text-primary">{current().spam.flag ?? messages().unavailable}</dd>
+                        <dt class="text-dimmed">{messages().status}</dt>
+                        <dd class="break-all text-primary">{current().spam.status ?? messages().unavailable}</dd>
+                        <dt class="text-dimmed">{messages().score}</dt>
+                        <dd class="break-all text-primary">{current().spam.score ?? messages().unavailable}</dd>
                       </dl>
                     </section>
                   </Show>
 
                   <Show when={current().placements.length > 0}>
                     <section class="detail-section">
-                      <p class="detail-section-label">Provider placements</p>
+                      <p class="detail-section-label">{messages().providerPlacements}</p>
                       <div class="overflow-x-auto">
                         <table class="w-full min-w-[36rem] border-separate border-spacing-x-3 border-spacing-y-1 text-left text-xs">
                           <thead>
                             <tr>
-                              <th>Folder</th>
+                              <th>{messages().folder}</th>
                               <th>UID</th>
-                              <th>UID validity</th>
-                              <th>Flags</th>
-                              <th>Provider keywords</th>
+                              <th>{messages().uidValidity}</th>
+                              <th>{messages().flags}</th>
+                              <th>{messages().providerKeywords}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -275,8 +284,8 @@ function MailMessageInspectorDialog(props: {
                                   <td title={placement.remotePath}>{placement.folderName}</td>
                                   <td class="font-mono">{placement.uid}</td>
                                   <td class="font-mono">{placement.uidValidity}</td>
-                                  <td>{placement.flags.join(", ") || "None"}</td>
-                                  <td>{placement.keywords.join(", ") || "None"}</td>
+                                  <td>{placement.flags.join(", ") || messages().none}</td>
+                                  <td>{placement.keywords.join(", ") || messages().none}</td>
                                 </tr>
                               )}
                             </For>
@@ -288,16 +297,16 @@ function MailMessageInspectorDialog(props: {
 
                   <Show when={current().parts.length > 0}>
                     <section class="detail-section">
-                      <p class="detail-section-label">MIME parts</p>
+                      <p class="detail-section-label">{messages().mimeParts}</p>
                       <div class="overflow-x-auto">
                         <table class="w-full min-w-[42rem] border-separate border-spacing-x-3 border-spacing-y-1 text-left text-xs">
                           <thead>
                             <tr>
-                              <th>Part</th>
-                              <th>Type</th>
-                              <th>Disposition</th>
-                              <th>Size</th>
-                              <th>State</th>
+                              <th>{messages().part}</th>
+                              <th>{messages().type}</th>
+                              <th>{messages().disposition}</th>
+                              <th>{messages().size}</th>
+                              <th>{messages().state}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -306,7 +315,7 @@ function MailMessageInspectorDialog(props: {
                                 <tr>
                                   <td class="font-mono">{part.partPath}</td>
                                   <td>{part.contentType}</td>
-                                  <td>{part.disposition ?? "Inline"}</td>
+                                  <td>{part.disposition ?? messages().inline}</td>
                                   <td>{formatFileViewSize(part.sizeBytes)}</td>
                                   <td>{part.hydrationStatus}</td>
                                 </tr>
@@ -322,12 +331,12 @@ function MailMessageInspectorDialog(props: {
                 <Show when={tab() === "headers"}>
                   <section class="detail-section">
                     <div class="mb-3 flex items-center justify-between gap-2">
-                      <p class="detail-section-label mb-0">All headers</p>
-                      <span class="text-xs text-dimmed">{current().headers.length} fields</span>
+                      <p class="detail-section-label mb-0">{messages().allHeaders}</p>
+                      <span class="text-xs text-dimmed">{messages().headerFields({ count: current().headers.length })}</span>
                     </div>
                     <Show
                       when={current().headers.length > 0}
-                      fallback={<Placeholder state="empty" variant="compact" title="No exact headers available" />}
+                      fallback={<Placeholder state="empty" variant="compact" title={messages().noExactHeaders} />}
                     >
                       <dl class="grid grid-cols-[minmax(7rem,12rem)_minmax(0,1fr)] gap-x-3 gap-y-2 text-xs">
                         <For each={current().headers}>
@@ -342,7 +351,7 @@ function MailMessageInspectorDialog(props: {
                     </Show>
                     <Show when={current().rawHeaders}>
                       <details class="mt-4">
-                        <summary class="cursor-pointer text-xs font-medium text-secondary">Raw header block</summary>
+                        <summary class="cursor-pointer text-xs font-medium text-secondary">{messages().rawHeaderBlock}</summary>
                         <pre class="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-all rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-3 font-mono text-xs text-secondary">
                           {current().rawHeaders}
                         </pre>
@@ -358,8 +367,8 @@ function MailMessageInspectorDialog(props: {
                       <Placeholder
                         state="empty"
                         variant="panel"
-                        title="Original source unavailable"
-                        description="This message was mirrored before exact source storage was available, or its source could not be retained."
+                        title={messages().originalSourceUnavailable}
+                        description={messages().originalSourceUnavailableDescription}
                       />
                     }
                   >
@@ -368,13 +377,13 @@ function MailMessageInspectorDialog(props: {
                       fallback={
                         <Show
                           when={sourcePreview.error()}
-                          fallback={<Placeholder state="loading" variant="panel" title="Loading source preview" />}
+                          fallback={<Placeholder state="loading" variant="panel" title={messages().loadingSourcePreview} />}
                         >
                           {(error) => (
                             <Placeholder
                               state="error"
                               variant="panel"
-                              title="Could not load source preview"
+                              title={messages().couldNotLoadSourcePreview}
                               description={error().message}
                               action={
                                 <Button
@@ -384,7 +393,7 @@ function MailMessageInspectorDialog(props: {
                                   disabled={sourcePreview.refreshing()}
                                   onClick={() => void sourcePreview.refresh()}
                                 >
-                                  <i class="ti ti-refresh" aria-hidden="true" /> Retry
+                                  <i class="ti ti-refresh" aria-hidden="true" /> {messages().retry}
                                 </Button>
                               }
                             />
@@ -396,9 +405,12 @@ function MailMessageInspectorDialog(props: {
                         <section class="detail-section">
                           <div class="mb-3 flex items-center justify-between gap-2">
                             <div>
-                              <p class="detail-section-label mb-0">Exact message source</p>
+                              <p class="detail-section-label mb-0">{messages().exactMessageSource}</p>
                               <p class="text-xs text-dimmed">
-                                Showing {formatFileViewSize(preview().previewByteLength)} of {formatFileViewSize(preview().byteLength)}
+                                {messages().showingBytes({
+                                  shown: formatFileViewSize(preview().previewByteLength),
+                                  total: formatFileViewSize(preview().byteLength),
+                                })}
                               </p>
                             </div>
                             <ButtonLink
@@ -407,12 +419,12 @@ function MailMessageInspectorDialog(props: {
                               href={sourceHref(props.mailboxId, current().id)}
                               download={downloadName()}
                             >
-                              <i class="ti ti-download" aria-hidden="true" /> Download .eml
+                              <i class="ti ti-download" aria-hidden="true" /> {messages().downloadEml}
                             </ButtonLink>
                           </div>
                           <Show when={preview().truncated}>
                             <NoticeCard tone="neutral" icon={false} class="mb-3">
-                              The on-screen preview is limited. The downloaded .eml contains the complete exact message.
+                              {messages().sourcePreviewLimited}
                             </NoticeCard>
                           </Show>
                           <pre class="max-h-[32rem] overflow-auto whitespace-pre-wrap break-all rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] p-3 font-mono text-xs text-secondary">

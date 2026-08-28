@@ -11,7 +11,7 @@ const { plugin } = createConfig({ dev: true, rootDir: root });
 Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
-const { default: MailMessageBody } = await import("./MailMessageBody.tsx");
+const [{ default: MailMessageBody }, { LocaleProvider }] = await Promise.all([import("./MailMessageBody.tsx"), import("@k2b/ui")]);
 
 const renderBody = (linksDisabled = false) =>
   renderToString(() =>
@@ -25,6 +25,25 @@ const renderBody = (linksDisabled = false) =>
       remoteContent: { imageIds: [], allowedByRule: false, sender: "sender@example.com", domain: "example.com" },
       linksDisabled,
       onSelectionChange: () => {},
+    }),
+  );
+
+const renderLocalizedHtmlBody = (locale: string) =>
+  renderToString(() =>
+    createComponent(LocaleProvider, {
+      locale,
+      get children() {
+        return createComponent(MailMessageBody, {
+          mailboxId: "Box001",
+          messageId: "Msg001",
+          format: "html",
+          html: '<p>Neuer Inhalt</p><blockquote type="cite">Alter Inhalt</blockquote>',
+          plainText: null,
+          attachments: [],
+          remoteContent: { imageIds: [], allowedByRule: false, sender: "sender@example.com", domain: "example.com" },
+          onSelectionChange: () => {},
+        });
+      },
     }),
   );
 
@@ -48,5 +67,15 @@ describe("plain mail message links", () => {
     expect(html).toContain("Reference: ");
     expect(html).toContain("https://example.com/security");
     expect(html).not.toContain("<a");
+  });
+});
+
+describe("HTML mail message locale", () => {
+  test("uses the resolved document language and localized quote label", () => {
+    const html = renderLocalizedHtmlBody("de-CH");
+
+    expect(html).toContain("lang=&quot;de&quot;");
+    expect(html).toContain("Zitierten Text anzeigen");
+    expect(html).not.toContain("Show quoted text");
   });
 });

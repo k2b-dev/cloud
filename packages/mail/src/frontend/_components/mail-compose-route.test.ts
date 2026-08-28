@@ -41,16 +41,10 @@ describe("Mail compose routes", () => {
   });
 
   test("opens a conversation in the current mailbox workspace context", () => {
-    expect(
-      mailConversationHref(
-        "Box001",
-        "Conv02",
-        "/app/mail/Box001?view=mine&conversation=Conv01&message=Msg01#message",
-      ),
-    ).toBe("/app/mail/Box001?view=mine&conversation=Conv02");
-    expect(mailConversationHref("Box001", "Conv02", "https://attacker.example/path")).toBe(
-      "/app/mail/Box001?conversation=Conv02",
+    expect(mailConversationHref("Box001", "Conv02", "/app/mail/Box001?view=mine&conversation=Conv01&message=Msg01#message")).toBe(
+      "/app/mail/Box001?view=mine&conversation=Conv02",
     );
+    expect(mailConversationHref("Box001", "Conv02", "https://attacker.example/path")).toBe("/app/mail/Box001?conversation=Conv02");
   });
 
   test("registers the same-origin mailto landing route and degrades safely", () => {
@@ -77,6 +71,6 @@ describe("Mail compose routes", () => {
         },
         "https://cloud.example",
       ),
-    ).toEqual({ kind: "failed", message: "Denied" });
+    ).toEqual({ kind: "failed" });
   });
 });

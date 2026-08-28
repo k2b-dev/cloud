@@ -56,10 +56,10 @@ describe("parseMailtoIntent", () => {
   });
 
   test("rejects malformed encoding, invalid recipients, repeated scalar fields, and oversized links", () => {
-    expect(parseMailtoIntent("mailto:%E0%A4%A").ok).toBe(false);
-    expect(parseMailtoIntent("mailto:not-an-address").ok).toBe(false);
-    expect(parseMailtoIntent("mailto:a@example.com?subject=one&subject=two").ok).toBe(false);
-    expect(parseMailtoIntent(`mailto:a@example.com?body=${"x".repeat(32 * 1024)}`).ok).toBe(false);
+    expect(parseMailtoIntent("mailto:%E0%A4%A")).toEqual({ ok: false, code: "invalid_encoding" });
+    expect(parseMailtoIntent("mailto:not-an-address")).toEqual({ ok: false, code: "invalid_to" });
+    expect(parseMailtoIntent("mailto:a@example.com?subject=one&subject=two")).toEqual({ ok: false, code: "duplicate_field" });
+    expect(parseMailtoIntent(`mailto:a@example.com?body=${"x".repeat(32 * 1024)}`)).toEqual({ ok: false, code: "too_large" });
   });
 
   test("removes header line breaks from the subject", () => {

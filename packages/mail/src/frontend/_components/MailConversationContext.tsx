@@ -1,5 +1,5 @@
 import { mutation, query } from "@k2b/stdlib/solid";
-import { Button, DetailPanel, Placeholder, prompts } from "@k2b/ui";
+import { Button, DetailPanel, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { createMemo, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { MailConversationContext } from "../../contracts";
@@ -8,8 +8,11 @@ import { readApiError } from "./api-response";
 import { createContact, listWritableContactBooks } from "./contact-capabilities";
 import { buildMailContactParticipantRows } from "./mail-contact-context";
 import { buildExactParticipantSearchHref } from "./mail-navigation";
+import { mailRemainingMessages } from "./mail-remaining-messages";
 
 export default function MailConversationContext(props: { mailboxId: string; conversationId: string; requestUrl: string; active: boolean }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
   const contexts = query.createInfinite<string, MailConversationContext, string>({
     source: () => props.conversationId,
     enabled: () => props.active,
@@ -21,9 +24,9 @@ export default function MailConversationContext(props: { mailboxId: string; conv
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not load Contacts"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().contactsUnavailable));
       const page = await response.json();
-      if (page.contacts.status === "ready") assertCursorProgress(cursor, page.contacts.nextCursor, "Contacts");
+      if (page.contacts.status === "ready") assertCursorProgress(cursor, page.contacts.nextCursor, messages().contacts);
       return page;
     },
     getNextCursor: (page) => (page.contacts.status === "ready" ? page.contacts.nextCursor : null),
@@ -66,7 +69,7 @@ export default function MailConversationContext(props: { mailboxId: string; conv
         {
           bookId: book.id,
           label: participant.displayName || participant.email,
-          emails: [{ label: "Email", email: participant.email }],
+          emails: [{ label: messages().email, email: participant.email }],
         },
         idempotencyKey,
         abortSignal,
@@ -75,13 +78,13 @@ export default function MailConversationContext(props: { mailboxId: string; conv
         try {
           await contexts.invalidate();
         } catch (error) {
-          void prompts.error(error instanceof Error ? error.message : "Contacts could not be refreshed", {
-            title: "Contact created, refresh failed",
+          void prompts.error(error instanceof Error ? error.message : messages().contactsRefreshFailed, {
+            title: messages().contactCreatedRefreshFailed,
           });
         }
       }
     },
-    onError: (error) => void prompts.error(error.message, { title: "Could not create contact" }),
+    onError: (error) => void prompts.error(error.message, { title: messages().couldNotCreateContact }),
   });
 
   const chooseBookAndCreate = async (participant: { email: string; displayName: string | null }) => {
@@ -96,11 +99,11 @@ export default function MailConversationContext(props: { mailboxId: string; conv
         }));
       },
       {
-        title: "Choose contact book",
+        title: messages().chooseContactBook,
         icon: "ti ti-address-book",
-        placeholder: "Search writable contact books...",
+        placeholder: messages().searchWritableContactBooks,
         minQueryLength: 0,
-        noResultsText: "No writable contact books found.",
+        noResultsText: messages().noWritableContactBooks,
         size: "small",
       },
     );
@@ -113,7 +116,7 @@ export default function MailConversationContext(props: { mailboxId: string; conv
     try {
       await contexts.invalidate();
     } catch (error) {
-      await prompts.error(error instanceof Error ? error.message : "Linked Spaces could not be refreshed", { title });
+      await prompts.error(error instanceof Error ? error.message : messages().linkedSpacesRefreshFailed, { title });
     }
   };
 
@@ -131,7 +134,7 @@ export default function MailConversationContext(props: { mailboxId: string; conv
           },
           { init: { signal: abortSignal } },
         );
-        if (!response.ok) throw new Error(await readApiError(response, "Could not search Spaces"));
+        if (!response.ok) throw new Error(await readApiError(response, messages().couldNotSearchSpaces));
         return (await response.json())
           .filter((item) => !linkedItemIds.has(item.ref.id))
           .map((item) => ({
@@ -142,11 +145,11 @@ export default function MailConversationContext(props: { mailboxId: string; conv
           }));
       },
       {
-        title: "Link Space item",
+        title: messages().linkSpaceItem,
         icon: "ti ti-link",
-        placeholder: "Search tasks and events...",
+        placeholder: messages().searchTasksAndEvents,
         minQueryLength: 0,
-        noResultsText: "No writable Space items found.",
+        noResultsText: messages().noWritableSpaceItems,
         size: "small",
       },
     );
@@ -155,8 +158,8 @@ export default function MailConversationContext(props: { mailboxId: string; conv
       param: { mailboxId, conversationId },
       json: { itemId: selected.value.id },
     });
-    if (!response.ok) return void prompts.error(await readApiError(response, "Could not link Space item"));
-    await reconcileSpacesAfterWrite(mailboxId, conversationId, "Space item linked, refresh failed");
+    if (!response.ok) return void prompts.error(await readApiError(response, messages().couldNotLinkSpaceItem));
+    await reconcileSpacesAfterWrite(mailboxId, conversationId, messages().spaceItemLinkedRefreshFailed);
   };
 
   const unlinkSpaceItem = async (itemId: string) => {
@@ -166,8 +169,8 @@ export default function MailConversationContext(props: { mailboxId: string; conv
       param: { mailboxId, conversationId },
       json: { itemId },
     });
-    if (!response.ok) return void prompts.error(await readApiError(response, "Could not unlink Space item"));
-    await reconcileSpacesAfterWrite(mailboxId, conversationId, "Space item unlinked, refresh failed");
+    if (!response.ok) return void prompts.error(await readApiError(response, messages().couldNotUnlinkSpaceItem));
+    await reconcileSpacesAfterWrite(mailboxId, conversationId, messages().spaceItemUnlinkedRefreshFailed);
   };
 
   const createSpaceItem = async (kind: "task" | "event") => {
@@ -176,7 +179,7 @@ export default function MailConversationContext(props: { mailboxId: string; conv
     const destinationsResponse = await apiClient.mailboxes[":mailboxId"]["calendar-destinations"].$get({
       param: { mailboxId },
     });
-    if (!destinationsResponse.ok) return void prompts.error(await readApiError(destinationsResponse, "Could not load Spaces"));
+    if (!destinationsResponse.ok) return void prompts.error(await readApiError(destinationsResponse, messages().couldNotLoadSpaces));
     const destinations = await destinationsResponse.json();
     const selected = await prompts.search<{ id: string; name: string }>(
       ({ query }) =>
@@ -186,11 +189,11 @@ export default function MailConversationContext(props: { mailboxId: string; conv
             .map((space) => ({ value: space, label: space.name, icon: "ti ti-layout-kanban" })),
         ),
       {
-        title: "Choose Space",
+        title: messages().chooseSpaceTitle,
         icon: "ti ti-layout-kanban",
-        placeholder: "Search writable Spaces...",
+        placeholder: messages().searchWritableSpaces,
         minQueryLength: 0,
-        noResultsText: "No writable Spaces found.",
+        noResultsText: messages().noWritableSpacesFound,
         size: "small",
       },
     );
@@ -200,15 +203,15 @@ export default function MailConversationContext(props: { mailboxId: string; conv
       param: { mailboxId, spaceId: destination.id },
       query: { conversationId },
     });
-    if (!spaceResponse.ok) return void prompts.error(await readApiError(spaceResponse, "Could not load Space kanbans"));
+    if (!spaceResponse.ok) return void prompts.error(await readApiError(spaceResponse, messages().couldNotLoadSpaceKanbans));
     const space = await spaceResponse.json();
     const kanbans = space.columns.filter((column) => !column.isDone);
     const defaultKanban = kanbans[0];
-    if (!defaultKanban) return void prompts.error("This Space has no open kanban.");
-    const titleField = { type: "text" as const, label: "Title", required: true, maxLength: 200 };
+    if (!defaultKanban) return void prompts.error(messages().noOpenKanban);
+    const titleField = { type: "text" as const, label: messages().title, required: true, maxLength: 200 };
     const kanbanField = {
       type: "select" as const,
-      label: "Kanban",
+      label: messages().kanban,
       required: true,
       default: defaultKanban.id,
       options: kanbans.map((kanban) => ({ id: kanban.id, label: kanban.name })),
@@ -217,10 +220,10 @@ export default function MailConversationContext(props: { mailboxId: string; conv
       kind === "task"
         ? await (async () => {
             const values = await prompts.form({
-              title: "New Space task",
+              title: messages().newSpaceTask,
               icon: "ti ti-checkbox",
-              confirmText: "Create",
-              fields: { title: titleField, columnId: kanbanField, deadline: { type: "datetime", label: "Deadline" } },
+              confirmText: messages().create,
+              fields: { title: titleField, columnId: kanbanField, deadline: { type: "datetime", label: messages().deadline } },
             });
             return values?.columnId && values.title
               ? {
@@ -234,13 +237,13 @@ export default function MailConversationContext(props: { mailboxId: string; conv
           })()
         : await (async () => {
             const values = await prompts.form({
-              title: "New Space event",
+              title: messages().newSpaceEvent,
               icon: "ti ti-calendar-event",
-              confirmText: "Create",
+              confirmText: messages().create,
               fields: {
                 title: titleField,
-                startsAt: { type: "datetime", label: "Starts", required: true },
-                endsAt: { type: "datetime", label: "Ends", required: true },
+                startsAt: { type: "datetime", label: messages().starts, required: true },
+                endsAt: { type: "datetime", label: messages().ends, required: true },
               },
             });
             return values?.title && values.startsAt && values.endsAt
@@ -259,29 +262,29 @@ export default function MailConversationContext(props: { mailboxId: string; conv
       param: { mailboxId, conversationId },
       json,
     });
-    if (!response.ok) return void prompts.error(await readApiError(response, `Could not create Space ${kind}`));
-    await reconcileSpacesAfterWrite(mailboxId, conversationId, `Space ${kind} created, refresh failed`);
+    if (!response.ok) return void prompts.error(await readApiError(response, messages().couldNotCreateSpaceItem({ kind })));
+    await reconcileSpacesAfterWrite(mailboxId, conversationId, messages().spaceItemCreatedRefreshFailed({ kind }));
   };
 
   onCleanup(() => createParticipantContact.abort());
 
   return (
     <>
-      <section aria-label="Contacts" class="bg-[var(--ui-surface)] p-3">
+      <section aria-label={messages().contacts} class="bg-[var(--ui-surface)] p-3">
         <Show
           when={context()}
           fallback={
-            <Show when={contexts.error()} fallback={<Placeholder state="loading" align="center" title="Loading contacts..." />}>
+            <Show when={contexts.error()} fallback={<Placeholder state="loading" align="center" title={messages().loadingContacts} />}>
               {(error) => (
                 <Placeholder
                   state="error"
                   align="center"
-                  title="Contacts unavailable"
+                  title={messages().contactsUnavailable}
                   description={error().message}
                   icon="ti ti-address-book-off"
                   action={
                     <Button variant="secondary" size="sm" type="button" onClick={() => void contexts.refresh()}>
-                      Retry
+                      {messages().retry}
                     </Button>
                   }
                 />
@@ -295,12 +298,12 @@ export default function MailConversationContext(props: { mailboxId: string; conv
               <Placeholder
                 state="error"
                 align="center"
-                title="Contacts unavailable"
+                title={messages().contactsUnavailable}
                 description={contexts.error()?.message ?? ""}
                 icon="ti ti-address-book-off"
                 action={
                   <Button variant="secondary" size="sm" type="button" onClick={() => void contexts.refresh()}>
-                    Retry
+                    {messages().retry}
                   </Button>
                 }
               />
@@ -312,12 +315,12 @@ export default function MailConversationContext(props: { mailboxId: string; conv
                 <Placeholder
                   state="error"
                   align="center"
-                  title="Contacts unavailable"
-                  description="Contact context could not be refreshed."
+                  title={messages().contactsUnavailable}
+                  description={messages().contactContextRefreshFailed}
                   icon="ti ti-address-book-off"
                   action={
                     <Button variant="secondary" size="sm" type="button" onClick={() => void contexts.refresh()}>
-                      Retry
+                      {messages().retry}
                     </Button>
                   }
                 />
@@ -325,7 +328,7 @@ export default function MailConversationContext(props: { mailboxId: string; conv
             >
               <Show
                 when={participantRows().length > 0}
-                fallback={<Placeholder align="center" title="No external participants" icon="ti ti-user-off" />}
+                fallback={<Placeholder align="center" title={messages().noExternalParticipants} icon="ti ti-user-off" />}
               >
                 <div class="flex flex-col gap-2">
                   <For each={participantRows()}>
@@ -341,7 +344,7 @@ export default function MailConversationContext(props: { mailboxId: string; conv
                                   <i class="ti ti-user mt-0.5 text-dimmed" aria-hidden="true" />
                                   <div class="min-w-0 flex-1">
                                     <p class="truncate text-sm font-medium text-primary">{participant.displayName || participant.email}</p>
-                                    <p class="truncate text-xs text-dimmed">Matching contact available. Load more to view it.</p>
+                                    <p class="truncate text-xs text-dimmed">{messages().matchingContactAvailable}</p>
                                   </div>
                                 </div>
                               }
@@ -352,7 +355,7 @@ export default function MailConversationContext(props: { mailboxId: string; conv
                                 onClick={() => void chooseBookAndCreate(participant)}
                                 leading={<i class="ti ti-user-plus text-[var(--app-accent)]" aria-hidden="true" />}
                                 title={participant.email}
-                                trailing={<span class="text-[0.6875rem] font-normal">New contact</span>}
+                                trailing={<span class="text-[0.6875rem] font-normal">{messages().newContact}</span>}
                               />
                             </Show>
                           }
@@ -418,10 +421,10 @@ export default function MailConversationContext(props: { mailboxId: string; conv
                                               leading={<i class="ti ti-address-book" aria-hidden="true" />}
                                               title={contact.displayName}
                                               description={description() || undefined}
-                                              menuLabel={`More actions for ${contact.displayName}`}
+                                              menuLabel={messages().moreActionsFor({ name: contact.displayName })}
                                               menuItems={[
                                                 {
-                                                  label: "Related Mail",
+                                                  label: messages().relatedMail,
                                                   icon: "ti ti-mail",
                                                   href: mailHref(),
                                                   external: true,
@@ -438,7 +441,7 @@ export default function MailConversationContext(props: { mailboxId: string; conv
                                           href={`tel:${phone().phone}`}
                                           leading={<i class="ti ti-phone" aria-hidden="true" />}
                                           title={phone().phone}
-                                          description="Phone"
+                                          description={messages().phone}
                                         />
                                       )}
                                     </Show>
@@ -459,10 +462,10 @@ export default function MailConversationContext(props: { mailboxId: string; conv
                     type="button"
                     class="mt-3"
                     loading={contexts.loadingMore()}
-                    loadingLabel="Loading more"
+                    loadingLabel={messages().loadingMore}
                     onClick={() => void contexts.loadMore()}
                   >
-                    Load more
+                    {messages().loadMore}
                   </Button>
                 </Show>
               </Show>
@@ -474,17 +477,17 @@ export default function MailConversationContext(props: { mailboxId: string; conv
         <Show
           when={context()}
           fallback={
-            <Show when={contexts.error()} fallback={<Placeholder state="loading" align="center" title="Loading Spaces..." />}>
+            <Show when={contexts.error()} fallback={<Placeholder state="loading" align="center" title={messages().loadingSpaces} />}>
               {(error) => (
                 <Placeholder
                   state="error"
                   align="center"
-                  title="Spaces unavailable"
+                  title={messages().spacesUnavailable}
                   description={error().message}
                   icon="ti ti-layout-kanban-off"
                   action={
                     <Button variant="secondary" size="sm" type="button" onClick={() => void contexts.refresh()}>
-                      Retry
+                      {messages().retry}
                     </Button>
                   }
                 />
@@ -495,7 +498,7 @@ export default function MailConversationContext(props: { mailboxId: string; conv
           {(current) => (
             <Show
               when={current().spaces.status === "ready"}
-              fallback={<Placeholder state="error" align="center" title="Spaces unavailable" icon="ti ti-layout-kanban-off" />}
+              fallback={<Placeholder state="error" align="center" title={messages().spacesUnavailable} icon="ti ti-layout-kanban-off" />}
             >
               <For each={current().spaces.status === "ready" ? current().spaces.items : []}>
                 {(item) => {
@@ -509,10 +512,10 @@ export default function MailConversationContext(props: { mailboxId: string; conv
                       leading={<i class={item.icon ?? "ti ti-checkbox"} aria-hidden="true" />}
                       title={item.title}
                       description={item.metadata?.find((entry) => entry.label === "Space")?.value}
-                      menuLabel={`More actions for ${item.title}`}
+                      menuLabel={messages().moreActionsFor({ name: item.title })}
                       menuItems={[
                         {
-                          label: "Unlink",
+                          label: messages().unlink,
                           icon: "ti ti-unlink",
                           action: () => void unlinkSpaceItem(item.ref.id),
                         },
@@ -522,28 +525,28 @@ export default function MailConversationContext(props: { mailboxId: string; conv
                 }}
               </For>
               <Show when={current().spaces.status === "ready" && current().spaces.truncated}>
-                <p class="px-2 py-1 text-xs text-dimmed">More linked Space items exist. Open Spaces to manage all links.</p>
+                <p class="px-2 py-1 text-xs text-dimmed">{messages().moreLinkedSpaceItems}</p>
               </Show>
               <DetailPanel.Action
                 type="button"
                 onClick={() => void linkExistingSpaceItem()}
                 leading={<i class="ti ti-link-plus text-[var(--k2b-action)]" aria-hidden="true" />}
-                title="Link Spaces"
-                trailing={<span class="text-[0.6875rem] font-normal">existing item</span>}
+                title={messages().linkSpaces}
+                trailing={<span class="text-[0.6875rem] font-normal">{messages().existingItem}</span>}
               />
               <DetailPanel.Action
                 type="button"
                 onClick={() => void createSpaceItem("task")}
                 leading={<i class="ti ti-checkbox text-[var(--k2b-action)]" aria-hidden="true" />}
-                title="Spaces Task"
-                trailing={<span class="text-[0.6875rem] font-normal">new item</span>}
+                title={messages().spacesTask}
+                trailing={<span class="text-[0.6875rem] font-normal">{messages().newItem}</span>}
               />
               <DetailPanel.Action
                 type="button"
                 onClick={() => void createSpaceItem("event")}
                 leading={<i class="ti ti-calendar-event text-[var(--k2b-action)]" aria-hidden="true" />}
-                title="Spaces Event"
-                trailing={<span class="text-[0.6875rem] font-normal">new item</span>}
+                title={messages().spacesEvent}
+                trailing={<span class="text-[0.6875rem] font-normal">{messages().newItem}</span>}
               />
             </Show>
           )}

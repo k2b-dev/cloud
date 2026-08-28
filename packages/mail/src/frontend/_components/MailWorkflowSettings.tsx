@@ -14,13 +14,14 @@ import {
   StatusBadge,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import {
   buildWorkflowAutocompleteCompletions,
   createWorkflowYamlHighlighter,
   type WorkflowAutocompleteRequest,
 } from "@valentinkolb/cloud/workflows/editor";
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type {
   MailWorkflow,
@@ -34,6 +35,7 @@ import type { ConversationReferenceConfiguration } from "../../service/conversat
 import { readApiError } from "./api-response";
 import { MailReferenceConfigurationForm } from "./MailResponsePolicySettings";
 import { waitForMailPageTransition } from "./mail-page-transition";
+import { mailRemainingMessages } from "./mail-remaining-messages";
 
 const DEFAULT_BUDGET: WorkflowEffectBudget = {
   maxTargets: 1_000,
@@ -81,6 +83,8 @@ function WorkflowEditor(props: {
   close: () => void;
   onSaved: (workflow: MailWorkflowDetail) => void;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
   const [name, setName] = createSignal(props.workflow?.name ?? "");
   const [description, setDescription] = createSignal(props.workflow?.description ?? "");
   const [priority, setPriority] = createSignal(props.workflow?.priority ?? 100);
@@ -122,7 +126,7 @@ function WorkflowEditor(props: {
       },
       { init: { signal } },
     );
-    if (!response.ok) throw new Error(await readApiError(response, "Workflow suggestions failed"));
+    if (!response.ok) throw new Error(await readApiError(response, messages().workflowSuggestionsFailed));
     const result = await response.json();
     if (!signal.aborted && request.source === source()) {
       setValidation({
@@ -148,7 +152,7 @@ function WorkflowEditor(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Workflow validation failed"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().workflowValidationFailed));
       return response.json();
     },
   });
@@ -170,16 +174,16 @@ function WorkflowEditor(props: {
     try {
       await validationQuery.invalidate();
       const result = validationQuery.data();
-      if (announce && result?.valid) toast.success("Workflow is valid");
+      if (announce && result?.valid) toast.success(messages().workflowValid);
     } catch (error) {
-      if (announce) await prompts.error(error instanceof Error ? error.message : "Workflow validation failed");
+      if (announce) await prompts.error(error instanceof Error ? error.message : messages().workflowValidationFailed);
     }
   };
 
   const updateDetails = mutations.create<MailWorkflowDetail, void>({
     mutation: async (_input, { abortSignal }) => {
       const workflow = props.workflow;
-      if (!workflow) throw new Error("Save the workflow before updating its details");
+      if (!workflow) throw new Error(messages().saveWorkflowBeforeDetails);
       const response = await apiClient.mailboxes[":mailboxId"].workflows[":workflowId"].$patch(
         {
           param: { mailboxId: props.mailboxId, workflowId: workflow.id },
@@ -192,13 +196,13 @@ function WorkflowEditor(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to update workflow details"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedUpdateWorkflowDetails));
       return await response.json();
     },
     onSuccess: (workflow) => {
       setExpectedUpdatedAt(workflow.updatedAt);
       props.onSaved(workflow);
-      toast.success("Workflow details updated");
+      toast.success(messages().workflowDetailsUpdated);
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -227,11 +231,11 @@ function WorkflowEditor(props: {
             },
             { init: { signal: abortSignal } },
           );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to save workflow"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedSaveWorkflow));
       return await response.json();
     },
     onSuccess: (workflow) => {
-      toast.success(props.workflow ? "Workflow version saved" : "Workflow created");
+      toast.success(props.workflow ? messages().workflowVersionSaved : messages().workflowCreated);
       props.onSaved(workflow);
       props.close();
     },
@@ -245,16 +249,22 @@ function WorkflowEditor(props: {
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title={props.workflow ? name() : "New workflow"}
-        subtitle="Canonical YAML with immutable saved versions"
+        title={props.workflow ? name() : messages().newWorkflow}
+        subtitle={messages().workflowEditorDescription}
         icon="ti ti-route"
         close={props.close}
       />
       <PanelDialog.Body>
-        <PanelDialog.Section title="Identity" subtitle="Shown to mailbox administrators." icon="ti ti-id">
-          <TextInput label="Name" value={name} onValueChange={setName} required />
-          <TextInput label="Description" value={description} onValueChange={setDescription} multiline lines={2} />
-          <NumberInput label="Priority" value={priority} onValueChange={(value) => setPriority(value ?? 100)} min={-1_000} max={1_000} />
+        <PanelDialog.Section title={messages().identity} subtitle={messages().shownToMailboxAdmins} icon="ti ti-id">
+          <TextInput label={messages().name} value={name} onValueChange={setName} required />
+          <TextInput label={messages().description} value={description} onValueChange={setDescription} multiline lines={2} />
+          <NumberInput
+            label={messages().priority}
+            value={priority}
+            onValueChange={(value) => setPriority(value ?? 100)}
+            min={-1_000}
+            max={1_000}
+          />
           <Show when={props.workflow}>
             <div class="flex justify-end">
               <Button
@@ -265,14 +275,14 @@ function WorkflowEditor(props: {
                 onClick={() => updateDetails.mutate()}
               >
                 <i class={`ti ${updateDetails.loading() ? "ti-loader-2 animate-spin" : "ti-device-floppy"}`} aria-hidden="true" />
-                Update details
+                {messages().updateDetails}
               </Button>
             </div>
           </Show>
         </PanelDialog.Section>
         <PanelDialog.Section
-          title="Conversation references"
-          subtitle="Optional durable identifiers for workflows that use ensureConversationReference."
+          title={messages().conversationReferences}
+          subtitle={messages().conversationReferencesDescription}
           icon="ti ti-hash"
         >
           <Show
@@ -291,26 +301,19 @@ function WorkflowEditor(props: {
           >
             <NoticeCard tone="success" icon={false} bodyClass="flex items-start gap-2">
               <i class="ti ti-check mt-0.5 shrink-0" aria-hidden="true" />
-              <span>
-                Reference numbers are ready with pattern <code>{referenceConfiguration()!.pattern}</code>. Use{" "}
-                <code>ensureConversationReference</code> and render the result through <code>{"{{ reference.value }}"}</code>.
-              </span>
+              <span>{messages().referenceNumbersReady({ pattern: referenceConfiguration()!.pattern })}</span>
             </NoticeCard>
           </Show>
         </PanelDialog.Section>
-        <PanelDialog.Section
-          title="Workflow YAML"
-          subtitle="Save creates a new immutable version; activation remains explicit."
-          icon="ti ti-code"
-        >
+        <PanelDialog.Section title={messages().workflowYaml} subtitle={messages().workflowYamlDescription} icon="ti ti-code">
           <div class="flex justify-end">
             <ButtonLink variant="ghost" size="sm" href={WORKFLOW_REFERENCE_HREF} target="_blank" rel="noreferrer">
-              <i class="ti ti-external-link" aria-hidden="true" /> Open YAML reference
+              <i class="ti ti-external-link" aria-hidden="true" /> {messages().openYamlReference}
             </ButtonLink>
           </div>
           <div class="min-h-[24rem]">
             <AutocompleteEditor
-              aria-label="Workflow YAML"
+              aria-label={messages().workflowYaml}
               value={source}
               onValueChange={(value) => {
                 setSource(value);
@@ -329,12 +332,14 @@ function WorkflowEditor(props: {
             {(result) => (
               <NoticeCard tone={result().valid ? "success" : "danger"} icon={false} role="status">
                 <p class="text-sm font-medium">
-                  {validating() ? "Validating…" : result().valid ? "YAML is valid" : "Fix validation errors before saving"}
+                  {validating() ? messages().validating : result().valid ? messages().yamlValid : messages().fixValidationErrors}
                 </p>
                 <For each={result().diagnostics}>
                   {(diagnostic) => (
                     <p class="mt-1 font-mono text-xs">
-                      {diagnostic.location ? `Line ${diagnostic.location.line}, column ${diagnostic.location.column}: ` : ""}
+                      {diagnostic.location
+                        ? messages().diagnosticLocation({ line: diagnostic.location.line, column: diagnostic.location.column })
+                        : ""}
                       {diagnostic.message}
                     </p>
                   )}
@@ -343,52 +348,88 @@ function WorkflowEditor(props: {
             )}
           </Show>
         </PanelDialog.Section>
-        <PanelDialog.Section title="Effect budget" subtitle="Hard limits bound each workflow execution." icon="ti ti-gauge">
+        <PanelDialog.Section title={messages().effectBudget} subtitle={messages().effectBudgetDescription} icon="ti ti-gauge">
           <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <NumberInput label="Targets" value={maxTargets} onValueChange={(value) => setMaxTargets(value ?? 1)} min={1} max={50_000} />
-            <NumberInput label="Moves" value={maxMoves} onValueChange={(value) => setMaxMoves(value ?? 0)} min={0} max={50_000} />
-            <NumberInput label="Copies" value={maxCopies} onValueChange={(value) => setMaxCopies(value ?? 0)} min={0} max={50_000} />
-            <NumberInput label="Sends" value={maxSends} onValueChange={(value) => setMaxSends(value ?? 0)} min={0} max={50_000} />
-            <NumberInput label="Drafts" value={maxDrafts} onValueChange={(value) => setMaxDrafts(value ?? 0)} min={0} max={50_000} />
             <NumberInput
-              label="Flag changes"
+              label={messages().targets}
+              value={maxTargets}
+              onValueChange={(value) => setMaxTargets(value ?? 1)}
+              min={1}
+              max={50_000}
+            />
+            <NumberInput
+              label={messages().moves}
+              value={maxMoves}
+              onValueChange={(value) => setMaxMoves(value ?? 0)}
+              min={0}
+              max={50_000}
+            />
+            <NumberInput
+              label={messages().copies}
+              value={maxCopies}
+              onValueChange={(value) => setMaxCopies(value ?? 0)}
+              min={0}
+              max={50_000}
+            />
+            <NumberInput
+              label={messages().sends}
+              value={maxSends}
+              onValueChange={(value) => setMaxSends(value ?? 0)}
+              min={0}
+              max={50_000}
+            />
+            <NumberInput
+              label={messages().drafts}
+              value={maxDrafts}
+              onValueChange={(value) => setMaxDrafts(value ?? 0)}
+              min={0}
+              max={50_000}
+            />
+            <NumberInput
+              label={messages().flagChanges}
               value={maxFlagChanges}
               onValueChange={(value) => setMaxFlagChanges(value ?? 0)}
               min={0}
               max={100_000}
             />
             <NumberInput
-              label="Notifications"
+              label={messages().notifications}
               value={maxNotifications}
               onValueChange={(value) => setMaxNotifications(value ?? 0)}
               min={0}
               max={50_000}
             />
             <NumberInput
-              label="Keyword changes"
+              label={messages().keywordChanges}
               value={maxKeywordChanges}
               onValueChange={(value) => setMaxKeywordChanges(value ?? 0)}
               min={0}
               max={100_000}
             />
             <NumberInput
-              label="Collaboration changes"
+              label={messages().collaborationChanges}
               value={maxCollaborationChanges}
               onValueChange={(value) => setMaxCollaborationChanges(value ?? 0)}
               min={0}
               max={100_000}
             />
-            <NumberInput label="AI calls" value={maxAiCalls} onValueChange={(value) => setMaxAiCalls(value ?? 0)} min={0} max={1_000} />
+            <NumberInput
+              label={messages().aiCalls}
+              value={maxAiCalls}
+              onValueChange={(value) => setMaxAiCalls(value ?? 0)}
+              min={0}
+              max={1_000}
+            />
           </div>
         </PanelDialog.Section>
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <Button variant="secondary" size="sm" type="button" disabled={validating()} onClick={() => void runValidation(true)}>
-          <i class={`ti ${validating() ? "ti-loader-2 animate-spin" : "ti-shield-check"}`} aria-hidden="true" /> Validate
+          <i class={`ti ${validating() ? "ti-loader-2 animate-spin" : "ti-shield-check"}`} aria-hidden="true" /> {messages().validate}
         </Button>
         <div class="flex items-center gap-2">
           <Button variant="ghost" size="sm" type="button" onClick={props.close}>
-            Cancel
+            {messages().cancel}
           </Button>
           <Button
             size="sm"
@@ -397,7 +438,7 @@ function WorkflowEditor(props: {
             onClick={() => save.mutate()}
           >
             <i class={`ti ${save.loading() ? "ti-loader-2 animate-spin" : "ti-device-floppy"}`} aria-hidden="true" />
-            {props.workflow ? "Save version" : "Create workflow"}
+            {props.workflow ? messages().saveVersion : messages().createWorkflow}
           </Button>
         </div>
       </PanelDialog.Footer>
@@ -412,36 +453,38 @@ function WorkflowVersionViewer(props: {
   restoring: boolean;
   restore: () => void;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
   return (
     <PanelDialog>
       <PanelDialog.Header
         title={props.version.identity}
-        subtitle={`Immutable source · ${props.version.sourceHash}`}
+        subtitle={messages().immutableSource({ hash: props.version.sourceHash })}
         icon="ti ti-history"
         close={props.close}
       />
       <PanelDialog.Body>
-        <PanelDialog.Section title="Exact YAML source" subtitle="Comments and formatting are preserved byte-for-byte." icon="ti ti-code">
+        <PanelDialog.Section title={messages().exactYamlSource} subtitle={messages().exactYamlSourceDescription} icon="ti ti-code">
           <CodeDisplay code={props.version.source} language="text" title={props.version.identity} />
         </PanelDialog.Section>
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <span class="flex items-center gap-2">
           <Show when={props.version.id === props.workflow.activeVersionId}>
-            <StatusBadge tone="ok" label="Active" />
+            <StatusBadge tone="ok" label={messages().active} />
           </Show>
           <Show when={props.version.id === props.workflow.currentVersionId}>
-            <StatusBadge tone="neutral" label="Current" icon={null} />
+            <StatusBadge tone="neutral" label={messages().current} icon={null} />
           </Show>
         </span>
         <div class="flex items-center gap-2">
           <Button variant="ghost" size="sm" type="button" onClick={props.close}>
-            Close
+            {messages().close}
           </Button>
           <Show when={props.version.id !== props.workflow.currentVersionId}>
             <Button size="sm" type="button" disabled={props.restoring} onClick={props.restore}>
               <i class={`ti ${props.restoring ? "ti-loader-2 animate-spin" : "ti-history"}`} aria-hidden="true" />
-              Restore as new version
+              {messages().restoreAsNewVersion}
             </Button>
           </Show>
         </div>
@@ -459,6 +502,8 @@ export default function MailWorkflowSettings(props: {
   openNew?: boolean;
   onOpenNewHandled?: () => void;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
   let disposed = false;
   const [workflows, setWorkflows] = createSignal(props.initialWorkflows);
   const [versions, setVersions] = createSignal<Record<string, MailWorkflowVersion[]>>({});
@@ -488,7 +533,7 @@ export default function MailWorkflowSettings(props: {
       const response = await apiClient.mailboxes[":mailboxId"].workflows[":workflowId"].$get({
         param: { mailboxId: props.mailboxId, workflowId: workflow.id },
       });
-      if (!response.ok) return await prompts.error(await readApiError(response, "Failed to load workflow"));
+      if (!response.ok) return await prompts.error(await readApiError(response, messages().failedLoadWorkflow));
       detail = await response.json();
     }
     await dialogCore.open<void>(
@@ -526,19 +571,19 @@ export default function MailWorkflowSettings(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to activate workflow"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedActivateWorkflow));
       return await response.json();
     },
     onSuccess: (workflow) => {
       replaceWorkflow(workflow);
-      toast.success("Workflow activated");
+      toast.success(messages().workflowActivated);
     },
     onError: (error) => prompts.error(error.message),
   });
 
   const deactivate = mutations.create<MailWorkflowDetail, MailWorkflow>({
     mutation: async (workflow, { abortSignal }) => {
-      if (!workflow.activeVersionId) throw new Error("Workflow is not active");
+      if (!workflow.activeVersionId) throw new Error(messages().workflowNotActive);
       const response = await apiClient.mailboxes[":mailboxId"].workflows[":workflowId"].deactivate.$post(
         {
           param: { mailboxId: props.mailboxId, workflowId: workflow.id },
@@ -546,12 +591,12 @@ export default function MailWorkflowSettings(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to deactivate workflow"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedDeactivateWorkflow));
       return await response.json();
     },
     onSuccess: (workflow) => {
       replaceWorkflow(workflow);
-      toast.success("Workflow deactivated");
+      toast.success(messages().workflowDeactivated);
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -561,14 +606,11 @@ export default function MailWorkflowSettings(props: {
     { workflow: MailWorkflow; version: MailWorkflowVersion; close: () => void }
   >({
     mutation: async ({ workflow, version, close }, { abortSignal }) => {
-      const confirmed = await prompts.confirm(
-        `Restore ${version.identity} as a new inactive version? The historical version remains unchanged.`,
-        {
-          title: "Restore workflow version",
-          confirmText: "Restore as new version",
-          icon: "ti ti-history",
-        },
-      );
+      const confirmed = await prompts.confirm(messages().restoreVersionDescription({ identity: version.identity }), {
+        title: messages().restoreWorkflowVersion,
+        confirmText: messages().restoreAsNewVersion,
+        icon: "ti ti-history",
+      });
       if (!confirmed || abortSignal.aborted) return null;
       const response = await apiClient.mailboxes[":mailboxId"].workflows[":workflowId"].versions[":versionId"].restore.$post(
         {
@@ -577,14 +619,14 @@ export default function MailWorkflowSettings(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to restore workflow version"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedRestoreWorkflowVersion));
       return { workflow: await response.json(), close };
     },
     onSuccess: (result) => {
       if (!result) return;
       replaceWorkflow(result.workflow);
       result.close();
-      toast.success("Historical source restored as a new version");
+      toast.success(messages().historicalSourceRestored);
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -619,7 +661,7 @@ export default function MailWorkflowSettings(props: {
     });
     if (!response.ok) {
       setExpandedWorkflowId(null);
-      return prompts.error(await readApiError(response, "Failed to load workflow versions"));
+      return prompts.error(await readApiError(response, messages().failedLoadWorkflowVersions));
     }
     const loaded = await response.json();
     if (!disposed) setVersions((current) => ({ ...current, [workflow.id]: loaded }));
@@ -629,17 +671,13 @@ export default function MailWorkflowSettings(props: {
     <div class="flex flex-col gap-2">
       <div class="flex justify-end">
         <Button size="sm" type="button" onClick={() => void openEditor()}>
-          <i class="ti ti-plus" aria-hidden="true" /> New workflow
+          <i class="ti ti-plus" aria-hidden="true" /> {messages().newWorkflow}
         </Button>
       </div>
-      <p class="text-xs text-dimmed">
-        Mailbox-scoped runtime history is available under Activity. Platform operators retain the central view.
-      </p>
+      <p class="text-xs text-dimmed">{messages().workflowActivityDescription}</p>
       <Show
         when={workflows().length > 0}
-        fallback={
-          <Placeholder title="No workflows" description="Create a deterministic workflow from canonical YAML." icon="ti ti-route-off" />
-        }
+        fallback={<Placeholder title={messages().noWorkflows} description={messages().noWorkflowsDescription} icon="ti ti-route-off" />}
       >
         <For each={workflows()}>
           {(workflow) => (
@@ -650,17 +688,22 @@ export default function MailWorkflowSettings(props: {
                 </span>
                 <span class="min-w-0 flex-1">
                   <span class="block truncate text-sm font-medium text-primary">{workflow.name}</span>
-                  <span class="block truncate text-xs text-dimmed">{workflow.description || `Priority ${workflow.priority}`}</span>
+                  <span class="block truncate text-xs text-dimmed">
+                    {workflow.description || messages().priorityValue({ priority: workflow.priority })}
+                  </span>
                 </span>
-                <StatusBadge tone={workflow.enabled ? "ok" : "neutral"} label={workflow.enabled ? "Active" : "Inactive"} />
+                <StatusBadge
+                  tone={workflow.enabled ? "ok" : "neutral"}
+                  label={workflow.enabled ? messages().active : messages().inactive}
+                />
                 <Show when={workflow.enabled && workflow.activeVersionId !== workflow.currentVersionId}>
-                  <StatusBadge tone="warning" label="Update available" />
+                  <StatusBadge tone="warning" label={messages().updateAvailable} />
                 </Show>
                 <Button variant="ghost" size="sm" type="button" onClick={() => void toggleVersions(workflow)}>
-                  <i class="ti ti-history" aria-hidden="true" /> Versions
+                  <i class="ti ti-history" aria-hidden="true" /> {messages().versions}
                 </Button>
                 <Button variant="ghost" size="sm" type="button" onClick={() => void openEditor(workflow)}>
-                  <i class="ti ti-code" aria-hidden="true" /> Edit YAML
+                  <i class="ti ti-code" aria-hidden="true" /> {messages().editYaml}
                 </Button>
                 <Show
                   when={workflow.enabled && workflow.activeVersionId === workflow.currentVersionId}
@@ -672,7 +715,7 @@ export default function MailWorkflowSettings(props: {
                       disabled={activate.loading()}
                       onClick={() => activate.mutate(workflow)}
                     >
-                      {workflow.enabled ? "Activate current version" : "Activate"}
+                      {workflow.enabled ? messages().activateCurrentVersion : messages().activate}
                     </Button>
                   }
                 >
@@ -683,7 +726,7 @@ export default function MailWorkflowSettings(props: {
                     disabled={deactivate.loading()}
                     onClick={() => deactivate.mutate(workflow)}
                   >
-                    Deactivate
+                    {messages().deactivate}
                   </Button>
                 </Show>
               </div>
@@ -698,13 +741,13 @@ export default function MailWorkflowSettings(props: {
                         />
                         <span class="min-w-0 flex-1 truncate font-mono">{version.identity}</span>
                         <Show when={version.id === workflow.currentVersionId}>
-                          <StatusBadge tone="neutral" label="Current" icon={null} />
+                          <StatusBadge tone="neutral" label={messages().current} icon={null} />
                         </Show>
                         <Show when={version.id === workflow.activeVersionId}>
-                          <StatusBadge tone="ok" label="Active" />
+                          <StatusBadge tone="ok" label={messages().active} />
                         </Show>
                         <Button variant="ghost" size="xs" type="button" onClick={() => void openVersion(workflow, version)}>
-                          View
+                          {messages().view}
                         </Button>
                       </div>
                     )}

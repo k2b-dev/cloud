@@ -1,12 +1,14 @@
 import { dates } from "@k2b/stdlib";
 import { ButtonLink, DataTable, type DataTableColumn, NoticeCard, Placeholder, StatCell, StatGrid, StatusBadge } from "@k2b/ui";
-import { type AuthContext, getDateConfig } from "@valentinkolb/cloud/server";
+import { type AuthContext, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { AdminLayout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
 import { ssr } from "../config";
 import type { MailProtectedIdentity, MailSecurityPolicy, MailSecurityReport } from "../security-contracts";
 import { type MailRequestContext, security } from "../service";
+import { localizeMailError } from "../service/error-messages";
 import MailAdminSecurityActions from "./_components/MailAdminSecurityActions.island";
+import { mailPageMessages } from "./pages-messages";
 
 const matchesSearch = (query: string, values: readonly (string | null | undefined)[]): boolean => {
   const normalized = query.toLocaleLowerCase();
@@ -19,20 +21,13 @@ const securitySearchAction = (searches: Record<string, string>): string => {
   return query ? `/admin/mail/security?${query}` : "/admin/mail/security";
 };
 
-const SECURITY_NOTICES = [
-  {
-    title: "Organization rules are exact and shared",
-    detail:
-      "Block rules contain known sender or link matches for everyone. Trust rules only remove this signal after a configured receiving server confirms the visible sender domain; trust never overrides a block.",
-  },
-  {
-    title: "Protected identities detect impersonation",
-    detail:
-      "Mail compares an exact visible sender name, such as a company or service, with its allowed sending domains. A mismatch shows readers an explainable warning; it does not delete or move the message.",
-  },
-] as const;
-
 export default ssr<AuthContext>(async (c) => {
+  const locale = getLocale(c);
+  const { t } = mailPageMessages.resolve([locale]);
+  const securityNotices = [
+    { title: t.rulesNoticeTitle, detail: t.rulesNoticeDetail },
+    { title: t.identitiesNoticeTitle, detail: t.identitiesNoticeDetail },
+  ];
   const reportSearch = (c.req.query("reports") ?? "").trim();
   const policySearch = (c.req.query("rules") ?? "").trim();
   const identitySearch = (c.req.query("identities") ?? "").trim();
@@ -68,29 +63,49 @@ export default ssr<AuthContext>(async (c) => {
     matchesSearch(identitySearch, [identity.name, identity.note, identity.enabled ? "active" : "paused", ...identity.allowedDomains]),
   );
   const openReports = reports.filter((report) => report.status === "new" || report.status === "in_review").length;
+  const reportStatusLabel = (status: MailSecurityReport["status"]): string => {
+    if (status === "new") return t.reportStatusNew;
+    if (status === "in_review") return t.reportStatusInReview;
+    if (status === "confirmed") return t.reportStatusConfirmed;
+    return t.reportStatusDismissed;
+  };
+  const policyTargetLabel = (target: MailSecurityPolicy["target"]): string => {
+    if (target === "sender_address") return t.targetSenderAddress;
+    if (target === "sender_domain") return t.targetSenderDomain;
+    return t.targetLinkDomain;
+  };
+  const findingText = (finding: MailSecurityReport["assessment"]["findings"][number]) => {
+    if (finding.code === "admin_deny_policy") return { title: t.findingBlockedTitle, explanation: t.findingBlockedExplanation };
+    if (finding.code === "authentication_failed")
+      return { title: t.findingAuthenticationTitle, explanation: t.findingAuthenticationExplanation };
+    if (finding.code === "reply_to_mismatch") return { title: t.findingReplyToTitle, explanation: t.findingReplyToExplanation };
+    if (finding.code === "misleading_link") return { title: t.findingLinkTitle, explanation: t.findingLinkExplanation };
+    if (finding.code === "protected_identity_mismatch") return { title: t.findingIdentityTitle, explanation: t.findingIdentityExplanation };
+    return finding;
+  };
   const reportColumns: DataTableColumn<MailSecurityReport>[] = [
-    { id: "status", header: "Status", value: (row) => row.status },
-    { id: "sender", header: "Sender", value: (row) => row.senderAddress ?? "Unknown" },
-    { id: "reason", header: "Evidence", value: (row) => row.assessment.findings.map((finding) => finding.title).join(", ") },
-    { id: "reports", header: "Reports", value: (row) => row.reportCount, headerClass: "text-right", cellClass: "text-right" },
-    { id: "updated", header: "Updated", value: (row) => row.updatedAt },
-    { id: "actions", header: "Actions", headerClass: "w-px text-right", cellClass: "text-right" },
+    { id: "status", header: t.status, value: (row) => row.status },
+    { id: "sender", header: t.sender, value: (row) => row.senderAddress ?? t.unknown },
+    { id: "reason", header: t.evidence, value: (row) => row.assessment.findings.map((finding) => findingText(finding).title).join(", ") },
+    { id: "reports", header: t.reports, value: (row) => row.reportCount, headerClass: "text-right", cellClass: "text-right" },
+    { id: "updated", header: t.updatedColumn, value: (row) => row.updatedAt },
+    { id: "actions", header: t.actions, headerClass: "w-px text-right", cellClass: "text-right" },
   ];
   const policyColumns: DataTableColumn<MailSecurityPolicy>[] = [
-    { id: "rule", header: "Rule", value: (row) => row.disposition },
-    { id: "target", header: "Match", value: (row) => row.target },
-    { id: "value", header: "Value", value: (row) => row.value },
-    { id: "state", header: "State", value: (row) => row.enabled },
-    { id: "actions", header: "Actions", headerClass: "w-px text-right", cellClass: "text-right" },
+    { id: "rule", header: t.rule, value: (row) => row.disposition },
+    { id: "target", header: t.match, value: (row) => row.target },
+    { id: "value", header: t.value, value: (row) => row.value },
+    { id: "state", header: t.state, value: (row) => row.enabled },
+    { id: "actions", header: t.actions, headerClass: "w-px text-right", cellClass: "text-right" },
   ];
   const identityColumns: DataTableColumn<MailProtectedIdentity>[] = [
-    { id: "name", header: "Visible name", value: (row) => row.name },
-    { id: "domains", header: "Allowed domains", value: (row) => row.allowedDomains.join(", ") },
-    { id: "actions", header: "Actions", headerClass: "w-px text-right", cellClass: "text-right" },
+    { id: "name", header: t.visibleName, value: (row) => row.name },
+    { id: "domains", header: t.allowedDomains, value: (row) => row.allowedDomains.join(", ") },
+    { id: "actions", header: t.actions, headerClass: "w-px text-right", cellClass: "text-right" },
   ];
 
   return () => (
-    <AdminLayout c={c} title="Mail security">
+    <AdminLayout c={c} title={t.securityTitle}>
       <div class="app-rows" data-scroll-preserve="mail-admin-security">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -98,51 +113,49 @@ export default ssr<AuthContext>(async (c) => {
               <ButtonLink href="/admin/mail" variant="subtle" size="sm">
                 <i class="ti ti-arrow-left" aria-hidden="true" /> Mail
               </ButtonLink>
-              <h1 class="text-base font-semibold text-primary">Phishing protection</h1>
+              <h1 class="text-base font-semibold text-primary">{t.phishingProtection}</h1>
             </div>
-            <p class="mt-1 text-xs text-dimmed">
-              Review user reports and maintain narrow, explainable protection rules. Message bodies stay out of this page.
-            </p>
+            <p class="mt-1 text-xs text-dimmed">{t.securityDescription}</p>
           </div>
           <MailAdminSecurityActions kind="toolbar" trustedAuthservIds={settingsResult.ok ? settingsResult.data.trustedAuthservIds : null} />
         </div>
 
         <StatGrid columns={4}>
           <StatCell
-            label="Open reports"
+            label={t.openReports}
             value={openReports}
-            sub="new or in review"
+            sub={t.reportsOpenSub}
             accent={openReports ? { tone: "amber", icon: "ti ti-shield-exclamation" } : undefined}
           />
           <StatCell
-            label="Blocking rules"
+            label={t.blockingRules}
             value={policies.filter((policy) => policy.disposition === "deny" && policy.enabled).length}
-            sub="exact matches"
+            sub={t.exactMatches}
           />
           <StatCell
-            label="Trusted senders"
+            label={t.trustedSenders}
             value={policies.filter((policy) => policy.disposition === "trust" && policy.enabled).length}
-            sub="authentication still required"
+            sub={t.authenticationRequired}
           />
           <StatCell
-            label="Protected identities"
+            label={t.protectedIdentities}
             value={identities.filter((identity) => identity.enabled).length}
-            sub="visible sender names"
+            sub={t.visibleSenderNames}
           />
         </StatGrid>
 
-        <NoticeCard.Grid items={SECURITY_NOTICES}>
+        <NoticeCard.Grid items={securityNotices}>
           {(notice) => <NoticeCard tone="info" title={notice.title} detail={notice.detail} />}
         </NoticeCard.Grid>
 
         {reportsResult.ok ? (
           <DataTable.Panel class="overflow-hidden">
             <DataTable.Header
-              title="Reported messages"
+              title={t.reportedMessages}
               subtitle={
                 reportSearch
-                  ? `${filteredReports.length} of ${reports.length} recent reports`
-                  : `${reports.length} recent ${reports.length === 1 ? "report" : "reports"} · newest first`
+                  ? t.filteredReports({ count: filteredReports.length, total: reports.length })
+                  : t.recentReports({ count: reports.length })
               }
             />
             <DataTable.Controls>
@@ -151,8 +164,8 @@ export default ssr<AuthContext>(async (c) => {
                 value={reportSearch}
                 param="reports"
                 pageParam="reports-page"
-                placeholder="Search recent reports..."
-                ariaLabel="Search recent phishing reports"
+                placeholder={t.searchReportsPlaceholder}
+                ariaLabel={t.searchReportsLabel}
               />
             </DataTable.Controls>
             <DataTable
@@ -162,34 +175,33 @@ export default ssr<AuthContext>(async (c) => {
               hoverRows
               class="overflow-x-auto"
               scrollPreserveKey="mail-admin-security-reports"
-              empty={reportSearch ? `No recent reports matching "${reportSearch}".` : "No messages have been reported."}
+              empty={reportSearch ? t.noMatchingReports({ query: reportSearch }) : t.noReports}
               renderCell={({ row, col }) => {
                 if (col.id === "status")
                   return (
                     <StatusBadge
                       tone={row.status === "confirmed" ? "error" : row.status === "dismissed" ? "neutral" : "warning"}
-                      label={row.status.replaceAll("_", " ")}
+                      label={reportStatusLabel(row.status)}
                     />
                   );
                 if (col.id === "reason")
                   return (
                     <div class="max-w-xl">
                       <p class="truncate text-xs text-primary">
-                        {row.assessment.findings.map((finding) => finding.title).join(" · ") || "Reported by a user"}
+                        {row.assessment.findings.map((finding) => findingText(finding).title).join(" · ") || t.reportedByUser}
                       </p>
                       <p class="truncate text-[10px] text-dimmed">
-                        {row.assessment.findings.map((finding) => finding.explanation).join(" · ") ||
-                          "No automatic warning was shown; review the report context."}
+                        {row.assessment.findings.map((finding) => findingText(finding).explanation).join(" · ") || t.noAutomaticWarning}
                       </p>
                       <p class="font-mono text-[10px] text-dimmed">
-                        message {row.messageId} · mailbox {row.mailboxId}
+                        {t.messageAndMailbox({ messageId: row.messageId, mailboxId: row.mailboxId })}
                       </p>
                     </div>
                   );
                 if (col.id === "sender")
                   return (
                     <div>
-                      <p class="font-mono text-xs text-primary">{row.senderAddress ?? "Unknown sender"}</p>
+                      <p class="font-mono text-xs text-primary">{row.senderAddress ?? t.unknownSender}</p>
                       {row.senderDomain ? <p class="font-mono text-[10px] text-dimmed">{row.senderDomain}</p> : null}
                     </div>
                   );
@@ -206,15 +218,22 @@ export default ssr<AuthContext>(async (c) => {
             />
           </DataTable.Panel>
         ) : (
-          <Placeholder state="error" variant="panel" title="Could not load reports" description={reportsResult.error.message} />
+          <Placeholder
+            state="error"
+            variant="panel"
+            title={t.couldNotLoadReports}
+            description={localizeMailError(reportsResult.error, locale).message}
+          />
         )}
 
         {policiesResult.ok ? (
           <DataTable.Panel class="overflow-hidden">
             <DataTable.Header
-              title="Organization rules"
+              title={t.organizationRules}
               subtitle={
-                policySearch ? `${filteredPolicies.length} of ${policies.length} rules` : `${policies.length} organization-wide rules`
+                policySearch
+                  ? t.filteredRules({ count: filteredPolicies.length, total: policies.length })
+                  : t.organizationRuleCount({ count: policies.length })
               }
             />
             <DataTable.Controls>
@@ -223,8 +242,8 @@ export default ssr<AuthContext>(async (c) => {
                 value={policySearch}
                 param="rules"
                 pageParam="rules-page"
-                placeholder="Search rules by address, domain, or reason..."
-                ariaLabel="Search organization Mail security rules"
+                placeholder={t.searchRulesPlaceholder}
+                ariaLabel={t.searchRulesLabel}
               />
             </DataTable.Controls>
             <DataTable
@@ -234,16 +253,16 @@ export default ssr<AuthContext>(async (c) => {
               hoverRows
               class="overflow-x-auto"
               scrollPreserveKey="mail-admin-security-rules"
-              empty={policySearch ? `No rules matching "${policySearch}".` : "No organization-wide Mail security rules."}
+              empty={policySearch ? t.noMatchingRules({ query: policySearch }) : t.noRules}
               renderCell={({ row, col }) => {
                 if (col.id === "rule")
                   return (
                     <StatusBadge
                       tone={row.disposition === "deny" ? "error" : "ok"}
-                      label={row.disposition === "deny" ? "Block" : "Trust"}
+                      label={row.disposition === "deny" ? t.block : t.trust}
                     />
                   );
-                if (col.id === "target") return <span class="capitalize text-secondary">{row.target.replaceAll("_", " ")}</span>;
+                if (col.id === "target") return <span class="text-secondary">{policyTargetLabel(row.target)}</span>;
                 if (col.id === "value")
                   return (
                     <div>
@@ -252,24 +271,29 @@ export default ssr<AuthContext>(async (c) => {
                     </div>
                   );
                 if (col.id === "state")
-                  return <StatusBadge tone={row.enabled ? "ok" : "neutral"} label={row.enabled ? "Active" : "Paused"} />;
+                  return <StatusBadge tone={row.enabled ? "ok" : "neutral"} label={row.enabled ? t.healthActive : t.paused} />;
                 if (col.id === "actions") return <MailAdminSecurityActions kind="policy" policy={row} />;
                 return "";
               }}
             />
           </DataTable.Panel>
         ) : (
-          <Placeholder state="error" variant="panel" title="Could not load rules" description={policiesResult.error.message} />
+          <Placeholder
+            state="error"
+            variant="panel"
+            title={t.couldNotLoadRules}
+            description={localizeMailError(policiesResult.error, locale).message}
+          />
         )}
 
         {identitiesResult.ok ? (
           <DataTable.Panel class="overflow-hidden">
             <DataTable.Header
-              title="Protected identities"
+              title={t.protectedIdentities}
               subtitle={
                 identitySearch
-                  ? `${filteredIdentities.length} of ${identities.length} protected identities`
-                  : `${identities.length} protected ${identities.length === 1 ? "identity" : "identities"}`
+                  ? t.filteredIdentities({ count: filteredIdentities.length, total: identities.length })
+                  : t.protectedIdentityCount({ count: identities.length })
               }
             />
             <DataTable.Controls>
@@ -278,8 +302,8 @@ export default ssr<AuthContext>(async (c) => {
                 value={identitySearch}
                 param="identities"
                 pageParam="identities-page"
-                placeholder="Search names or allowed domains..."
-                ariaLabel="Search protected Mail identities"
+                placeholder={t.searchIdentitiesPlaceholder}
+                ariaLabel={t.searchIdentitiesLabel}
               />
             </DataTable.Controls>
             <DataTable
@@ -289,7 +313,7 @@ export default ssr<AuthContext>(async (c) => {
               hoverRows
               class="overflow-x-auto"
               scrollPreserveKey="mail-admin-security-identities"
-              empty={identitySearch ? `No protected identities matching "${identitySearch}".` : "No protected sender identities."}
+              empty={identitySearch ? t.noMatchingIdentities({ query: identitySearch }) : t.noIdentities}
               renderCell={({ row, col }) => {
                 if (col.id === "name") return <span class="font-medium text-primary">{row.name}</span>;
                 if (col.id === "domains") return <span class="font-mono text-xs text-secondary">{row.allowedDomains.join(", ")}</span>;
@@ -302,8 +326,8 @@ export default ssr<AuthContext>(async (c) => {
           <Placeholder
             state="error"
             variant="panel"
-            title="Could not load protected identities"
-            description={identitiesResult.error.message}
+            title={t.couldNotLoadIdentities}
+            description={localizeMailError(identitiesResult.error, locale).message}
           />
         )}
       </div>

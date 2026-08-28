@@ -83,8 +83,10 @@ describe("Mail overview", () => {
     expect(html.indexOf("New mailbox")).toBeGreaterThan(html.indexOf("Support"));
     expect(html).toContain('role="tablist" aria-label="Mail focus view"');
     expect(html).toContain('role="tab" aria-selected="true"');
-    expect(html).toContain('For me <span class="mail-focus-tab-count">1</span>');
-    expect(html).toContain('Unassigned <span class="mail-focus-tab-count">2</span>');
+    expect(html).toContain("For me");
+    expect(html).toContain('<span class="mail-focus-tab-count">1</span>');
+    expect(html).toContain("Unassigned");
+    expect(html).toContain('<span class="mail-focus-tab-count">2</span>');
     expect(html).toContain("1 conversation assigned to you");
     expect(html).toContain("Assigned to you");
     expect(html).toContain("Release update");

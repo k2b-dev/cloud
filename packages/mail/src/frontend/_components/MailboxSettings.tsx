@@ -12,6 +12,7 @@ import {
   SettingsPanelFooter,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { PermissionEditor } from "@valentinkolb/cloud/access/ui";
 import { createMemo, createSignal, onCleanup, Show } from "solid-js";
@@ -26,7 +27,7 @@ import MailFolderSettings from "./MailFolderSettings";
 import { MailIdentitySettings } from "./MailIdentitySettings";
 import MailOrganizationSettings from "./MailOrganizationSettings";
 import { readMailUserPreferences, writeMailUserPreferences } from "./MailSettingsStore";
-import { mailboxHealthPresentation } from "./mail-health-presentation";
+import { mailSettingsMessages } from "./mail-settings-messages";
 
 const normalizeInitialTab = (tab: string | undefined, canWrite: boolean, canAdmin: boolean, hasCalendar: boolean): string => {
   const aliases: Record<string, string> = {
@@ -58,6 +59,8 @@ export default function MailboxSettings(props: {
   onClose: () => void;
   onDeleted: () => void;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const canWrite = () => props.context.permission === "write" || props.context.permission === "admin";
   const canAdmin = () => props.context.permission === "admin";
   const admin = () => props.context.admin!;
@@ -80,7 +83,33 @@ export default function MailboxSettings(props: {
   );
   const [childDirtyStates, setChildDirtyStates] = createSignal<Record<string, boolean>>({});
   const [navigationPending, setNavigationPending] = createSignal(false);
-  const healthPresentation = createMemo(() => mailboxHealthPresentation(props.context.mailbox));
+  const healthPresentation = createMemo(() => {
+    const health = props.context.mailbox.health;
+    if (health === "active") return null;
+    if (health === "paused")
+      return { title: messages().healthPausedTitle, message: messages().healthPausedMessage, tone: "warning" as const };
+    if (health === "degraded") {
+      const timedOut =
+        props.context.mailbox.healthReason?.toLowerCase().includes("failed to establish connection in required time") === true;
+      return timedOut
+        ? { title: messages().healthSlowTitle, message: messages().healthSlowMessage, tone: "warning" as const }
+        : { title: messages().healthDegradedTitle, message: messages().healthDegradedMessage, tone: "warning" as const };
+    }
+    if (health === "auth_required")
+      return { title: messages().healthAuthTitle, message: messages().healthAuthMessage, tone: "warning" as const };
+    if (health === "connection_required" || health === "disconnected") {
+      return {
+        title: messages().healthConnectTitle,
+        message: health === "connection_required" ? messages().healthConnectionRequiredMessage : messages().healthDisconnectedMessage,
+        tone: "warning" as const,
+      };
+    }
+    if (health === "verifying")
+      return { title: messages().healthVerifyingTitle, message: messages().healthVerifyingMessage, tone: "info" as const };
+    if (health === "bootstrapping")
+      return { title: messages().healthBootstrappingTitle, message: messages().healthBootstrappingMessage, tone: "info" as const };
+    return { title: messages().healthReconnectingTitle, message: messages().healthReconnectingMessage, tone: "info" as const };
+  });
   const mailboxDetailsDirty = createMemo(
     () => name().trim() !== props.context.mailbox.name || description().trim() !== (props.context.mailbox.description ?? ""),
   );
@@ -167,7 +196,7 @@ export default function MailboxSettings(props: {
     },
     onSuccess: () => {
       setSavedReadingFormat(readingFormat());
-      toast.success("Reading preference saved");
+      toast.success(messages().readingPreferenceSaved);
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -183,7 +212,7 @@ export default function MailboxSettings(props: {
     onSuccess: () => {
       setSavedComposeFormat(composeFormat());
       setSavedUndoSeconds(undoSeconds());
-      toast.success("Writing preferences saved");
+      toast.success(messages().writingPreferencesSaved);
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -211,7 +240,7 @@ export default function MailboxSettings(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to update mailbox settings"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedUpdateMailboxSettings));
       return response.json();
     },
     onSuccess: (mailbox) => {
@@ -220,7 +249,7 @@ export default function MailboxSettings(props: {
       setInternalDomains(mailbox.composeSafety.internalDomains.join(", "));
       setLargeRecipientThreshold(mailbox.composeSafety.largeRecipientThreshold);
       props.onContextChange((context) => ({ ...context, mailbox }));
-      toast.success("Mailbox settings saved");
+      toast.success(messages().mailboxSettingsSaved);
       props.onWorkspaceChange();
     },
     onError: (error) => prompts.error(error.message),
@@ -236,7 +265,7 @@ export default function MailboxSettings(props: {
       const response = input.folderId
         ? await route.$put({ param, json: { folderId: input.folderId } }, { init: { signal: abortSignal } })
         : await route.$delete({ param }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to update folder role"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedUpdateFolderRole));
       return input;
     },
     onSuccess: ({ role, folderId }) => {
@@ -254,7 +283,7 @@ export default function MailboxSettings(props: {
             }
           : context,
       );
-      toast.success("Folder role updated");
+      toast.success(messages().folderRoleUpdated);
       props.onWorkspaceChange();
     },
     onError: (error) => prompts.error(error.message),
@@ -283,32 +312,29 @@ export default function MailboxSettings(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to update automatic reply access"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedUpdateAutomaticReplyAccess));
       return response.json();
     },
     onSuccess: (mailbox) => {
       props.onContextChange((context) => ({ ...context, mailbox }));
-      toast.success("Automatic reply access updated");
+      toast.success(messages().automaticReplyAccessUpdated);
     },
     onError: (error) => prompts.error(error.message),
   });
 
   const deleteMailbox = mutation.create<boolean, void>({
     mutation: async (_input, { abortSignal }) => {
-      const confirmed = await prompts.confirm(
-        "This pauses the mailbox and hides it from normal use. Provider mail and Cloud data remain retained so an administrator can restore it.",
-        {
-          title: "Move mailbox to recently deleted?",
-          confirmText: "Move to recently deleted",
-          variant: "danger",
-        },
-      );
+      const confirmed = await prompts.confirm(messages().recentlyDeletedDescription, {
+        title: messages().moveMailboxToRecentlyDeleted,
+        confirmText: messages().moveToRecentlyDeleted,
+        variant: "danger",
+      });
       if (!confirmed || abortSignal.aborted) return false;
       const response = await apiClient.mailboxes[":mailboxId"].$delete(
         { param: { mailboxId: props.context.mailbox.id } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to move mailbox to recently deleted"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedMoveToRecentlyDeleted));
       return true;
     },
     onSuccess: (deleted) => {
@@ -327,43 +353,41 @@ export default function MailboxSettings(props: {
 
   return (
     <SettingsModal
-      title="Mailbox settings"
+      title={messages().mailboxSettings}
       activeTab={activeTab()}
       onTabChange={(tab) => void requestTabChange(tab)}
       onClose={() => void requestClose()}
-      closeLabel="Close settings"
+      closeLabel={messages().closeSettings}
     >
-      <SettingsModal.Group title="Personal">
-        <SettingsModal.Tab id="reading" title="Reading" icon="ti ti-mail-opened" description="How messages appear in this browser.">
-          <SettingsGroup title="Message display" description="Choose the default representation used when you open a message.">
+      <SettingsModal.Group title={messages().personal}>
+        <SettingsModal.Tab id="reading" title={messages().reading} icon="ti ti-mail-opened" description={messages().readingDescription}>
+          <SettingsGroup title={messages().messageDisplay} description={messages().messageDisplayDescription}>
             <SettingsField
-              label="Default message format"
-              description="This preference applies only to this browser."
+              label={messages().defaultMessageFormat}
+              description={messages().browserOnlyPreference}
               error={() => undefined}
               changed={() => readingChangeCount() > 0}
             >
               {(control) => (
                 <Select
-                  aria-label="Default message format"
+                  aria-label={messages().defaultMessageFormat}
                   aria-describedby={control.describedBy()}
                   value={readingFormat}
                   onValueChange={(value) => setReadingFormat(value === "html" || value === "plain" ? value : "automatic")}
                   options={[
                     {
                       id: "automatic",
-                      label: "Automatic — Recommended",
-                      description: "Use the safest readable format for the current theme.",
+                      label: messages().automaticRecommended,
+                      description: messages().automaticFormatDescription,
                       icon: "ti ti-adjustments-horizontal",
                     },
-                    { id: "html", label: "HTML", description: "Preserve safe email layout and styling.", icon: "ti ti-code" },
-                    { id: "plain", label: "Plain text", description: "Show only the text alternative.", icon: "ti ti-align-left" },
+                    { id: "html", label: "HTML", description: messages().htmlFormatDescription, icon: "ti ti-code" },
+                    { id: "plain", label: messages().plainText, description: messages().plainTextDescription, icon: "ti ti-align-left" },
                   ]}
                 />
               )}
             </SettingsField>
-            <p class="text-xs text-dimmed">
-              Scripts and active content are always removed. Remote images stay blocked until you choose to load them.
-            </p>
+            <p class="text-xs text-dimmed">{messages().messageSafetyDescription}</p>
           </SettingsGroup>
           <SettingsModal.Footer>
             <SettingsPanelFooter
@@ -378,50 +402,45 @@ export default function MailboxSettings(props: {
 
       <Show when={canWrite() && props.context.compose}>
         {(compose) => (
-          <SettingsModal.Group title="Compose">
-            <SettingsModal.Tab
-              id="writing"
-              title="Writing"
-              icon="ti ti-pencil"
-              description="Personal defaults and reusable mailbox content."
-            >
+          <SettingsModal.Group title={messages().compose}>
+            <SettingsModal.Tab id="writing" title={messages().writing} icon="ti ti-pencil" description={messages().writingDescription}>
               <div class="flex flex-col gap-8">
-                <SettingsGroup title="My writing defaults" description="These defaults apply only to this browser.">
+                <SettingsGroup title={messages().myWritingDefaults} description={messages().browserOnlyDefaults}>
                   <SettingsField
-                    label="Compose format"
-                    description="Used for new messages, replies, and forwards."
+                    label={messages().composeFormat}
+                    description={messages().composeFormatDescription}
                     error={() => undefined}
                     changed={() => composeFormat() !== savedComposeFormat()}
                   >
                     {(control) => (
                       <Select
-                        aria-label="Compose format"
+                        aria-label={messages().composeFormat}
                         aria-describedby={control.describedBy()}
                         value={composeFormat}
                         onValueChange={(value) => setComposeFormat(value === "plain" ? "plain" : "markdown")}
                         options={[
                           { id: "markdown", label: "Markdown", icon: "ti ti-markdown" },
-                          { id: "plain", label: "Plain text", icon: "ti ti-align-left" },
+                          { id: "plain", label: messages().plainText, icon: "ti ti-align-left" },
                         ]}
                       />
                     )}
                   </SettingsField>
                   <SettingsField
-                    label="Undo send window"
-                    description="Delay delivery so you can cancel a queued message."
+                    label={messages().undoSendWindow}
+                    description={messages().undoSendDescription}
                     error={() => undefined}
                     changed={() => undoSeconds() !== savedUndoSeconds()}
                   >
                     {(control) => (
                       <NumberInput
-                        aria-label="Undo send window"
+                        aria-label={messages().undoSendWindow}
                         aria-describedby={control.describedBy()}
                         value={undoSeconds}
                         onValueChange={(value) => setUndoSeconds(value ?? 0)}
                         min={0}
                         max={60}
                         allowNegative={false}
-                        suffix="seconds"
+                        suffix={messages().seconds}
                       />
                     )}
                   </SettingsField>
@@ -456,19 +475,19 @@ export default function MailboxSettings(props: {
         )}
       </Show>
 
-      <SettingsModal.Group title="Mailbox">
+      <SettingsModal.Group title={messages().mailbox}>
         <Show when={canAdmin() && props.context.admin}>
-          <SettingsModal.Tab id="mailbox" title="General" icon="ti ti-id" description="Shared identity and sending safeguards.">
-            <SettingsGroup title="Identity" description="Set the name and context collaborators see.">
+          <SettingsModal.Tab id="mailbox" title={messages().general} icon="ti ti-id" description={messages().mailboxGeneralDescription}>
+            <SettingsGroup title={messages().identity} description={messages().identityDescription}>
               <SettingsField
-                label="Name"
-                description="Shown in navigation and mailbox selectors."
-                error={() => (!name().trim() ? "Name is required" : undefined)}
+                label={messages().name}
+                description={messages().mailboxNameDescription}
+                error={() => (!name().trim() ? messages().nameRequired : undefined)}
                 changed={() => name().trim() !== props.context.mailbox.name}
               >
                 {(control) => (
                   <TextInput
-                    aria-label="Name"
+                    aria-label={messages().name}
                     aria-describedby={control.describedBy()}
                     value={name}
                     onValueChange={setName}
@@ -478,14 +497,14 @@ export default function MailboxSettings(props: {
                 )}
               </SettingsField>
               <SettingsField
-                label="Description"
-                description="Optional context for collaborators."
+                label={messages().description}
+                description={messages().optionalCollaboratorContext}
                 error={() => undefined}
                 changed={() => description().trim() !== (props.context.mailbox.description ?? "")}
               >
                 {(control) => (
                   <TextInput
-                    aria-label="Description"
+                    aria-label={messages().description}
                     aria-describedby={control.describedBy()}
                     value={description}
                     onValueChange={setDescription}
@@ -496,19 +515,16 @@ export default function MailboxSettings(props: {
                 )}
               </SettingsField>
             </SettingsGroup>
-            <SettingsGroup
-              title="Sending safeguards"
-              description="Warn collaborators before messages leave expected boundaries or reach many people."
-            >
+            <SettingsGroup title={messages().sendingSafeguards} description={messages().sendingSafeguardsDescription}>
               <SettingsField
-                label="Internal email domains"
-                description="Recipients outside these comma-separated domains trigger a review."
+                label={messages().internalEmailDomains}
+                description={messages().internalEmailDomainsDescription}
                 error={() => undefined}
                 changed={() => internalDomains() !== props.context.mailbox.composeSafety.internalDomains.join(", ")}
               >
                 {(control) => (
                   <TextInput
-                    aria-label="Internal email domains"
+                    aria-label={messages().internalEmailDomains}
                     aria-describedby={control.describedBy()}
                     value={internalDomains}
                     onValueChange={setInternalDomains}
@@ -518,21 +534,21 @@ export default function MailboxSettings(props: {
                 )}
               </SettingsField>
               <SettingsField
-                label="Large recipient warning"
-                description="Show a review at this number of unique recipients."
+                label={messages().largeRecipientWarning}
+                description={messages().largeRecipientWarningDescription}
                 error={() => undefined}
                 changed={() => largeRecipientThreshold() !== props.context.mailbox.composeSafety.largeRecipientThreshold}
               >
                 {(control) => (
                   <NumberInput
-                    aria-label="Large recipient warning"
+                    aria-label={messages().largeRecipientWarning}
                     aria-describedby={control.describedBy()}
                     value={largeRecipientThreshold}
                     onValueChange={(value) => setLargeRecipientThreshold(value ?? 20)}
                     min={5}
                     max={200}
                     allowNegative={false}
-                    suffix="recipients"
+                    suffix={messages().recipients}
                     disabled={saveMailboxSettings.loading() || props.reloading}
                   />
                 )}
@@ -555,7 +571,12 @@ export default function MailboxSettings(props: {
           </SettingsModal.Tab>
         </Show>
 
-        <SettingsModal.Tab id="organization" title="Organization" icon="ti ti-tags" description="Saved views and conversation tags.">
+        <SettingsModal.Tab
+          id="organization"
+          title={messages().organization}
+          icon="ti ti-tags"
+          description={messages().organizationDescription}
+        >
           <MailOrganizationSettings
             mailboxId={props.context.mailbox.id}
             permission={props.context.permission}
@@ -567,12 +588,12 @@ export default function MailboxSettings(props: {
       </SettingsModal.Group>
 
       <Show when={canAdmin() && props.context.admin}>
-        <SettingsModal.Group title="Delivery">
+        <SettingsModal.Group title={messages().delivery}>
           <SettingsModal.Tab
             id="delivery"
-            title="Accounts & identities"
+            title={messages().accountsAndIdentities}
             icon="ti ti-send"
-            description="Provider connection and selectable sender identities."
+            description={messages().accountsAndIdentitiesDescription}
           >
             <div class="flex flex-col gap-8">
               <Show when={healthPresentation()}>
@@ -588,7 +609,7 @@ export default function MailboxSettings(props: {
                   </NoticeCard>
                 )}
               </Show>
-              <SettingsGroup title="Connected account" description="The encrypted IMAP and SMTP credential used by this mailbox.">
+              <SettingsGroup title={messages().connectedAccount} description={messages().connectedAccountDescription}>
                 <MailConnectionSettings
                   mailbox={props.context.mailbox}
                   admin={admin()}
@@ -615,21 +636,16 @@ export default function MailboxSettings(props: {
           <Show when={props.context.integrations.spacesCalendar}>
             <SettingsModal.Tab
               id="calendar"
-              title="Calendar invitations"
+              title={messages().calendarInvitations}
               icon="ti ti-calendar-event"
-              description="Default destination for imported invitations."
+              description={messages().calendarInvitationsDescription}
             >
               <MailCalendarSettings mailboxId={props.context.mailbox.id} onDirtyChange={(dirty) => setChildDirty("calendar", dirty)} />
             </SettingsModal.Tab>
           </Show>
 
-          <SettingsModal.Tab
-            id="folders"
-            title="Folders"
-            icon="ti ti-folders"
-            description="Provider folders, mappings, and mailbox visibility."
-          >
-            <SettingsGroup title="Mailbox folders" description="Changes to visibility and provider subscriptions apply immediately.">
+          <SettingsModal.Tab id="folders" title={messages().folders} icon="ti ti-folders" description={messages().foldersDescription}>
+            <SettingsGroup title={messages().mailboxFolders} description={messages().mailboxFoldersDescription}>
               <MailFolderSettings
                 mailboxId={props.context.mailbox.id}
                 folders={admin().folders}
@@ -644,23 +660,18 @@ export default function MailboxSettings(props: {
           </SettingsModal.Tab>
         </SettingsModal.Group>
 
-        <SettingsModal.Group title="Sharing">
-          <SettingsModal.Tab
-            id="access"
-            title="Access"
-            icon="ti ti-shield"
-            description="Mailbox permissions and delegated reply management."
-          >
-            <SettingsGroup title="Automatic replies" description="Choose who may manage absences and acknowledgements.">
+        <SettingsModal.Group title={messages().sharing}>
+          <SettingsModal.Tab id="access" title={messages().access} icon="ti ti-shield" description={messages().accessDescription}>
+            <SettingsGroup title={messages().automaticReplies} description={messages().automaticRepliesDescription}>
               <SettingsField
-                label="Management access"
-                description="This does not grant broader mailbox administration."
+                label={messages().managementAccess}
+                description={messages().managementAccessDescription}
                 error={() => undefined}
                 changed={() => accessChangeCount() > 0}
               >
                 {(control) => (
                   <Select
-                    aria-label="Automatic reply management access"
+                    aria-label={messages().automaticReplyManagementAccess}
                     aria-describedby={control.describedBy()}
                     icon="ti ti-message-cog"
                     value={automaticReplyManagementPermission}
@@ -668,14 +679,14 @@ export default function MailboxSettings(props: {
                     options={[
                       {
                         id: "write",
-                        label: "Writers and administrators",
-                        description: "Writers can manage automatic replies.",
+                        label: messages().writersAndAdministrators,
+                        description: messages().writersCanManageReplies,
                         icon: "ti ti-pencil",
                       },
                       {
                         id: "admin",
-                        label: "Administrators only",
-                        description: "Only mailbox administrators can change automatic replies.",
+                        label: messages().administratorsOnly,
+                        description: messages().onlyAdministratorsCanManageReplies,
                         icon: "ti ti-shield",
                       },
                     ]}
@@ -683,7 +694,7 @@ export default function MailboxSettings(props: {
                 )}
               </SettingsField>
             </SettingsGroup>
-            <SettingsGroup title="People and integrations" description="Permission changes apply immediately.">
+            <SettingsGroup title={messages().peopleAndIntegrations} description={messages().permissionChangesImmediate}>
               <PermissionEditor
                 initialEntries={admin().accessEntries}
                 allowAuthenticated={false}
@@ -694,7 +705,7 @@ export default function MailboxSettings(props: {
                     param: { mailboxId: props.context.mailbox.id },
                     json: { principal, permission },
                   });
-                  if (!response.ok) throw new Error(await readApiError(response, "Failed to grant access"));
+                  if (!response.ok) throw new Error(await readApiError(response, messages().failedGrantAccess));
                   return response.json();
                 }}
                 updateAccess={async (accessId, permission) => {
@@ -702,13 +713,13 @@ export default function MailboxSettings(props: {
                     param: { mailboxId: props.context.mailbox.id, accessId },
                     json: { permission },
                   });
-                  if (!response.ok) throw new Error(await readApiError(response, "Failed to update access"));
+                  if (!response.ok) throw new Error(await readApiError(response, messages().failedUpdateAccess));
                 }}
                 revokeAccess={async (accessId) => {
                   const response = await apiClient.mailboxes[":mailboxId"].access[":accessId"].$delete({
                     param: { mailboxId: props.context.mailbox.id, accessId },
                   });
-                  if (!response.ok) throw new Error(await readApiError(response, "Failed to revoke access"));
+                  if (!response.ok) throw new Error(await readApiError(response, messages().failedRevokeAccess));
                 }}
               />
             </SettingsGroup>
@@ -723,22 +734,19 @@ export default function MailboxSettings(props: {
           </SettingsModal.Tab>
         </SettingsModal.Group>
 
-        <SettingsModal.Group title="Lifecycle">
+        <SettingsModal.Group title={messages().lifecycle}>
           <SettingsModal.Tab
             id="danger"
-            title="Danger zone"
+            title={messages().dangerZone}
             icon="ti ti-alert-triangle"
-            description="Remove this mailbox from normal use."
+            description={messages().dangerZoneDescription}
             tone="danger"
           >
-            <SettingsGroup
-              title="Move to recently deleted"
-              description="Pause and hide the mailbox while retaining provider mail and Cloud data for restoration."
-            >
+            <SettingsGroup title={messages().moveToRecentlyDeleted} description={messages().recentlyDeletedGroupDescription}>
               <SettingsGroup.Action>
                 <Button variant="danger" size="sm" type="button" onClick={() => deleteMailbox.mutate()} disabled={deleteMailbox.loading()}>
                   <i class={`ti ${deleteMailbox.loading() ? "ti-loader-2 animate-spin" : "ti-trash"}`} aria-hidden="true" />
-                  Move to recently deleted
+                  {messages().moveToRecentlyDeleted}
                 </Button>
               </SettingsGroup.Action>
             </SettingsGroup>

@@ -1,10 +1,13 @@
 import { mutation, query } from "@k2b/stdlib/solid";
-import { Button, Placeholder, prompts, Select, SettingsField, SettingsGroup, SettingsSaveBar, toast } from "@k2b/ui";
-import { createEffect, createSignal, onCleanup, Show } from "solid-js";
+import { Button, Placeholder, prompts, Select, SettingsField, SettingsGroup, SettingsSaveBar, toast, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import { readApiError } from "./api-response";
+import { mailSettingsMessages } from "./mail-settings-messages";
 
 export default function MailCalendarSettings(props: { mailboxId: string; onDirtyChange?: (dirty: boolean) => void }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const [savedSpaceId, setSavedSpaceId] = createSignal<string | null>(null);
   const [spaceId, setSpaceId] = createSignal<string | null>(null);
   const [items, setItems] = createSignal<Array<{ id: string; name: string; color: string }>>([]);
@@ -16,7 +19,7 @@ export default function MailCalendarSettings(props: { mailboxId: string; onDirty
         { param: { mailboxId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to load calendar destinations"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedLoadCalendarDestinations));
       return response.json();
     },
   });
@@ -27,12 +30,12 @@ export default function MailCalendarSettings(props: { mailboxId: string; onDirty
         { param: { mailboxId: props.mailboxId }, json: { spaceId: spaceId() } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to save the calendar destination"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedSaveCalendarDestination));
       const data = await response.json();
       setSavedSpaceId(data.selectedSpaceId);
       setSpaceId(data.selectedSpaceId);
       setItems(data.items);
-      toast.success(data.selectedSpaceId ? "Default calendar saved" : "Default calendar cleared");
+      toast.success(data.selectedSpaceId ? messages().defaultCalendarSaved : messages().defaultCalendarCleared);
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -52,22 +55,19 @@ export default function MailCalendarSettings(props: { mailboxId: string; onDirty
   });
 
   return (
-    <SettingsGroup
-      title="Default destination"
-      description="Choose the Space suggested when you add an invitation. Mail never imports events automatically."
-    >
-      <Show when={!destinations.loading()} fallback={<Placeholder state="loading" variant="compact" title="Loading Spaces" />}>
+    <SettingsGroup title={messages().defaultDestination} description={messages().defaultDestinationDescription}>
+      <Show when={!destinations.loading()} fallback={<Placeholder state="loading" variant="compact" title={messages().loadingSpaces} />}>
         <Show
           when={!destinations.error()}
           fallback={
             <Placeholder
               state="error"
               variant="compact"
-              title="Spaces is unavailable"
+              title={messages().spacesUnavailable}
               description={destinations.error()?.message}
               action={
                 <Button variant="secondary" size="sm" type="button" onClick={() => void destinations.refresh()}>
-                  Retry
+                  {messages().retry}
                 </Button>
               }
             />
@@ -80,26 +80,26 @@ export default function MailCalendarSettings(props: { mailboxId: string; onDirty
                 state="empty"
                 variant="compact"
                 icon="ti ti-calendar-off"
-                title="No writable Spaces"
-                description="Ask a Space owner for write access before choosing a default calendar."
+                title={messages().noWritableSpaces}
+                description={messages().noWritableSpacesDescription}
               />
             }
           >
             <SettingsField
-              label="Default Space"
-              description="Writers can choose another writable Space for each invitation."
+              label={messages().defaultSpace}
+              description={messages().defaultSpaceDescription}
               error={() => undefined}
               changed={() => spaceId() !== savedSpaceId()}
             >
               {(control) => (
                 <Select
-                  aria-label="Default Space"
+                  aria-label={messages().defaultSpace}
                   aria-describedby={control.describedBy()}
                   icon="ti ti-calendar-event"
                   value={() => spaceId() ?? null}
                   onValueChange={setSpaceId}
                   clearable
-                  placeholder="No default Space"
+                  placeholder={messages().noDefaultSpace}
                   disabled={save.loading()}
                   options={items().map((item) => ({ id: item.id, label: item.name, color: item.color, icon: "ti ti-calendar-event" }))}
                 />
@@ -110,7 +110,7 @@ export default function MailCalendarSettings(props: { mailboxId: string; onDirty
               loading={save.loading}
               onDiscard={() => setSpaceId(savedSpaceId())}
               onSave={() => save.mutate()}
-              saveLabel="Save calendar"
+              saveLabel={messages().saveCalendar}
             />
           </Show>
         </Show>

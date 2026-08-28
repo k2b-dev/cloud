@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import type { SenderIdentity } from "../../contracts";
 import type { MessageDetail } from "../../service/messages";
-import { deriveReplyIdentityId, deriveReplyRecipients } from "./mail-compose-derivation";
+import {
+  deriveReplyIdentityId,
+  deriveReplyRecipients,
+  forwardMessageBody,
+  mailComposeDerivationMessages,
+  quoteReplyBody,
+} from "./mail-compose-derivation";
 
 const identity = {
   id: "00000000-0000-4000-8000-000000000001",
@@ -161,5 +167,31 @@ describe("deriveReplyIdentityId", () => {
         duplicate,
       ]),
     ).toBeNull();
+  });
+});
+
+describe("Mail compose derivation presentation", () => {
+  test("keeps German regional locales complete and localizes forwarded message metadata", () => {
+    expect(Object.keys(mailComposeDerivationMessages.resolve(["de-CH"]).t)).toEqual(
+      Object.keys(mailComposeDerivationMessages.resolve(["en"]).t),
+    );
+
+    const body = forwardMessageBody(
+      message({ from: [], to: [], subject: "", forwardText: "Inhalt" }),
+      { locale: "en", timeZone: "UTC" },
+      "de-CH",
+    );
+    expect(body).toContain("---------- Weitergeleitete Nachricht ----------");
+    expect(body).toContain("Von: Unbekannter Absender");
+    expect(body).toContain("Datum: 01 Jan. 2026, 00:00");
+    expect(body).toContain("Betreff: (kein Betreff)");
+    expect(body).toContain("An: Nicht offengelegte Empfänger");
+    expect(body).not.toContain("Forwarded message");
+  });
+
+  test("localizes quote attribution and falls back to English copy", () => {
+    expect(quoteReplyBody(message(), "Erste Zeile\nZweite Zeile", { timeZone: "UTC" }, "de-CH")).toContain("schrieb Sender:");
+    expect(quoteReplyBody(message(), "Text", { timeZone: "UTC" }, "fr")).toContain("Sender wrote:");
+    expect(forwardMessageBody(message(), { timeZone: "UTC" }, "fr")).toContain("---------- Forwarded message ----------");
   });
 });

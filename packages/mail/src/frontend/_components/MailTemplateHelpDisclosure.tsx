@@ -1,8 +1,12 @@
 import { clipboard } from "@k2b/stdlib/solid";
-import type { JSX } from "solid-js";
+import { useLocale } from "@k2b/ui";
+import { createMemo, type JSX } from "solid-js";
+import { mailRemainingMessages } from "./mail-remaining-messages";
 
 export function MailTemplateToken(props: { value: string; muted?: boolean }) {
   const { copy, wasCopied } = clipboard.create();
+  const locale = useLocale();
+  const messages = createMemo(() => mailRemainingMessages.resolve([locale()]).t);
 
   return (
     <button
@@ -10,8 +14,8 @@ export function MailTemplateToken(props: { value: string; muted?: boolean }) {
       class={`focus-ui inline-flex items-center gap-1 rounded bg-[var(--ui-surface)] px-1.5 py-0.5 font-mono text-[11px] transition-colors hover:bg-[var(--ui-hover)] ${
         props.muted ? "text-dimmed" : "text-primary"
       }`}
-      aria-label={wasCopied() ? `Copied ${props.value}` : `Copy ${props.value}`}
-      title={wasCopied() ? "Copied" : "Click to copy"}
+      aria-label={wasCopied() ? messages().copiedValue({ value: props.value }) : messages().copyValue({ value: props.value })}
+      title={wasCopied() ? messages().copied : messages().clickToCopy}
       onClick={() => void copy(props.value)}
     >
       <span>{props.value}</span>

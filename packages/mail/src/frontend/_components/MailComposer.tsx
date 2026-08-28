@@ -17,6 +17,7 @@ import {
   TextInput,
   Tooltip,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
@@ -48,6 +49,7 @@ import { launchMailDraftAssistant } from "./mail-assistant-launch";
 import { mailConversationHref, mailDraftHref, mailDraftSeedHref } from "./mail-compose-route";
 import { createMailComposerAttachmentManager } from "./mail-composer-attachment-manager";
 import { focusMailComposerEditorAtStart } from "./mail-composer-editor-focus";
+import { mailComposerMessages } from "./mail-composer-messages";
 import { reconcileMailComposerPanes } from "./mail-composer-panes";
 import { createMailComposerTransition } from "./mail-composer-transition";
 import { removeMailDraftSeed } from "./mail-draft-seed-store";
@@ -57,9 +59,6 @@ import { writeMailSenderPreference } from "./mail-sender-preference";
 
 class ComposeSafetyCancelled extends Error {}
 class ComposeSafetyAttachmentRequested extends Error {}
-
-const intentLabel = (intent: DraftIntent): string =>
-  intent === "reply" ? "Reply" : intent === "reply_all" ? "Reply all" : intent === "forward" ? "Forward" : "Send";
 
 const intentIcon = (intent: DraftIntent): string =>
   intent === "reply"
@@ -83,6 +82,10 @@ export default function MailComposer(props: {
   canShareAttachments?: boolean;
   calendarIntegrationAvailable?: boolean;
 }) {
+  const locale = useLocale();
+  const t = () => mailComposerMessages.resolve([locale()]).t;
+  const intentLabel = (intent: DraftIntent): string =>
+    intent === "reply" ? t().reply : intent === "reply_all" ? t().replyAll : intent === "forward" ? t().forward : t().send;
   const initial = props.initialDraft ?? props.initialSeed;
   if (!initial) throw new Error("MailComposer requires a draft or compose seed");
   const initialContent = props.initialDraft
@@ -126,10 +129,10 @@ export default function MailComposer(props: {
   const [requestReadReceipt, setRequestReadReceipt] = createSignal(initialContent.requestReadReceipt);
   const deliveryOptionsSummary = createMemo(() => {
     const options: string[] = [];
-    if (priority() === "high") options.push("high priority");
-    if (priority() === "low") options.push("low priority");
-    if (requestDeliveryReceipt()) options.push("delivery receipt");
-    if (requestReadReceipt()) options.push("read receipt");
+    if (priority() === "high") options.push(t().highPriority);
+    if (priority() === "low") options.push(t().lowPriority);
+    if (requestDeliveryReceipt()) options.push(t().deliveryReceipt);
+    if (requestReadReceipt()) options.push(t().readReceipt);
     return options;
   });
   const [showCc, setShowCc] = createSignal(Boolean(initialContent.cc.length || initialContent.bcc.length));
@@ -183,7 +186,7 @@ export default function MailComposer(props: {
     content,
     applyDraftContent,
     isDisposed: () => disposed,
-    onRecovered: () => toast("Unsaved changes from this browser were restored.", { title: "Draft recovered" }),
+    onRecovered: () => toast(t().unsavedChangesRestored, { title: t().draftRecovered }),
     onMaterialized: (materialized) => {
       if (props.initialSeed) {
         clearInitialSeed();
@@ -196,6 +199,7 @@ export default function MailComposer(props: {
         );
       }
     },
+    locale,
   });
   const {
     draft,
@@ -221,7 +225,7 @@ export default function MailComposer(props: {
   const composeWithAi = mutations.create<void, void>({
     mutation: async () => {
       const currentDraft = await persist();
-      if (!currentDraft) throw new Error(statusMessage() || "Draft could not be saved");
+      if (!currentDraft) throw new Error(statusMessage() || t().draftCouldNotBeSaved);
       const launch = await launchMailDraftAssistant({
         mailboxId: props.mailboxId,
         returnHref: props.returnHref,
@@ -242,7 +246,7 @@ export default function MailComposer(props: {
           includeSourceAttachments: false,
         },
       });
-      if (!response.ok) throw new Error(await readApiError(response, "Could not save as a new draft"));
+      if (!response.ok) throw new Error(await readApiError(response, t().saveAsNewFailed));
       return await response.json();
     },
     onSuccess: (created) => navigateTo(mailDraftHref(props.mailboxId, created.id, props.returnHref, { popout: props.popout })),
@@ -251,9 +255,9 @@ export default function MailComposer(props: {
   const copyLifecycleText = async () => {
     try {
       await navigator.clipboard.writeText(body());
-      toast.success("Unsaved text copied");
+      toast.success(t().unsavedTextCopied);
     } catch {
-      await prompts.error("Your browser could not copy the text. The read-only editor still contains it.");
+      await prompts.error(t().copyTextFailed);
     }
   };
   const openLifecycleMessage = () => {
@@ -279,7 +283,7 @@ export default function MailComposer(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Preview could not be rendered"));
+      if (!response.ok) throw new Error(await readApiError(response, t().previewFailed));
       return await response.json();
     },
   });
@@ -310,6 +314,7 @@ export default function MailComposer(props: {
     format,
     setBody,
     isDisposed: () => disposed,
+    locale,
   });
   const uploads = attachments.uploads;
   const attachmentDropzone = dropzone.create({
@@ -333,10 +338,10 @@ export default function MailComposer(props: {
       });
       if (updated) {
         setDraft(updated);
-        toast("The invitation was attached to this draft.", { title: "Calendar invitation added" });
+        toast(t().invitationAddedDescription, { title: t().invitationAdded });
       }
     } catch (error) {
-      await prompts.error(error instanceof Error ? error.message : "Calendar invitation could not be added");
+      await prompts.error(error instanceof Error ? error.message : t().invitationFailed);
     } finally {
       composerTransition.release(reservation);
     }
@@ -379,41 +384,46 @@ export default function MailComposer(props: {
         { param: { mailboxId: props.mailboxId, draftId: currentDraft.id } },
         { init: { signal: controller.signal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not load draft recovery copies"));
+      if (!response.ok) throw new Error(await readApiError(response, t().recoveryCopiesFailed));
       const copies: DraftRecoveryCopy[] = await response.json();
       if (disposed || recoveryController !== controller) return;
       const unresolved = copies.filter((copy) => !copy.restoredAt);
       if (unresolved.length === 0) {
         setDraft({ ...currentDraft, recoveryCopyCount: 0 });
-        return void toast("No unresolved recovery copies remain.", { title: "Draft is current" });
+        return void toast(t().noRecoveryCopies, { title: t().draftCurrent });
       }
       const labels = new Map(
         unresolved.map((copy, index) => {
-          const preview = copy.content.body.trim().replaceAll(/\s+/g, " ").slice(0, 80) || "(empty message)";
+          const preview = copy.content.body.trim().replaceAll(/\s+/g, " ").slice(0, 80) || t().emptyMessage;
           return [
             copy.id,
-            `${index + 1}. ${dates.formatDateTimeRelative(copy.createdAt, props.dateConfig)} · ${copy.createdBy.kind} · ${preview}`,
+            t().recoveryCopyOption({
+              index: index + 1,
+              date: dates.formatDateTimeRelative(copy.createdAt, props.dateConfig),
+              actor: copy.createdBy.kind === "user" ? t().user : t().serviceAccount,
+              preview,
+            }),
           ];
         }),
       );
       const values = await prompts.form({
-        title: "Restore draft changes",
+        title: t().restoreChanges,
         fields: {
           recoveryCopyId: {
             type: "select",
-            label: "Recovery copy",
+            label: t().recoveryCopy,
             options: unresolved.map((copy) => ({ id: copy.id, label: labels.get(copy.id) ?? copy.id })),
             default: unresolved[0]?.id,
             required: true,
           },
         },
-        confirmText: "Restore copy",
+        confirmText: t().restoreCopy,
       });
       if (!values || disposed || recoveryController !== controller) return;
       const selected = unresolved.find((copy) => copy.id === values.recoveryCopyId);
-      if (!selected) return void (await prompts.error("The selected recovery copy is no longer available."));
+      if (!selected) return void (await prompts.error(t().recoveryCopyUnavailable));
       const currentLease = lease();
-      if (!canEditDraft() || !currentLease) return void (await prompts.error("This draft is no longer editable in this session."));
+      if (!canEditDraft() || !currentLease) return void (await prompts.error(t().draftNotEditable));
       const restoreResponse = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"]["recovery-copies"][
         ":recoveryCopyId"
       ].restore.$post(
@@ -427,7 +437,7 @@ export default function MailComposer(props: {
         },
         { init: { signal: controller.signal } },
       );
-      if (!restoreResponse.ok) throw new Error(await readApiError(restoreResponse, "Could not restore draft changes"));
+      if (!restoreResponse.ok) throw new Error(await readApiError(restoreResponse, t().restoreFailed));
       const restored = await restoreResponse.json();
       if (disposed || recoveryController !== controller) return;
       setDraft(restored);
@@ -436,10 +446,10 @@ export default function MailComposer(props: {
       localStorage.removeItem(draftSession.draftKey(restored.id));
       setStatus("saved");
       setStatusMessage("");
-      toast.success("Draft changes restored");
+      toast.success(t().changesRestored);
     } catch (error) {
       if (!disposed && recoveryController === controller && !(error instanceof DOMException && error.name === "AbortError")) {
-        await prompts.error(error instanceof Error ? error.message : "Could not restore draft changes");
+        await prompts.error(error instanceof Error ? error.message : t().restoreFailed);
       }
     } finally {
       if (recoveryController === controller) recoveryController = null;
@@ -479,10 +489,10 @@ export default function MailComposer(props: {
   });
 
   const validateDelivery = () => {
-    if (uploads().length > 0) throw new Error("Finish or cancel attachment uploads before sending.");
-    if (to().length + cc().length + bcc().length === 0) throw new Error("Add at least one recipient.");
+    if (uploads().length > 0) throw new Error(t().finishUploadsBeforeSend);
+    if (to().length + cc().length + bcc().length === 0) throw new Error(t().addRecipient);
     if (!body().trim() && !(draft()?.attachments.length ?? props.initialSeed?.attachments.length ?? 0)) {
-      throw new Error("Write a message or attach a file before sending.");
+      throw new Error(t().addContent);
     }
   };
 
@@ -498,7 +508,7 @@ export default function MailComposer(props: {
       },
       { init: { signal: abortSignal } },
     );
-    if (!response.ok) throw new Error(await readApiError(response, "Could not review message safety"));
+    if (!response.ok) throw new Error(await readApiError(response, t().safetyReviewFailed));
     const review: ComposeSafetyReview = await response.json();
     if (review.warnings.length === 0) return undefined;
     const choice = await prompts.dialog<"approve" | "attachment">(
@@ -519,20 +529,20 @@ export default function MailComposer(props: {
           </div>
           <div class="flex flex-wrap items-center justify-end gap-2">
             <Button variant="secondary" size="sm" type="button" onClick={() => close(undefined)}>
-              Cancel
+              {t().cancel}
             </Button>
             <Show when={review.warnings.some((warning) => warning.id === "missing_attachment")}>
               <Button variant="secondary" size="sm" type="button" onClick={() => close("attachment")}>
-                <i class="ti ti-paperclip" aria-hidden="true" /> Add attachment
+                <i class="ti ti-paperclip" aria-hidden="true" /> {t().addAttachment}
               </Button>
             </Show>
             <Button size="sm" type="button" onClick={() => close("approve")}>
-              {scheduled ? "Schedule anyway" : "Send anyway"}
+              {scheduled ? t().scheduleAnyway : t().sendAnyway}
             </Button>
           </div>
         </div>
       ),
-      { title: "Review before sending", icon: "ti ti-shield-check", size: "medium" },
+      { title: t().reviewBeforeSending, icon: "ti ti-shield-check", size: "medium" },
     );
     if (abortSignal.aborted) throw new DOMException("Aborted", "AbortError");
     if (choice === "attachment") throw new ComposeSafetyAttachmentRequested();
@@ -577,7 +587,7 @@ export default function MailComposer(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to queue message"));
+      if (!response.ok) throw new Error(await readApiError(response, t().queueFailed));
       const command = await response.json();
       return { command, attempt };
     },
@@ -588,10 +598,10 @@ export default function MailComposer(props: {
       const scheduled = Boolean(attempt.scheduledAt);
       toast.success(
         scheduled
-          ? `Delivery scheduled for ${dates.formatDateTime(attempt.scheduledAt!, props.dateConfig)}`
+          ? t().deliveryScheduled({ value: dates.formatDateTime(attempt.scheduledAt!, props.dateConfig) })
           : preferences.undoSeconds > 0
-            ? "Message queued. You can undo it directly in the conversation."
-            : "Message queued",
+            ? t().messageQueuedUndo
+            : t().messageQueued,
       );
       const pendingConversationId = command.result.conversationId;
       navigateTo(
@@ -616,7 +626,7 @@ export default function MailComposer(props: {
     if (!saved) throw new Error(statusMessage());
     const safetyApproval = await reviewSafety(saved, Boolean(delivery.scheduledAt), abortSignal);
     const senderIdentityId = identityId();
-    if (!senderIdentityId) throw new Error("Choose a sender identity before sending.");
+    if (!senderIdentityId) throw new Error(t().chooseSenderBeforeSend);
     return {
       scheduledAt: delivery.scheduledAt,
       contentFingerprint: deliveryFingerprint(delivery),
@@ -664,7 +674,7 @@ export default function MailComposer(props: {
     } catch (error) {
       if (error instanceof ComposeSafetyAttachmentRequested) attachAfterDeliveryReview = true;
       else if (!(error instanceof ComposeSafetyCancelled)) {
-        await prompts.error(error instanceof Error ? error.message : "Message is not ready to send");
+        await prompts.error(error instanceof Error ? error.message : t().messageNotReadySend);
       }
     } finally {
       preparation.abort();
@@ -681,7 +691,7 @@ export default function MailComposer(props: {
     try {
       scheduledAt = (await chooseScheduledSendTime(props.dateConfig)) ?? null;
     } catch (error) {
-      await prompts.error(error instanceof Error ? error.message : "Message is not ready to schedule");
+      await prompts.error(error instanceof Error ? error.message : t().messageNotReadySchedule);
     } finally {
       finishDeliveryTransition(reservation);
     }
@@ -705,52 +715,48 @@ export default function MailComposer(props: {
         return (
           <div class="flex flex-col gap-3">
             <Select
-              label="Priority"
-              description="Recipients may see high or low importance when their mail client supports it."
+              label={t().priority}
+              description={t().priorityDescription}
               value={nextPriority}
               onValueChange={(value) => setNextPriority(value === "high" ? "high" : value === "low" ? "low" : "normal")}
               options={[
-                { id: "normal", label: "Normal", icon: "ti ti-minus" },
-                { id: "high", label: "High", icon: "ti ti-arrow-up" },
-                { id: "low", label: "Low", icon: "ti ti-arrow-down" },
+                { id: "normal", label: t().normal, icon: "ti ti-minus" },
+                { id: "high", label: t().high, icon: "ti ti-arrow-up" },
+                { id: "low", label: t().low, icon: "ti ti-arrow-down" },
               ]}
             />
             <CheckboxCard
-              label={deliveryReceiptSupported() ? "Request a delivery receipt" : "Delivery receipts unavailable"}
-              description={
-                deliveryReceiptSupported()
-                  ? "Ask the sending server to report delivery or failure. Receiving servers may not return a report."
-                  : "The selected SMTP server does not advertise the DSN capability required to request delivery reports."
-              }
+              label={deliveryReceiptSupported() ? t().requestDeliveryReceipt : t().deliveryReceiptsUnavailable}
+              description={deliveryReceiptSupported() ? t().deliveryReceiptDescription : t().deliveryReceiptUnsupported}
               icon="ti ti-mail-check"
               value={nextDeliveryReceipt}
               onValueChange={setNextDeliveryReceipt}
               disabled={!deliveryReceiptSupported()}
             />
             <CheckboxCard
-              label="Request a read receipt"
-              description="Ask recipients to confirm opening the message. They may decline or their mail client may ignore the request."
+              label={t().requestReadReceipt}
+              description={t().readReceiptDescription}
               icon="ti ti-eye-check"
               value={nextReadReceipt}
               onValueChange={setNextReadReceipt}
             />
             <NoticeCard tone="neutral" icon={false} bodyClass="flex items-start gap-2">
               <i class="ti ti-info-circle mt-0.5 shrink-0" aria-hidden="true" />
-              <p>Receipt requests are optional signals, not proof that a message was delivered or read.</p>
+              <p>{t().receiptDisclaimer}</p>
             </NoticeCard>
             <div class="flex items-center justify-end gap-2">
               <Button variant="secondary" size="sm" type="button" onClick={() => close(false)}>
-                Cancel
+                {t().cancel}
               </Button>
               <Button size="sm" type="button" onClick={save}>
                 <i class="ti ti-check" aria-hidden="true" />
-                Apply
+                {t().apply}
               </Button>
             </div>
           </div>
         );
       },
-      { title: "Delivery options", icon: "ti ti-adjustments", size: "medium" },
+      { title: t().deliveryOptions, icon: "ti ti-adjustments", size: "medium" },
     );
 
   const editDeliveryOptions = async () => {
@@ -769,25 +775,25 @@ export default function MailComposer(props: {
       (close) => (
         <div class="flex flex-col gap-4">
           <Select
-            label="Message format"
-            description="Choose how this message is written and delivered."
+            label={t().messageFormat}
+            description={t().messageFormatDescription}
             value={format}
             onValueChange={(value) => setFormat(value === "plain" ? "plain" : "markdown")}
             options={[
               { id: "markdown", label: "Markdown", icon: "ti ti-markdown" },
-              { id: "plain", label: "Plain text", icon: "ti ti-align-left" },
+              { id: "plain", label: t().plainText, icon: "ti ti-align-left" },
             ]}
           />
           <div class="flex flex-col gap-2">
             <Show when={props.calendarIntegrationAvailable}>
               <Button variant="secondary" type="button" class="w-full justify-start" onClick={() => close("calendar")}>
                 <i class="ti ti-calendar-plus" aria-hidden="true" />
-                Add calendar invitation
+                {t().addCalendarInvitation}
               </Button>
             </Show>
             <Button variant="secondary" type="button" class="w-full justify-start" onClick={() => close("delivery")}>
               <i class="ti ti-mail-cog" aria-hidden="true" />
-              Delivery options
+              {t().deliveryOptions}
               <Show when={deliveryOptionsSummary().length > 0}>
                 <span class="ml-auto text-xs font-normal text-dimmed">{deliveryOptionsSummary().join(", ")}</span>
               </Show>
@@ -795,12 +801,12 @@ export default function MailComposer(props: {
           </div>
           <div class="flex justify-end">
             <Button variant="secondary" size="sm" type="button" onClick={() => close(undefined)}>
-              Done
+              {t().done}
             </Button>
           </div>
         </div>
       ),
-      { title: "Message options", icon: "ti ti-adjustments-horizontal", size: "medium" },
+      { title: t().messageOptions, icon: "ti ti-adjustments-horizontal", size: "medium" },
     );
 
   const editMessageOptions = async () => {
@@ -820,14 +826,14 @@ export default function MailComposer(props: {
 
   const discard = mutations.create<boolean, void>({
     mutation: async (_input, { abortSignal }) => {
-      if (uploads().length > 0) throw new Error("Cancel attachment uploads before discarding this draft.");
+      if (uploads().length > 0) throw new Error(t().cancelUploadsBeforeDiscard);
       if (!draft()) {
         clearInitialSeed();
         return true;
       }
-      const confirmed = await prompts.confirm("This removes the shared draft for everyone with mailbox access.", {
-        title: "Discard draft?",
-        confirmText: "Discard draft",
+      const confirmed = await prompts.confirm(t().discardSharedDescription, {
+        title: t().discardDraftQuestion,
+        confirmText: t().discardDraft,
         variant: "danger",
       });
       if (!confirmed || abortSignal.aborted) return false;
@@ -842,7 +848,7 @@ export default function MailComposer(props: {
           },
           { init: { signal: abortSignal } },
         );
-        if (!response.ok) throw new Error(await readApiError(response, "Failed to discard draft"));
+        if (!response.ok) throw new Error(await readApiError(response, t().discardFailed));
         localStorage.removeItem(draftSession.draftKey(currentDraft.id));
       });
       return true;
@@ -874,7 +880,7 @@ export default function MailComposer(props: {
 
   const leaveComposer = async (): Promise<void> => {
     if (uploads().length > 0) {
-      await prompts.error("Finish or cancel attachment uploads before closing this draft.");
+      await prompts.error(t().finishUploadsBeforeClose);
       return;
     }
     const reservation = composerTransition.reserve("handoff");
@@ -900,7 +906,7 @@ export default function MailComposer(props: {
       }
       if (!disposed) navigateTo(props.returnHref);
     } catch (error) {
-      if (!disposed) await prompts.error(error instanceof Error ? error.message : "Could not close the draft");
+      if (!disposed) await prompts.error(error instanceof Error ? error.message : t().closeDraftFailed);
     } finally {
       composerTransition.release(reservation);
     }
@@ -909,7 +915,7 @@ export default function MailComposer(props: {
   const handoffTo = async (href: (draftId: string) => string, popup: Window): Promise<void> => {
     if (uploads().length > 0) {
       popup.close();
-      await prompts.error("Finish or cancel attachment uploads before moving this draft.");
+      await prompts.error(t().finishUploadsBeforeMove);
       return;
     }
     const reservation = composerTransition.reserve("handoff");
@@ -934,10 +940,10 @@ export default function MailComposer(props: {
           await acquireLease(releasedDraft);
         } catch {
           setStatus("readonly");
-          setStatusMessage("Draft editing could not be restored. Reload or take over the draft.");
+          setStatusMessage(t().editingRestoreFailed);
         }
       }
-      await prompts.error(error instanceof Error ? error.message : "Could not open the draft in the requested window");
+      await prompts.error(error instanceof Error ? error.message : t().requestedWindowFailed);
     } finally {
       composerTransition.release(reservation);
     }
@@ -945,7 +951,7 @@ export default function MailComposer(props: {
 
   const openWindow = () => {
     const popup = window.open("about:blank", "", "popup,width=1120,height=820,resizable=yes,scrollbars=yes");
-    if (!popup) return void prompts.error("Allow pop-up windows to open this draft in a separate window.");
+    if (!popup) return void prompts.error(t().allowPopups);
     if (!draft() && !hasUnsavedChanges() && props.initialSeed) {
       popup.location.replace(mailDraftSeedHref(props.mailboxId, props.initialSeed.id, props.returnHref, { popout: true }));
       navigateTo(props.returnHref);
@@ -966,6 +972,7 @@ export default function MailComposer(props: {
         conflict,
         currentActor: props.currentActor,
         dateConfig: props.dateConfig,
+        locale: locale(),
       });
       if (choice !== "takeover" || disposed) return;
       stopHeartbeat();
@@ -974,12 +981,12 @@ export default function MailComposer(props: {
       if (!disposed && acquired) {
         setStatus("saved");
         setStatusMessage("");
-        toast.success("You can now edit this draft");
+        toast.success(t().editingAvailable);
       }
     } catch (error) {
       if (!disposed) {
         setStatus("error");
-        setStatusMessage(error instanceof Error ? error.message : "Draft editing could not be taken over");
+        setStatusMessage(error instanceof Error ? error.message : t().takeoverFailed);
       }
     } finally {
       conflictDialogOpen = false;
@@ -995,23 +1002,23 @@ export default function MailComposer(props: {
 
   const collaborationStatus = () => {
     const conflict = leaseConflict();
-    return conflict ? mailDraftCollaborationCopy(conflict, props.currentActor).status : statusMessage();
+    return conflict ? mailDraftCollaborationCopy(conflict, props.currentActor, locale()).status : statusMessage();
   };
   const connectionUnavailable = () => status() === "readonly" && Boolean(lease()) && !leaseConflict();
   const readonlyActionLabel = () => {
     const conflict = leaseConflict();
-    return conflict ? mailDraftCollaborationCopy(conflict, props.currentActor).takeoverLabel : "Retry";
+    return conflict ? mailDraftCollaborationCopy(conflict, props.currentActor, locale()).takeoverLabel : t().retry;
   };
   const handleReadonlyAction = () => (leaseConflict() ? void presentLeaseConflict() : void resumeCurrentLease());
 
   const composerIntent = () => draft()?.intent ?? initial.intent;
   const retryPreview = () => void previewQuery.refresh();
   const IdentitySwitcher = () => {
-    const label = () => selectedIdentity()?.label ?? "Choose sender";
+    const label = () => selectedIdentity()?.label ?? t().chooseSender;
     const address = () => selectedIdentity()?.fromAddress ?? "";
     const Content = () => (
       <>
-        <span class="shrink-0 text-dimmed">from</span>
+        <span class="shrink-0 text-dimmed">{t().from}</span>
         <span class="min-w-0 truncate font-medium text-secondary" title={address()}>
           {label()}
         </span>
@@ -1032,7 +1039,7 @@ export default function MailComposer(props: {
             appearance="plain"
             type="button"
             class="focus-ui flex max-w-[min(18rem,45vw)] min-w-0 items-center gap-1.5 rounded-[var(--ui-radius-control)] px-1.5 py-1 text-sm hover:bg-[var(--ui-hover)] disabled:cursor-default"
-            aria-label={`Change sender identity. Current sender: ${label()}${address() ? `, ${address()}` : ""}`}
+            aria-label={t().changeSender({ label: label(), address: address() })}
             disabled={!editable()}
           >
             <Content />
@@ -1060,7 +1067,7 @@ export default function MailComposer(props: {
           },
           { init: { signal } },
         );
-        if (!response.ok) throw new Error(await readApiError(response, "Compose templates could not be loaded"));
+        if (!response.ok) throw new Error(await readApiError(response, t().templatesFailed));
         const suggestions = await response.json();
         return suggestions.map((suggestion) => ({
           text: `/${suggestion.shortcut}`,
@@ -1085,16 +1092,16 @@ export default function MailComposer(props: {
         >
           <div class="flex items-center gap-2 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] px-4 py-3 text-sm font-medium text-primary shadow-lg">
             <i class="ti ti-paperclip text-[var(--ui-accent)]" aria-hidden="true" />
-            Drop files to attach
+            {t().dropFiles}
           </div>
         </div>
       </Show>
       <Show when={!props.popout}>
         <header class="flex shrink-0 items-center gap-2 bg-[var(--ui-surface-subtle)] px-3 py-2">
-          <Tooltip.Anchor content="Back to mailbox">
+          <Tooltip.Anchor content={t().backToMailbox}>
             <IconButton
               type="button"
-              label="Back to mailbox"
+              label={t().backToMailbox}
               disabled={composerTransition.active() !== null}
               onClick={() => void leaveComposer()}
             >
@@ -1123,11 +1130,11 @@ export default function MailComposer(props: {
           </Show>
           <Show when={editable() && (draft()?.recoveryCopyCount ?? 0) > 0}>
             <Button variant="secondary" size="sm" type="button" onClick={() => void restoreRecoveryCopy()}>
-              <i class="ti ti-history" aria-hidden="true" /> Recover changes
+              <i class="ti ti-history" aria-hidden="true" /> {t().recoverChanges}
             </Button>
           </Show>
-          <Tooltip.Anchor content="Open in new window">
-            <IconButton type="button" label="Open in new window" disabled={!editable()} onClick={openWindow}>
+          <Tooltip.Anchor content={t().openInNewWindow}>
+            <IconButton type="button" label={t().openInNewWindow} disabled={!editable()} onClick={openWindow}>
               <i class="ti ti-app-window" aria-hidden="true" />
             </IconButton>
           </Tooltip.Anchor>
@@ -1155,9 +1162,9 @@ export default function MailComposer(props: {
 
       <Show when={props.popout && editable() && (draft()?.recoveryCopyCount ?? 0) > 0}>
         <div class="flex shrink-0 items-center gap-2 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
-          <span class="min-w-0 flex-1">Saved conflict changes are available for this draft.</span>
+          <span class="min-w-0 flex-1">{t().conflictCopiesAvailable}</span>
           <Button variant="secondary" size="sm" type="button" onClick={() => void restoreRecoveryCopy()}>
-            <i class="ti ti-history" aria-hidden="true" /> Recover
+            <i class="ti ti-history" aria-hidden="true" /> {t().recover}
           </Button>
         </div>
       </Show>
@@ -1183,10 +1190,10 @@ export default function MailComposer(props: {
       <div class="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto px-3">
         <div class="grid shrink-0 gap-1.5 py-1.5 text-sm lg:grid-cols-2">
           <div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-2 lg:col-span-2">
-            <span class="text-dimmed">To</span>
+            <span class="text-dimmed">{t().to}</span>
             <div class="flex min-w-0 items-center gap-2">
               <div class="min-w-0 flex-1">
-                <MailRecipientInput placeholder="Recipients" value={to} onChange={setTo} disabled={!editable()} />
+                <MailRecipientInput placeholder={t().recipients} value={to} onChange={setTo} disabled={!editable()} />
               </div>
               <Show when={!showCc()}>
                 <Button variant="ghost" size="sm" type="button" disabled={!editable()} onClick={() => setShowCc(true)}>
@@ -1198,16 +1205,16 @@ export default function MailComposer(props: {
           <Show when={showCc()}>
             <div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-2">
               <span class="text-dimmed">Cc</span>
-              <MailRecipientInput placeholder="Cc recipients" value={cc} onChange={setCc} disabled={!editable()} />
+              <MailRecipientInput placeholder={t().ccRecipients} value={cc} onChange={setCc} disabled={!editable()} />
             </div>
             <div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-2">
               <span class="text-dimmed">Bcc</span>
-              <MailRecipientInput placeholder="Bcc recipients" value={bcc} onChange={setBcc} disabled={!editable()} />
+              <MailRecipientInput placeholder={t().bccRecipients} value={bcc} onChange={setBcc} disabled={!editable()} />
             </div>
           </Show>
           <div class="grid min-w-0 grid-cols-[max-content_minmax(0,1fr)] items-center gap-2 lg:col-span-2">
-            <span class="text-dimmed">Subject</span>
-            <TextInput aria-label="Subject" value={subject} onValueChange={setSubject} maxLength={998} disabled={!editable()} />
+            <span class="text-dimmed">{t().subject}</span>
+            <TextInput aria-label={t().subject} value={subject} onValueChange={setSubject} maxLength={998} disabled={!editable()} />
           </div>
         </div>
 
@@ -1258,10 +1265,10 @@ export default function MailComposer(props: {
           type="button"
           loading={send.loading()}
           disabled={!editable() || uploads().length > 0}
-          menuLabel="More send options"
+          menuLabel={t().moreSendOptions}
           items={[
-            { label: "Save as draft", icon: "ti ti-device-floppy", action: () => void leaveComposer() },
-            { label: "Send later", icon: "ti ti-clock", action: () => void schedule() },
+            { label: t().saveAsDraft, icon: "ti ti-device-floppy", action: () => void leaveComposer() },
+            { label: t().sendLater, icon: "ti ti-clock", action: () => void schedule() },
           ]}
           onClick={() => void sendDraft({})}
         >
@@ -1277,36 +1284,40 @@ export default function MailComposer(props: {
           onClick={() =>
             void composeWithAi
               .mutate()
-              .catch((error: unknown) => prompts.error(error instanceof Error ? error.message : "Assistant chat could not be created"))
+              .catch((error: unknown) => prompts.error(error instanceof Error ? error.message : t().assistantFailed))
           }
         >
-          <i class="ti ti-sparkles" aria-hidden="true" /> Write with AI
+          <i class="ti ti-sparkles" aria-hidden="true" /> {t().writeWithAi}
         </Button>
         <Tooltip.Anchor
-          content={deliveryOptionsSummary().length > 0 ? `Message options: ${deliveryOptionsSummary().join(", ")}` : "Message options"}
+          content={
+            deliveryOptionsSummary().length > 0
+              ? t().messageOptionsSummary({ options: deliveryOptionsSummary().join(", ") })
+              : t().messageOptions
+          }
         >
           <Button
             size="sm"
             variant="secondary"
             type="button"
             class="relative"
-            aria-label="Message options"
+            aria-label={t().messageOptions}
             disabled={!editable()}
             onClick={() => void editMessageOptions()}
           >
             <i class="ti ti-adjustments-horizontal" aria-hidden="true" />
-            <span class="hidden sm:inline">Options</span>
+            <span class="hidden sm:inline">{t().options}</span>
             <Show when={deliveryOptionsSummary().length > 0}>
               <span class="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-[var(--ui-accent)]" aria-hidden="true" />
             </Show>
           </Button>
         </Tooltip.Anchor>
-        <Tooltip.Anchor content="Attach files">
+        <Tooltip.Anchor content={t().attachFiles}>
           <IconButton
             size="sm"
             variant="secondary"
             type="button"
-            label="Attach files"
+            label={t().attachFiles}
             disabled={!editable()}
             onClick={() => attachmentInput?.click()}
           >
@@ -1326,8 +1337,13 @@ export default function MailComposer(props: {
           }}
         />
         <span class="flex-1" />
-        <Tooltip.Anchor content="Discard draft">
-          <IconButton type="button" label="Discard draft" disabled={!editable() || discard.loading()} onClick={() => void discardDraft()}>
+        <Tooltip.Anchor content={t().discardDraft}>
+          <IconButton
+            type="button"
+            label={t().discardDraft}
+            disabled={!editable() || discard.loading()}
+            onClick={() => void discardDraft()}
+          >
             <i class={`ti ${discard.loading() ? "ti-loader-2 animate-spin" : "ti-trash"}`} aria-hidden="true" />
           </IconButton>
         </Tooltip.Anchor>

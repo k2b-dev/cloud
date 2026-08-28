@@ -1,9 +1,13 @@
-import { StatCell, StatGrid, ButtonLink } from "@k2b/ui";
+import { ButtonLink, StatCell, StatGrid, useLocale } from "@k2b/ui";
+import { createMemo } from "solid-js";
 import type { MailAutomationActivityData } from "../service/automation-workspace";
 import MailAutomationActivityTable from "./_components/MailAutomationActivityTable";
 import MailAutomationShell from "./_components/MailAutomationShell";
+import { mailAutomationPageMessages } from "./mail-automation-page-messages";
 
 export default function MailAutomationActivityPage(props: { data: MailAutomationActivityData; currentUserEmail: string | null }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailAutomationPageMessages.resolve([locale()]).t);
   return (
     <MailAutomationShell
       mailbox={props.data.mailbox}
@@ -13,39 +17,39 @@ export default function MailAutomationActivityPage(props: { data: MailAutomation
     >
       <div class="flex flex-wrap items-start justify-between gap-3">
         <header>
-          <h1 class="text-base font-semibold text-primary">Activity</h1>
-          <p class="mt-0.5 text-xs text-dimmed">Workflow runs and mail-rule backfills for this mailbox during the last 30 days.</p>
+          <h1 class="text-base font-semibold text-primary">{messages().activity}</h1>
+          <p class="mt-0.5 text-xs text-dimmed">{messages().activityDescription}</p>
         </header>
         <ButtonLink variant="secondary" size="sm" href={`/app/mail/${props.data.mailbox.id}/automations/activity`}>
-          <i class="ti ti-refresh" aria-hidden="true" /> Refresh
+          <i class="ti ti-refresh" aria-hidden="true" /> {messages().refresh}
         </ButtonLink>
       </div>
       <StatGrid columns={4}>
         <StatCell
-          label="Recent activity"
+          label={messages().recentActivity}
           value={props.data.counts.total}
-          sub="Up to 200 entries"
+          sub={messages().upToEntries({ count: 200 })}
           accent={{ tone: "blue", icon: "ti ti-activity" }}
         />
         <StatCell
-          label="In progress"
+          label={messages().inProgress}
           value={props.data.counts.active}
-          sub="Queued, running, or waiting"
+          sub={messages().inProgressDescription}
           accent={{ tone: "blue", icon: "ti ti-loader-2" }}
         />
         <StatCell
-          label="Needs attention"
+          label={messages().needsAttention}
           value={props.data.counts.failed}
-          sub="Failed or waiting for a decision"
+          sub={messages().needsAttentionDescription}
           accent={{
             tone: props.data.counts.failed > 0 ? "red" : "emerald",
             icon: props.data.counts.failed > 0 ? "ti ti-alert-triangle" : "ti ti-check",
           }}
         />
         <StatCell
-          label="Backfills"
+          label={messages().backfills}
           value={props.data.counts.backfills}
-          sub="Sender-rule history"
+          sub={messages().backfillsDescription}
           accent={{ tone: "zinc", icon: "ti ti-database-import" }}
         />
       </StatGrid>

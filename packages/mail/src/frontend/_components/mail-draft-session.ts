@@ -1,17 +1,14 @@
 import { createLiveWebSocket } from "@valentinkolb/cloud/browser/live";
+import type { Accessor } from "solid-js";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { AcquiredDraftLease, DraftEditableContent, DraftLease, MailDraft, MailDraftSeed } from "../../contracts";
 import { MAIL_LIVE_WS_TYPE, type MailLiveClientMessage, type MailLiveServerMessage, parseMailLiveServerMessage } from "../../live-events";
 import { readApiError } from "./api-response";
+import { mailComposerMessages } from "./mail-composer-messages";
 import { advanceMailDraftJournalAfterSave, type MailDraftJournal, readMailDraftJournal } from "./mail-draft-journal";
 import { type DraftLeaseHeartbeatResult, recoverDraftLeaseHeartbeat } from "./mail-draft-lease-recovery";
-import {
-  isClosedMailDraft,
-  type MailDraftLifecycleTransition,
-  mailDraftLifecycleMessage,
-  reconcileMailDraftLifecycle,
-} from "./mail-draft-lifecycle";
+import { isClosedMailDraft, type MailDraftLifecycleTransition, reconcileMailDraftLifecycle } from "./mail-draft-lifecycle";
 import { createMailLiveInvalidationHub } from "./mail-live-invalidation-hub";
 
 type ComposerStatus = "local" | "preparing" | "saved" | "saving" | "error" | "readonly";
@@ -71,12 +68,14 @@ export const createMailDraftSession = (options: {
   isDisposed: () => boolean;
   onRecovered: () => void;
   onMaterialized: (draft: MailDraft) => void;
+  locale: Accessor<string>;
 }) => {
+  const t = () => mailComposerMessages.resolve([options.locale()]).t;
   const [draft, setDraft] = createSignal<MailDraft | null>(options.initialDraft ?? null);
   const [lease, setLease] = createSignal<AcquiredDraftLease | null>(null);
   const [leaseConflict, setLeaseConflict] = createSignal<MailDraftLeaseConflict | null>(null);
   const [status, setStatus] = createSignal<ComposerStatus>(options.initialSeed ? "local" : "preparing");
-  const [statusMessage, setStatusMessage] = createSignal(options.initialSeed ? "" : "Preparing draft...");
+  const [statusMessage, setStatusMessage] = createSignal(options.initialSeed ? "" : t().preparingDraft);
   const [lifecycleTransition, setLifecycleTransition] = createSignal<MailDraftLifecycleTransition | null>(null);
   const [initialized, setInitialized] = createSignal(false);
   let saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -113,7 +112,16 @@ export const createMailDraftSession = (options: {
     setDraft(currentDraft);
     setLifecycleTransition(transition);
     setStatus("readonly");
-    setStatusMessage(mailDraftLifecycleMessage(currentDraft));
+    const name = currentDraft.lastEditedByDisplayName;
+    setStatusMessage(
+      currentDraft.state === "scheduled"
+        ? t().lifecycleScheduled({ name })
+        : currentDraft.state === "sending"
+          ? t().lifecycleSending({ name })
+          : currentDraft.state === "sent"
+            ? t().lifecycleSent({ name })
+            : t().lifecycleDiscarded({ name }),
+    );
   };
 
   const refreshDraftLifecycle = async (): Promise<void> => {
@@ -122,7 +130,7 @@ export const createMailDraftSession = (options: {
     const response = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"].$get({
       param: { mailboxId: options.mailboxId, draftId: currentDraft.id },
     });
-    if (!response.ok) throw new Error(await readApiError(response, "Draft status could not be refreshed"));
+    if (!response.ok) throw new Error(await readApiError(response, t().draftStatusRefreshFailed));
     applyClosedDraft(await response.json());
   };
 
@@ -150,7 +158,7 @@ export const createMailDraftSession = (options: {
         param: { mailboxId: options.mailboxId, draftId: currentDraft.id },
         json: { token: currentLease.token },
       });
-      if (!response.ok) throw new Error(await readApiError(response, "Could not transfer draft editing"));
+      if (!response.ok) throw new Error(await readApiError(response, t().draftEditingTransferFailed));
       setLease(null);
     } catch (error) {
       startHeartbeat();
@@ -194,11 +202,7 @@ export const createMailDraftSession = (options: {
     if (options.isDisposed()) return;
     setLeaseConflict({ lease: current, reason });
     setStatus("readonly");
-    setStatusMessage(
-      current
-        ? `${current.holder.displayName} is editing this draft in another session.`
-        : "This draft is open in another editing session.",
-    );
+    setStatusMessage(current ? t().editingByNamed({ name: current.holder.displayName }) : t().draftOpenAnotherSession);
   };
 
   const startHeartbeat = () => {
@@ -227,7 +231,7 @@ export const createMailDraftSession = (options: {
       if (heartbeat.kind === "unavailable") {
         setLeaseConflict(null);
         setStatus("readonly");
-        setStatusMessage("Connection lost. Retry to resume editing.");
+        setStatusMessage(t().connectionLost);
         return;
       }
       if (heartbeat.kind === "rejected") {
@@ -258,7 +262,7 @@ export const createMailDraftSession = (options: {
       } else {
         setLeaseConflict(null);
         setStatus("error");
-        setStatusMessage(await readApiError(response, "Draft editing could not be started"));
+        setStatusMessage(await readApiError(response, t().editingStartFailed));
       }
       return null;
     }
@@ -286,7 +290,7 @@ export const createMailDraftSession = (options: {
   const initialize = async (): Promise<MailDraft | null> => {
     if (!options.hasVerifiedIdentity()) {
       setStatus("readonly");
-      setStatusMessage("Configure and verify an identity before composing mail.");
+      setStatusMessage(t().configureVerifiedIdentity);
       return null;
     }
     const currentDraft = draft();
@@ -319,7 +323,7 @@ export const createMailDraftSession = (options: {
       .catch((error: unknown) => {
         if (!options.isDisposed()) {
           setStatus("error");
-          setStatusMessage(error instanceof Error ? error.message : "Draft could not be prepared");
+          setStatusMessage(error instanceof Error ? error.message : t().draftPrepareFailed);
         }
         return null;
       })
@@ -336,7 +340,7 @@ export const createMailDraftSession = (options: {
       if (!currentDraft && options.initialSeed) {
         const nextContent = options.content();
         setStatus("saving");
-        setStatusMessage("Saving draft...");
+        setStatusMessage(t().savingDraft);
         const response = await apiClient.mailboxes[":mailboxId"]["draft-seeds"].materialize.$post({
           param: { mailboxId: options.mailboxId },
           json: {
@@ -348,7 +352,7 @@ export const createMailDraftSession = (options: {
         if (!response.ok) {
           if (options.isDisposed()) return null;
           setStatus("error");
-          setStatusMessage(await readApiError(response, "Draft could not be saved"));
+          setStatusMessage(await readApiError(response, t().draftSaveFailed));
           return null;
         }
         currentDraft = await response.json();
@@ -374,7 +378,7 @@ export const createMailDraftSession = (options: {
       const serialized = JSON.stringify(nextContent);
       if (serialized === lastSavedContent) return currentDraft;
       setStatus("saving");
-      setStatusMessage("Saving draft...");
+      setStatusMessage(t().savingDraft);
       const response = await apiClient.mailboxes[":mailboxId"].drafts[":draftId"].$put({
         param: { mailboxId: options.mailboxId, draftId: currentDraft.id },
         json: { expectedRevision: currentDraft.revision, draft: nextContent },
@@ -382,7 +386,7 @@ export const createMailDraftSession = (options: {
       if (!response.ok) {
         if (options.isDisposed()) return null;
         if (lifecycleTransition()) return null;
-        const message = await readApiError(response, "Draft could not be saved");
+        const message = await readApiError(response, t().draftSaveFailed);
         setStatus("error");
         setStatusMessage(message);
         if (message.includes("recovery copy")) {
@@ -447,7 +451,7 @@ export const createMailDraftSession = (options: {
     if (heartbeat.kind === "unavailable") {
       setLeaseConflict(null);
       setStatus("readonly");
-      setStatusMessage("Connection lost. Retry to resume editing.");
+      setStatusMessage(t().connectionLost);
       return;
     }
     setLease(null);
@@ -496,7 +500,7 @@ export const createMailDraftSession = (options: {
     window.addEventListener("pageshow", onPageShow);
     if (!options.hasVerifiedIdentity()) {
       setStatus("readonly");
-      setStatusMessage("Configure and verify an identity before composing mail.");
+      setStatusMessage(t().configureVerifiedIdentity);
       return;
     }
     if (options.initialSeed) {

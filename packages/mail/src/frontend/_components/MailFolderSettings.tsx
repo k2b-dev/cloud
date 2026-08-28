@@ -13,6 +13,7 @@ import {
   Switch,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
@@ -20,14 +21,7 @@ import type { ConfigurableFolderRole, MailCommand } from "../../contracts";
 import type { MailAdminFolderView } from "../../service/folders";
 import { readApiError } from "./api-response";
 import { buildMailFolderTree, flattenMailFolderTree } from "./mail-folder-tree";
-
-const FOLDER_ROLES: Array<{ id: ConfigurableFolderRole; label: string; icon: string }> = [
-  { id: "sent", label: "Sent", icon: "ti ti-send" },
-  { id: "drafts", label: "Drafts", icon: "ti ti-file-pencil" },
-  { id: "archive", label: "Archive", icon: "ti ti-archive" },
-  { id: "trash", label: "Trash", icon: "ti ti-trash" },
-  { id: "junk", label: "Junk", icon: "ti ti-alert-octagon" },
-];
+import { mailSettingsMessages } from "./mail-settings-messages";
 
 type FolderSelectOption = {
   id: string;
@@ -67,7 +61,14 @@ const wait = (milliseconds: number, signal: AbortSignal): Promise<void> =>
     signal.addEventListener("abort", onAbort, { once: true });
   });
 
-const waitForFolderCommand = async (mailboxId: string, command: MailCommand, signal: AbortSignal): Promise<MailCommand> => {
+type Messages = ReturnType<typeof mailSettingsMessages.resolve>["t"];
+
+const waitForFolderCommand = async (
+  mailboxId: string,
+  command: MailCommand,
+  signal: AbortSignal,
+  messages: Messages,
+): Promise<MailCommand> => {
   let current = command;
   for (let attempt = 0; attempt < 90 && !terminalCommandStates.has(current.state); attempt += 1) {
     await wait(Math.min(1_000, 200 + attempt * 50), signal);
@@ -75,14 +76,14 @@ const waitForFolderCommand = async (mailboxId: string, command: MailCommand, sig
       { param: { mailboxId, commandId: command.id } },
       { init: { signal } },
     );
-    if (!response.ok) throw new Error(await readApiError(response, "Could not verify the folder operation"));
+    if (!response.ok) throw new Error(await readApiError(response, messages.failedVerifyFolderOperation));
     current = await response.json();
   }
   if (!terminalCommandStates.has(current.state)) {
-    throw new Error("The provider is still processing this folder operation. Check the folder status again shortly.");
+    throw new Error(messages.folderOperationPending);
   }
   if (current.state !== "confirmed" && current.state !== "reconciled") {
-    throw new Error(current.lastError || "The provider could not complete the folder operation.");
+    throw new Error(current.lastError || messages.folderOperationFailed);
   }
   return current;
 };
@@ -96,6 +97,7 @@ const runFolderCommand = async (
     | { kind: "set_folder_subscription"; folderId: string; subscribed: boolean },
   signal: AbortSignal,
   idempotencyKey: string,
+  messages: Messages,
 ): Promise<MailCommand> => {
   const response = await apiClient.mailboxes[":mailboxId"].commands.$post(
     {
@@ -104,8 +106,8 @@ const runFolderCommand = async (
     },
     { init: { signal } },
   );
-  if (!response.ok) throw new Error(await readApiError(response, "Could not start the folder operation"));
-  return waitForFolderCommand(mailboxId, await response.json(), signal);
+  if (!response.ok) throw new Error(await readApiError(response, messages.failedStartFolderOperation));
+  return waitForFolderCommand(mailboxId, await response.json(), signal, messages);
 };
 
 function FolderEditor(props: {
@@ -116,6 +118,8 @@ function FolderEditor(props: {
   close: () => void;
   onSaved: () => Promise<void>;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const create = () => props.folder === null;
   const [name, setName] = createSignal(props.folder?.name ?? "");
   const [parentFolderId, setParentFolderId] = createSignal(props.parentFolderId);
@@ -130,8 +134,8 @@ function FolderEditor(props: {
   const parentOptions = createMemo<FolderSelectOption[]>(() => [
     {
       id: TOP_LEVEL_FOLDER_ID,
-      label: "Top level",
-      description: "Create alongside the mailbox's top-level folders.",
+      label: messages().topLevel,
+      description: messages().topLevelDescription,
       icon: "ti ti-folders",
     },
     ...flattenMailFolderTree(buildMailFolderTree(props.folders))
@@ -139,8 +143,8 @@ function FolderEditor(props: {
       .map(({ folder, depth }) => ({
         id: folder.id,
         label: `${"- ".repeat(depth)}${folder.name}`,
-        description: `${folder.namespaceKinds.includes("shared") ? "Shared folder" : "Mailbox folder"}${
-          folder.showInSidebar ? "" : " - hidden in sidebar"
+        description: `${folder.namespaceKinds.includes("shared") ? messages().sharedFolder : messages().mailboxFolder}${
+          folder.showInSidebar ? "" : ` · ${messages().hiddenInSidebar}`
         }`,
         icon: folder.namespaceKinds.includes("shared") ? "ti ti-users" : "ti ti-folder",
       })),
@@ -163,6 +167,7 @@ function FolderEditor(props: {
           },
           context.abortSignal,
           context.idempotencyKey,
+          messages(),
         );
       } else {
         await runFolderCommand(
@@ -170,6 +175,7 @@ function FolderEditor(props: {
           { kind: "rename_folder", folderId: props.folder!.id, name: name().trim() },
           context.abortSignal,
           context.idempotencyKey,
+          messages(),
         );
       }
     },
@@ -178,12 +184,12 @@ function FolderEditor(props: {
       void props
         .onSaved()
         .then(() => {
-          toast.success(create() ? "Folder created" : "Folder renamed");
+          toast.success(create() ? messages().folderCreated : messages().folderRenamed);
           props.close();
         })
         .catch((error) =>
-          prompts.error(error instanceof Error ? error.message : "The folder list could not be refreshed", {
-            title: `${create() ? "Folder created" : "Folder renamed"}, refresh failed`,
+          prompts.error(error instanceof Error ? error.message : messages().folderListRefreshFailed, {
+            title: create() ? messages().folderCreatedRefreshFailed : messages().folderRenamedRefreshFailed,
           }),
         )
         .finally(() => setReconciling(false));
@@ -195,44 +201,44 @@ function FolderEditor(props: {
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title={create() ? "New folder" : "Rename folder"}
-        subtitle={create() ? "Create a folder on the mail provider." : "Change this folder's name on the mail provider."}
+        title={create() ? messages().newFolder : messages().renameFolder}
+        subtitle={create() ? messages().createFolderSubtitle : messages().renameFolderSubtitle}
         icon={create() ? "ti ti-folder-plus" : "ti ti-edit"}
         close={() => void closeSafely()}
       />
       <PanelDialog.Body>
         <div class="flex flex-col gap-2">
-          <TextInput label="Name" value={name} onValueChange={setName} required />
+          <TextInput label={messages().name} value={name} onValueChange={setName} required />
           <Show when={create()}>
             <Select
-              label="Location"
-              description="Choose where the new folder belongs."
+              label={messages().location}
+              description={messages().locationDescription}
               value={() => parentFolderId() ?? TOP_LEVEL_FOLDER_ID}
               selectedLabel={selectedParentLabel}
               fetchData={fetchParentOptions}
               fetchDebounceMs={0}
-              placeholder="Search folders..."
+              placeholder={messages().searchFolders}
               icon="ti ti-folder"
               activeIcon="ti ti-search"
               onValueChange={(value) => setParentFolderId(value === TOP_LEVEL_FOLDER_ID ? null : value)}
             />
             <div class="flex flex-col gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-3 py-3">
-              <Switch label="Show in mailbox navigation" value={showInSidebar} onValueChange={setShowInSidebar} />
-              <Switch label="Subscribe on provider" value={subscribe} onValueChange={setSubscribe} />
+              <Switch label={messages().showInMailboxNavigation} value={showInSidebar} onValueChange={setShowInSidebar} />
+              <Switch label={messages().subscribeOnProvider} value={subscribe} onValueChange={setSubscribe} />
             </div>
           </Show>
         </div>
       </PanelDialog.Body>
       <PanelDialog.Footer>
         <Button variant="ghost" size="sm" type="button" onClick={() => void closeSafely()}>
-          Cancel
+          {messages().cancel}
         </Button>
         <Button size="sm" type="button" disabled={save.loading() || reconciling() || !name().trim()} onClick={() => save.mutate()}>
           <i
             class={`ti ${save.loading() || reconciling() ? "ti-loader-2 animate-spin" : create() ? "ti-folder-plus" : "ti-device-floppy"}`}
             aria-hidden="true"
           />
-          {create() ? "Create folder" : "Save name"}
+          {create() ? messages().createFolder : messages().saveName}
         </Button>
       </PanelDialog.Footer>
     </PanelDialog>
@@ -249,6 +255,15 @@ export default function MailFolderSettings(props: {
   onFolderRoleChange: (role: ConfigurableFolderRole, folderId: string) => void;
   folderRolePending: boolean;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
+  const folderRoles = createMemo<Array<{ id: ConfigurableFolderRole; label: string; icon: string }>>(() => [
+    { id: "sent", label: messages().sent, icon: "ti ti-send" },
+    { id: "drafts", label: messages().drafts, icon: "ti ti-file-pencil" },
+    { id: "archive", label: messages().archive, icon: "ti ti-archive" },
+    { id: "trash", label: messages().trash, icon: "ti ti-trash" },
+    { id: "junk", label: messages().junk, icon: "ti ti-alert-octagon" },
+  ]);
   const [pendingFolderId, setPendingFolderId] = createSignal<string | null>(null);
   const rows = createMemo(() => flattenMailFolderTree(buildMailFolderTree(props.folders)));
   const roleFolderOptions = createMemo<FolderSelectOption[]>(() =>
@@ -257,7 +272,7 @@ export default function MailFolderSettings(props: {
       .map((folder) => ({
         id: folder.id,
         label: folder.name,
-        description: folder.namespaceKinds.includes("shared") ? "Shared folder" : "Mailbox folder",
+        description: folder.namespaceKinds.includes("shared") ? messages().sharedFolder : messages().mailboxFolder,
         icon: "ti ti-folder",
       })),
   );
@@ -293,7 +308,7 @@ export default function MailFolderSettings(props: {
           },
           { init: { signal: abortSignal } },
         );
-        if (!response.ok) throw new Error(await readApiError(response, "Could not update folder visibility"));
+        if (!response.ok) throw new Error(await readApiError(response, messages().failedUpdateFolderVisibility));
         return response.json();
       } finally {
         setPendingFolderId(null);
@@ -321,14 +336,16 @@ export default function MailFolderSettings(props: {
             { kind: "set_folder_subscription", folderId: folder.id, subscribed: folder.subscribed !== true },
             context.abortSignal,
             context.idempotencyKey,
+            messages(),
           );
           return { changed: true, action };
         }
         if (action === "dismiss") {
-          const confirmed = await prompts.confirm(
-            "This removes the unavailable folder and unavailable subfolders from Cloud Mail. It does not delete anything from the mail provider or remove mirrored messages. If the provider exposes the folder again, it returns automatically.",
-            { title: `Remove ${folder.name} from Mail?`, confirmText: "Remove from Mail", variant: "danger" },
-          );
+          const confirmed = await prompts.confirm(messages().removeUnavailableFolderDescription, {
+            title: messages().removeFolderFromMail({ name: folder.name }),
+            confirmText: messages().removeFromMail,
+            variant: "danger",
+          });
           if (!confirmed || context.abortSignal.aborted) return { changed: false, action };
           const response = await apiClient.mailboxes[":mailboxId"].folders[":folderId"].$delete(
             {
@@ -336,19 +353,21 @@ export default function MailFolderSettings(props: {
             },
             { init: { signal: context.abortSignal } },
           );
-          if (!response.ok) throw new Error(await readApiError(response, "Could not remove the unavailable folder"));
+          if (!response.ok) throw new Error(await readApiError(response, messages().failedRemoveUnavailableFolder));
           return { changed: true, action };
         }
-        const confirmed = await prompts.confirm(
-          "Only an empty folder without subfolders can be deleted. This removes it from the mail provider for everyone who can access it.",
-          { title: `Delete ${folder.name}?`, confirmText: "Delete folder", variant: "danger" },
-        );
+        const confirmed = await prompts.confirm(messages().deleteProviderFolderDescription, {
+          title: messages().deleteNamedFolder({ name: folder.name }),
+          confirmText: messages().deleteFolder,
+          variant: "danger",
+        });
         if (!confirmed || context.abortSignal.aborted) return { changed: false, action };
         await runFolderCommand(
           props.mailboxId,
           { kind: "delete_folder", folderId: folder.id },
           context.abortSignal,
           context.idempotencyKey,
+          messages(),
         );
         return { changed: true, action };
       } finally {
@@ -361,15 +380,15 @@ export default function MailFolderSettings(props: {
         .then(() =>
           toast.success(
             action === "delete"
-              ? "Folder deleted"
+              ? messages().folderDeleted
               : action === "dismiss"
-                ? "Unavailable folder removed from Mail"
-                : "Provider subscription updated",
+                ? messages().unavailableFolderRemoved
+                : messages().providerSubscriptionUpdated,
           ),
         )
         .catch((error) =>
-          prompts.error(error instanceof Error ? error.message : "Folders could not be refreshed", {
-            title: "Folder updated, refresh failed",
+          prompts.error(error instanceof Error ? error.message : messages().foldersRefreshFailed, {
+            title: messages().folderUpdatedRefreshFailed,
           }),
         );
     },
@@ -385,12 +404,10 @@ export default function MailFolderSettings(props: {
   return (
     <div class="flex flex-col gap-2">
       <div class="flex items-center justify-between gap-3">
-        <p class="text-xs text-dimmed">
-          Choose what appears in Mail. Visibility changes apply immediately; provider subscriptions are managed separately.
-        </p>
+        <p class="text-xs text-dimmed">{messages().folderVisibilityDescription}</p>
         <Button variant="secondary" size="sm" type="button" class="shrink-0" disabled={busy()} onClick={() => void openFolderEditor(null)}>
           <i class="ti ti-folder-plus" aria-hidden="true" />
-          New folder
+          {messages().newFolder}
         </Button>
       </div>
 
@@ -398,25 +415,25 @@ export default function MailFolderSettings(props: {
         <summary class="focus-ui flex cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--ui-radius-control)] px-3 py-2.5 text-sm font-medium text-primary">
           <span class="flex min-w-0 items-center gap-2">
             <i class="ti ti-folders text-secondary" aria-hidden="true" />
-            Special folder mappings
+            {messages().specialFolderMappings}
           </span>
           <i class="ti ti-chevron-down text-secondary transition-transform group-open:rotate-180" aria-hidden="true" />
         </summary>
         <div class="flex flex-col gap-2 px-3 pb-3">
-          <p class="text-xs text-dimmed">Choose where Mail stores sent messages, drafts, archived mail, trash, and junk.</p>
-          <For each={FOLDER_ROLES}>
+          <p class="text-xs text-dimmed">{messages().specialFolderMappingsDescription}</p>
+          <For each={folderRoles()}>
             {(role) => {
               const current = () => props.folders.find((folder) => folder.configuredRole === role.id || folder.role === role.id);
               return (
                 <Select
                   label={role.label}
-                  description={`Provider folder used for ${role.label.toLowerCase()} operations.`}
+                  description={messages().folderRoleDescription({ role: role.label })}
                   icon={role.icon}
                   value={() => current()?.id ?? null}
                   selectedLabel={() => current()?.name}
                   fetchData={fetchRoleFolderOptions}
                   fetchDebounceMs={0}
-                  placeholder={`Search ${role.label.toLowerCase()} folders...`}
+                  placeholder={messages().searchRoleFolders({ role: role.label })}
                   activeIcon="ti ti-search"
                   clearable
                   disabled={props.folderRolePending || busy()}
@@ -432,7 +449,11 @@ export default function MailFolderSettings(props: {
         <Show
           when={rows().length > 0}
           fallback={
-            <Placeholder icon="ti ti-folder-off" title="No folders discovered" description="Connect and rediscover the mailbox first." />
+            <Placeholder
+              icon="ti ti-folder-off"
+              title={messages().noFoldersDiscovered}
+              description={messages().noFoldersDiscoveredDescription}
+            />
           }
         >
           <For each={rows()}>
@@ -441,13 +462,15 @@ export default function MailFolderSettings(props: {
               const canManageSidebarVisibility = () => folder.selectable || folder.subscribed !== false;
               const menuItems = () => [
                 ...(folder.canCreateChildren
-                  ? [{ label: "New subfolder", icon: "ti ti-folder-plus", action: () => void openFolderEditor(null, folder.id) }]
+                  ? [{ label: messages().newSubfolder, icon: "ti ti-folder-plus", action: () => void openFolderEditor(null, folder.id) }]
                   : []),
-                ...(folder.canRename ? [{ label: "Rename", icon: "ti ti-edit", action: () => void openFolderEditor(folder) }] : []),
+                ...(folder.canRename
+                  ? [{ label: messages().rename, icon: "ti ti-edit", action: () => void openFolderEditor(folder) }]
+                  : []),
                 ...(folder.canManageSubscription
                   ? [
                       {
-                        label: folder.subscribed ? "Unsubscribe on provider" : "Subscribe on provider",
+                        label: folder.subscribed ? messages().unsubscribeOnProvider : messages().subscribeOnProvider,
                         icon: folder.subscribed ? "ti ti-bookmark-off" : "ti ti-bookmark",
                         action: () => folderMutation.mutate({ folder, action: "subscription" }),
                       },
@@ -456,7 +479,7 @@ export default function MailFolderSettings(props: {
                 ...(folder.discoveryState === "active" && canManageSidebarVisibility()
                   ? [
                       {
-                        label: folder.showInSidebar ? "Hide from Mail" : "Show in Mail",
+                        label: folder.showInSidebar ? messages().hideFromMail : messages().showInMail,
                         icon: folder.showInSidebar ? "ti ti-eye-off" : "ti ti-eye",
                         action: () => updateVisibility.mutate({ folderId: folder.id, showInSidebar: !folder.showInSidebar }),
                       },
@@ -465,7 +488,7 @@ export default function MailFolderSettings(props: {
                 ...(folder.discoveryState === "missing"
                   ? [
                       {
-                        label: "Remove from Mail",
+                        label: messages().removeFromMail,
                         icon: "ti ti-folder-off",
                         variant: "danger" as const,
                         action: () => folderMutation.mutate({ folder, action: "dismiss" }),
@@ -475,7 +498,7 @@ export default function MailFolderSettings(props: {
                 ...(folder.canDelete
                   ? [
                       {
-                        label: "Delete folder",
+                        label: messages().deleteFolder,
                         icon: "ti ti-trash",
                         variant: "danger" as const,
                         action: () => folderMutation.mutate({ folder, action: "delete" }),
@@ -485,15 +508,15 @@ export default function MailFolderSettings(props: {
               ];
               const status = () => {
                 if (folder.discoveryState === "missing") {
-                  return { label: "Unavailable", icon: "ti ti-folder-off", tone: "warning" as const };
+                  return { label: messages().unavailable, icon: "ti ti-folder-off", tone: "warning" as const };
                 }
                 if (folder.discoveryState === "ambiguous") {
-                  return { label: "Needs review", icon: "ti ti-alert-triangle", tone: "warning" as const };
+                  return { label: messages().needsReview, icon: "ti ti-alert-triangle", tone: "warning" as const };
                 }
                 if (!canManageSidebarVisibility()) return null;
-                if (!folder.showInSidebar) return { label: "Hidden", icon: "ti ti-eye-off", tone: "neutral" as const };
-                if (hiddenByParent) return { label: "Parent hidden", icon: "ti ti-eye-off", tone: "neutral" as const };
-                return { label: "Visible", icon: "ti ti-eye", tone: "neutral" as const };
+                if (!folder.showInSidebar) return { label: messages().hidden, icon: "ti ti-eye-off", tone: "neutral" as const };
+                if (hiddenByParent) return { label: messages().parentHidden, icon: "ti ti-eye-off", tone: "neutral" as const };
+                return { label: messages().visible, icon: "ti ti-eye", tone: "neutral" as const };
               };
               return (
                 <div class="group flex min-h-10 items-center gap-2 rounded-[var(--ui-radius-control)] px-2 py-1.5 hover:bg-[var(--ui-hover)]">
@@ -503,16 +526,16 @@ export default function MailFolderSettings(props: {
                       <span class="block truncate text-sm font-medium text-primary">{folder.name}</span>
                       <span class="flex flex-wrap items-center gap-1 text-xs text-dimmed">
                         <Show when={shared()}>
-                          <span>Shared by provider</span>
+                          <span>{messages().sharedByProvider}</span>
                         </Show>
                         <Show when={folder.discoveryState !== "active"}>
-                          <span>{folder.discoveryState === "missing" ? "Unavailable" : "Needs review"}</span>
+                          <span>{folder.discoveryState === "missing" ? messages().unavailable : messages().needsReview}</span>
                         </Show>
                         <Show when={folder.subscribed === false}>
-                          <span>Not subscribed</span>
+                          <span>{messages().notSubscribed}</span>
                         </Show>
                         <Show when={!folder.selectable}>
-                          <span>Folder group</span>
+                          <span>{messages().folderGroup}</span>
                         </Show>
                       </span>
                     </span>
@@ -524,7 +547,13 @@ export default function MailFolderSettings(props: {
                   </Show>
                   <Show when={menuItems().length > 0}>
                     <Dropdown.Root position="bottom-left" items={menuItems()}>
-                      <Dropdown.Trigger iconOnly type="button" variant="ghost" disabled={busy()} label={`Actions for ${folder.name}`}>
+                      <Dropdown.Trigger
+                        iconOnly
+                        type="button"
+                        variant="ghost"
+                        disabled={busy()}
+                        label={messages().folderActions({ name: folder.name })}
+                      >
                         <i
                           class={busy() && pendingFolderId() === folder.id ? "ti ti-loader-2 animate-spin" : "ti ti-dots"}
                           aria-hidden="true"

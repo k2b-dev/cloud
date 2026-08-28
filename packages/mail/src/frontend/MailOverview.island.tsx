@@ -1,7 +1,7 @@
 import { listenPopState, navigate, navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { detailPanel, mutation as mutations, query as queries } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, ButtonLink, IconButton, Placeholder, prompts, Tabs, toast } from "@k2b/ui";
+import { AppWorkspace, Button, ButtonLink, IconButton, Placeholder, prompts, Tabs, toast, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "../api/client";
 import type { DeletedMailbox, DeletedMailboxPage, Mailbox, MailFocusPage, MailFocusView } from "../contracts";
@@ -10,8 +10,9 @@ import { readApiError } from "./_components/api-response";
 import { openMailboxHealthDialog } from "./_components/MailboxHealthDialog";
 import { openMailboxSettingsDialog } from "./_components/MailboxSettingsDialog";
 import MailDetailsPanel from "./_components/MailDetailsPanel";
-import { mailboxOverviewSubtitle } from "./_components/mail-overview-presentation";
+import { mailboxOverviewSubtitle } from "./_components/mail-health-presentation";
 import { readMailWorkspacePreferences, writeMailWorkspacePreferences } from "./_components/mail-workspace-preferences";
+import { mailOverviewMessages } from "./mail-overview-messages";
 import { assertCursorProgress } from "./pagination";
 
 type MailboxWithPermission = Mailbox & { permission: "read" | "write" | "admin"; receivingAddress: string | null };
@@ -25,30 +26,14 @@ type MailboxOverviewItem = {
   needsAction: number;
 };
 
-const viewLabels: Record<MailFocusView, string> = {
-  mine: "For me",
-  unassigned: "Unassigned",
-  waiting: "Waiting",
-  all: "All active",
-};
-
-const viewDescriptions: Record<MailFocusView, (count: number) => string> = {
-  mine: (count) => `${count} conversation${count === 1 ? "" : "s"} assigned to you`,
-  unassigned: (count) => `${count} conversation${count === 1 ? "" : "s"} without an assignee`,
-  waiting: (count) => `${count} conversation${count === 1 ? "" : "s"} waiting for a reply`,
-  all: (count) => `${count} active conversation${count === 1 ? "" : "s"}`,
-};
-
-const viewEyebrows: Record<MailFocusView, string> = {
-  mine: "Assigned to you",
-  unassigned: "Unassigned",
-  waiting: "Waiting for reply",
-  all: "All active",
-};
-
-const primaryParticipant = (summary: string): string => summary.split(/\s[·,]\s/u)[0]?.trim() || "Unknown sender";
+const primaryParticipant = (summary: string, fallback: string): string => summary.split(/\s[·,]\s/u)[0]?.trim() || fallback;
 const participantInitials = (summary: string): string => {
-  const words = primaryParticipant(summary).split(/\s+/u).filter(Boolean);
+  const words =
+    summary
+      .split(/\s[·,]\s/u)[0]
+      ?.trim()
+      .split(/\s+/u)
+      .filter(Boolean) ?? [];
   return (
     words
       .slice(0, 2)
@@ -57,7 +42,7 @@ const participantInitials = (summary: string): string => {
   );
 };
 const avatarTone = (summary: string): string =>
-  String([...primaryParticipant(summary)].reduce((total, character) => total + character.codePointAt(0)!, 0) % 5);
+  String([...primaryParticipant(summary, "")].reduce((total, character) => total + character.codePointAt(0)!, 0) % 5);
 
 export default function MailOverview(props: {
   mailboxes: MailboxWithPermission[];
@@ -72,6 +57,14 @@ export default function MailOverview(props: {
   currentUserEmail: string | null;
   dateConfig: DateContext;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailOverviewMessages.resolve([locale()]).t);
+  const viewEyebrows = createMemo<Record<MailFocusView, string>>(() => ({
+    mine: messages().assignedToYou,
+    unassigned: messages().unassigned,
+    waiting: messages().waitingForReply,
+    all: messages().allActive,
+  }));
   const [view, setView] = createSignal<MailFocusView>(props.initialView);
   const [pinnedMailboxIds, setPinnedMailboxIds] = createSignal(props.initialPinnedMailboxIds);
   const [pinAnnouncement, setPinAnnouncement] = createSignal("");
@@ -84,7 +77,7 @@ export default function MailOverview(props: {
         { query: { view: source, limit: "50", cursor } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to load focused mail"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedLoadFocus));
       const page = await response.json();
       assertCursorProgress(cursor, page.nextCursor, "mail-focus");
       setInitialFocusError(null);
@@ -103,7 +96,7 @@ export default function MailOverview(props: {
         id: mailbox.id,
         href: `/app/mail/${mailbox.id}?view=needs_action`,
         name: mailbox.name,
-        subtitle: mailboxOverviewSubtitle(mailbox),
+        subtitle: mailboxOverviewSubtitle(mailbox, locale()),
         unread: mailboxStats.unread,
         needsAction: mailboxStats.needsAction,
       };
@@ -128,7 +121,7 @@ export default function MailOverview(props: {
         ...readMailWorkspacePreferences(document.cookie),
         pinnedMailboxIds: next,
       });
-      setPinAnnouncement(`${pinned ? "Unpinned" : "Pinned"} ${mailbox.name}`);
+      setPinAnnouncement(pinned ? messages().unpinned({ name: mailbox.name }) : messages().pinned({ name: mailbox.name }));
       return next;
     });
   };
@@ -136,7 +129,13 @@ export default function MailOverview(props: {
     const permission = props.mailboxes.find((mailbox) => mailbox.id === mailboxId)?.permission;
     return permission === "write" || permission === "admin";
   };
-  const focusDescription = () => viewDescriptions[view()](counts()[view()]);
+  const focusDescription = () => {
+    const count = counts()[view()];
+    if (view() === "mine") return messages().focusDescriptionMine({ count });
+    if (view() === "unassigned") return messages().focusDescriptionUnassigned({ count });
+    if (view() === "waiting") return messages().focusDescriptionWaiting({ count });
+    return messages().focusDescriptionAll({ count });
+  };
   const focusError = () => focusResults.error()?.message ?? initialFocusError();
   const [selection, setSelection] = createSignal<MailFocusSelection | null>(props.initialSelection);
   const [wideLayout, setWideLayout] = createSignal(false);
@@ -153,14 +152,14 @@ export default function MailOverview(props: {
         : undefined,
     enabled: detailOpen,
     load: async (source, { abortSignal }) => {
-      if (!source) throw new Error("Select a conversation to show its details");
+      if (!source) throw new Error(messages().selectConversationDetails);
       const [mailboxId, conversationId] = source.split("/");
-      if (!mailboxId || !conversationId) throw new Error("Invalid conversation selection");
+      if (!mailboxId || !conversationId) throw new Error(messages().invalidConversationSelection);
       const response = await apiClient.mailboxes[":mailboxId"]["workspace-detail"][":conversationId"].$get(
         { param: { mailboxId, conversationId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to load conversation details"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedLoadConversationDetails));
       return response.json();
     },
   });
@@ -206,7 +205,7 @@ export default function MailOverview(props: {
     initial: { source: "deleted-mailboxes", pages: [{ items: props.deletedMailboxes, nextCursor: props.initialDeletedCursor }] },
     loadPage: async (_source, { cursor, abortSignal }) => {
       const response = await apiClient.mailboxes.deleted.$get({ query: { limit: "100", cursor } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to load deleted mailboxes"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedLoadDeletedMailboxes));
       const page = await response.json();
       assertCursorProgress(cursor, page.nextCursor, "deleted-mailbox");
       return page;
@@ -222,31 +221,31 @@ export default function MailOverview(props: {
   const createMailbox = mutations.create<Mailbox | null, void>({
     mutation: async (_input, { abortSignal }) => {
       const values = await prompts.form({
-        title: "New mailbox",
+        title: messages().newMailbox,
         icon: "ti ti-mail-plus",
         fields: {
-          name: { type: "text", label: "Name", description: "The label everyone with access sees.", required: true },
+          name: { type: "text", label: messages().name, description: messages().nameDescription, required: true },
           description: {
             type: "text",
-            label: "Description",
-            description: "Optional context for collaborators.",
+            label: messages().description,
+            description: messages().descriptionDescription,
             multiline: true,
             lines: 3,
           },
         },
-        confirmText: "Create mailbox",
+        confirmText: messages().createMailbox,
       });
       if (!values || abortSignal.aborted) return null;
       const response = await apiClient.mailboxes.$post(
         { json: { name: values.name, description: values.description || null } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to create mailbox"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedCreateMailbox));
       return response.json();
     },
     onSuccess: (mailbox) => {
       if (!mailbox) return;
-      toast.success("Mailbox created");
+      toast.success(messages().mailboxCreated);
       void openMailboxSettingsDialog({ mailboxId: mailbox.id, currentUserEmail: props.currentUserEmail, initialTab: "delivery" }).then(
         (result) => navigateTo(result.deleted ? "/app/mail" : `/app/mail/${mailbox.id}`),
       );
@@ -256,19 +255,19 @@ export default function MailOverview(props: {
 
   const restoreMailbox = mutations.create<Mailbox | null, string>({
     mutation: async (mailboxId, { abortSignal }) => {
-      const confirmed = await prompts.confirm(
-        "The mailbox will return in paused state. Verify its provider before resuming synchronization.",
-        { title: "Restore mailbox", confirmText: "Restore mailbox" },
-      );
+      const confirmed = await prompts.confirm(messages().restoreWarning, {
+        title: messages().restoreMailbox,
+        confirmText: messages().restoreMailbox,
+      });
       if (!confirmed || abortSignal.aborted) return null;
       const response = await apiClient.mailboxes[":mailboxId"].restore.$post({ param: { mailboxId } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to restore mailbox"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedRestoreMailbox));
       return response.json();
     },
     onSuccess: (mailbox) => {
       if (!mailbox) return;
       void deletedResults.invalidate();
-      toast.success("Mailbox restored in paused state");
+      toast.success(messages().mailboxRestored);
       void openMailboxHealthDialog({ mailboxId: mailbox.id }).then(() => navigateTo(`/app/mail/${mailbox.id}`));
     },
     onError: (error) => prompts.error(error.message),
@@ -299,19 +298,19 @@ export default function MailOverview(props: {
   const focusPanel = () => (
     <>
       <div class="mail-focus-list-heading">
-        <span>{viewEyebrows[view()]}</span>
-        <span>Newest first</span>
+        <span>{viewEyebrows()[view()]}</span>
+        <span>{messages().newestFirst}</span>
       </div>
       <Show when={focusError()}>
         {(error) => (
           <Placeholder
             state="error"
-            title="Could not load focused mail"
+            title={messages().couldNotLoadFocus}
             description={error()}
             class="min-h-56"
             action={
               <Button variant="secondary" size="sm" onClick={retryFocus}>
-                <i class="ti ti-refresh" aria-hidden="true" /> Retry
+                <i class="ti ti-refresh" aria-hidden="true" /> {messages().retry}
               </Button>
             }
           />
@@ -320,12 +319,18 @@ export default function MailOverview(props: {
       <Show when={!focusError() && focusItems().length === 0}>
         <Placeholder
           state={focusResults.loading() ? "loading" : "empty"}
-          title={focusResults.loading() ? "Loading focused mail" : `Nothing ${viewLabels[view()].toLowerCase()}`}
-          description={
+          title={
             focusResults.loading()
-              ? "The server is collecting conversations across your mailboxes."
-              : "There are no matching active conversations."
+              ? messages().loadingFocus
+              : view() === "mine"
+                ? messages().nothingForMe
+                : view() === "unassigned"
+                  ? messages().nothingUnassigned
+                  : view() === "waiting"
+                    ? messages().nothingWaiting
+                    : messages().nothingActive
           }
+          description={focusResults.loading() ? messages().loadingFocusDescription : messages().noMatchingConversations}
           icon={focusResults.loading() ? undefined : "ti ti-circle-check"}
           class="min-h-56"
         />
@@ -350,27 +355,27 @@ export default function MailOverview(props: {
                   {participantInitials(item.participantSummary)}
                 </span>
                 <span class="mail-focus-copy">
-                  <span class="mail-focus-sender">{primaryParticipant(item.participantSummary)}</span>
+                  <span class="mail-focus-sender">{primaryParticipant(item.participantSummary, messages().unknownSender)}</span>
                   <span class={`mail-focus-subject ${item.unread ? "mail-focus-subject-unread" : ""}`}>
-                    {item.subject || "(No subject)"}
+                    {item.subject || messages().noSubject}
                   </span>
-                  <span class="mail-focus-preview">{item.preview || "No preview available"}</span>
+                  <span class="mail-focus-preview">{item.preview || messages().noPreview}</span>
                   <span class="mail-focus-meta">
                     <span>
                       <i class="ti ti-inbox" aria-hidden="true" /> {item.mailboxName}
                     </span>
                     <span class={item.workStatus === "waiting" ? "mail-focus-status-waiting" : "mail-focus-status-action"}>
                       <i class={item.workStatus === "waiting" ? "ti ti-clock" : "ti ti-message-exclamation"} aria-hidden="true" />
-                      {item.workStatus === "waiting" ? "Waiting" : "Needs action"}
+                      {item.workStatus === "waiting" ? messages().waiting : messages().needsAction}
                     </span>
                     <Show when={item.flagged}>
                       <span>
-                        <i class="ti ti-flag-filled" aria-hidden="true" /> Flagged
+                        <i class="ti ti-flag-filled" aria-hidden="true" /> {messages().flagged}
                       </span>
                     </Show>
                     <Show when={item.hasAttachments}>
                       <span>
-                        <i class="ti ti-paperclip" aria-hidden="true" /> Attachment
+                        <i class="ti ti-paperclip" aria-hidden="true" /> {messages().attachment}
                       </span>
                     </Show>
                   </span>
@@ -394,7 +399,8 @@ export default function MailOverview(props: {
               disabled={focusResults.loadingMore()}
               onClick={() => void focusResults.loadMore()}
             >
-              <i class={focusResults.loadingMore() ? "ti ti-loader-2 animate-spin" : "ti ti-chevron-down"} aria-hidden="true" /> Load more
+              <i class={focusResults.loadingMore() ? "ti ti-loader-2 animate-spin" : "ti ti-chevron-down"} aria-hidden="true" />{" "}
+              {messages().loadMore}
             </Button>
           </Show>
         </div>
@@ -410,14 +416,14 @@ export default function MailOverview(props: {
           <header class="mail-focus-mailboxes">
             <div class="mail-focus-section-heading">
               <div>
-                <h2>Mailboxes</h2>
-                <p>Open folders, search, and settings.</p>
+                <h2>{messages().mailboxes}</h2>
+                <p>{messages().mailboxesDescription}</p>
               </div>
               <ButtonLink href="/app/mail/compose" size="sm" class="mail-compose-action">
-                <i class="ti ti-pencil" aria-hidden="true" /> Compose
+                <i class="ti ti-pencil" aria-hidden="true" /> {messages().compose}
               </ButtonLink>
             </div>
-            <nav class="mail-focus-mailbox-list" aria-label="Mailboxes">
+            <nav class="mail-focus-mailbox-list" aria-label={messages().mailboxes}>
               <For each={orderedMailboxOverviewItems()}>
                 {(mailbox) => {
                   const pinned = () => mailboxIsPinned(mailbox.id);
@@ -434,13 +440,13 @@ export default function MailOverview(props: {
                         <span class="mail-focus-mailbox-copy">
                           <span class="mail-focus-mailbox-name">{mailbox.name}</span>
                           <span class="mail-focus-mailbox-counts">
-                            <span>{mailbox.unread} unread</span>
-                            <span>{mailbox.needsAction} need action</span>
+                            <span>{messages().unreadCount({ count: mailbox.unread })}</span>
+                            <span>{messages().needsActionCount({ count: mailbox.needsAction })}</span>
                           </span>
                         </span>
                       </ButtonLink>
                       <IconButton
-                        label={`${pinned() ? "Unpin" : "Pin"} ${mailbox.name}`}
+                        label={pinned() ? messages().unpinMailbox({ name: mailbox.name }) : messages().pinMailbox({ name: mailbox.name })}
                         size="xs"
                         variant="text"
                         class="mail-focus-mailbox-pin"
@@ -458,28 +464,28 @@ export default function MailOverview(props: {
                 size="sm"
                 class="mail-focus-new-mailbox-button"
                 loading={createMailbox.loading()}
-                loadingLabel="Creating mailbox"
+                loadingLabel={messages().creatingMailbox}
                 onClick={() => createMailbox.mutate()}
               >
-                <i class="ti ti-mail-plus app-accent-text" aria-hidden="true" /> New mailbox
+                <i class="ti ti-mail-plus app-accent-text" aria-hidden="true" /> {messages().newMailbox}
               </Button>
             </nav>
             <span class="sr-only" aria-live="polite">
               {pinAnnouncement()}
             </span>
             <Show when={deletedMailboxes().length > 0}>
-              <div class="mail-focus-deleted" role="group" aria-label="Recently deleted mailboxes">
-                <span>Recently deleted</span>
+              <div class="mail-focus-deleted" role="group" aria-label={messages().recentlyDeletedMailboxes}>
+                <span>{messages().recentlyDeleted}</span>
                 <For each={deletedMailboxes()}>
                   {(mailbox) => (
                     <Button
                       variant="ghost"
                       size="xs"
                       loading={restoreMailbox.loading()}
-                      loadingLabel={`Restoring ${mailbox.name}`}
+                      loadingLabel={messages().restoringMailbox({ name: mailbox.name })}
                       onClick={() => restoreMailbox.mutate(mailbox.id)}
                     >
-                      <i class="ti ti-restore" aria-hidden="true" /> Restore {mailbox.name}
+                      <i class="ti ti-restore" aria-hidden="true" /> {messages().restoreNamedMailbox({ name: mailbox.name })}
                     </Button>
                   )}
                 </For>
@@ -490,16 +496,16 @@ export default function MailOverview(props: {
           <section class="mail-focus-panel" aria-labelledby="mail-focus-title">
             <div class="mail-focus-section-heading">
               <div>
-                <h2 id="mail-focus-title">Focus</h2>
+                <h2 id="mail-focus-title">{messages().focus}</h2>
                 <p>{focusDescription()}</p>
               </div>
             </div>
-            <Tabs<MailFocusView> ariaLabel="Mail focus view" value={view} onValueChange={selectView}>
+            <Tabs<MailFocusView> ariaLabel={messages().focusView} value={view} onValueChange={selectView}>
               <Tabs.Item
                 value="mine"
                 label={
                   <>
-                    For me <span class="mail-focus-tab-count">{counts().mine}</span>
+                    {messages().forMe} <span class="mail-focus-tab-count">{counts().mine}</span>
                   </>
                 }
               >
@@ -509,7 +515,7 @@ export default function MailOverview(props: {
                 value="unassigned"
                 label={
                   <>
-                    Unassigned <span class="mail-focus-tab-count">{counts().unassigned}</span>
+                    {messages().unassigned} <span class="mail-focus-tab-count">{counts().unassigned}</span>
                   </>
                 }
               >
@@ -519,7 +525,7 @@ export default function MailOverview(props: {
                 value="waiting"
                 label={
                   <>
-                    Waiting <span class="mail-focus-tab-count">{counts().waiting}</span>
+                    {messages().waiting} <span class="mail-focus-tab-count">{counts().waiting}</span>
                   </>
                 }
               >
@@ -529,7 +535,7 @@ export default function MailOverview(props: {
                 value="all"
                 label={
                   <>
-                    All active <span class="mail-focus-tab-count">{counts().all}</span>
+                    {messages().allActive} <span class="mail-focus-tab-count">{counts().all}</span>
                   </>
                 }
               >
@@ -545,8 +551,8 @@ export default function MailOverview(props: {
             fallback={
               <Placeholder
                 state="empty"
-                title="Select a conversation"
-                description="Conversation context and team notes will appear here."
+                title={messages().selectConversation}
+                description={messages().selectConversationDescription}
                 icon="ti ti-message-circle"
                 class="h-full"
               />
@@ -558,13 +564,13 @@ export default function MailOverview(props: {
                 fallback={
                   <Placeholder
                     state={detailResult.error() ? "error" : "loading"}
-                    title={detailResult.error() ? "Could not load conversation details" : "Loading conversation details"}
+                    title={detailResult.error() ? messages().couldNotLoadConversationDetails : messages().loadingConversationDetails}
                     description={detailResult.error()?.message}
                     class="h-full"
                     action={
                       detailResult.error() ? (
                         <Button variant="secondary" size="sm" onClick={() => void detailResult.refresh()}>
-                          <i class="ti ti-refresh" aria-hidden="true" /> Retry
+                          <i class="ti ti-refresh" aria-hidden="true" /> {messages().retry}
                         </Button>
                       ) : undefined
                     }
@@ -577,8 +583,8 @@ export default function MailOverview(props: {
                     fallback={
                       <Placeholder
                         state="error"
-                        title="Conversation details are unavailable"
-                        description={detail().collaborationError ?? "Try refreshing this conversation."}
+                        title={messages().conversationDetailsUnavailable}
+                        description={detail().collaborationError ?? messages().refreshConversation}
                         class="h-full"
                       />
                     }

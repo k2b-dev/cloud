@@ -137,6 +137,23 @@ describe("mailHelp", () => {
     expect(mailHelp.getMarkdown("mail-troubleshooting")).toContain("Attachment extraction never blocks receiving");
   });
 
+  test("translates every article to German with matching metadata and locale fallback", () => {
+    const english = mailHelp.documentsByLocale?.en ?? [];
+    const german = mailHelp.documentsByLocale?.de ?? [];
+
+    expect(german.map((document) => document.id)).toEqual(english.map((document) => document.id));
+    for (const document of german) {
+      const base = english.find((candidate) => candidate.id === document.id);
+      expect(base).toBeDefined();
+      expect(document.icon).toBe(base!.icon!);
+      expect(document.order).toBe(base!.order);
+    }
+
+    expect(mailHelp.getMarkdown("mail-start", "de-CH")).toContain("Mail spiegelt E-Mails");
+    expect(mailHelp.getMarkdown("mail-workflows", "de")).toContain("Mail-Workflow-YAML");
+    expect(mailHelp.getMarkdown("mail-start", "fr")).toBe(mailHelp.getMarkdown("mail-start")!);
+  });
+
   test("documents permission-scoped Contacts context", () => {
     const collaboration = mailHelp.getMarkdown("mail-collaboration");
     expect(collaboration).toContain("Multiple Contacts can match the same address");

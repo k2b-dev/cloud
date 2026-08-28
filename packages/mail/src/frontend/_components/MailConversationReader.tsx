@@ -15,6 +15,7 @@ import {
   Select,
   Tooltip,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import type { CloudTheme } from "@valentinkolb/cloud/shared";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
@@ -35,11 +36,19 @@ import MailConversationSummaryCard from "./MailConversationSummaryCard";
 import { openMailConversationToolbarDialog } from "./MailConversationToolbarDialog";
 import MailMessageCard from "./MailMessageCard";
 import { getMailAction, type MailActionId } from "./mail-actions";
-import { deriveReplyIdentityId, deriveReplyRecipients, forwardMessageBody, forwardSubject, replySubject } from "./mail-compose-derivation";
+import {
+  deriveReplyIdentityId,
+  deriveReplyRecipients,
+  forwardMessageBody,
+  forwardSubject,
+  quoteReplyBody,
+  replySubject,
+} from "./mail-compose-derivation";
 import { mailDraftHref, mailDraftSeedHref } from "./mail-compose-route";
 import { initialConversationMessageId, isNearConversationStart, newestFirstMessages } from "./mail-conversation-history";
 import { buildMailConversationTimeline } from "./mail-conversation-timeline";
-import { MAIL_CONVERSATION_TOOLBAR_SECTIONS, type MailConversationToolbarActionId } from "./mail-conversation-toolbar";
+import { getMailConversationToolbarSections, type MailConversationToolbarActionId } from "./mail-conversation-toolbar";
+import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { storeMailDraftSeed } from "./mail-draft-seed-store";
 import { messageDeliveryAllowsResponses } from "./mail-message-presentation";
 import { buildMailListHref } from "./mail-navigation";
@@ -63,9 +72,6 @@ type DirectToolbarAction = {
   disabled?: boolean;
   action: () => void;
 };
-
-const intentLabel = (intent: DraftIntent): string =>
-  intent === "reply" ? "reply" : intent === "reply_all" ? "reply all" : intent === "forward" ? "forward" : "message";
 
 export default function MailConversationReader(props: {
   mailboxId: string;
@@ -109,13 +115,23 @@ export default function MailConversationReader(props: {
   onReconcileAfterWrite: () => Promise<void>;
   onClose: (event: LinkNavigateEvent) => void | Promise<void>;
 }) {
+  const locale = useLocale();
+  const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
+  const intentLabel = (intent: DraftIntent): string =>
+    intent === "reply"
+      ? t().replyIntent
+      : intent === "reply_all"
+        ? t().replyAllIntent
+        : intent === "forward"
+          ? t().forwardIntent
+          : t().messageIntent;
   const selectedHistoryMessageId = () =>
     props.selectedMessageId && props.messages.some((message) => message.id === props.selectedMessageId)
       ? props.selectedMessageId
       : initialConversationMessageId(props.messages);
   const initialMessageId = selectedHistoryMessageId();
   const orderedMessages = createMemo(() => newestFirstMessages(props.messages));
-  const timeline = createMemo(() => buildMailConversationTimeline(props.messages, props.activity));
+  const timeline = createMemo(() => buildMailConversationTimeline(props.messages, props.activity, locale()));
   const latestMessage = createMemo(() => orderedMessages()[0] ?? null);
   const [expandedMessages, setExpandedMessages] = createSignal(new Set(initialMessageId ? [initialMessageId] : []));
   const [messageSelections, setMessageSelections] = createSignal<Record<string, string>>({});
@@ -132,7 +148,7 @@ export default function MailConversationReader(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to update conversation summary"));
+      if (!response.ok) throw new Error(await readApiError(response, t().updateSummaryFailed));
       const updated = await response.json();
       let refreshError: Error | null = null;
       try {
@@ -143,8 +159,8 @@ export default function MailConversationReader(props: {
       return { created, refreshError };
     },
     onSuccess: ({ created, refreshError }) => {
-      toast.success(created ? "Summary created" : "Summary updated");
-      if (refreshError) void prompts.error(refreshError.message, { title: "Summary saved, refresh failed" });
+      toast.success(created ? t().summaryCreated : t().summaryUpdated);
+      if (refreshError) void prompts.error(refreshError.message, { title: t().summaryRefreshFailed });
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -218,14 +234,14 @@ export default function MailConversationReader(props: {
     const current = props.conversationSummary;
     if (!conversationId || !current || summarySaving()) return;
     const values = await prompts.form({
-      title: current.summary ? "Edit summary" : "Create summary",
+      title: current.summary ? t().editSummary : t().createSummary,
       icon: "ti ti-notes",
       size: "large",
       fields: {
         summary: {
           type: "text",
-          label: "Summary",
-          description: "Keep the current conversation context concise. Leave empty to remove the summary.",
+          label: t().summary,
+          description: t().summaryDescription,
           default: current.summary ?? "",
           multiline: true,
           lines: 8,
@@ -233,7 +249,7 @@ export default function MailConversationReader(props: {
           markdown: true,
         },
       },
-      confirmText: current.summary ? "Save summary" : "Create summary",
+      confirmText: current.summary ? t().saveSummary : t().createSummary,
     });
     if (!values || conversationId !== props.selectedConversationId) return;
     await summarySave.mutate({
@@ -263,8 +279,8 @@ export default function MailConversationReader(props: {
     try {
       storeMailDraftSeed(localStorage, seed);
     } catch {
-      void prompts.error("The browser could not keep this message locally. Free some site storage and try again.", {
-        title: "Could not start message",
+      void prompts.error(t().localDraftFailed, {
+        title: t().startMessageFailed,
       });
       return;
     }
@@ -282,11 +298,7 @@ export default function MailConversationReader(props: {
         });
         return (
           <div class="flex min-h-0 flex-col gap-3">
-            <p class="text-sm text-secondary">
-              {existingDrafts.length === 1
-                ? "This conversation already has a draft. Continue it or start a separate message."
-                : `This conversation already has ${existingDrafts.length} drafts. Continue one or start a separate message.`}
-            </p>
+            <p class="text-sm text-secondary">{t().existingDrafts({ count: existingDrafts.length })}</p>
             <div class="flex max-h-[55vh] flex-col gap-2 overflow-y-auto">
               <For each={existingDrafts}>
                 {(existingDraft) => (
@@ -301,22 +313,22 @@ export default function MailConversationReader(props: {
                     <span class="flex min-w-0 flex-1 flex-col gap-1">
                       <span class="flex min-w-0 items-center gap-2">
                         <span class="min-w-0 flex-1 truncate text-sm font-medium text-primary">
-                          {existingDraft.subject || "(no subject)"}
+                          {existingDraft.subject || t().noSubject}
                         </span>
-                        <span class="shrink-0 text-xs font-medium text-secondary group-hover:text-primary">Continue</span>
+                        <span class="shrink-0 text-xs font-medium text-secondary group-hover:text-primary">{t().continue}</span>
                       </span>
                       <span class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-dimmed">
                         <span>
                           <i class="ti ti-user mr-1" aria-hidden="true" />
-                          Created by {existingDraft.createdByDisplayName}
+                          {t().createdBy({ name: existingDraft.createdByDisplayName })}
                         </span>
                         <span>
-                          {intentLabel(existingDraft.intent)} · updated{" "}
-                          {dates.formatDateTimeRelative(existingDraft.updatedAt, props.dateConfig)}
+                          {intentLabel(existingDraft.intent)} ·{" "}
+                          {t().updated({ value: dates.formatDateTimeRelative(existingDraft.updatedAt, props.dateConfig) })}
                         </span>
                       </span>
                       <span class="line-clamp-2 min-h-5 text-xs leading-5 text-secondary">
-                        {existingDraft.bodyPreview || "No content yet"}
+                        {existingDraft.bodyPreview || t().noContent}
                       </span>
                     </span>
                   </button>
@@ -325,18 +337,18 @@ export default function MailConversationReader(props: {
             </div>
             <div class="flex items-center justify-end gap-2">
               <Button variant="secondary" size="sm" type="button" onClick={() => close(undefined)}>
-                Cancel
+                {t().cancel}
               </Button>
               <Button size="sm" type="button" onClick={() => close(null)}>
                 <i class="ti ti-plus" aria-hidden="true" />
-                New {intentLabel(lookup.request.intent)}
+                {t().newIntent({ intent: intentLabel(lookup.request.intent) })}
               </Button>
             </div>
           </div>
         );
       },
       {
-        title: "Continue a draft?",
+        title: t().continueDraftTitle,
         icon: "ti ti-file-pencil",
         size: "large",
       },
@@ -360,7 +372,7 @@ export default function MailConversationReader(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not check conversation drafts"));
+      if (!response.ok) throw new Error(await readApiError(response, t().checkDraftsFailed));
       return response.json();
     },
     onSuccess: (existingDrafts, context) => {
@@ -395,13 +407,13 @@ export default function MailConversationReader(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not create draft"));
+      if (!response.ok) throw new Error(await readApiError(response, t().createDraftFailed));
       return response.json();
     },
     onSuccess: (seed, lookup) => {
       if (lookup && isCurrentLookup(lookup)) openDraftSeed(seed);
     },
-    onError: (error) => prompts.error(error.message, { title: "Could not start message" }),
+    onError: (error) => prompts.error(error.message, { title: t().startMessageFailed }),
   });
 
   const chooseReplyIdentity = async (lookup: DraftLookup): Promise<string | null> => {
@@ -409,7 +421,7 @@ export default function MailConversationReader(props: {
     const derived = deriveReplyIdentityId(lookup.request.message, identities);
     if (derived) return derived;
     if (identities.length === 0) {
-      await prompts.error("Add a verified sending identity before composing mail.");
+      await prompts.error(t().verifiedSenderRequired);
       return null;
     }
     const selected = await prompts.dialog<string | null>(
@@ -419,11 +431,9 @@ export default function MailConversationReader(props: {
         );
         return (
           <div class="flex flex-col gap-3">
-            <p class="text-sm text-secondary">
-              More than one sender matches this conversation. Choose which identity should own the draft.
-            </p>
+            <p class="text-sm text-secondary">{t().multipleSenders}</p>
             <Select
-              label="From"
+              label={t().from}
               value={senderIdentityId}
               onValueChange={setSenderIdentityId}
               options={identities.map((identity) => ({
@@ -434,16 +444,16 @@ export default function MailConversationReader(props: {
             />
             <div class="flex items-center justify-end gap-2">
               <Button variant="secondary" size="sm" type="button" onClick={() => close(null)}>
-                Cancel
+                {t().cancel}
               </Button>
               <Button size="sm" type="button" onClick={() => close(senderIdentityId())}>
-                Continue
+                {t().continue}
               </Button>
             </div>
           </div>
         );
       },
-      { title: "Choose sender", icon: "ti ti-user", size: "medium" },
+      { title: t().chooseSender, icon: "ti ti-user", size: "medium" },
     );
     return selected ?? null;
   };
@@ -482,7 +492,7 @@ export default function MailConversationReader(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not create a draft from this message"));
+      if (!response.ok) throw new Error(await readApiError(response, t().createFromMessageFailed));
       return response.json();
     },
     onSuccess: (seed, context) => {
@@ -508,32 +518,30 @@ export default function MailConversationReader(props: {
     const selectionKey = props.selectionKey;
     const identities = props.identities.filter((identity) => identity.status === "verified");
     const defaultIdentity = identities.find((identity) => identity.isDefault) ?? identities[0];
-    if (!defaultIdentity) return prompts.error("Add a verified sending identity before reusing a message.");
+    if (!defaultIdentity) return prompts.error(t().verifiedSenderReuseRequired);
     const choice = await prompts.dialog<Omit<DeriveDraftFromMessageInput, "idempotencyKey">>(
       (close) => {
         const [senderIdentityId, setSenderIdentityId] = createSignal(defaultIdentity.id);
         const [includeAttachments, setIncludeAttachments] = createSignal(message.attachments.length > 0);
         return (
           <div class="flex flex-col gap-3">
-            <p class="text-sm text-secondary">
-              Create an independent draft from this message. The original message and conversation stay unchanged.
-            </p>
+            <p class="text-sm text-secondary">{t().deriveDescription}</p>
             <Select
-              label="Send from"
+              label={t().sendFrom}
               value={senderIdentityId}
               onValueChange={setSenderIdentityId}
               options={identities.map((identity) => ({ id: identity.id, label: identity.label }))}
             />
             <Show when={message.attachments.length > 0}>
               <CheckboxCard
-                label={`Include ${message.attachments.length} attachment${message.attachments.length === 1 ? "" : "s"}`}
+                label={t().includeAttachments({ count: message.attachments.length })}
                 value={includeAttachments}
                 onValueChange={setIncludeAttachments}
               />
             </Show>
             <div class="flex items-center justify-end gap-2">
               <Button variant="secondary" size="sm" type="button" onClick={() => close(undefined)}>
-                Cancel
+                {t().cancel}
               </Button>
               <Button
                 size="sm"
@@ -546,14 +554,14 @@ export default function MailConversationReader(props: {
                   })
                 }
               >
-                <i class="ti ti-file-pencil" aria-hidden="true" /> Continue
+                <i class="ti ti-file-pencil" aria-hidden="true" /> {t().continue}
               </Button>
             </div>
           </div>
         );
       },
       {
-        title: "Use as new message",
+        title: t().useAsNew,
         icon: "ti ti-copy",
         size: "small",
       },
@@ -640,15 +648,11 @@ export default function MailConversationReader(props: {
     const selectedInBody = selection?.anchorNode && body.contains(selection.anchorNode) ? hostSelection : "";
     const text = selectedInBody || selectedInFrame;
     if (!text) {
-      return prompts.error("Select text in this message first.", {
-        title: "Quote in reply",
+      return prompts.error(t().quoteSelectionFirst, {
+        title: t().quoteInReply,
       });
     }
-    const sender = message.from[0]?.name || message.from[0]?.address || "Sender";
-    const quote = `${dates.formatDateTime(message.internalDate, props.dateConfig)} ${sender} wrote:\n${text
-      .split("\n")
-      .map((line) => `> ${line}`)
-      .join("\n")}\n\n`;
+    const quote = quoteReplyBody(message, text, props.dateConfig, locale());
     startComposer("reply", message, quote);
   };
 
@@ -696,15 +700,34 @@ export default function MailConversationReader(props: {
 
   const canSplitConversation = () => props.canWrite && (props.totalMessageCount > 1 || props.messages.length > 1);
 
+  const localizedActionLabel = (actionId: MailActionId): string =>
+    actionId === "archive"
+      ? t().archive
+      : actionId === "move"
+        ? t().moveToFolder
+        : actionId === "trash"
+          ? t().trash
+          : actionId === "junk"
+            ? t().junk
+            : actionId === "not_spam"
+              ? t().notSpam
+              : actionId === "mark_read"
+                ? t().markRead
+                : actionId === "mark_unread"
+                  ? t().markUnread
+                  : actionId === "flag"
+                    ? t().flag
+                    : t().unflag;
+
   const respondToLatest = (intent: Extract<DraftIntent, "reply" | "reply_all" | "forward">) => {
     const message = latestMessage();
     if (!message || !canRespondToLatest()) return;
-    startComposer(intent, message, intent === "forward" ? forwardMessageBody(message, props.dateConfig) : undefined);
+    startComposer(intent, message, intent === "forward" ? forwardMessageBody(message, props.dateConfig, locale()) : undefined);
   };
 
   const directToolbarAction = (id: MailConversationToolbarActionId): DirectToolbarAction | null => {
     if (id === "print") {
-      return { id, label: "Print conversation", icon: "ti ti-printer", action: printConversation };
+      return { id, label: t().printConversation, icon: "ti ti-printer", action: printConversation };
     }
     if (id === "reply" || id === "reply_all" || id === "forward") {
       if (!canRespondToLatest()) return null;
@@ -712,11 +735,11 @@ export default function MailConversationReader(props: {
       const label =
         id === "reply"
           ? props.conversationDrafts.length > 0
-            ? "Reply, draft available"
-            : "Reply"
+            ? t().replyDraftAvailable
+            : t().reply
           : id === "reply_all"
-            ? "Reply all"
-            : "Forward";
+            ? t().replyAll
+            : t().forward;
       const icon = id === "reply" ? "ti ti-arrow-back-up" : id === "reply_all" ? "ti ti-arrow-back-up-double" : "ti ti-arrow-forward-up";
       return {
         id,
@@ -731,7 +754,7 @@ export default function MailConversationReader(props: {
       if (!message || !canSplitConversation()) return null;
       return {
         id,
-        label: "Start new conversation from latest message",
+        label: t().splitLatest,
         icon: "ti ti-arrows-split-2",
         disabled: props.actionPending,
         action: () => void props.onSplitMessage(message.id),
@@ -741,7 +764,7 @@ export default function MailConversationReader(props: {
     if (id === "tags") {
       return {
         id,
-        label: "Tags",
+        label: t().tags,
         icon: "ti ti-tags",
         disabled: props.actionPending,
         action: () => void props.onManageTags(),
@@ -750,7 +773,7 @@ export default function MailConversationReader(props: {
     if (id === "merge") {
       return {
         id,
-        label: "Merge with another conversation",
+        label: t().mergeWithConversation,
         icon: "ti ti-git-merge",
         disabled: props.actionPending,
         action: () => void props.onMergeConversation(),
@@ -773,7 +796,7 @@ export default function MailConversationReader(props: {
     const action = getMailAction(actionId);
     return {
       id,
-      label: action.label,
+      label: localizedActionLabel(actionId),
       icon: action.icon,
       disabled: props.actionPending,
       action: () => void props.onAction(actionId),
@@ -781,14 +804,16 @@ export default function MailConversationReader(props: {
   };
 
   const directToolbarSections = createMemo(() =>
-    MAIL_CONVERSATION_TOOLBAR_SECTIONS.map((section) => ({
-      id: section.id,
-      actions: section.options.flatMap((option) => {
-        if (!props.toolbarActions.includes(option.id)) return [];
-        const action = directToolbarAction(option.id);
-        return action ? [action] : [];
-      }),
-    })).filter((section) => section.actions.length > 0),
+    getMailConversationToolbarSections(locale())
+      .map((section) => ({
+        id: section.id,
+        actions: section.options.flatMap((option) => {
+          if (!props.toolbarActions.includes(option.id)) return [];
+          const action = directToolbarAction(option.id);
+          return action ? [action] : [];
+        }),
+      }))
+      .filter((section) => section.actions.length > 0),
   );
 
   const customizeToolbar = async () => {
@@ -800,24 +825,24 @@ export default function MailConversationReader(props: {
     const actions: DropdownItem[] = [];
     if (canRespondToLatest()) {
       actions.push({
-        sectionLabel: "Respond",
+        sectionLabel: t().respond,
         items: [
           {
-            label: "Reply",
+            label: t().reply,
             icon: "ti ti-arrow-back-up",
             action: () => respondToLatest("reply"),
           },
           ...(canReplyAllToLatest()
             ? [
                 {
-                  label: "Reply all",
+                  label: t().replyAll,
                   icon: "ti ti-arrow-back-up-double",
                   action: () => respondToLatest("reply_all"),
                 },
               ]
             : []),
           {
-            label: "Forward",
+            label: t().forward,
             icon: "ti ti-arrow-forward-up",
             action: () => respondToLatest("forward"),
           },
@@ -826,69 +851,69 @@ export default function MailConversationReader(props: {
     }
     if (props.canWrite) {
       actions.push({
-        sectionLabel: "Organize",
+        sectionLabel: t().organize,
         items: [
           {
-            label: getMailAction("archive").label,
+            label: localizedActionLabel("archive"),
             icon: getMailAction("archive").icon,
             action: () => props.onAction("archive"),
           },
           {
-            label: getMailAction(props.inJunk ? "not_spam" : "junk").label,
+            label: localizedActionLabel(props.inJunk ? "not_spam" : "junk"),
             icon: getMailAction(props.inJunk ? "not_spam" : "junk").icon,
             action: () => props.onAction(props.inJunk ? "not_spam" : "junk"),
           },
           {
-            label: getMailAction("trash").label,
+            label: localizedActionLabel("trash"),
             icon: getMailAction("trash").icon,
             action: () => props.onAction("trash"),
             variant: "danger",
           },
           {
-            label: getMailAction("move").label,
+            label: localizedActionLabel("move"),
             icon: getMailAction("move").icon,
             action: () => props.onAction("move"),
           },
         ],
       });
       actions.push({
-        sectionLabel: "Mark",
+        sectionLabel: t().mark,
         items: [
           {
-            label: getMailAction(props.unread ? "mark_read" : "mark_unread").label,
+            label: localizedActionLabel(props.unread ? "mark_read" : "mark_unread"),
             icon: getMailAction(props.unread ? "mark_read" : "mark_unread").icon,
             action: () => props.onAction(props.unread ? "mark_read" : "mark_unread"),
           },
           {
-            label: getMailAction(props.flagged ? "unflag" : "flag").label,
+            label: localizedActionLabel(props.flagged ? "unflag" : "flag"),
             icon: getMailAction(props.flagged ? "unflag" : "flag").icon,
             action: () => props.onAction(props.flagged ? "unflag" : "flag"),
           },
           {
-            label: "Tags",
+            label: t().tags,
             icon: "ti ti-tags",
             action: props.onManageTags,
           },
         ],
       });
       actions.push({
-        sectionLabel: "Conversation",
+        sectionLabel: t().conversation,
         items: [
           {
-            label: props.conversationSummary?.summary ? "Edit summary" : "Create summary",
+            label: props.conversationSummary?.summary ? t().editSummary : t().createSummary,
             icon: "ti ti-notes",
             disabled: summarySaving() || !props.conversationSummary,
             action: () => void editConversationSummary(),
           },
           {
-            label: "Merge with another conversation",
+            label: t().mergeWithConversation,
             icon: "ti ti-git-merge",
             action: props.onMergeConversation,
           },
           ...(canSplitConversation() && latestMessage()
             ? [
                 {
-                  label: "Start new conversation from latest message",
+                  label: t().splitLatest,
                   icon: "ti ti-arrows-split-2",
                   action: () => {
                     const message = latestMessage();
@@ -901,15 +926,15 @@ export default function MailConversationReader(props: {
       });
     }
     actions.push({
-      sectionLabel: "Other",
+      sectionLabel: t().other,
       items: [
         {
-          label: "Print conversation",
+          label: t().printConversation,
           icon: "ti ti-printer",
           action: printConversation,
         },
         {
-          label: "Customize toolbar",
+          label: t().customizeToolbar,
           icon: "ti ti-adjustments-horizontal",
           action: () => void customizeToolbar(),
         },
@@ -927,11 +952,11 @@ export default function MailConversationReader(props: {
             <Placeholder
               state="error"
               variant="panel"
-              title="Could not load this message"
+              title={t().couldNotLoadMessage}
               description={message}
               action={
                 <Button variant="secondary" size="sm" type="button" onClick={() => void props.onReconcile()}>
-                  <i class="ti ti-refresh" aria-hidden="true" /> Retry
+                  <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
                 </Button>
               }
             />
@@ -940,18 +965,14 @@ export default function MailConversationReader(props: {
       </Show>
       <Show when={!props.error && props.totalMessageCount > props.messages.length}>
         <NoticeCard tone="warning" icon={false} class="mx-3 mt-3" role="status">
-          Showing the latest {props.messages.length} of {props.totalMessageCount} messages in this unusually long conversation.
+          {t().longConversation({ shown: props.messages.length, total: props.totalMessageCount })}
         </NoticeCard>
       </Show>
       <Show
         when={props.messages.length > 0}
         fallback={
           <div class="flex min-h-0 flex-1 items-center justify-center p-[var(--ui-space-shell)]">
-            <Placeholder
-              icon="ti ti-mail-opened"
-              title="Choose a conversation"
-              description="Select a message from the list to read its complete thread."
-            />
+            <Placeholder icon="ti ti-mail-opened" title={t().chooseConversationTitle} description={t().chooseConversationDescription} />
           </div>
         }
       >
@@ -960,7 +981,7 @@ export default function MailConversationReader(props: {
             <IconButtonLink
               href={closeHref()}
               class="lg:hidden"
-              label="Back to conversation list"
+              label={t().backToList}
               navigation="enhanced"
               onNavigate={props.onClose}
               scroll="preserve"
@@ -968,8 +989,8 @@ export default function MailConversationReader(props: {
               <i class="ti ti-arrow-left" aria-hidden="true" />
             </IconButtonLink>
             <Show when={props.listCollapsed}>
-              <Tooltip.Anchor content="Show conversation list">
-                <IconButton type="button" class="hidden lg:inline-flex" label="Show conversation list" onClick={props.onRestoreList}>
+              <Tooltip.Anchor content={t().showList}>
+                <IconButton type="button" class="hidden lg:inline-flex" label={t().showList} onClick={props.onRestoreList}>
                   <i class="ti ti-layout-sidebar-left-expand" aria-hidden="true" />
                 </IconButton>
               </Tooltip.Anchor>
@@ -977,14 +998,14 @@ export default function MailConversationReader(props: {
             <div class="min-w-0 flex-1">
               <div class="flex min-w-0 items-center gap-2">
                 <h1 class="truncate text-lg font-semibold text-primary" data-mail-reader-heading tabIndex={-1}>
-                  {props.subject || "(no subject)"}
+                  {props.subject || t().noSubject}
                 </h1>
                 <Show when={props.flagged}>
-                  <Tooltip.Anchor content="Flagged conversation">
+                  <Tooltip.Anchor content={t().flaggedConversation}>
                     <span
                       class="flex h-7 w-7 shrink-0 items-center justify-center text-orange-600 dark:text-orange-400"
                       role="img"
-                      aria-label="Flagged conversation"
+                      aria-label={t().flaggedConversation}
                     >
                       <i class={getMailAction("flag").icon} aria-hidden="true" />
                     </span>
@@ -994,13 +1015,13 @@ export default function MailConversationReader(props: {
                   <button
                     type="button"
                     class="chip shrink-0 font-mono text-xs"
-                    title="Copy conversation reference"
+                    title={t().copyReference}
                     onClick={() => {
                       const reference = props.reference;
                       if (!reference) return;
                       void navigator.clipboard.writeText(reference).then(
-                        () => toast.success("Reference copied"),
-                        () => toast.error("Could not copy reference"),
+                        () => toast.success(t().referenceCopied),
+                        () => toast.error(t().referenceCopyFailed),
                       );
                     }}
                   >
@@ -1009,10 +1030,7 @@ export default function MailConversationReader(props: {
                   </button>
                 </Show>
               </div>
-              <p class="mt-0.5 text-xs text-dimmed">
-                {props.messages.length} message
-                {props.messages.length === 1 ? "" : "s"}
-              </p>
+              <p class="mt-0.5 text-xs text-dimmed">{t().messageCount({ count: props.messages.length })}</p>
             </div>
             <div class="flex shrink-0 items-center gap-1">
               <div class="hidden max-w-[min(40vw,28rem)] items-center gap-2 overflow-x-auto sm:flex">
@@ -1024,7 +1042,7 @@ export default function MailConversationReader(props: {
                           <>
                             <Show when={action.id === "reply" && props.conversationDrafts.length > 0}>
                               <span class="hidden whitespace-nowrap text-xs text-dimmed sm:inline" data-mail-draft-label>
-                                Draft available
+                                {t().draftAvailable}
                               </span>
                             </Show>
                             <Tooltip.Anchor content={action.label}>
@@ -1054,15 +1072,15 @@ export default function MailConversationReader(props: {
                 </For>
               </div>
               <Dropdown.Root position="bottom-left" width="14rem" items={overflowActions()}>
-                <Dropdown.Trigger iconOnly type="button" variant="ghost" label="More conversation actions">
+                <Dropdown.Trigger iconOnly type="button" variant="ghost" label={t().moreConversationActions}>
                   <i class="ti ti-dots" aria-hidden="true" />
                 </Dropdown.Trigger>
               </Dropdown.Root>
-              <Tooltip.Anchor content="Conversation details">
+              <Tooltip.Anchor content={t().conversationDetails}>
                 <IconButton
                   type="button"
                   classList={{ "bg-[var(--ui-selected)]": props.detailsOpen }}
-                  label="Toggle conversation details"
+                  label={t().toggleDetails}
                   aria-pressed={props.detailsOpen}
                   data-mail-details-trigger
                   onClick={props.onToggleDetails}
@@ -1168,7 +1186,7 @@ export default function MailConversationReader(props: {
                 aria-live="polite"
                 onClick={jumpToNewest}
               >
-                {count()} new message{count() === 1 ? "" : "s"}
+                {t().newMessages({ count: count() })}
                 <i class="ti ti-arrow-up" aria-hidden="true" />
               </Button>
             )}

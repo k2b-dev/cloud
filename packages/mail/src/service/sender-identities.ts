@@ -1,4 +1,4 @@
-import { err, fail, isServiceError, ok, type Result } from "@k2b/stdlib";
+import { err, fail, i18n, isServiceError, ok, type Result } from "@k2b/stdlib";
 import { audit } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import { z } from "zod";
@@ -16,6 +16,20 @@ import {
   smtpTransportCapabilitiesSchema,
   type UpdateSenderIdentityInput,
 } from "../contracts";
+
+const verificationMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      subject: "Cloud Mail sender identity verification",
+      body: ({ address }: { address: string }) => `Cloud Mail verified that ${address} can be submitted through this provider binding.`,
+    },
+    de: {
+      subject: "Bestätigung der Absenderidentität in Cloud Mail",
+      body: ({ address }) => `Cloud Mail hat bestätigt, dass ${address} über diese Anbieterverbindung versendet werden kann.`,
+    },
+  },
+});
 import { withShortIdDb } from "../lib/short-id";
 import { requireMailboxPermission } from "./access";
 import { normalizeEmailAddress } from "./address-normalization";
@@ -794,6 +808,7 @@ export const verifySenderIdentity = async (params: {
   bindingId: string;
   verificationRecipient: string;
   savesSentAutomatically: boolean;
+  locale?: string;
 }): Promise<Result<SenderIdentity>> => {
   const recipient = params.verificationRecipient.trim().toLowerCase();
   if (!/^.+@.+\..+$/.test(recipient) || recipient.length > 320) return fail(err.badInput("Invalid verification recipient"));
@@ -826,14 +841,15 @@ export const verifySenderIdentity = async (params: {
           return fail(err.conflict("Provider credentials changed before sender verification"));
         }
         try {
+          const t = verificationMessages.resolve([params.locale ?? "en"]).t;
           await assertLeaseActive();
           const result = await imapSmtpConnector.send(snapshot.runtime, {
             from: { name: current.display_name, address: current.from_address },
             replyTo: current.reply_to,
             envelopeFrom: current.envelope_sender,
             to: [{ address: recipient }],
-            subject: "Cloud Mail sender identity verification",
-            text: `Cloud Mail verified that ${current.from_address} can be submitted through this provider binding.`,
+            subject: t.subject,
+            text: t.body({ address: current.from_address }),
             messageId,
           });
           await assertLeaseActive();

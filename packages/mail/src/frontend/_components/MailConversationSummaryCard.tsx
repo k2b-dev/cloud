@@ -1,5 +1,6 @@
-import { IconButton, MarkdownView, Paper, Tooltip } from "@k2b/ui";
-import { Show } from "solid-js";
+import { IconButton, MarkdownView, Paper, Tooltip, useLocale } from "@k2b/ui";
+import { createMemo, Show } from "solid-js";
+import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 
 export default function MailConversationSummaryCard(props: {
   summary: string;
@@ -7,6 +8,8 @@ export default function MailConversationSummaryCard(props: {
   editDisabled?: boolean;
   onEdit: () => void;
 }) {
+  const locale = useLocale();
+  const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   return (
     <Paper
       as="section"
@@ -16,11 +19,18 @@ export default function MailConversationSummaryCard(props: {
     >
       <div class="mb-2 flex items-center gap-2">
         <h2 id="mail-conversation-summary-title" class="min-w-0 flex-1 text-sm font-semibold text-[var(--app-accent)]">
-          Conversation summary
+          {t().conversationSummary}
         </h2>
         <Show when={props.canEdit}>
-          <Tooltip.Anchor content="Edit summary">
-            <IconButton type="button" size="sm" variant="ghost" label="Edit summary" disabled={props.editDisabled} onClick={props.onEdit}>
+          <Tooltip.Anchor content={t().editSummary}>
+            <IconButton
+              type="button"
+              size="sm"
+              variant="ghost"
+              label={t().editSummary}
+              disabled={props.editDisabled}
+              onClick={props.onEdit}
+            >
               <i class="ti ti-pencil" aria-hidden="true" />
             </IconButton>
           </Tooltip.Anchor>

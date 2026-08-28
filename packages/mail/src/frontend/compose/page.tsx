@@ -1,11 +1,13 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import { type MailRequestContext, mailboxes } from "../../service";
 import MailComposeIntentPage from "../_components/MailComposeIntentPage.island";
+import { mailPageMessages } from "../pages-messages";
 import { projectSsrMailboxList } from "../ssr-public-boundary";
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = mailPageMessages.resolve([getLocale(c)]);
   const context: MailRequestContext = {
     actor: c.get("actor"),
     accessSubject: c.get("accessSubject"),
@@ -30,7 +32,7 @@ export default ssr<AuthContext>(async (c) => {
       : "";
 
   return () => (
-    <Layout c={c} fullPage focusMode title={[{ title: "Mail", href: "/app/mail" }, { title: "New message" }]}>
+    <Layout c={c} fullPage focusMode title={[{ title: t.breadcrumbMail, href: "/app/mail" }, { title: t.newMessage }]}>
       <MailComposeIntentPage
         mailboxes={writableMailboxes}
         initialMailboxId={initialMailboxId}

@@ -1,6 +1,6 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, IconButton, prompts, SettingsCollection, SettingsGroup, TagEditor, toast } from "@k2b/ui";
-import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { Button, IconButton, prompts, SettingsCollection, SettingsGroup, TagEditor, toast, useLocale } from "@k2b/ui";
+import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { LocalTag } from "../../service/local-tags";
 import type { SavedConversationView } from "../../service/saved-views";
@@ -8,6 +8,7 @@ import type { MailboxSettingsContext } from "../../settings-context";
 import { readApiError } from "./api-response";
 import { openMailSearchBuilder } from "./MailSearchBuilder";
 import { summarizeMailSearchExpression } from "./mail-search-builder-model";
+import { mailSettingsMessages } from "./mail-settings-messages";
 
 type OrganizationContext = MailboxSettingsContext["organization"];
 
@@ -18,6 +19,8 @@ export default function MailOrganizationSettings(props: {
   onDirtyChange?: (dirty: boolean) => void;
   onWorkspaceChange: () => void;
 }) {
+  const locale = useLocale();
+  const messages = createMemo(() => mailSettingsMessages.resolve([locale()]).t);
   const [views, setViews] = createSignal(props.initial.savedViews);
   const [tags, setTags] = createSignal(props.initial.localTags);
   const [tagEditorDirty, setTagEditorDirty] = createSignal(false);
@@ -54,21 +57,21 @@ export default function MailOrganizationSettings(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to delete view"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedDeleteView));
       return view.id;
     },
     onSuccess: (viewId) => {
       setViews((current) => current.filter((item) => item.id !== viewId));
       props.onWorkspaceChange();
-      toast.success("Saved view deleted");
+      toast.success(messages().savedViewDeleted);
     },
     onError: (error) => prompts.error(error.message),
   });
 
   const removeView = async (view: SavedConversationView) => {
-    const confirmed = await prompts.confirm(`Remove “${view.name}” from the mailbox navigation?`, {
-      title: "Delete saved view?",
-      confirmText: "Delete view",
+    const confirmed = await prompts.confirm(messages().removeViewDescription({ name: view.name }), {
+      title: messages().deleteSavedView,
+      confirmText: messages().deleteView,
       variant: "danger",
     });
     if (!confirmed || disposed) return;
@@ -92,13 +95,13 @@ export default function MailOrganizationSettings(props: {
             },
             { init: { signal: abortSignal } },
           );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to save tag"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedSaveTag));
       return { tag: await response.json(), edited: Boolean(existing) };
     },
     onSuccess: ({ tag: saved, edited }) => {
       setTags((current) => (edited ? current.map((tag) => (tag.id === saved.id ? saved : tag)) : [...current, saved]));
       props.onWorkspaceChange();
-      toast.success(edited ? "Tag updated" : "Tag created");
+      toast.success(edited ? messages().tagUpdated : messages().tagCreated);
     },
   });
 
@@ -111,13 +114,13 @@ export default function MailOrganizationSettings(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Failed to delete tag"));
+      if (!response.ok) throw new Error(await readApiError(response, messages().failedDeleteTag));
       return tag.id;
     },
     onSuccess: (tagId) => {
       setTags((current) => current.filter((item) => item.id !== tagId));
       props.onWorkspaceChange();
-      toast.success("Tag deleted");
+      toast.success(messages().tagDeleted);
     },
   });
   onCleanup(() => {
@@ -127,9 +130,9 @@ export default function MailOrganizationSettings(props: {
   });
 
   const removeTag = async (tag: LocalTag) => {
-    const confirmed = await prompts.confirm(`Remove “${tag.name}” from every conversation?`, {
-      title: "Delete tag?",
-      confirmText: "Delete tag",
+    const confirmed = await prompts.confirm(messages().removeTagDescription({ name: tag.name }), {
+      title: messages().deleteTag,
+      confirmText: messages().deleteTagAction,
       variant: "danger",
     });
     if (!confirmed || disposed) return;
@@ -144,29 +147,30 @@ export default function MailOrganizationSettings(props: {
 
   return (
     <div class="flex flex-col gap-6">
-      <SettingsCollection
-        title="Saved views"
-        description="Private and shared filters shown in mailbox navigation."
-        empty="No saved views yet."
-      >
+      <SettingsCollection title={messages().savedViews} description={messages().savedViewsDescription} empty={messages().noSavedViews}>
         <SettingsCollection.Action>
           <Button variant="secondary" size="sm" type="button" class="shrink-0 whitespace-nowrap" onClick={() => void editView()}>
-            <i class="ti ti-plus" aria-hidden="true" /> New view
+            <i class="ti ti-plus" aria-hidden="true" /> {messages().newView}
           </Button>
         </SettingsCollection.Action>
         <For each={views()}>
           {(view) => (
             <SettingsCollection.Item
               title={view.name}
-              description={`${view.scope === "private" ? "Only me" : "Shared with mailbox"} · ${summarizeMailSearchExpression(view.filter.expression)}`}
+              description={`${view.scope === "private" ? messages().onlyMe : messages().sharedWithMailbox} · ${summarizeMailSearchExpression(view.filter.expression, locale())}`}
               icon={<i class={`ti ${view.scope === "private" ? "ti-user" : "ti-users"}`} aria-hidden="true" />}
             >
               <Show when={view.scope === "private" || canWrite()}>
                 <SettingsCollection.Item.Actions>
-                  <IconButton size="sm" type="button" label={`Edit ${view.name}`} onClick={() => void editView(view)}>
+                  <IconButton size="sm" type="button" label={messages().editNamed({ name: view.name })} onClick={() => void editView(view)}>
                     <i class="ti ti-pencil" aria-hidden="true" />
                   </IconButton>
-                  <IconButton size="sm" type="button" label={`Delete ${view.name}`} onClick={() => void removeView(view)}>
+                  <IconButton
+                    size="sm"
+                    type="button"
+                    label={messages().deleteNamed({ name: view.name })}
+                    onClick={() => void removeView(view)}
+                  >
                     <i class="ti ti-trash" aria-hidden="true" />
                   </IconButton>
                 </SettingsCollection.Item.Actions>
@@ -177,12 +181,12 @@ export default function MailOrganizationSettings(props: {
       </SettingsCollection>
 
       <Show when={canWrite()}>
-        <SettingsGroup title="Conversation tags" description="Organize conversations for your team, saved views, and automations.">
+        <SettingsGroup title={messages().conversationTags} description={messages().conversationTagsDescription}>
           <TagEditor
             items={tags()}
             onDirtyChange={setTagEditorDirty}
             disabled={saveTag.loading() || removeTagMutation.loading()}
-            labels={{ create: "New tag", empty: "No conversation tags yet" }}
+            labels={{ create: messages().newTag, empty: messages().noConversationTags }}
             onCreate={(value) => saveTagValue(undefined, value)}
             onUpdate={(tag, value) => saveTagValue(tag, value)}
             onDelete={removeTag}

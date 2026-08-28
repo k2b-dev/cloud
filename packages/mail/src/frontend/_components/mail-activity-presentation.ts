@@ -1,25 +1,5 @@
 import type { MailActivityEvent } from "../../service/collaboration";
-
-const labels: Readonly<Record<string, string>> = {
-  "conversation.comment_created": "added an internal comment",
-  "conversation.comment_deleted": "deleted an internal comment",
-  "conversation.comment_updated": "updated an internal comment",
-  "conversation.local_tag_added": "added a tag",
-  "conversation.local_tag_removed": "removed a tag",
-  "conversation.local_tags_added": "added tags",
-  "conversation.local_tags_updated": "updated tags",
-  "conversation.merged": "merged conversations",
-  "conversation.message_reassigned": "moved a message between conversations",
-  "conversation.reference_allocated": "assigned a reference number",
-  "conversation.snooze_expired": "returned the conversation from snooze",
-  "conversation.split": "split the conversation",
-  "conversation.summary_updated": "updated the summary",
-  "draft.created": "created a draft",
-  "draft.derived": "created a draft from this conversation",
-  "draft.discarded": "discarded a draft",
-  "message.delivery_receipt_received": "received a delivery-status report",
-  "message.read_receipt_received": "received a read-receipt report",
-};
+import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 
 type CollaborationSnapshot = {
   assigneeUserId?: unknown;
@@ -29,33 +9,54 @@ type CollaborationSnapshot = {
 
 const snapshot = (value: unknown): CollaborationSnapshot => (value && typeof value === "object" ? (value as CollaborationSnapshot) : {});
 
-const workStatusLabel = (value: unknown): string =>
-  value === "done" ? "Done" : value === "waiting" ? "Waiting for reply" : "Needs action";
-
-const collaborationPresentation = (event: MailActivityEvent): { label: string; icon: string } => {
+const collaborationPresentation = (event: MailActivityEvent, locale: string): { label: string; icon: string } => {
+  const t = mailConversationUiMessages.resolve([locale]).t;
   const before = snapshot(event.metadata.before);
   const after = snapshot(event.metadata.after);
   const changes: string[] = [];
   let icon = "ti-pencil";
   if (before.assigneeUserId !== after.assigneeUserId) {
-    changes.push(after.assigneeUserId ? "assigned the conversation" : "removed the assignee");
+    changes.push(after.assigneeUserId ? t.activityAssigned : t.activityUnassigned);
     icon = "ti-user-check";
   }
   if (before.workStatus !== after.workStatus) {
-    changes.push(`marked it ${workStatusLabel(after.workStatus)}`);
+    const status = after.workStatus === "done" ? t.done : after.workStatus === "waiting" ? t.waitingForReply : t.needsAction;
+    changes.push(t.activityMarked({ status }));
     icon = after.workStatus === "done" ? "ti-circle-check" : after.workStatus === "waiting" ? "ti-hourglass" : "ti-message-reply";
   }
   if (before.snoozedUntil !== after.snoozedUntil) {
-    changes.push(after.snoozedUntil ? "snoozed the conversation" : "removed the snooze");
+    changes.push(after.snoozedUntil ? t.activitySnoozed : t.activityUnsnoozed);
     icon = "ti-alarm-snooze";
   }
-  return { label: changes.join(" and ") || "updated the conversation", icon };
+  return { label: changes.join(t.activityAnd) || t.activityUpdated, icon };
 };
 
-export const mailActivityLabel = (event: MailActivityEvent): string => {
+export const mailActivityLabel = (event: MailActivityEvent, locale = "en"): string => {
+  const resolved = mailConversationUiMessages.resolve([locale]);
+  const t = resolved.t;
   if (event.action === "conversation.collaboration_updated" || event.action === "conversation.work_state_changed")
-    return collaborationPresentation(event).label;
-  return labels[event.action] ?? event.action.split(".").at(-1)!.replaceAll("_", " ");
+    return collaborationPresentation(event, locale).label;
+  const labels: Readonly<Record<string, string>> = {
+    "conversation.comment_created": t.activityCommentCreated,
+    "conversation.comment_deleted": t.activityCommentDeleted,
+    "conversation.comment_updated": t.activityCommentUpdated,
+    "conversation.local_tag_added": t.activityTagAdded,
+    "conversation.local_tag_removed": t.activityTagRemoved,
+    "conversation.local_tags_added": t.activityTagsAdded,
+    "conversation.local_tags_updated": t.activityTagsUpdated,
+    "conversation.merged": t.activityMerged,
+    "conversation.message_reassigned": t.activityMessageMoved,
+    "conversation.reference_allocated": t.activityReference,
+    "conversation.snooze_expired": t.activitySnoozeExpired,
+    "conversation.split": t.activitySplit,
+    "conversation.summary_updated": t.activitySummary,
+    "draft.created": t.activityDraftCreated,
+    "draft.derived": t.activityDraftDerived,
+    "draft.discarded": t.activityDraftDiscarded,
+    "message.delivery_receipt_received": t.activityDeliveryReceipt,
+    "message.read_receipt_received": t.activityReadReceipt,
+  };
+  return labels[event.action] ?? (resolved.locale === "en" ? event.action.split(".").at(-1)!.replaceAll("_", " ") : event.action);
 };
 
 const inlineActions = new Set([
@@ -77,7 +78,7 @@ const inlineActions = new Set([
 
 export const mailActivityIcon = (event: MailActivityEvent): string => {
   if (event.action === "conversation.collaboration_updated" || event.action === "conversation.work_state_changed")
-    return collaborationPresentation(event).icon;
+    return collaborationPresentation(event, "en").icon;
   if (event.action.includes("local_tag")) return "ti-tag";
   if (event.action === "conversation.summary_updated") return "ti-pencil";
   if (event.action.startsWith("draft.")) return event.action === "draft.discarded" ? "ti-file-x" : "ti-file-pencil";
@@ -91,10 +92,12 @@ export const mailActivityIcon = (event: MailActivityEvent): string => {
   return "ti-history";
 };
 
-export const mailActivityActorLabel = (event: MailActivityEvent): string =>
-  event.actor.kind === "workflow" && event.actor.displayName !== "Workflow"
-    ? `Workflow ${event.actor.displayName}`
+export const mailActivityActorLabel = (event: MailActivityEvent, locale = "en"): string => {
+  const t = mailConversationUiMessages.resolve([locale]).t;
+  return event.actor.kind === "workflow" && event.actor.displayName !== "Workflow"
+    ? t.workflowActor({ name: event.actor.displayName })
     : event.actor.displayName;
+};
 
 export const showMailActivityInline = (event: MailActivityEvent): boolean =>
   inlineActions.has(event.action) &&
@@ -108,11 +111,11 @@ export type PresentedMailActivity = MailActivityEvent & {
   count: number;
 };
 
-export const presentMailActivity = (events: MailActivityEvent[]): PresentedMailActivity[] => {
+export const presentMailActivity = (events: MailActivityEvent[], locale = "en"): PresentedMailActivity[] => {
   const presented: PresentedMailActivity[] = [];
   for (const event of events) {
-    const label = mailActivityLabel(event);
-    const actorLabel = mailActivityActorLabel(event);
+    const label = mailActivityLabel(event, locale);
+    const actorLabel = mailActivityActorLabel(event, locale);
     const previous = presented.at(-1);
     if (previous && previous.actor.id === event.actor.id && previous.actor.kind === event.actor.kind && previous.label === label) {
       previous.count += 1;

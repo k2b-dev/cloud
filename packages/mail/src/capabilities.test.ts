@@ -8,6 +8,7 @@ import {
   capabilityResultSchema,
 } from "@valentinkolb/cloud/contracts";
 import { mailCapabilities } from "./capabilities";
+import { checkMailCapabilityMessages } from "./capability-messages";
 import {
   ActivityListDataSchema,
   AttachmentContentReadDataSchema,
@@ -233,6 +234,10 @@ beforeEach(() => {
 afterEach(() => mock.restore());
 
 describe("mail capabilities", () => {
+  test("keeps capability messages complete", () => {
+    expect(checkMailCapabilityMessages()).toEqual([]);
+  });
+
   test("compiles into a registrable v1 manifest", () => {
     const manifest = compileCapabilityManifest("mail", mailCapabilities);
     expect(manifest.appId).toBe("mail");
@@ -465,6 +470,30 @@ describe("mail capabilities", () => {
       },
     });
     if (review.ok) expect(CapabilityActionReviewSchema.safeParse(review.data).success).toBeTrue();
+  });
+
+  test("returns German action-review text for regional German locales", async () => {
+    spyOn(mailboxAccess, "requireMailboxPermission").mockResolvedValue({ ok: true, data: "write" });
+    const review = await mailCapabilities.actions["draft.create"].review(
+      DraftCreateInputSchema.parse({
+        mailboxId,
+        senderIdentityId,
+        to: [{ name: "Ada", address: "ada@example.test" }],
+        subject: "Release follow-up",
+        body: "Hallo Ada",
+      }),
+      { ...context, locale: "de-CH" },
+    );
+
+    expect(review.ok).toBeTrue();
+    if (!review.ok) return;
+    expect(review.data.message).toBe("Die E-Mail wird als Entwurf gespeichert und nicht gesendet.");
+    expect(review.data.details).toEqual([
+      { label: "Betreff", value: "Release follow-up" },
+      { label: "Empfänger", value: "Ada" },
+      { label: "Anhänge", value: "0" },
+      { label: "Text", value: "Hallo Ada", display: "block" },
+    ]);
   });
 
   test("reviews a draft update with a disclosed bounded plain-text body preview", async () => {
@@ -1220,6 +1249,15 @@ describe("mail capabilities", () => {
 
     expect(mailbox).toMatchObject({ ok: false, error: { code: "NOT_FOUND", message: "Mailbox not found" } });
     expect(conversation).toMatchObject({ ok: false, error: { code: "NOT_FOUND", message: "Conversation not found" } });
+  });
+
+  test("localizes capability errors without changing their stable metadata", async () => {
+    const result = await mailCapabilities.queries["mailbox.read"].run({ id: "XyZ123" }, { ...context, locale: "de-CH" });
+
+    expect(result).toEqual({
+      ok: false,
+      error: { code: "NOT_FOUND", message: "Das Postfach wurde nicht gefunden", status: 404 },
+    });
   });
 
   test("explains attachment-content conversation matches with public links", async () => {

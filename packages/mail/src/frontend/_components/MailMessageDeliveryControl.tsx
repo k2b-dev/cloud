@@ -1,53 +1,56 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { type DateContext, dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, prompts, toast } from "@k2b/ui";
+import { Button, prompts, toast, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
 import type { CancelScheduledSendResult, DeliveryRecoveryRecipientMode, MailDraft } from "../../contracts";
 import type { MessageDetail } from "../../service/messages";
 import { readApiError } from "./api-response";
 import { mailDraftHref } from "./mail-compose-route";
+import { mailConversationUiMessages } from "./mail-conversation-ui-messages";
 import { messageDeliveryControlLabel, undoSendSecondsRemaining } from "./mail-message-presentation";
 import { buildMailListHref } from "./mail-navigation";
 
 type MessageDelivery = NonNullable<MessageDetail["delivery"]>;
 
-const deliveryExplanation = (delivery: MessageDelivery): string => {
+const deliveryExplanation = (delivery: MessageDelivery, locale: string): string => {
+  const t = mailConversationUiMessages.resolve([locale]).t;
   if (delivery.lastErrorCode === "SMTP_PARTIAL_ACCEPTANCE") {
-    return "The receiving server accepted some recipients but not others. Review the remaining recipients before sending again. Mail will not resend automatically, which avoids duplicate messages.";
+    return t.partialExplanation;
   }
   if (delivery.state === "unknown" || delivery.lastErrorCode === "AMBIGUOUS_SMTP_OUTCOME") {
-    return "The connection ended before the receiving server confirmed the result. Mail will not send again automatically because that could create a duplicate.";
+    return t.unknownExplanation;
   }
   if (delivery.state === "scheduled" && delivery.lastErrorCode) {
-    return `${delivery.attempt} of ${delivery.maxAttempts} delivery attempts did not succeed. Mail will try again automatically.`;
+    return t.retryExplanation({ attempt: delivery.attempt, total: delivery.maxAttempts });
   }
   if (["SENT_APPEND_FAILED", "SENT_COPY_LEASE_EXPIRED", "SENT_RECONCILIATION_FAILED"].includes(delivery.lastErrorCode ?? "")) {
-    return "The message was sent, but Mail could not save its copy in the Sent folder. Do not send it again.";
+    return t.sentCopyExplanation;
   }
   if (["failed", "reconciled_unsent"].includes(delivery.state)) {
     const code = delivery.lastErrorCode ?? "";
     const reason = ["SMTP_NO_RECIPIENTS_ACCEPTED", "EENVELOPE"].includes(code)
-      ? "The receiving server rejected the recipients."
+      ? t.recipientsRejected
       : code.includes("AUTH") || code.includes("CREDENTIAL")
-        ? "Mail could not authenticate with the sending account."
+        ? t.authenticationFailed
         : code.includes("SIZE") || code === "SMTP_DSN_UNSUPPORTED"
-          ? "The message or one of its requested delivery options is not supported by this sending account."
+          ? t.unsupportedDelivery
           : code.includes("ACCESS") || code.includes("IDENTITY")
-            ? "The sending account or its permissions changed before delivery."
-            : "The message was not delivered.";
-    return `${reason} It is still available as a draft so you can check it, edit it, and send it again.`;
+            ? t.sendingAccessChanged
+            : t.notDelivered;
+    return `${reason} ${t.remainsDraft}`;
   }
-  return "This delivery needs attention before Mail can treat it as complete.";
+  return t.deliveryNeedsAttention;
 };
 
-const failedActionLabel = (delivery: MessageDelivery): string => {
+const failedActionLabel = (delivery: MessageDelivery, locale: string): string => {
+  const t = mailConversationUiMessages.resolve([locale]).t;
   const code = delivery.lastErrorCode ?? "";
-  if (["SMTP_NO_RECIPIENTS_ACCEPTED", "EENVELOPE"].includes(code)) return "Review recipients";
-  if (code === "SMTP_DSN_UNSUPPORTED") return "Review delivery options";
-  if (code.includes("SIZE")) return "Edit message";
-  return "Review and resend";
+  if (["SMTP_NO_RECIPIENTS_ACCEPTED", "EENVELOPE"].includes(code)) return t.reviewRecipients;
+  if (code === "SMTP_DSN_UNSUPPORTED") return t.reviewDeliveryOptions;
+  if (code.includes("SIZE")) return t.editMessage;
+  return t.reviewResend;
 };
 
 export default function MailMessageDeliveryControl(props: {
@@ -58,6 +61,8 @@ export default function MailMessageDeliveryControl(props: {
   dateConfig: DateContext;
   onReconcile: () => Promise<void>;
 }) {
+  const locale = useLocale();
+  const t = createMemo(() => mailConversationUiMessages.resolve([locale()]).t);
   const [now, setNow] = createSignal(Date.now());
   let expiryTimer: number | undefined;
   let reconciledSubmissionId: string | null = null;
@@ -75,8 +80,26 @@ export default function MailMessageDeliveryControl(props: {
   });
   const label = createMemo(() => {
     const action = messageDeliveryControlLabel(props.delivery, props.canWrite);
+    const localizedAction =
+      props.delivery.state === "undo_window"
+        ? t().undoSend
+        : props.delivery.state === "scheduled" && props.delivery.lastErrorCode
+          ? t().retryControl({ attempt: props.delivery.attempt, total: props.delivery.maxAttempts })
+          : props.delivery.state === "scheduled"
+            ? t().scheduled
+            : props.delivery.lastErrorCode === "SMTP_PARTIAL_ACCEPTANCE"
+              ? t().partiallySent
+              : props.delivery.state === "unknown" || props.delivery.lastErrorCode === "AMBIGUOUS_SMTP_OUTCOME"
+                ? t().deliveryUnclear
+                : ["SENT_APPEND_FAILED", "SENT_COPY_LEASE_EXPIRED", "SENT_RECONCILIATION_FAILED"].includes(
+                      props.delivery.lastErrorCode ?? "",
+                    )
+                  ? t().sentNotSaved
+                  : props.delivery.state === "failed" || props.delivery.state === "reconciled_unsent"
+                    ? t().couldNotSend
+                    : t().deliveryNeedsAttention;
     const remaining = remainingSeconds();
-    return action && props.delivery.state === "undo_window" && remaining !== null ? `${action} · ${remaining}s` : action;
+    return action && props.delivery.state === "undo_window" && remaining !== null ? `${localizedAction} · ${remaining}s` : localizedAction;
   });
 
   const reconcileAfterExpiry = () => {
@@ -120,11 +143,11 @@ export default function MailMessageDeliveryControl(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not undo this send"));
+      if (!response.ok) throw new Error(await readApiError(response, t().undoSendFailed));
       return await response.json();
     },
     onSuccess: (result, context) => {
-      toast.success(context?.state === "scheduled" ? "Scheduled send cancelled. The message was restored as a draft." : "Send undone.");
+      toast.success(context?.state === "scheduled" ? t().scheduledCancelledDraft : t().sendUndone);
       const returnHref = buildMailListHref(new URL(props.requestUrl, window.location.origin));
       navigateTo(mailDraftHref(props.mailboxId, result.draftId, returnHref));
     },
@@ -140,7 +163,7 @@ export default function MailMessageDeliveryControl(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readApiError(response, "Could not prepare a recovery draft"));
+      if (!response.ok) throw new Error(await readApiError(response, t().recoveryDraftFailed));
       return response.json();
     },
     onSuccess: (draft) => {
@@ -181,12 +204,10 @@ export default function MailMessageDeliveryControl(props: {
 
           const prepareRecoveryDraft = async (mode: DeliveryRecoveryRecipientMode) => {
             if (mode === "all") {
-              const confirmed = await prompts.confirm(
-                partial
-                  ? "Some recipients already received this message and may receive a duplicate if you send the new draft."
-                  : "The previous delivery may have succeeded. Sending a new draft could create a duplicate message.",
-                { title: "Create a draft for everyone again?", confirmText: "Create draft" },
-              );
+              const confirmed = await prompts.confirm(partial ? t().duplicatePartialWarning : t().duplicateUnknownWarning, {
+                title: t().createDraftForEveryone,
+                confirmText: t().createDraft,
+              });
               if (!confirmed) return;
             }
             close();
@@ -202,27 +223,23 @@ export default function MailMessageDeliveryControl(props: {
             <div class="flex flex-col gap-4">
               <Show when={props.delivery.state === "scheduled"}>
                 <div class="rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-3 py-2">
-                  <p class="text-xs font-medium text-dimmed">{retrying ? "Next delivery attempt" : "Scheduled delivery"}</p>
+                  <p class="text-xs font-medium text-dimmed">{retrying ? t().nextDeliveryAttempt : t().scheduledDelivery}</p>
                   <p class="mt-1 text-sm font-semibold text-primary">{dates.formatDateTime(scheduledAt, dateConfig)}</p>
-                  <p class="mt-1 text-xs text-dimmed">Time zone: {dateConfig.timeZone}</p>
+                  <p class="mt-1 text-xs text-dimmed">{t().timeZone({ value: dateConfig.timeZone ?? t().localTimeZone })}</p>
                 </div>
               </Show>
-              <p class="text-sm text-secondary">
-                {scheduled
-                  ? "Cancel delivery to return this message to Drafts. You can edit it there or schedule it again."
-                  : deliveryExplanation(props.delivery)}
-              </p>
+              <p class="text-sm text-secondary">{scheduled ? t().cancelToDrafts : deliveryExplanation(props.delivery, locale())}</p>
               <Show when={partial && (props.delivery.acceptedRecipients.length > 0 || props.delivery.rejectedRecipients.length > 0)}>
                 <div class="grid gap-3 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-3 py-2 text-xs">
                   <Show when={props.delivery.acceptedRecipients.length > 0}>
                     <div>
-                      <p class="font-semibold text-primary">Accepted by server</p>
+                      <p class="font-semibold text-primary">{t().acceptedByServer}</p>
                       <p class="mt-1 break-words text-secondary">{props.delivery.acceptedRecipients.join(", ")}</p>
                     </div>
                   </Show>
                   <Show when={props.delivery.rejectedRecipients.length > 0}>
                     <div>
-                      <p class="font-semibold text-primary">Not accepted</p>
+                      <p class="font-semibold text-primary">{t().notAccepted}</p>
                       <p class="mt-1 break-words text-secondary">{props.delivery.rejectedRecipients.join(", ")}</p>
                     </div>
                   </Show>
@@ -230,7 +247,7 @@ export default function MailMessageDeliveryControl(props: {
               </Show>
               <Show when={props.delivery.lastErrorCode || props.delivery.lastErrorMessage}>
                 <details class="text-xs text-dimmed">
-                  <summary class="cursor-pointer select-none font-medium">Technical details</summary>
+                  <summary class="cursor-pointer select-none font-medium">{t().technicalDetails}</summary>
                   <div class="mt-2 break-words rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-3 py-2">
                     <Show when={props.delivery.lastErrorCode}>
                       <p>{props.delivery.lastErrorCode}</p>
@@ -249,18 +266,18 @@ export default function MailMessageDeliveryControl(props: {
                   disabled={cancel.loading() || recoveryDraft.loading()}
                   onClick={() => close()}
                 >
-                  {scheduled || retrying ? "Keep delivery" : "Close"}
+                  {scheduled || retrying ? t().keepDelivery : t().close}
                 </Button>
                 <Show when={props.canWrite && (scheduled || retrying)}>
                   <Button variant="danger" size="sm" type="button" disabled={cancel.loading()} onClick={() => void cancelQueuedSend()}>
                     <i class={`ti ${cancel.loading() ? "ti-loader-2 animate-spin" : "ti-calendar-cancel"}`} aria-hidden="true" />
-                    {retrying ? "Cancel retry and edit" : "Cancel send"}
+                    {retrying ? t().cancelRetryEdit : t().cancelSend}
                   </Button>
                 </Show>
                 <Show when={props.canWrite && failed}>
                   <Button variant="primary" size="sm" type="button" onClick={editDraft}>
                     <i class="ti ti-pencil" aria-hidden="true" />
-                    {failedActionLabel(props.delivery)}
+                    {failedActionLabel(props.delivery, locale())}
                   </Button>
                 </Show>
                 <Show when={props.canWrite && partial}>
@@ -271,22 +288,22 @@ export default function MailMessageDeliveryControl(props: {
                     disabled={recoveryDraft.loading()}
                     onClick={() => void prepareRecoveryDraft("all")}
                   >
-                    Review everyone again…
+                    {t().reviewEveryone}
                   </Button>
                   <Button
                     variant="primary"
                     size="sm"
                     type="button"
                     loading={recoveryDraft.loading()}
-                    loadingLabel="Preparing draft"
+                    loadingLabel={t().preparingDraft}
                     onClick={() => void prepareRecoveryDraft("remaining")}
                   >
-                    Review remaining recipients
+                    {t().reviewRemaining}
                   </Button>
                 </Show>
                 <Show when={unclear}>
                   <Button variant="secondary" size="sm" type="button" onClick={() => void checkAgain()}>
-                    Check again
+                    {t().checkAgain}
                   </Button>
                   <Show when={props.canWrite}>
                     <Button
@@ -296,7 +313,7 @@ export default function MailMessageDeliveryControl(props: {
                       disabled={recoveryDraft.loading()}
                       onClick={() => void prepareRecoveryDraft("all")}
                     >
-                      Review resend draft…
+                      {t().reviewResendDraft}
                     </Button>
                   </Show>
                 </Show>
@@ -306,18 +323,18 @@ export default function MailMessageDeliveryControl(props: {
         },
         {
           title: scheduled
-            ? "Scheduled message"
+            ? t().scheduledMessage
             : retrying
-              ? "Delivery delayed"
+              ? t().deliveryDelayed
               : partial
-                ? "Partially sent"
+                ? t().partiallySent
                 : unclear
-                  ? "Delivery status unclear"
+                  ? t().deliveryUnclear
                   : sentCopyProblem
-                    ? "Sent, but not saved"
+                    ? t().sentNotSaved
                     : failed
-                      ? "Couldn’t send"
-                      : "Delivery needs attention",
+                      ? t().couldNotSend
+                      : t().deliveryNeedsAttention,
           icon: scheduled ? "ti ti-calendar-time" : failed ? "ti ti-alert-circle" : "ti ti-alert-triangle",
         },
       );
@@ -354,15 +371,15 @@ export default function MailMessageDeliveryControl(props: {
             data-mail-scheduled-send={props.delivery.state === "scheduled" ? "" : undefined}
             aria-label={
               props.delivery.state === "undo_window" && remainingSeconds() !== null
-                ? `Undo send, ${remainingSeconds()} seconds remaining`
-                : "View delivery details"
+                ? t().undoSeconds({ seconds: remainingSeconds()! })
+                : t().viewDeliveryDetails
             }
             title={
               props.delivery.state === "undo_window"
-                ? "Cancel delivery and restore this message as a draft"
+                ? t().cancelRestoreDraft
                 : props.delivery.state === "scheduled"
-                  ? `Scheduled for ${dates.formatDateTime(props.delivery.scheduledAt, props.dateConfig)}`
-                  : "View delivery details"
+                  ? t().scheduledFor({ value: dates.formatDateTime(props.delivery.scheduledAt, props.dateConfig) })
+                  : t().viewDeliveryDetails
             }
             onClick={() =>
               props.delivery.state !== "undo_window"

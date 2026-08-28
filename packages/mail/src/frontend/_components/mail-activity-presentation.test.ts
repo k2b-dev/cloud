@@ -21,6 +21,15 @@ describe("mail activity presentation", () => {
     );
   });
 
+  test("localizes stable activity actions for regional German locales", () => {
+    const tagged = event();
+    tagged.action = "conversation.local_tag_added";
+    expect(mailActivityLabel(tagged, "de-CH")).toBe("hat einen Tag hinzugefügt");
+    expect(mailActivityLabel(event({ before: { workStatus: "needs_action" }, after: { workStatus: "waiting" } }), "de-CH")).toBe(
+      "hat den Status auf „Wartet auf Antwort“ gesetzt",
+    );
+  });
+
   test("collapses consecutive duplicate events", () => {
     expect(presentMailActivity([event(), event()])).toHaveLength(1);
     expect(presentMailActivity([event(), event()])[0]?.count).toBe(2);

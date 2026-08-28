@@ -1,7 +1,18 @@
-import { AutocompleteEditor, Button, type Completion, MarkdownEditor, Panes, type PanesItem, type PanesLayout, Placeholder } from "@k2b/ui";
+import {
+  AutocompleteEditor,
+  Button,
+  type Completion,
+  MarkdownEditor,
+  Panes,
+  type PanesItem,
+  type PanesLayout,
+  Placeholder,
+  useLocale,
+} from "@k2b/ui";
 import type { Accessor, JSX } from "solid-js";
 import { createMemo, Show } from "solid-js";
 import type { ComposePreview } from "../../contracts";
+import { mailComposerMessages } from "./mail-composer-messages";
 
 export default function MailComposerEditor(props: {
   format: Accessor<"plain" | "markdown">;
@@ -17,6 +28,8 @@ export default function MailComposerEditor(props: {
   onEditorReady: (element: HTMLTextAreaElement) => void;
   history?: () => JSX.Element;
 }) {
+  const locale = useLocale();
+  const t = () => mailComposerMessages.resolve([locale()]).t;
   const hasHistory = () => props.history !== undefined;
   const usesPanes = () => props.format() === "markdown" || hasHistory();
   const writeSurface = () => (
@@ -27,8 +40,8 @@ export default function MailComposerEditor(props: {
           value={props.body}
           onValueChange={props.onBodyInput}
           lines={26}
-          placeholder="Write your message"
-          aria-label="Message body"
+          placeholder={t().writeMessage}
+          aria-label={t().messageBody}
           spellcheck
           disabled={!props.editable()}
           completions={props.completions()}
@@ -40,8 +53,8 @@ export default function MailComposerEditor(props: {
       <MarkdownEditor
         value={props.body}
         onValueChange={props.onBodyInput}
-        placeholder="Write your message"
-        aria-label="Message body"
+        placeholder={t().writeMessage}
+        aria-label={t().messageBody}
         lines={26}
         spellcheck
         disabled={!props.editable()}
@@ -59,13 +72,13 @@ export default function MailComposerEditor(props: {
         fallback={
           <Show
             when={props.previewError()}
-            fallback={<Placeholder state="loading" variant="panel" class="h-full min-h-72" title="Preparing preview..." />}
+            fallback={<Placeholder state="loading" variant="panel" class="h-full min-h-72" title={t().preparingPreview} />}
           >
             {(message) => (
               <div class="flex h-full min-h-72 flex-col items-center justify-center gap-2 p-4 text-sm text-red-600">
                 <span>{message()}</span>
                 <Button variant="secondary" size="sm" type="button" onClick={props.onRetryPreview}>
-                  Retry
+                  {t().retry}
                 </Button>
               </div>
             )}
@@ -77,7 +90,7 @@ export default function MailComposerEditor(props: {
             class="h-full min-h-72 w-full border-0 bg-white"
             sandbox=""
             srcdoc={`<style>body{margin:0}</style>${value().html}`}
-            title="Email preview"
+            title={t().emailPreview}
           />
         )}
       </Show>
@@ -85,7 +98,7 @@ export default function MailComposerEditor(props: {
         <div class="absolute inset-x-2 top-2 flex items-center gap-2 border border-red-200 bg-white px-2 py-1 text-xs text-red-600 shadow-sm">
           <span class="min-w-0 flex-1 truncate">{props.previewError()}</span>
           <Button variant="ghost" size="sm" type="button" onClick={props.onRetryPreview}>
-            Retry
+            {t().retry}
           </Button>
         </div>
       </Show>
@@ -94,12 +107,12 @@ export default function MailComposerEditor(props: {
   const items = createMemo<PanesItem[]>(() => [
     {
       id: "editor",
-      title: "Write",
+      title: t().write,
       icon: "ti ti-pencil",
       render: () => <div class="h-full min-h-0 overflow-hidden">{writeSurface()}</div>,
     },
-    ...(props.format() === "markdown" ? [{ id: "preview", title: "Preview", icon: "ti ti-eye", render: previewSurface }] : []),
-    ...(props.history ? [{ id: "history", title: "History", icon: "ti ti-history", render: props.history }] : []),
+    ...(props.format() === "markdown" ? [{ id: "preview", title: t().preview, icon: "ti ti-eye", render: previewSurface }] : []),
+    ...(props.history ? [{ id: "history", title: t().history, icon: "ti ti-history", render: props.history }] : []),
   ]);
 
   return (
@@ -113,7 +126,7 @@ export default function MailComposerEditor(props: {
           movable
           resizable
           split="horizontal"
-          ariaLabel="Message editor panes"
+          ariaLabel={t().editorPanes}
         />
       </Show>
     </div>

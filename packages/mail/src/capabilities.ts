@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import { Readable } from "node:stream";
-import { err, fail, ok, type Result } from "@k2b/stdlib";
+import { err, fail, i18n, ok, type Result } from "@k2b/stdlib";
 import {
   type CapabilityActionReview,
+  type CapabilityDefinitions,
   type CapabilityExecutionContext,
   type CapabilityInvocationResult,
   type CapabilityResult,
@@ -15,6 +16,8 @@ import {
   UniversalSearchInputSchema,
 } from "@valentinkolb/cloud/contracts";
 import type { z } from "zod";
+import { mailCapabilityMessages } from "./capability-messages";
+import { localizeMailError } from "./service/error-messages";
 import * as c from "./capability-contracts";
 import type { Mailbox, MailDraft, MailSearchExpression, MailSubscriptionSummary } from "./contracts";
 import {
@@ -49,6 +52,31 @@ const requestContext = (context: CapabilityExecutionContext): MailRequestContext
   accessSubject: context.accessSubject,
 });
 
+const localizeCapabilityErrors = <T extends CapabilityDefinitions>(definitions: T): T => {
+  for (const definition of Object.values(definitions.queries ?? {})) {
+    const run = definition.run;
+    definition.run = async (input, context) => {
+      const result = await run(input, context);
+      return result.ok ? result : { ok: false, error: localizeMailError(result.error, context.locale) };
+    };
+  }
+  for (const definition of Object.values(definitions.actions ?? {})) {
+    const run = definition.run;
+    definition.run = async (input, context) => {
+      const result = await run(input, context);
+      return result.ok ? result : { ok: false, error: localizeMailError(result.error, context.locale) };
+    };
+    if (definition.review) {
+      const review = definition.review;
+      definition.review = async (input, context) => {
+        const result = await review(input, context);
+        return result.ok ? result : { ok: false, error: localizeMailError(result.error, context.locale) };
+      };
+    }
+  }
+  return definitions;
+};
+
 type PublicTable = Parameters<typeof publicResources.resolvePublicId>[0];
 type MailboxPublicTable = Parameters<typeof publicResources.resolveMailboxPublicId>[0];
 
@@ -69,6 +97,27 @@ const RESOURCE_LABELS: Record<PublicTable, string> = {
   composeTemplates: "Compose template",
   incomingAutomations: "Incoming automation",
   automaticReplyConfigurations: "Automatic reply configuration",
+};
+
+const localizedState = (state: string, locale?: string): string => {
+  const t = mailCapabilityMessages(locale);
+  return (
+    {
+      pending: t.statePending,
+      complete: t.stateComplete,
+      failed: t.stateFailed,
+      sent: t.stateSent,
+      canceled: t.stateCanceled,
+      scheduled: t.stateScheduled,
+      undo_window: t.stateUndoWindow,
+      draft: t.stateDraft,
+      sending: t.stateSending,
+      discarded: t.stateDiscarded,
+      active: t.stateActive,
+      requesting: t.stateRequesting,
+      unsubscribe_requested: t.stateUnsubscribeRequested,
+    }[state] ?? state
+  );
 };
 
 const resolvePublicResource = async (table: PublicTable, shortId: string): Promise<Result<string>> => {
@@ -164,26 +213,27 @@ const truncateText = (value: string, maxBytes: number): { text: string; truncate
 const capabilitySummary = (value: string): string => truncateText(value, 500).text;
 const quotedSubject = (value: string | null | undefined): string => `“${truncateText(value || "(no subject)", 420).text}”`;
 const tagLabel = (value: string): string => (value.startsWith("#") ? value : `#${value}`);
-const joinedLabels = (values: string[]): string => {
+const joinedLabels = (values: string[], locale?: string): string => {
   const labels = values.map(tagLabel);
-  if (labels.length < 2) return labels[0] ?? "tags";
-  return `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}`;
+  return i18n.formatList(labels, locale) || "tags";
 };
-const tagChangeSummary = (subject: string, added: string[], removed: string[]): string => {
-  if (added.length === 0 && removed.length === 0) return `Tags on ${quotedSubject(subject)} were already up to date.`;
-  if (added.length > 0 && removed.length === 0) return `Added ${joinedLabels(added)} to ${quotedSubject(subject)}.`;
-  if (removed.length > 0 && added.length === 0) return `Removed ${joinedLabels(removed)} from ${quotedSubject(subject)}.`;
-  return `Changed tags on ${quotedSubject(subject)}: added ${joinedLabels(added)}; removed ${joinedLabels(removed)}.`;
+const tagChangeSummary = (subject: string, added: string[], removed: string[], locale?: string): string => {
+  const t = mailCapabilityMessages(locale);
+  if (added.length === 0 && removed.length === 0) return t.tagsUnchanged({ subject });
+  if (added.length > 0 && removed.length === 0) return t.tagsAdded({ tags: joinedLabels(added, locale), subject });
+  if (removed.length > 0 && added.length === 0) return t.tagsRemoved({ tags: joinedLabels(removed, locale), subject });
+  return t.tagsChanged({ added: joinedLabels(added, locale), removed: joinedLabels(removed, locale), subject });
 };
 
 const bodyReviewDetails = (input: {
   body: string;
   label: string;
   truncatedMessage: string;
+  previewWarningLabel?: string;
 }): NonNullable<CapabilityActionReview["details"]> => {
   const preview = truncateText(input.body, 10_000);
   return [
-    ...(preview.truncated ? [{ label: "Preview warning", value: input.truncatedMessage }] : []),
+    ...(preview.truncated ? [{ label: input.previewWarningLabel ?? "Preview warning", value: input.truncatedMessage }] : []),
     { label: input.label, value: preview.text, display: "block" as const },
   ];
 };
@@ -254,7 +304,8 @@ const openLink = (href: string): CapabilitySemanticLink => ({ rel: "open", href 
 const editLink = (href: string): CapabilitySemanticLink => ({ rel: "edit", href });
 const statusLink = (href: string): CapabilitySemanticLink => ({ rel: "status", href });
 const mailboxApprovalScope = (mailboxId: string): string => `mailbox:${mailboxId}`;
-const mailSubject = (subject: string | null | undefined): string => subject?.trim() || "(no subject)";
+const mailSubject = (subject: string | null | undefined, locale?: string): string =>
+  subject?.trim() || mailCapabilityMessages(locale).noSubject;
 const mailboxRef = (id: string, name: string, description?: string | null) => ({
   type: "mail.mailbox" as const,
   id,
@@ -262,59 +313,65 @@ const mailboxRef = (id: string, name: string, description?: string | null) => ({
   ...(description ? { preview: description } : {}),
   icon: "ti ti-inbox",
 });
-const draftRef = (id: string, subject?: string | null) => ({
+const draftRef = (id: string, subject?: string | null, locale?: string) => ({
   type: "mail.draft" as const,
   id,
-  ...(subject !== undefined ? { title: mailSubject(subject) } : {}),
+  ...(subject !== undefined ? { title: mailSubject(subject, locale) } : {}),
   icon: "ti ti-mail-pencil",
 });
-const conversationRef = (id: string, subject?: string | null, preview?: string | null) => ({
+const conversationRef = (id: string, subject?: string | null, preview?: string | null, locale?: string) => ({
   type: "mail.conversation" as const,
   id,
-  ...(subject !== undefined ? { title: mailSubject(subject) } : {}),
+  ...(subject !== undefined ? { title: mailSubject(subject, locale) } : {}),
   ...(preview ? { preview } : {}),
   icon: "ti ti-mail",
 });
-const messageRef = (id: string, subject: string | null | undefined) => ({
+const messageRef = (id: string, subject: string | null | undefined, locale?: string) => ({
   type: "mail.message" as const,
   id,
-  title: mailSubject(subject),
+  title: mailSubject(subject, locale),
   icon: "ti ti-mail",
 });
-const attachmentRef = (id: string, filename: string | null | undefined) => ({
+const attachmentRef = (id: string, filename: string | null | undefined, locale?: string) => ({
   type: "mail.attachment" as const,
   id,
-  title: filename?.trim() || "Unnamed attachment",
+  title: filename?.trim() || mailCapabilityMessages(locale).unnamedAttachment,
   icon: "ti ti-paperclip",
 });
-const commentRef = (id: string, author?: string | null) => ({
+const commentRef = (id: string, author?: string | null, locale?: string) => ({
   type: "mail.comment" as const,
   id,
-  title: author ? `Comment by ${author}` : "Conversation comment",
+  title: author ? mailCapabilityMessages(locale).commentBy({ author }) : mailCapabilityMessages(locale).conversationComment,
   icon: "ti ti-message",
 });
 const commentAuthorName = (author: { kind: string; displayName?: string | null }): string | null =>
   author.kind === "user" ? (author.displayName ?? null) : null;
-const reminderRef = (id: string, state?: string) => ({
+const reminderRef = (id: string, state?: string, locale?: string) => ({
   type: "mail.reminder" as const,
   id,
-  title: "Personal reminder",
-  ...(state ? { preview: state } : {}),
+  title: mailCapabilityMessages(locale).personalReminder,
+  ...(state ? { preview: localizedState(state, locale) } : {}),
   icon: "ti ti-bell",
 });
-const deliveryRef = (id: string, subject: string | null | undefined, state?: string) => ({
+const deliveryRef = (id: string, subject: string | null | undefined, state?: string, locale?: string) => ({
   type: "mail.delivery" as const,
   id,
-  title: mailSubject(subject),
-  ...(state ? { preview: state } : {}),
+  title: mailSubject(subject, locale),
+  ...(state ? { preview: localizedState(state, locale) } : {}),
   icon: "ti ti-clock-send",
 });
-const draftMetadata = (mailboxId: string, draftId: string, subject?: string | null) => ({
-  refs: [draftRef(draftId, subject)],
+const draftMetadata = (mailboxId: string, draftId: string, subject?: string | null, locale?: string) => ({
+  refs: [draftRef(draftId, subject, locale)],
   links: [editLink(draftHref(mailboxId, draftId))],
 });
-const conversationMetadata = (mailboxId: string, conversationId: string, subject?: string | null, preview?: string | null) => ({
-  refs: [conversationRef(conversationId, subject, preview)],
+const conversationMetadata = (
+  mailboxId: string,
+  conversationId: string,
+  subject?: string | null,
+  preview?: string | null,
+  locale?: string,
+) => ({
+  refs: [conversationRef(conversationId, subject, preview, locale)],
   links: [openLink(conversationHref(mailboxId, conversationId))],
 });
 
@@ -422,14 +479,14 @@ const mapDraft = (draft: MailDraft, ids: DraftPublicIds) => {
   };
 };
 
-const mapDraftSummary = (draft: MailDraft, ids: DraftPublicIds) => {
+const mapDraftSummary = (draft: MailDraft, ids: DraftPublicIds, locale?: string) => {
   const id = requirePublicId(ids.drafts, draft.id);
   const preview = truncateText(draft.body, 240).text;
   const recipientValues = [...draft.to, ...draft.cc, ...draft.bcc].map((recipient) => recipient.name?.trim() || recipient.address);
   const recipients = truncateText(recipientValues.join(", "), 320);
   return {
     ref: { type: "mail.draft" as const, id },
-    title: truncateText(draft.subject || "(no subject)", 500).text,
+    title: truncateText(draft.subject || mailCapabilityMessages(locale).noSubject, 500).text,
     ...(preview ? { preview } : {}),
     links: [editLink(draftHref(requirePublicId(ids.mailboxes, draft.mailboxId), id))],
     conversationId: draft.conversationId ? requirePublicId(ids.conversations, draft.conversationId) : null,
@@ -462,13 +519,14 @@ const mapConversation = (
   mailboxId: string,
   conversation: Omit<ConversationSummary, "folderId">,
   ids: { conversations: Map<string, string>; folders: Map<string, string> },
+  locale?: string,
 ) => {
   const id = requirePublicId(ids.conversations, conversation.id);
   const reference = boundedText(conversation.primaryReference, 160).text;
   const preview = boundedText(conversation.preview, 240).text;
   return {
     ref: { type: "mail.conversation" as const, id },
-    title: truncateText(conversation.subject || "(no subject)", 500).text,
+    title: truncateText(conversation.subject || mailCapabilityMessages(locale).noSubject, 500).text,
     ...(preview ? { preview } : {}),
     links: [openLink(conversationHref(mailboxId, id))],
     ...(reference ? { reference } : {}),
@@ -514,12 +572,12 @@ const mapMessageSummary = (
   };
 };
 
-const mapMessageListItem = (mailboxId: string, message: MessageSummary, messageIds: Map<string, string>) => {
+const mapMessageListItem = (mailboxId: string, message: MessageSummary, messageIds: Map<string, string>, locale?: string) => {
   const id = requirePublicId(messageIds, message.id);
   const preview = boundedText(message.preview ?? null, 240).text;
   return {
     ref: { type: "mail.message" as const, id },
-    title: truncateText(message.subject || "(no subject)", 500).text,
+    title: truncateText(message.subject || mailCapabilityMessages(locale).noSubject, 500).text,
     ...(preview ? { preview } : {}),
     links: [openLink(messageHref(mailboxId, id))],
     internalDate: message.internalDate,
@@ -638,6 +696,7 @@ const mapSubscription = (item: MailSubscriptionSummary) => ({
 });
 
 const runSearch = async (input: UniversalSearchInput, capabilityContext: CapabilityExecutionContext) => {
+  const t = mailCapabilityMessages(capabilityContext.locale);
   if (!input.query.trim()) return ok({ data: [] });
   const context = requestContext(capabilityContext);
   const mailboxResult = await mailboxes.listMailboxes(context, 20);
@@ -691,7 +750,7 @@ const runSearch = async (input: UniversalSearchInput, capabilityContext: Capabil
     const attachmentMatch = message.attachmentMatch;
     return {
       ref: { type: "mail.message", id: messageId },
-      title: message.subject || "(no subject)",
+      title: message.subject || t.noSubject,
       preview: truncateText(
         attachmentMatch?.snippet ?? message.snippet ?? message.from.map((address) => address.name || address.address).join(", "),
         320,
@@ -699,9 +758,9 @@ const runSearch = async (input: UniversalSearchInput, capabilityContext: Capabil
       icon: "ti ti-mail",
       priority: 8,
       metadata: [
-        { label: "Mailbox", value: mailbox.name },
-        { label: "Date", value: message.internalDate },
-        ...(attachmentMatch ? [{ label: "Matched attachment", value: attachmentMatch.filename?.trim() || "Untitled attachment" }] : []),
+        { label: t.mailbox, value: mailbox.name },
+        { label: t.date, value: message.internalDate },
+        ...(attachmentMatch ? [{ label: t.matchedAttachment, value: attachmentMatch.filename?.trim() || t.untitledAttachment }] : []),
       ],
       links: [
         {
@@ -717,7 +776,7 @@ const runSearch = async (input: UniversalSearchInput, capabilityContext: Capabil
               {
                 rel: "download" as const,
                 href: `/api/mail/mailboxes/${mailboxId}/messages/${requirePublicId(messageIds, attachmentMatch.messageId)}/attachments/${requirePublicId(attachmentIds, attachmentMatch.attachmentId)}`,
-                title: attachmentMatch.filename?.trim() || "Download matched attachment",
+                title: attachmentMatch.filename?.trim() || t.downloadMatchedAttachment,
               },
             ]
           : []),
@@ -771,6 +830,7 @@ const queryDefinitions = {
     data: c.MailboxDataSchema,
     openWorld: false,
     run: async (input: z.output<typeof c.MailboxReadInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const mailContext = requestContext(context);
       const scope = await resolveMailboxScope(input.id);
       if (!scope.ok) return scope;
@@ -781,7 +841,7 @@ const queryDefinitions = {
         ? fail(err.forbidden("Mailbox access is required"))
         : ok({
             data: mapMailbox({ ...mailbox.data, permission }, scope.data.shortId),
-            summary: capabilitySummary(`Read mailbox “${mailbox.data.name}”.`),
+            summary: capabilitySummary(t.readMailbox({ name: mailbox.data.name })),
             refs: [mailboxRef(scope.data.shortId, mailbox.data.name, mailbox.data.description)],
             links: [openLink(mailboxHref(scope.data.shortId))],
           });
@@ -925,7 +985,7 @@ const queryDefinitions = {
           result.data.items.flatMap((item) => item.activeFolderIds),
         ),
       ]);
-      const data = result.data.items.map((item) => mapConversation(scope.data.shortId, item, { conversations, folders }));
+      const data = result.data.items.map((item) => mapConversation(scope.data.shortId, item, { conversations, folders }, context.locale));
       return ok({
         data,
         refs: [{ type: "mail.mailbox" as const, id: scope.data.shortId }],
@@ -941,6 +1001,7 @@ const queryDefinitions = {
     data: c.ConversationFocusListDataSchema,
     openWorld: true,
     run: async (input: z.output<typeof c.ConversationFocusInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const result = await focus.listFocusConversations({
         context: requestContext(context),
         view: input.view,
@@ -964,7 +1025,7 @@ const queryDefinitions = {
         const preview = boundedText(item.preview, 240).text;
         return {
           ref: { type: "mail.conversation" as const, id: conversationId },
-          title: truncateText(item.subject || "(no subject)", 500).text,
+          title: truncateText(item.subject || t.noSubject, 500).text,
           ...(preview ? { preview } : {}),
           links: [openLink(conversationHref(mailboxId, conversationId))],
           mailboxId,
@@ -1021,10 +1082,12 @@ const queryDefinitions = {
         ),
       ]);
       const data = items.map((item) => {
+        const t = mailCapabilityMessages(context.locale);
         const conversation = mapConversation(
           scope.data.shortId,
           { ...item, id: item.conversationId!, workStatus: item.workStatus ?? "needs_action", preview: item.snippet },
           { conversations, folders },
+          context.locale,
         );
         if (!item.attachmentMatch) return { ...conversation, attachmentMatch: null };
         const attachmentId = requirePublicId(attachments, item.attachmentMatch.attachmentId);
@@ -1036,14 +1099,14 @@ const queryDefinitions = {
           attachmentMatch: {
             ref: { type: "mail.attachment" as const, id: attachmentId },
             messageRef: { type: "mail.message" as const, id: messageId },
-            title: filename?.trim() || "Unnamed attachment",
+            title: filename?.trim() || t.unnamedAttachment,
             preview: truncateText(snippet, 240).text,
             links: [
               openLink(messageHref(scope.data.shortId, messageId)),
               {
                 rel: "download" as const,
                 href: `/api/mail/mailboxes/${scope.data.shortId}/messages/${messageId}/attachments/${attachmentId}`,
-                title: filename?.trim() || "Download attachment",
+                title: filename?.trim() || t.downloadAttachment,
               },
             ],
           },
@@ -1064,6 +1127,7 @@ const queryDefinitions = {
     data: c.ConversationRelatedDataSchema,
     openWorld: true,
     run: async (input: z.output<typeof c.ConversationRelatedInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
       if (!scope.ok) return scope;
       const result = await conversationContext.listRelatedConversations({
@@ -1082,7 +1146,7 @@ const queryDefinitions = {
         const preview = boundedText(item.preview, 240).text;
         return {
           ref: { type: "mail.conversation" as const, id },
-          title: truncateText(item.subject || "(no subject)", 500).text,
+          title: truncateText(item.subject || t.noSubject, 500).text,
           participants: truncateText(item.participantSummary, 240).text,
           latestMessageAt: item.latestMessageAt,
           ...(preview ? { preview } : {}),
@@ -1101,6 +1165,7 @@ const queryDefinitions = {
     data: c.ConversationGetDataSchema,
     openWorld: true,
     run: async (input: z.output<typeof c.ConversationReadInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const mailContext = requestContext(context);
       const conversation = await resolvePublicResource("conversations", input.id);
       if (!conversation.ok) return conversation;
@@ -1156,11 +1221,11 @@ const queryDefinitions = {
             revision: state.data.revision,
           },
           tags: tags.data.tags.map(({ id, name, color, revision }) => ({ id: requirePublicId(tagIds, id), name, color, revision })),
-          messages: page.data.items.map((item) => mapMessageListItem(mailboxShortId, item, messageIds)),
+          messages: page.data.items.map((item) => mapMessageListItem(mailboxShortId, item, messageIds, context.locale)),
           messagesTruncated: page.data.nextCursor !== null,
         },
-        ...(subject ? { summary: capabilitySummary(`Read conversation ${quotedSubject(subject)}.`) } : {}),
-        ...conversationMetadata(mailboxShortId, input.id, subject, boundedText(summary.data.summary, 1000).text),
+        ...(subject ? { summary: capabilitySummary(t.readConversation({ subject })) } : {}),
+        ...conversationMetadata(mailboxShortId, input.id, subject, boundedText(summary.data.summary, 1000).text, context.locale),
       });
     },
   },
@@ -1188,7 +1253,7 @@ const queryDefinitions = {
         "messages",
         result.data.items.map((item) => item.id),
       );
-      const data = result.data.items.map((item) => mapMessageListItem(scope.data.shortId, item, ids));
+      const data = result.data.items.map((item) => mapMessageListItem(scope.data.shortId, item, ids, context.locale));
       return ok({
         data,
         page: capabilityPage(result.data.nextCursor),
@@ -1203,6 +1268,7 @@ const queryDefinitions = {
     data: c.MessageDataSchema,
     openWorld: true,
     run: async (input: z.output<typeof c.MessageReadInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const message = await resolvePublicResource("messages", input.id);
       if (!message.ok) return message;
       const mailboxId = await resourceParents.message(message.data);
@@ -1265,17 +1331,17 @@ const queryDefinitions = {
               }
             : null,
         },
-        summary: capabilitySummary(`Read message ${quotedSubject(item.subject)}.`),
+        summary: capabilitySummary(t.readMessage({ subject: reviewSubject(item.subject, context) })),
         refs: [
-          messageRef(input.id, item.subject),
-          ...attachments.slice(0, 99).map((attachment) => attachmentRef(attachment.id, attachment.filename)),
+          messageRef(input.id, item.subject, context.locale),
+          ...attachments.slice(0, 99).map((attachment) => attachmentRef(attachment.id, attachment.filename, context.locale)),
         ],
         links: [
           openLink(messageHref(mailboxShortId, input.id)),
           ...attachments.slice(0, 19).map((attachment) => ({
             rel: "download" as const,
             href: attachment.downloadHref,
-            title: attachment.filename?.trim() || "Download attachment",
+            title: attachment.filename?.trim() || t.downloadAttachment,
           })),
         ],
       });
@@ -1289,6 +1355,7 @@ const queryDefinitions = {
     data: c.AttachmentReadDataSchema,
     openWorld: false,
     run: async (input: z.output<typeof c.AttachmentReadInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const attachmentId = await resolvePublicResource("attachments", input.id);
       if (!attachmentId.ok) return attachmentId;
       const parent = await resourceParents.attachment(attachmentId.data);
@@ -1316,9 +1383,9 @@ const queryDefinitions = {
       };
       return ok({
         data,
-        summary: capabilitySummary(`Read attachment “${data.filename?.trim() || "unnamed attachment"}”.`),
-        refs: [attachmentRef(input.id, data.filename)],
-        links: [{ rel: "download" as const, href: data.downloadHref, title: data.filename?.trim() || "Download attachment" }],
+        summary: capabilitySummary(t.readAttachment({ filename: data.filename?.trim() || t.unnamedAttachment })),
+        refs: [attachmentRef(input.id, data.filename, context.locale)],
+        links: [{ rel: "download" as const, href: data.downloadHref, title: data.filename?.trim() || t.downloadAttachment }],
       });
     },
   },
@@ -1330,6 +1397,7 @@ const queryDefinitions = {
     data: c.AttachmentContentReadDataSchema,
     openWorld: false,
     run: async (input: z.output<typeof c.AttachmentContentReadInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const attachmentId = await resolvePublicResource("attachments", input.id);
       if (!attachmentId.ok) return attachmentId;
       const parent = await resourceParents.attachment(attachmentId.data);
@@ -1403,13 +1471,13 @@ const queryDefinitions = {
         },
         summary: capabilitySummary(
           metadata.available
-            ? `Read attachment text from “${filename?.trim() || "unnamed attachment"}”.`
-            : `Text extraction for “${filename?.trim() || "unnamed attachment"}” is ${metadata.status}.`,
+            ? t.readAttachmentText({ filename: filename?.trim() || t.unnamedAttachment })
+            : t.extractionState({ filename: filename?.trim() || t.unnamedAttachment, state: localizedState(metadata.status, context.locale) }),
         ),
-        refs: [attachmentRef(input.id, filename), messageRef(messageId, message.data.subject)],
+        refs: [attachmentRef(input.id, filename, context.locale), messageRef(messageId, message.data.subject, context.locale)],
         links: [
           openLink(messageHref(mailboxId, messageId)),
-          { rel: "download" as const, href: downloadHref, title: attachment.filename?.trim() || "Download attachment" },
+          { rel: "download" as const, href: downloadHref, title: attachment.filename?.trim() || t.downloadAttachment },
         ],
       });
     },
@@ -1433,7 +1501,7 @@ const queryDefinitions = {
         cursor: input.cursor,
         limit: input.limit,
         id: (item) => item.id,
-        map: (item) => mapDraftSummary(item, ids),
+        map: (item) => mapDraftSummary(item, ids, context.locale),
       });
     },
   },
@@ -1444,6 +1512,7 @@ const queryDefinitions = {
     data: c.DraftDataSchema,
     openWorld: false,
     run: async (input: z.output<typeof c.DraftReadInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const draftId = await resolvePublicResource("drafts", input.id);
       if (!draftId.ok) return draftId;
       const mailboxId = await resourceParents.draft(draftId.data);
@@ -1455,8 +1524,8 @@ const queryDefinitions = {
       const data = mapDraft(result.data, ids);
       return ok({
         data,
-        summary: capabilitySummary(`Read draft ${quotedSubject(data.subject)}.`),
-        ...draftMetadata(mailboxShortId, input.id, data.subject),
+        summary: capabilitySummary(t.readDraft({ subject: reviewSubject(data.subject, context) })),
+        ...draftMetadata(mailboxShortId, input.id, data.subject, context.locale),
       });
     },
   },
@@ -1468,6 +1537,7 @@ const queryDefinitions = {
     data: c.DraftSendReviewDataSchema,
     openWorld: false,
     run: async (input: z.output<typeof c.DraftSendReviewInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const draftId = await resolveMailboxResource("drafts", scope.data.id, input.draftId);
@@ -1478,13 +1548,12 @@ const queryDefinitions = {
           mailboxId: scope.data.id,
           draftId: draftId.data,
           expectedRevision: input.expectedRevision,
+          locale: context.locale,
         }),
         (item) => ({ ...item, draftId: input.draftId }),
         (item) => ({
           summary: capabilitySummary(
-            item.warnings.length === 0
-              ? "Draft passed the send-safety review."
-              : `Draft has ${item.warnings.length} send-safety ${item.warnings.length === 1 ? "warning" : "warnings"}.`,
+            item.warnings.length === 0 ? t.safetyPassed : t.safetyWarnings({ count: item.warnings.length }),
           ),
           ...draftMetadata(input.mailboxId, input.draftId),
         }),
@@ -1530,6 +1599,7 @@ const queryDefinitions = {
     data: c.CommentListDataSchema,
     openWorld: false,
     run: async (input: z.output<typeof c.CommentListInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const conversation = await resolveMailboxResource("conversations", scope.data.id, input.conversationId);
@@ -1550,7 +1620,9 @@ const queryDefinitions = {
         const author = { kind: item.author.kind, displayName: authorName };
         return {
           ref: { type: "mail.comment" as const, id: item.id },
-          title: commentAuthorName(item.author) ? truncateText(`Comment by ${authorName}`, 500).text : "Internal comment",
+          title: commentAuthorName(item.author)
+            ? truncateText(t.commentBy({ author: authorName }), 500).text
+            : t.internalComment,
           ...(preview ? { preview } : {}),
           links: [openLink(conversationHref(input.mailboxId, input.conversationId))],
           author,
@@ -1579,6 +1651,7 @@ const queryDefinitions = {
     data: c.CommentDataSchema,
     openWorld: false,
     run: async (input: z.output<typeof c.CommentReadInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const commentId = await resolvePublicResource("comments", input.id);
       if (!commentId.ok) return commentId;
       const parent = await resourceParents.comment(commentId.data);
@@ -1594,11 +1667,12 @@ const queryDefinitions = {
       return ok({
         data: item,
         summary: capabilitySummary(
-          item.author.kind === "user" && item.author.displayName
-            ? `Read an internal comment by ${item.author.displayName}.`
-            : "Read an internal conversation comment.",
+          item.author.kind === "user" && item.author.displayName ? t.readCommentBy({ author: item.author.displayName }) : t.readComment,
         ),
-        refs: [commentRef(item.id, commentAuthorName(item.author)), conversationRef(requirePublicId(conversations, parent.conversationId))],
+        refs: [
+          commentRef(item.id, commentAuthorName(item.author), context.locale),
+          conversationRef(requirePublicId(conversations, parent.conversationId), undefined, undefined, context.locale),
+        ],
         links: [
           openLink(conversationHref(requirePublicId(mailboxes, parent.mailboxId), requirePublicId(conversations, parent.conversationId))),
         ],
@@ -1645,6 +1719,7 @@ const queryDefinitions = {
     data: c.ReminderGetDataSchema,
     openWorld: false,
     run: async (input: z.output<typeof c.ReminderGetInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const conversation = await resolveMailboxResource("conversations", scope.data.id, input.conversationId);
@@ -1658,9 +1733,12 @@ const queryDefinitions = {
       const item = result.data ? await projectReminder(result.data) : null;
       return ok({
         data: item,
-        summary: capabilitySummary(item ? `Read a ${item.state} personal reminder.` : "No personal reminder is set for this conversation."),
+        summary: capabilitySummary(item ? t.readReminder({ state: localizedState(item.state, context.locale) }) : t.noReminder),
         ...((item) => ({
-          refs: [conversationRef(input.conversationId), ...(item ? [reminderRef(item.id, item.state)] : [])],
+          refs: [
+            conversationRef(input.conversationId, undefined, undefined, context.locale),
+            ...(item ? [reminderRef(item.id, item.state, context.locale)] : []),
+          ],
           links: [openLink(conversationHref(input.mailboxId, input.conversationId))],
         }))(item),
       });
@@ -1674,6 +1752,7 @@ const queryDefinitions = {
     data: c.ReminderDataSchema,
     openWorld: false,
     run: async (input: z.output<typeof c.ReminderReadInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const reminderId = await resolvePublicResource("reminders", input.id);
       if (!reminderId.ok) return reminderId;
       const parent = await resourceParents.reminder(reminderId.data);
@@ -1688,8 +1767,11 @@ const queryDefinitions = {
       ]);
       return ok({
         data,
-        summary: capabilitySummary(`Read a ${data.state} personal reminder.`),
-        refs: [reminderRef(data.id, data.state), conversationRef(data.conversationId)],
+        summary: capabilitySummary(t.readReminder({ state: localizedState(data.state, context.locale) })),
+        refs: [
+          reminderRef(data.id, data.state, context.locale),
+          conversationRef(data.conversationId, undefined, undefined, context.locale),
+        ],
         links: [
           openLink(conversationHref(requirePublicId(mailboxes, parent.mailboxId), requirePublicId(conversations, parent.conversationId))),
         ],
@@ -1704,6 +1786,7 @@ const queryDefinitions = {
     data: c.DeliveryListDataSchema,
     openWorld: false,
     run: async (input: z.output<typeof c.DeliveryListInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const result = await scheduledSends.listScheduledSends({
@@ -1718,7 +1801,7 @@ const queryDefinitions = {
         const lastError = boundedText(item.lastError, 320).text;
         return {
           ref: { type: "mail.delivery" as const, id: item.id },
-          title: truncateText(item.subject || "(no subject)", 500).text,
+          title: truncateText(item.subject || t.noSubject, 500).text,
           ...(lastError ? { preview: lastError } : {}),
           links: [statusLink(scheduledHref(scope.data.shortId))],
           draftId: item.draftId,
@@ -1743,6 +1826,7 @@ const queryDefinitions = {
     data: c.DeliveryDataSchema,
     openWorld: false,
     run: async (input: z.output<typeof c.DeliveryReadInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const deliveryId = await resolvePublicResource("deliveries", input.id);
       if (!deliveryId.ok) return deliveryId;
       const mailboxId = await resourceParents.delivery(deliveryId.data);
@@ -1771,8 +1855,10 @@ const queryDefinitions = {
           lastError: boundedText(item.lastError, 1000).text,
           createdAt: item.createdAt,
         },
-        summary: capabilitySummary(`Read ${item.state} delivery ${quotedSubject(subject)}.`),
-        refs: [deliveryRef(item.id, subject, item.state)],
+        summary: capabilitySummary(
+          t.readDelivery({ state: localizedState(item.state, context.locale), subject: reviewSubject(subject, context) }),
+        ),
+        refs: [deliveryRef(item.id, subject, item.state, context.locale)],
         links: [statusLink(scheduledHref(requirePublicId(mailboxes, mailboxId)))],
       });
     },
@@ -1822,6 +1908,7 @@ const queryDefinitions = {
     data: c.SubscriptionGetDataSchema,
     openWorld: true,
     run: async (input: z.output<typeof c.SubscriptionGetInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       return mapResult(
@@ -1832,8 +1919,8 @@ const queryDefinitions = {
           return {
             summary: capabilitySummary(
               item
-                ? `Read ${item.status} mailing-list subscription “${item.name || item.address}”.`
-                : "No matching mailing-list subscription was found.",
+                ? t.readSubscription({ status: localizedState(item.status, context.locale), name: item.name || item.address })
+                : t.noSubscription,
             ),
             ...(href ? { links: [openLink(href)] } : {}),
           };
@@ -1865,7 +1952,8 @@ const recipientSummary = (draft: Pick<MailDraft, "to" | "cc" | "bcc">): string =
   ).text;
 };
 
-const reviewSubject = (value: string | null | undefined): string => truncateText(value || "(no subject)", 700).text;
+const reviewSubject = (value: string | null | undefined, context?: CapabilityExecutionContext): string =>
+  truncateText(value || mailCapabilityMessages(context?.locale).noSubject, 700).text;
 
 const requireConversationForReview = async (
   mailboxId: string,
@@ -1890,7 +1978,7 @@ const requireConversationForReview = async (
   const message = page.data.items[0];
   if (!message) return fail(err.notFound("Conversation"));
   return ok({
-    subject: reviewSubject(message.subject),
+    subject: reviewSubject(message.subject, context),
     href: conversationHref(scope.data.shortId, conversationId),
     mailboxInternalId: scope.data.id,
     conversationInternalId: resolvedConversation.data,
@@ -1933,21 +2021,23 @@ const actionDefinitions = {
     idempotency: "required",
     approval: "rememberable",
     review: async (input: z.output<typeof c.DraftCreateInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "write");
       if (!access.ok) return access;
       return ok({
-        message: "The email will be saved as a draft and will not be sent.",
+        message: t.saveDraftReview,
         details: [
-          { label: "Subject", value: reviewSubject(input.subject) },
-          { label: "Recipients", value: recipientSummary(input) || "None" },
-          { label: "Attachments", value: String(input.attachments.length) },
+          { label: t.subject, value: reviewSubject(input.subject, context) },
+          { label: t.recipients, value: recipientSummary(input) || t.none },
+          { label: t.attachments, value: String(input.attachments.length) },
           ...(input.body
             ? bodyReviewDetails({
                 body: input.body,
-                label: "Body",
-                truncatedMessage: "This preview is truncated to 10 KB. Review the full proposed body in Details before creating the draft.",
+                label: t.body,
+                truncatedMessage: t.truncatedCreate,
+                previewWarningLabel: t.previewWarning,
               })
             : []),
         ],
@@ -1955,6 +2045,7 @@ const actionDefinitions = {
       });
     },
     run: async (input: z.output<typeof c.DraftCreateInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const key = requireIdempotencyKey(context, "draft.create");
       if (!key.ok) return key;
       const scope = await resolveMailboxScope(input.mailboxId);
@@ -2020,7 +2111,7 @@ const actionDefinitions = {
       const data = mapDraftMutation(result.data, ids);
       return ok({
         data,
-        summary: capabilitySummary(`Created draft ${quotedSubject(result.data.subject)}.`),
+        summary: capabilitySummary(t.createdDraft({ subject: reviewSubject(result.data.subject, context) })),
         ...draftMetadata(scope.data.shortId, publicDraftId, result.data.subject),
       });
     },
@@ -2035,19 +2126,21 @@ const actionDefinitions = {
     idempotency: "none",
     approval: "rememberable",
     review: async (input: z.output<typeof c.DraftUpdateInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const current = await requireDraftForReview(input.mailboxId, input.draftId, context);
       if (!current.ok) return current;
       if (current.data.revision !== input.expectedRevision) return fail(err.conflict("Draft changed before review"));
       return ok({
-        message: `Replace the editable content of draft ${reviewSubject(current.data.subject)}.`,
+        message: t.replaceDraftReview({ subject: reviewSubject(current.data.subject, context) }),
         details: [
-          { label: "Current subject", value: reviewSubject(current.data.subject) },
-          { label: "New subject", value: input.draft.subject || "(no subject)" },
-          { label: "Recipients", value: recipientSummary(input.draft) || "None" },
+          { label: t.currentSubject, value: reviewSubject(current.data.subject, context) },
+          { label: t.newSubject, value: input.draft.subject || t.noSubject },
+          { label: t.recipients, value: recipientSummary(input.draft) || t.none },
           ...bodyReviewDetails({
             body: input.draft.body,
-            label: "Proposed body preview",
-            truncatedMessage: "This preview is truncated to 10 KB. Review the full proposed body in Details before approving.",
+            label: t.proposedBody,
+            truncatedMessage: t.truncatedApprove,
+            previewWarningLabel: t.previewWarning,
           }),
         ],
         links: [editLink(draftHref(input.mailboxId, input.draftId))],
@@ -2055,6 +2148,7 @@ const actionDefinitions = {
       });
     },
     run: async (input: z.output<typeof c.DraftUpdateInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveDraftScope(input.mailboxId, input.draftId);
       if (!scope.ok) return scope;
       const senderIdentity = await resolveMailboxResource("senderIdentities", scope.data.mailbox.id, input.draft.senderIdentityId);
@@ -2071,7 +2165,7 @@ const actionDefinitions = {
       const data = mapDraftMutation(result.data, ids);
       return ok({
         data,
-        summary: capabilitySummary(`Updated draft ${quotedSubject(result.data.subject)}.`),
+        summary: capabilitySummary(t.updatedDraft({ subject: reviewSubject(result.data.subject, context) })),
         ...draftMetadata(input.mailboxId, input.draftId, result.data.subject),
       });
     },
@@ -2085,20 +2179,22 @@ const actionDefinitions = {
     openWorld: false,
     idempotency: "none",
     review: async (input: z.output<typeof c.DraftDiscardInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const draft = await requireDraftForReview(input.mailboxId, input.draftId, context);
       if (!draft.ok) return draft;
       if (draft.data.revision !== input.expectedRevision) return fail(err.conflict("Draft changed before review"));
       return ok({
-        message: `Discard draft ${reviewSubject(draft.data.subject)}.`,
+        message: t.discardDraftReview({ subject: reviewSubject(draft.data.subject, context) }),
         details: [
-          { label: "Subject", value: reviewSubject(draft.data.subject) },
-          { label: "Recipients", value: recipientSummary(draft.data) || "None" },
-          { label: "Attachments", value: String(draft.data.attachments.length) },
+          { label: t.subject, value: reviewSubject(draft.data.subject, context) },
+          { label: t.recipients, value: recipientSummary(draft.data) || t.none },
+          { label: t.attachments, value: String(draft.data.attachments.length) },
         ],
         links: [editLink(draftHref(input.mailboxId, input.draftId))],
       });
     },
     run: async (input: z.output<typeof c.DraftDiscardInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const draft = await requireDraftForReview(input.mailboxId, input.draftId, context);
       if (!draft.ok) return draft;
       const scope = await resolveDraftScope(input.mailboxId, input.draftId);
@@ -2111,7 +2207,7 @@ const actionDefinitions = {
           expectedRevision: input.expectedRevision,
         }),
         () => ({ deleted: true as const }),
-        () => ({ summary: capabilitySummary(`Discarded draft ${quotedSubject(draft.data.subject)}.`) }),
+        () => ({ summary: capabilitySummary(t.discardedDraft({ subject: reviewSubject(draft.data.subject, context) })) }),
       );
     },
   },
@@ -2125,23 +2221,31 @@ const actionDefinitions = {
     idempotency: "none",
     approval: "rememberable",
     review: async (input: z.output<typeof c.DraftAttachmentAddInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const draft = await requireDraftForReview(input.mailboxId, input.draftId, context);
       if (!draft.ok) return draft;
       if (draft.data.revision !== input.expectedRevision) return fail(err.conflict("Draft changed before review"));
       const byteLength = Buffer.byteLength(input.attachment.base64, "base64");
       return ok({
-        message: `Add ${truncateText(input.attachment.filename, 200).text} to draft ${reviewSubject(draft.data.subject)}.`,
+        message: t.addAttachmentReview({
+          filename: truncateText(input.attachment.filename, 200).text,
+          subject: reviewSubject(draft.data.subject, context),
+        }),
         details: [
-          { label: "Draft", value: reviewSubject(draft.data.subject) },
-          { label: "Attachment", value: input.attachment.filename },
-          { label: "Content type", value: input.attachment.contentType },
-          { label: "Size", value: `${byteLength} bytes` },
+          { label: t.draft, value: reviewSubject(draft.data.subject, context) },
+          { label: t.attachment, value: input.attachment.filename },
+          { label: t.contentType, value: input.attachment.contentType },
+          {
+            label: t.size,
+            value: t.bytes({ count: byteLength, formatted: new Intl.NumberFormat(context.locale).format(byteLength) }),
+          },
         ],
         links: [editLink(draftHref(input.mailboxId, input.draftId))],
         approvalScope: mailboxApprovalScope(input.mailboxId),
       });
     },
     run: async (input: z.output<typeof c.DraftAttachmentAddInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const bytes = Buffer.from(input.attachment.base64, "base64");
       if (bytes.byteLength > 105 * 1024) return fail(err.badInput("Inline attachment exceeds the 105 KiB capability limit"));
       const scope = await resolveDraftScope(input.mailboxId, input.draftId);
@@ -2161,7 +2265,9 @@ const actionDefinitions = {
       const data = mapDraftMutation(result.data, ids);
       return ok({
         data,
-        summary: capabilitySummary(`Added ${input.attachment.filename} to draft ${quotedSubject(result.data.subject)}.`),
+        summary: capabilitySummary(
+          t.addedAttachment({ filename: input.attachment.filename, subject: reviewSubject(result.data.subject, context) }),
+        ),
         ...draftMetadata(input.mailboxId, input.draftId, result.data.subject),
       });
     },
@@ -2175,6 +2281,7 @@ const actionDefinitions = {
     openWorld: false,
     idempotency: "none",
     review: async (input: z.output<typeof c.DraftAttachmentRemoveInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const draft = await requireDraftForReview(input.mailboxId, input.draftId, context);
       if (!draft.ok) return draft;
       if (draft.data.revision !== input.expectedRevision) return fail(err.conflict("Draft changed before review"));
@@ -2185,15 +2292,19 @@ const actionDefinitions = {
       const attachment = draft.data.attachments.find((candidate) => candidate.id === attachmentId.data);
       if (!attachment) return fail(err.notFound("Draft attachment"));
       return ok({
-        message: `Remove attachment ${truncateText(attachment.filename, 200).text} from draft ${reviewSubject(draft.data.subject)}.`,
+        message: t.removeAttachmentReview({
+          filename: truncateText(attachment.filename, 200).text,
+          subject: reviewSubject(draft.data.subject, context),
+        }),
         details: [
-          { label: "Draft", value: reviewSubject(draft.data.subject) },
-          { label: "Attachment", value: attachment.filename },
+          { label: t.draft, value: reviewSubject(draft.data.subject, context) },
+          { label: t.attachment, value: attachment.filename },
         ],
         links: [editLink(draftHref(input.mailboxId, input.draftId))],
       });
     },
     run: async (input: z.output<typeof c.DraftAttachmentRemoveInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveDraftScope(input.mailboxId, input.draftId);
       if (!scope.ok) return scope;
       const [draft, attachmentId] = await Promise.all([
@@ -2215,7 +2326,9 @@ const actionDefinitions = {
       const ids = await draftPublicIds([result.data]);
       return ok({
         data: mapDraftMutation(result.data, ids),
-        summary: capabilitySummary(`Removed ${attachment.filename} from draft ${quotedSubject(draft.data.subject)}.`),
+        summary: capabilitySummary(
+          t.removedAttachment({ filename: attachment.filename, subject: reviewSubject(draft.data.subject, context) }),
+        ),
         ...draftMetadata(input.mailboxId, input.draftId, draft.data.subject),
       });
     },
@@ -2229,6 +2342,7 @@ const actionDefinitions = {
     openWorld: true,
     idempotency: "required",
     review: async (input: z.output<typeof c.DraftSendInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveDraftScope(input.mailboxId, input.draftId);
       if (!scope.ok) return scope;
       const [draft, safety] = await Promise.all([
@@ -2238,29 +2352,32 @@ const actionDefinitions = {
           mailboxId: scope.data.mailbox.id,
           draftId: scope.data.draftId,
           expectedRevision: input.expectedRevision,
+          locale: context.locale,
         }),
       ]);
       if (!draft.ok) return draft;
       if (!safety.ok) return safety;
       return ok({
-        message: `${input.scheduledAt ? "Schedule" : "Send"} draft ${reviewSubject(draft.data.subject)} to external recipients.`,
+        message: t.sendDraftReview({ subject: reviewSubject(draft.data.subject, context), scheduled: Boolean(input.scheduledAt) }),
         details: [
-          { label: "Subject", value: reviewSubject(draft.data.subject) },
-          { label: "Recipients", value: recipientSummary(draft.data) || "None" },
+          { label: t.subject, value: reviewSubject(draft.data.subject, context) },
+          { label: t.recipients, value: recipientSummary(draft.data) || t.none },
           input.scheduledAt
-            ? { label: "Delivery", value: input.scheduledAt, format: "date-time" as const }
-            : { label: "Delivery", value: `After a ${input.undoSeconds}-second undo window` },
+            ? { label: t.delivery, value: input.scheduledAt, format: "date-time" as const }
+            : { label: t.delivery, value: t.undoWindow({ seconds: input.undoSeconds }) },
           ...safety.data.warnings.map((warning) => ({ label: warning.title, value: warning.description })),
           ...bodyReviewDetails({
             body: draft.data.body,
-            label: "Body",
-            truncatedMessage: "This preview is truncated to 10 KB. Open the draft to review the complete body before sending.",
+            label: t.body,
+            truncatedMessage: t.truncatedSend,
+            previewWarningLabel: t.previewWarning,
           }),
         ],
         links: [editLink(draftHref(input.mailboxId, input.draftId))],
       });
     },
     run: async (input: z.output<typeof c.DraftSendInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const key = requireIdempotencyKey(context, "draft.send");
       if (!key.ok) return key;
       const scope = await resolveDraftScope(input.mailboxId, input.draftId);
@@ -2294,8 +2411,8 @@ const actionDefinitions = {
         },
         summary: capabilitySummary(
           input.scheduledAt
-            ? `Scheduled ${draft.ok ? quotedSubject(draft.data.subject) : "the email"} for delivery.`
-            : `Queued ${draft.ok ? quotedSubject(draft.data.subject) : "the email"} for delivery.`,
+            ? t.deliveryScheduled({ subject: draft.ok ? `“${reviewSubject(draft.data.subject, context)}”` : t.theEmail })
+            : t.deliveryQueued({ subject: draft.ok ? `“${reviewSubject(draft.data.subject, context)}”` : t.theEmail }),
         ),
         refs: [
           draftRef(input.draftId, draft.ok ? draft.data.subject : undefined),
@@ -2317,6 +2434,7 @@ const actionDefinitions = {
     openWorld: false,
     idempotency: "none",
     review: async (input: z.output<typeof c.DeliveryCancelInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const deliveryId = await resolveMailboxResource("deliveries", scope.data.id, input.deliveryId);
@@ -2330,16 +2448,17 @@ const actionDefinitions = {
       });
       if (!delivery.ok) return delivery;
       return ok({
-        message: `Cancel delivery of ${reviewSubject(delivery.data.subject)}.`,
+        message: t.cancelDeliveryReview({ subject: reviewSubject(delivery.data.subject, context) }),
         details: [
-          { label: "Subject", value: reviewSubject(delivery.data.subject) },
-          { label: "Scheduled for", value: delivery.data.scheduledAt, format: "date-time" as const },
-          { label: "Draft", value: input.disposition === "draft" ? "Restore as draft" : "Discard" },
+          { label: t.subject, value: reviewSubject(delivery.data.subject, context) },
+          { label: t.scheduledFor, value: delivery.data.scheduledAt, format: "date-time" as const },
+          { label: t.draft, value: input.disposition === "draft" ? t.restoreAsDraft : t.discard },
         ],
         links: [statusLink(scheduledHref(input.mailboxId))],
       });
     },
     run: async (input: z.output<typeof c.DeliveryCancelInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const deliveryId = await resolveMailboxResource("deliveries", scope.data.id, input.deliveryId);
@@ -2362,9 +2481,10 @@ const actionDefinitions = {
       return ok({
         data,
         summary: capabilitySummary(
-          data.disposition === "draft"
-            ? `Cancelled delivery of ${quotedSubject(delivery.data.subject)} and restored it as a draft.`
-            : `Cancelled delivery of ${quotedSubject(delivery.data.subject)} and discarded its draft.`,
+          t.deliveryCancelled({
+            subject: `“${reviewSubject(delivery.data.subject, context)}”`,
+            restored: data.disposition === "draft",
+          }),
         ),
         ...(data.disposition === "draft" ? draftMetadata(input.mailboxId, data.draftId, delivery.data.subject) : {}),
       });
@@ -2380,23 +2500,25 @@ const actionDefinitions = {
     idempotency: "required",
     approval: "rememberable",
     review: async (input: z.output<typeof c.ConversationMarkInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.target.conversationId, context);
       if (!conversation.ok) return conversation;
       const changes = [
-        ...(input.read === undefined ? [] : [input.read ? "mark read" : "mark unread"]),
-        ...(input.flagged === undefined ? [] : [input.flagged ? "flag" : "unflag"]),
+        ...(input.read === undefined ? [] : [input.read ? t.markRead : t.markUnread]),
+        ...(input.flagged === undefined ? [] : [input.flagged ? t.flag : t.unflag]),
       ];
       return ok({
-        message: `${changes.join(" and ")} ${conversation.data.subject}.`,
+        message: t.changeConversationReview({ changes: i18n.formatList(changes, context.locale), subject: conversation.data.subject }),
         details: [
-          { label: "Conversation", value: conversation.data.subject },
-          { label: "Change", value: changes.join(", ") },
+          { label: t.conversation, value: conversation.data.subject },
+          { label: t.change, value: i18n.formatList(changes, context.locale) },
         ],
         links: [openLink(conversation.data.href)],
         approvalScope: mailboxApprovalScope(input.mailboxId),
       });
     },
     run: async (input: z.output<typeof c.ConversationMarkInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const key = requireIdempotencyKey(context, "conversation.mark");
       if (!key.ok) return key;
       const conversation = await requireConversationForReview(input.mailboxId, input.target.conversationId, context);
@@ -2422,8 +2544,8 @@ const actionDefinitions = {
       });
       if (!result.ok) return result;
       const states = [
-        ...(input.read === undefined ? [] : [input.read ? "read" : "unread"]),
-        ...(input.flagged === undefined ? [] : [input.flagged ? "flagged" : "unflagged"]),
+        ...(input.read === undefined ? [] : [input.read ? t.read : t.unread]),
+        ...(input.flagged === undefined ? [] : [input.flagged ? t.flagged : t.unflagged]),
       ];
       return ok({
         data: {
@@ -2431,7 +2553,9 @@ const actionDefinitions = {
           correlationId: result.data.correlationId,
           commands: result.data.commands.map((command) => ({ id: command.id, state: command.state })),
         },
-        summary: capabilitySummary(`Marked ${quotedSubject(conversation.data.subject)} as ${states.join(" and ")}.`),
+        summary: capabilitySummary(
+          t.markedConversation({ subject: conversation.data.subject, states: i18n.formatList(states, context.locale) }),
+        ),
         ...conversationMetadata(input.mailboxId, input.target.conversationId, conversation.data.subject),
       });
     },
@@ -2445,6 +2569,7 @@ const actionDefinitions = {
     openWorld: false,
     idempotency: "required",
     review: async (input: z.output<typeof c.ConversationMoveInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.target.conversationId, context);
       if (!conversation.ok) return conversation;
       let destination = input.destination.kind === "role" ? input.destination.role : input.destination.folderId;
@@ -2461,15 +2586,16 @@ const actionDefinitions = {
         ).text;
       }
       return ok({
-        message: `Move ${conversation.data.subject} to ${destination}.`,
+        message: t.moveConversationReview({ subject: conversation.data.subject, destination }),
         details: [
-          { label: "Conversation", value: conversation.data.subject },
-          { label: "Destination", value: destination },
+          { label: t.conversation, value: conversation.data.subject },
+          { label: t.destination, value: destination },
         ],
         links: [openLink(conversation.data.href)],
       });
     },
     run: async (input: z.output<typeof c.ConversationMoveInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const key = requireIdempotencyKey(context, "conversation.move");
       if (!key.ok) return key;
       const conversation = await requireConversationForReview(input.mailboxId, input.target.conversationId, context);
@@ -2510,7 +2636,7 @@ const actionDefinitions = {
           correlationId: result.data.correlationId,
           commands: result.data.commands.map((command) => ({ id: command.id, state: command.state })),
         },
-        summary: capabilitySummary(`Moved ${quotedSubject(conversation.data.subject)} to ${destination}.`),
+        summary: capabilitySummary(t.movedConversation({ subject: conversation.data.subject, destination })),
         ...conversationMetadata(input.mailboxId, input.target.conversationId, conversation.data.subject),
       });
     },
@@ -2525,6 +2651,7 @@ const actionDefinitions = {
     idempotency: "none",
     approval: "rememberable",
     review: async (input: z.output<typeof c.ConversationTagUpdateInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
       if (!scope.ok) return scope;
       const [conversation, tags] = await Promise.all([
@@ -2539,11 +2666,11 @@ const actionDefinitions = {
       );
       const names = new Map(tags.data.map((tag) => [requirePublicId(publicTagIds, tag.id), tag.name]));
       return ok({
-        message: `Change tags on ${conversation.data.subject}.`,
+        message: t.changeTagsReview({ subject: conversation.data.subject }),
         details: [
-          { label: "Conversation", value: conversation.data.subject },
-          { label: "Add", value: input.addTagIds.map((id) => names.get(id) ?? id).join(", ") || "None" },
-          { label: "Remove", value: input.removeTagIds.map((id) => names.get(id) ?? id).join(", ") || "None" },
+          { label: t.conversation, value: conversation.data.subject },
+          { label: t.add, value: i18n.formatList(input.addTagIds.map((id) => names.get(id) ?? id), context.locale) || t.none },
+          { label: t.remove, value: i18n.formatList(input.removeTagIds.map((id) => names.get(id) ?? id), context.locale) || t.none },
         ],
         links: [{ rel: "open" as const, href: conversation.data.href }],
         approvalScope: mailboxApprovalScope(input.mailboxId),
@@ -2592,7 +2719,7 @@ const actionDefinitions = {
             revision: tag.revision,
           })),
         },
-        summary: capabilitySummary(tagChangeSummary(conversation.data.subject, addedNames, removedNames)),
+        summary: capabilitySummary(tagChangeSummary(conversation.data.subject, addedNames, removedNames, context.locale)),
         ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
       });
     },
@@ -2607,6 +2734,7 @@ const actionDefinitions = {
     idempotency: "none",
     approval: "rememberable",
     review: async (input: z.output<typeof c.ConversationAssignInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
       if (!conversation.ok) return conversation;
       const assignee = input.assigneeUserId
@@ -2620,17 +2748,18 @@ const actionDefinitions = {
       if (input.assigneeUserId && !assignee[0]) return fail(err.badInput("Assignee must have current write access to this mailbox"));
       return ok({
         message: input.assigneeUserId
-          ? `Assign ${conversation.data.subject} to ${assignee[0]!.displayName}.`
-          : `Clear the assignee of ${conversation.data.subject}.`,
+          ? t.assignReview({ subject: conversation.data.subject, assignee: assignee[0]!.displayName })
+          : t.unassignReview({ subject: conversation.data.subject }),
         details: [
-          { label: "Conversation", value: conversation.data.subject },
-          { label: "Assignee", value: assignee[0] ? `${assignee[0].displayName} · ${assignee[0].uid}` : "Unassigned" },
+          { label: t.conversation, value: conversation.data.subject },
+          { label: t.assignee, value: assignee[0] ? `${assignee[0].displayName} · ${assignee[0].uid}` : t.unassigned },
         ],
         links: [{ rel: "open" as const, href: conversation.data.href }],
         approvalScope: mailboxApprovalScope(input.mailboxId),
       });
     },
     run: async (input: z.output<typeof c.ConversationAssignInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
       if (!conversation.ok) return conversation;
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
@@ -2649,8 +2778,8 @@ const actionDefinitions = {
         (item) => ({
           summary: capabilitySummary(
             item.assignee
-              ? `Assigned ${quotedSubject(conversation.data.subject)} to ${item.assignee.displayName}.`
-              : `Cleared the assignment of ${quotedSubject(conversation.data.subject)}.`,
+              ? t.assignedConversation({ subject: conversation.data.subject, assignee: item.assignee.displayName })
+              : t.unassignedConversation({ subject: conversation.data.subject }),
           ),
           ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
         }),
@@ -2667,19 +2796,21 @@ const actionDefinitions = {
     idempotency: "none",
     approval: "rememberable",
     review: async (input: z.output<typeof c.ConversationStatusUpdateInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
       if (!conversation.ok) return conversation;
       return ok({
-        message: `${input.status === "done" ? "Mark" : "Reopen"} ${conversation.data.subject}${input.status === "done" ? " done" : ""}.`,
+        message: t.statusReview({ subject: conversation.data.subject, done: input.status === "done" }),
         details: [
-          { label: "Conversation", value: conversation.data.subject },
-          { label: "Status", value: input.status === "done" ? "Done" : "Open" },
+          { label: t.conversation, value: conversation.data.subject },
+          { label: t.status, value: input.status === "done" ? t.done : t.open },
         ],
         links: [{ rel: "open" as const, href: conversation.data.href }],
         approvalScope: mailboxApprovalScope(input.mailboxId),
       });
     },
     run: async (input: z.output<typeof c.ConversationStatusUpdateInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
       if (!conversation.ok) return conversation;
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
@@ -2695,8 +2826,8 @@ const actionDefinitions = {
         () => ({
           summary: capabilitySummary(
             input.status === "done"
-              ? `Completed ${quotedSubject(conversation.data.subject)}.`
-              : `Reopened ${quotedSubject(conversation.data.subject)}.`,
+              ? t.completedConversation({ subject: conversation.data.subject })
+              : t.reopenedConversation({ subject: conversation.data.subject }),
           ),
           ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
         }),
@@ -2713,21 +2844,25 @@ const actionDefinitions = {
     idempotency: "none",
     approval: "rememberable",
     review: async (input: z.output<typeof c.ConversationSnoozeInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
       if (!conversation.ok) return conversation;
       return ok({
-        message: input.snoozedUntil ? `Snooze ${conversation.data.subject}.` : `Clear the snooze deadline of ${conversation.data.subject}.`,
+        message: input.snoozedUntil
+          ? t.snoozeReview({ subject: conversation.data.subject })
+          : t.clearSnoozeReview({ subject: conversation.data.subject }),
         details: [
-          { label: "Conversation", value: conversation.data.subject },
+          { label: t.conversation, value: conversation.data.subject },
           ...(input.snoozedUntil
-            ? [{ label: "Snoozed until", value: input.snoozedUntil, format: "date-time" as const }]
-            : [{ label: "Snoozed until", value: "Not snoozed" }]),
+            ? [{ label: t.snoozedUntil, value: input.snoozedUntil, format: "date-time" as const }]
+            : [{ label: t.snoozedUntil, value: t.notSnoozed }]),
         ],
         links: [{ rel: "open" as const, href: conversation.data.href }],
         approvalScope: mailboxApprovalScope(input.mailboxId),
       });
     },
     run: async (input: z.output<typeof c.ConversationSnoozeInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
       if (!conversation.ok) return conversation;
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
@@ -2743,8 +2878,8 @@ const actionDefinitions = {
         () => ({
           summary: capabilitySummary(
             input.snoozedUntil
-              ? `Snoozed ${quotedSubject(conversation.data.subject)}.`
-              : `Cleared the snooze deadline of ${quotedSubject(conversation.data.subject)}.`,
+              ? t.snoozedConversation({ subject: conversation.data.subject })
+              : t.clearedSnooze({ subject: conversation.data.subject }),
           ),
           ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
         }),
@@ -2761,19 +2896,21 @@ const actionDefinitions = {
     idempotency: "none",
     approval: "rememberable",
     review: async (input: z.output<typeof c.ReminderSetInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "read");
       if (!conversation.ok) return conversation;
       return ok({
-        message: `Set your reminder for ${conversation.data.subject}.`,
+        message: t.setReminderReview({ subject: conversation.data.subject }),
         details: [
-          { label: "Conversation", value: conversation.data.subject },
-          { label: "Due at", value: input.dueAt, format: "date-time" as const },
+          { label: t.conversation, value: conversation.data.subject },
+          { label: t.dueAt, value: input.dueAt, format: "date-time" as const },
         ],
         links: [{ rel: "open" as const, href: conversation.data.href }],
         approvalScope: mailboxApprovalScope(input.mailboxId),
       });
     },
     run: async (input: z.output<typeof c.ReminderSetInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "read");
       if (!conversation.ok) return conversation;
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
@@ -2788,7 +2925,7 @@ const actionDefinitions = {
       const item = await projectReminder(result.data);
       return ok({
         data: item,
-        summary: capabilitySummary(`Set a reminder for ${quotedSubject(conversation.data.subject)}.`),
+        summary: capabilitySummary(t.reminderSet({ subject: conversation.data.subject })),
         refs: [reminderRef(item.id, item.state), conversationRef(input.conversationId, conversation.data.subject)],
         links: [openLink(conversationHref(input.mailboxId, input.conversationId))],
       });
@@ -2804,6 +2941,7 @@ const actionDefinitions = {
     idempotency: "none",
     approval: "rememberable",
     review: async (input: z.output<typeof c.ReminderCancelInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
       if (!scope.ok) return scope;
       const [conversation, reminder] = await Promise.all([
@@ -2817,18 +2955,19 @@ const actionDefinitions = {
       if (!conversation.ok) return conversation;
       if (!reminder.ok) return reminder;
       return ok({
-        message: `Cancel your reminder for ${conversation.data.subject}.`,
+        message: t.cancelReminderReview({ subject: conversation.data.subject }),
         details: [
-          { label: "Conversation", value: conversation.data.subject },
+          { label: t.conversation, value: conversation.data.subject },
           ...(reminder.data?.dueAt
-            ? [{ label: "Due at", value: reminder.data.dueAt, format: "date-time" as const }]
-            : [{ label: "Due at", value: "Unknown" }]),
+            ? [{ label: t.dueAt, value: reminder.data.dueAt, format: "date-time" as const }]
+            : [{ label: t.dueAt, value: t.unknown }]),
         ],
         links: [{ rel: "open" as const, href: conversation.data.href }],
         approvalScope: mailboxApprovalScope(input.mailboxId),
       });
     },
     run: async (input: z.output<typeof c.ReminderCancelInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context, "read");
       if (!conversation.ok) return conversation;
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
@@ -2843,7 +2982,7 @@ const actionDefinitions = {
       const item = await projectReminder(result.data);
       return ok({
         data: item,
-        summary: capabilitySummary(`Cancelled the reminder for ${quotedSubject(conversation.data.subject)}.`),
+        summary: capabilitySummary(t.reminderCancelled({ subject: conversation.data.subject })),
         refs: [reminderRef(item.id, item.state), conversationRef(input.conversationId, conversation.data.subject)],
         links: [openLink(conversationHref(input.mailboxId, input.conversationId))],
       });
@@ -2859,16 +2998,18 @@ const actionDefinitions = {
     idempotency: "none",
     approval: "rememberable",
     review: async (input: z.output<typeof c.CommentCreateInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
       if (!conversation.ok) return conversation;
       return ok({
-        message: `Add an internal comment to ${conversation.data.subject}.`,
+        message: t.addCommentReview({ subject: conversation.data.subject }),
         details: [
-          { label: "Conversation", value: conversation.data.subject },
+          { label: t.conversation, value: conversation.data.subject },
           ...bodyReviewDetails({
             body: input.body,
-            label: "Comment",
-            truncatedMessage: "This comment preview is truncated to 10 KB. Review the full comment in Details before approving.",
+            label: t.comment,
+            truncatedMessage: t.truncatedCommentApprove,
+            previewWarningLabel: t.previewWarning,
           }),
         ],
         links: [{ rel: "open" as const, href: conversation.data.href }],
@@ -2876,6 +3017,7 @@ const actionDefinitions = {
       });
     },
     run: async (input: z.output<typeof c.CommentCreateInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const conversation = await requireConversationForReview(input.mailboxId, input.conversationId, context);
       if (!conversation.ok) return conversation;
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
@@ -2901,7 +3043,7 @@ const actionDefinitions = {
           revision: item.revision,
           deleted: item.deletedAt !== null,
         },
-        summary: capabilitySummary(`Added an internal comment to ${quotedSubject(conversation.data.subject)}.`),
+        summary: capabilitySummary(t.commentAdded({ subject: conversation.data.subject })),
         refs: [commentRef(item.id, commentAuthorName(item.author)), conversationRef(input.conversationId, conversation.data.subject)],
         links: [openLink(conversationHref(input.mailboxId, input.conversationId))],
       });
@@ -2917,21 +3059,24 @@ const actionDefinitions = {
     idempotency: "none",
     approval: "rememberable",
     review: async (input: z.output<typeof c.CommentUpdateInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const review = await requireCommentForReview(input, context);
       if (!review.ok) return review;
       return ok({
-        message: `Update your internal comment on ${review.data.conversation.subject}.`,
+        message: t.updateCommentReview({ subject: review.data.conversation.subject }),
         details: [
-          { label: "Conversation", value: review.data.conversation.subject },
+          { label: t.conversation, value: review.data.conversation.subject },
           ...bodyReviewDetails({
             body: review.data.comment.body,
-            label: "Current comment",
-            truncatedMessage: "This current-comment preview is truncated to 10 KB.",
+            label: t.currentComment,
+            truncatedMessage: t.truncatedCurrentComment,
+            previewWarningLabel: t.previewWarning,
           }),
           ...bodyReviewDetails({
             body: input.body,
-            label: "Replacement comment",
-            truncatedMessage: "This replacement preview is truncated to 10 KB. Review the full replacement in Details before approving.",
+            label: t.replacementComment,
+            truncatedMessage: t.truncatedReplacement,
+            previewWarningLabel: t.previewWarning,
           }),
         ],
         links: [{ rel: "open" as const, href: review.data.conversation.href }],
@@ -2939,6 +3084,7 @@ const actionDefinitions = {
       });
     },
     run: async (input: z.output<typeof c.CommentUpdateInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const review = await requireCommentForReview(input, context);
       if (!review.ok) return review;
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
@@ -2963,7 +3109,7 @@ const actionDefinitions = {
           revision: item.revision,
           deleted: item.deletedAt !== null,
         },
-        summary: capabilitySummary(`Updated your internal comment on ${quotedSubject(review.data.conversation.subject)}.`),
+        summary: capabilitySummary(t.commentUpdated({ subject: review.data.conversation.subject })),
         refs: [
           commentRef(item.id, commentAuthorName(item.author)),
           conversationRef(input.conversationId, review.data.conversation.subject),
@@ -2981,22 +3127,25 @@ const actionDefinitions = {
     openWorld: false,
     idempotency: "none",
     review: async (input: z.output<typeof c.CommentDeleteInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const review = await requireCommentForReview(input, context);
       if (!review.ok) return review;
       return ok({
-        message: `Delete your internal comment on ${review.data.conversation.subject}.`,
+        message: t.deleteCommentReview({ subject: review.data.conversation.subject }),
         details: [
-          { label: "Conversation", value: review.data.conversation.subject },
+          { label: t.conversation, value: review.data.conversation.subject },
           ...bodyReviewDetails({
             body: review.data.comment.body,
-            label: "Comment",
-            truncatedMessage: "This comment preview is truncated to 10 KB. Open the conversation to review the complete comment.",
+            label: t.comment,
+            truncatedMessage: t.truncatedCommentOpen,
+            previewWarningLabel: t.previewWarning,
           }),
         ],
         links: [{ rel: "open" as const, href: review.data.conversation.href }],
       });
     },
     run: async (input: z.output<typeof c.CommentDeleteInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const review = await requireCommentForReview(input, context);
       if (!review.ok) return review;
       const scope = await resolveConversationScope(input.mailboxId, input.conversationId);
@@ -3021,7 +3170,7 @@ const actionDefinitions = {
           revision: item.revision,
           deleted: item.deletedAt !== null,
         },
-        summary: capabilitySummary(`Deleted your internal comment from ${quotedSubject(review.data.conversation.subject)}.`),
+        summary: capabilitySummary(t.commentDeleted({ subject: review.data.conversation.subject })),
         refs: [
           commentRef(item.id, commentAuthorName(item.author)),
           conversationRef(input.conversationId, review.data.conversation.subject),
@@ -3040,20 +3189,22 @@ const actionDefinitions = {
     idempotency: "none",
     approval: "rememberable",
     review: async (input: z.output<typeof c.TagCreateInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "write");
       if (!access.ok) return access;
       return ok({
-        message: `Create mailbox tag ${tagLabel(input.name)}.`,
+        message: t.createTagReview({ tag: tagLabel(input.name) }),
         details: [
-          { label: "Tag", value: tagLabel(input.name) },
-          { label: "Color", value: input.color },
+          { label: t.tag, value: tagLabel(input.name) },
+          { label: t.color, value: input.color },
         ],
         approvalScope: mailboxApprovalScope(input.mailboxId),
       });
     },
     run: async (input: z.output<typeof c.TagCreateInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const result = await localTags.createLocalTag({
@@ -3069,7 +3220,7 @@ const actionDefinitions = {
         color: result.data.color,
         revision: result.data.revision,
       };
-      return ok({ data, summary: capabilitySummary(`Created mailbox tag ${tagLabel(data.name)}.`) });
+      return ok({ data, summary: capabilitySummary(t.tagCreated({ tag: tagLabel(data.name) })) });
     },
   },
   "mailbox.tag.update": {
@@ -3081,6 +3232,7 @@ const actionDefinitions = {
     openWorld: false,
     idempotency: "none",
     review: async (input: z.output<typeof c.TagUpdateInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const tagId = await resolveMailboxResource("tags", scope.data.id, input.tagId);
@@ -3092,15 +3244,16 @@ const actionDefinitions = {
       const tag = tags.data.find((candidate) => candidate.id === tagId.data);
       if (!tag) return fail(err.notFound("Mailbox tag"));
       return ok({
-        message: `Update mailbox tag ${tag.name}.`,
+        message: t.updateTagReview({ tag: tag.name }),
         details: [
-          { label: "Current name", value: tag.name },
-          ...(input.name ? [{ label: "New name", value: input.name }] : []),
-          ...(input.color ? [{ label: "New color", value: input.color }] : []),
+          { label: t.currentName, value: tag.name },
+          ...(input.name ? [{ label: t.newName, value: input.name }] : []),
+          ...(input.color ? [{ label: t.newColor, value: input.color }] : []),
         ],
       });
     },
     run: async (input: z.output<typeof c.TagUpdateInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const tagId = await resolveMailboxResource("tags", scope.data.id, input.tagId);
@@ -3117,10 +3270,10 @@ const actionDefinitions = {
         data,
         summary: capabilitySummary(
           input.name && input.color
-            ? `Updated mailbox tag ${tagLabel(data.name)}.`
+            ? t.tagUpdated({ tag: tagLabel(data.name) })
             : input.name
-              ? `Renamed mailbox tag to ${tagLabel(data.name)}.`
-              : `Changed the color of mailbox tag ${tagLabel(data.name)}.`,
+              ? t.tagRenamed({ tag: tagLabel(data.name) })
+              : t.tagColorChanged({ tag: tagLabel(data.name) }),
         ),
       });
     },
@@ -3134,6 +3287,7 @@ const actionDefinitions = {
     openWorld: false,
     idempotency: "none",
     review: async (input: z.output<typeof c.TagDeleteInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const tagId = await resolveMailboxResource("tags", scope.data.id, input.tagId);
@@ -3145,11 +3299,12 @@ const actionDefinitions = {
       const tag = tags.data.find((candidate) => candidate.id === tagId.data);
       if (!tag) return fail(err.notFound("Mailbox tag"));
       return ok({
-        message: `Delete mailbox tag ${tag.name} and remove it from conversations.`,
-        details: [{ label: "Tag", value: tag.name }],
+        message: t.deleteTagReview({ tag: tag.name }),
+        details: [{ label: t.tag, value: tag.name }],
       });
     },
     run: async (input: z.output<typeof c.TagDeleteInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const tagId = await resolveMailboxResource("tags", scope.data.id, input.tagId);
@@ -3166,7 +3321,7 @@ const actionDefinitions = {
           input: { expectedRevision: input.expectedRevision },
         }),
         () => ({ deleted: true as const }),
-        () => ({ summary: capabilitySummary(`Deleted mailbox tag ${tagLabel(tag.name)}.`) }),
+        () => ({ summary: capabilitySummary(t.tagDeleted({ tag: tagLabel(tag.name) })) }),
       );
     },
   },
@@ -3179,6 +3334,7 @@ const actionDefinitions = {
     openWorld: true,
     idempotency: "none",
     review: async (input: z.output<typeof c.SubscriptionUnsubscribeInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const access = await mailboxAccess.requireMailboxPermission(requestContext(context), scope.data.id, "write");
@@ -3189,16 +3345,17 @@ const actionDefinitions = {
       if (subscription.data.unsubscribe?.href !== input.href) return fail(err.conflict("The advertised unsubscribe endpoint changed"));
       const href = subscriptionHref(input.mailboxId, input.listKey);
       return ok({
-        message: `Request external unsubscribe from ${subscription.data.name}.`,
+        message: t.unsubscribeReview({ list: subscription.data.name }),
         details: [
-          { label: "Mailing list", value: subscription.data.name },
-          { label: "Address", value: subscription.data.address },
-          { label: "Endpoint", value: input.href },
+          { label: t.mailingList, value: subscription.data.name },
+          { label: t.address, value: subscription.data.address },
+          { label: t.endpoint, value: input.href },
         ],
         ...(href ? { links: [openLink(href)] } : {}),
       });
     },
     run: async (input: z.output<typeof c.SubscriptionUnsubscribeInputSchema>, context: CapabilityExecutionContext) => {
+      const t = mailCapabilityMessages(context.locale);
       const scope = await resolveMailboxScope(input.mailboxId);
       if (!scope.ok) return scope;
       const subscription = await listSubscriptions.getSubscription(requestContext(context), scope.data.id, input.listKey);
@@ -3215,7 +3372,7 @@ const actionDefinitions = {
         (item) => {
           const href = subscriptionHref(input.mailboxId, item.listKey);
           return {
-            summary: capabilitySummary(`Requested unsubscribe from ${subscriptionName}.`),
+            summary: capabilitySummary(t.unsubscribeRequested({ list: subscriptionName })),
             ...(href ? { links: [openLink(href)] } : {}),
           };
         },
@@ -3224,7 +3381,7 @@ const actionDefinitions = {
   },
 } as const;
 
-export const mailCapabilities = defineCapabilities({
+export const mailCapabilities = localizeCapabilityErrors(defineCapabilities({
   protocolVersion: 1,
   types: {
     mailbox: { title: "Mailbox", description: "A mailbox the actor may access.", icon: "ti ti-inbox", reader: "mailbox.read" },
@@ -3266,4 +3423,4 @@ export const mailCapabilities = defineCapabilities({
   },
   queries: queryDefinitions,
   actions: actionDefinitions,
-});
+}));
