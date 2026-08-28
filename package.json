@@ -78,7 +78,7 @@
     "dev:fibel:logs": "docker compose -f compose.fibel.yml logs -f fibel",
     "dev:fibel:down": "docker compose -f compose.fibel.yml down --remove-orphans --volumes",
     "dev:full": "bun run dev:infra && docker compose -f compose.dev.yml --profile extra up --build",
-    "dev:down": "docker compose -f compose.dev.yml --profile extra down --remove-orphans",
+    "dev:down": "docker compose -f compose.dev.yml --profile extra down",
     "dev:rebuild:all": "bun run dev:infra && bun run scripts/dev-rebuild-all.ts",
     "dev:start": "bun run scripts/dev-start.ts",
     "dev:stop": "bun run scripts/dev-stop.ts",
