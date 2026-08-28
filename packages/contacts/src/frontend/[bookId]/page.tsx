@@ -1,6 +1,6 @@
 import { AppWorkspace } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import { contactsService } from "../../service";
@@ -29,9 +29,11 @@ import {
   permissionForBook,
   resolveSelectedContact,
 } from "../page-data";
+import { pagesMessages } from "../pages-messages";
 
 export default ssr<AuthContext>(async (c) => {
   const user = expectUserBackedActor(c);
+  const { t } = pagesMessages.resolve([getLocale(c)]);
   const publicBookId = c.req.param("bookId") ?? "";
   const search = c.req.query("search") ?? "";
   const page = parseContactsPage(c.req.query("page"));
@@ -44,8 +46,8 @@ export default ssr<AuthContext>(async (c) => {
   const bookId = await resolvePublicId("books", publicBookId);
   if (!bookId) {
     return () => (
-      <Layout c={c} title="Not Found">
-        <ContactBookUnavailable title="Contact book not found" description="This link is no longer valid." icon="ti ti-address-book-off" />
+      <Layout c={c} title={t.notFoundTitle}>
+        <ContactBookUnavailable title={t.bookNotFoundTitle} description={t.linkInvalidDescription} icon="ti ti-address-book-off" />
       </Layout>
     );
   }
@@ -57,10 +59,10 @@ export default ssr<AuthContext>(async (c) => {
   ]);
   if (!book) {
     return () => (
-      <Layout c={c} title="Not Found">
+      <Layout c={c} title={t.notFoundTitle}>
         <ContactBookUnavailable
-          title="Contact book not found"
-          description="The book may have been deleted or this link is no longer valid."
+          title={t.bookNotFoundTitle}
+          description={t.bookDeletedDescription}
           icon="ti ti-address-book-off"
         />
       </Layout>
@@ -73,10 +75,10 @@ export default ssr<AuthContext>(async (c) => {
   });
   if (!hasReadAccess) {
     return () => (
-      <Layout c={c} title="Access Denied">
+      <Layout c={c} title={t.accessDeniedTitle}>
         <ContactBookUnavailable
-          title="Contact book unavailable"
-          description="Ask a book administrator to grant you access."
+          title={t.bookUnavailableTitle}
+          description={t.askAdminDescription}
           icon="ti ti-lock"
         />
       </Layout>
@@ -153,7 +155,7 @@ export default ssr<AuthContext>(async (c) => {
     <Layout
       c={c}
       fullWidth
-      title={[{ title: "Start", href: "/" }, { title: "Contacts", href: "/app/contacts" }, { title: currentBook.name }]}
+      title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbContacts, href: "/app/contacts" }, { title: currentBook.name }]}
     >
       <ContactsLiveEvents scope={{ kind: "book", bookId: publicBookId }} initialCursor={initialLiveCursor} />
       <AppWorkspace>
@@ -162,13 +164,13 @@ export default ssr<AuthContext>(async (c) => {
         <AppWorkspace.Content>
           <ContactsWorkspaceMain
             title={currentBook.name}
-            description={currentBook.description ?? "Shared contact book"}
+            description={currentBook.description ?? t.sharedBookDescription}
             total={contactsResult.total}
             search={search}
             resultHref={resultHref}
             bookId={publicBookId}
             perPage={perPage}
-            searchPlaceholder={`Filter ${currentBook.name}...`}
+            searchPlaceholder={t.filterBookPlaceholder({ name: currentBook.name })}
             contacts={contacts}
             bookNames={bookNames}
             initialSelectedContactId={initialSelectedContactId}

@@ -1,9 +1,10 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, type ButtonVariant, prompts, toast } from "@k2b/ui";
+import { AppWorkspace, Button, type ButtonVariant, prompts, toast, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup } from "solid-js";
 import { apiClient } from "@/api/client";
 import { readErrorMessage } from "./api";
+import { bookMessages } from "./book-messages";
 
 type Props = {
   class?: string;
@@ -16,18 +17,20 @@ type Props = {
  * Opens a modal to create a new contact book and redirects to the created book.
  */
 export default function CreateBookButton(props: Props) {
+  const locale = useLocale();
+  const t = () => bookMessages.resolve([locale()]).t;
   const [prompting, setPrompting] = createSignal(false);
   let disposed = false;
   const mutation = mutations.create<{ id: string }, { name: string; description?: string }>({
     mutation: async (payload, { abortSignal }) => {
       const response = await apiClient.books.$post({ json: payload }, { init: { signal: abortSignal } });
 
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to create contact book"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().createBookFailed));
 
       return response.json();
     },
     onSuccess: (book) => {
-      toast.success("Contact book created");
+      toast.success(t().bookCreated);
       navigateTo(`/app/contacts/${book.id}`);
     },
     onError: (error) => {
@@ -45,20 +48,20 @@ export default function CreateBookButton(props: Props) {
     setPrompting(true);
     try {
       const result = await prompts.form({
-        title: "New Contact Book",
+        title: t().newContactBookTitle,
         icon: "ti ti-cube-plus",
-        confirmText: "Create",
+        confirmText: t().create,
         fields: {
           name: {
             type: "text",
-            label: "Book name",
-            placeholder: "Sales Contacts",
+            label: t().bookNameLabel,
+            placeholder: t().createBookNamePlaceholder,
             required: true,
           },
           description: {
             type: "text",
-            label: "Description",
-            placeholder: "Optional",
+            label: t().descriptionLabel,
+            placeholder: t().optionalPlaceholder,
             multiline: true,
           },
         },
@@ -66,7 +69,7 @@ export default function CreateBookButton(props: Props) {
       if (!result || disposed) return;
       void mutation.mutate({ name: result.name.trim(), description: result.description?.trim() || undefined });
     } catch (error) {
-      if (!disposed) void prompts.error(error instanceof Error ? error.message : "Could not open the contact book form");
+      if (!disposed) void prompts.error(error instanceof Error ? error.message : t().openCreateFormFailed);
     } finally {
       if (!disposed) setPrompting(false);
     }
@@ -77,7 +80,7 @@ export default function CreateBookButton(props: Props) {
     return (
       <AppWorkspace.SidebarIconAction
         icon={busy() ? "ti ti-loader-2 k2b-spin" : "ti ti-cube-plus"}
-        label={props.label ?? "New book"}
+        label={props.label ?? t().newBook}
         disabled={busy()}
         onClick={() => void createBook()}
       />
@@ -90,13 +93,13 @@ export default function CreateBookButton(props: Props) {
       size="sm"
       class={props.class}
       loading={busy()}
-      loadingLabel="Creating book"
+      loadingLabel={t().creatingBook}
       data-contacts-editor={busy() ? "true" : undefined}
       onClick={() => void createBook()}
-      aria-label="Create new contact book"
+      aria-label={t().createNewContactBook}
     >
       <i class="ti ti-cube-plus" aria-hidden="true" />
-      {props.label ?? "New book"}
+      {props.label ?? t().newBook}
     </Button>
   );
 }

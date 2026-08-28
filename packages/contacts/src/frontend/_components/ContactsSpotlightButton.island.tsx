@@ -1,4 +1,5 @@
 import { navigateTo } from "@k2b/ssr/nav";
+import { i18n } from "@k2b/stdlib";
 import {
   AppWorkspace,
   isSpotlightShortcut,
@@ -6,6 +7,7 @@ import {
   SPOTLIGHT_SHORTCUT_TITLE,
   SpotlightButton,
   type SpotlightButtonVariant,
+  useLocale,
 } from "@k2b/ui";
 import { onCleanup, onMount } from "solid-js";
 import { apiClient } from "@/api/client";
@@ -19,6 +21,28 @@ type Props = {
 
 const PER_PAGE = 20;
 
+export const spotlightMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      searchContacts: "Search contacts",
+      searchContactsButton: "Search Contacts",
+      searchContactsPlaceholder: "Search contacts...",
+      searchContactsWithShortcut: ({ shortcut }: { shortcut: string }) => `Search contacts (${shortcut})`,
+      noContactsFound: "No contacts found.",
+      unnamedContact: "Unnamed contact",
+    },
+    de: {
+      searchContacts: "Kontakte suchen",
+      searchContactsButton: "Kontakte suchen",
+      searchContactsPlaceholder: "Kontakte suchen…",
+      searchContactsWithShortcut: ({ shortcut }) => `Kontakte suchen (${shortcut})`,
+      noContactsFound: "Keine Kontakte gefunden.",
+      unnamedContact: "Kontakt ohne Namen",
+    },
+  },
+});
+
 const primaryDetail = (contact: Contact): string | undefined => {
   const email = contact.emails[0]?.email;
   if (email) return email;
@@ -30,13 +54,15 @@ const primaryDetail = (contact: Contact): string | undefined => {
 const contactHref = (contact: Contact): string => `/app/contacts/${contact.bookId}?contact=${contact.id}&contactBook=${contact.bookId}`;
 
 export default function ContactsSpotlightButton(props: Props) {
+  const locale = useLocale();
+  const t = () => spotlightMessages.resolve([locale()]).t;
   const openSearch = async () => {
     const selected = await openSpotlightSearch<Contact>({
-      title: "Search contacts",
+      title: t().searchContacts,
       icon: "ti ti-address-book",
-      placeholder: "Search contacts...",
+      placeholder: t().searchContactsPlaceholder,
       minQueryLength: 1,
-      noResultsText: "No contacts found.",
+      noResultsText: t().noContactsFound,
       resolve: async ({ query, abortSignal }) => {
         const trimmed = query.trim();
         if (!trimmed) return [];
@@ -56,7 +82,7 @@ export default function ContactsSpotlightButton(props: Props) {
         const payload = await response.json();
         return payload.data.map((contact) => ({
           value: contact,
-          label: resolveContactName(contact),
+          label: resolveContactName(contact, t().unnamedContact),
           desc: primaryDetail(contact),
           icon: "ti ti-address-book",
         }));
@@ -82,7 +108,7 @@ export default function ContactsSpotlightButton(props: Props) {
     return (
       <AppWorkspace.SidebarIconAction
         icon="ti ti-search"
-        label={`Search contacts (${SPOTLIGHT_SHORTCUT_TITLE})`}
+        label={t().searchContactsWithShortcut({ shortcut: SPOTLIGHT_SHORTCUT_TITLE })}
         onClick={() => void openSearch()}
       />
     );
@@ -91,10 +117,10 @@ export default function ContactsSpotlightButton(props: Props) {
   return (
     <SpotlightButton
       variant={props.variant}
-      label="Search Contacts"
+      label={t().searchContactsButton}
       onClick={openSearch}
-      title={`Search contacts (${SPOTLIGHT_SHORTCUT_TITLE})`}
-      ariaLabel="Search contacts"
+      title={t().searchContactsWithShortcut({ shortcut: SPOTLIGHT_SHORTCUT_TITLE })}
+      ariaLabel={t().searchContacts}
     />
   );
 }

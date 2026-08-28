@@ -1,7 +1,8 @@
-import { AppWorkspace } from "@k2b/ui";
+import { AppWorkspace, useLocale } from "@k2b/ui";
 import type { Contact, ContactTag } from "../../service";
 import ContactsResults from "./ContactsResults.island";
 import CreateContactButton from "./CreateContactButton.island";
+import { resultsMessages } from "./results-messages";
 
 type ContactBookOption = {
   id: string;
@@ -34,6 +35,8 @@ type Props = {
 };
 
 export default function ContactsWorkspaceMain(props: Props) {
+  const locale = useLocale();
+  const t = () => resultsMessages.resolve([locale()]).t;
   return (
     <AppWorkspace.Main scroll={false}>
       <header class="flex shrink-0 flex-col gap-3 px-3 py-3 sm:px-4">
@@ -46,7 +49,7 @@ export default function ContactsWorkspaceMain(props: Props) {
             writableBooks={props.writableBooks}
             defaultBookId={props.defaultCreateBookId}
             chooseBook={props.chooseBookOnCreate}
-            label="New contact"
+            label={t().newContact}
           />
         </div>
       </header>

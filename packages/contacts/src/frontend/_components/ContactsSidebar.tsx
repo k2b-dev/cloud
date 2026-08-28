@@ -1,4 +1,5 @@
-import { AppWorkspace } from "@k2b/ui";
+import { i18n } from "@k2b/stdlib";
+import { AppWorkspace, useLocale } from "@k2b/ui";
 import type { ContactBook } from "../../service";
 import BookSettingsButton from "./BookSettingsButton.island";
 import ContactsSpotlightButton from "./ContactsSpotlightButton.island";
@@ -10,10 +11,32 @@ type Props = {
   adminBookIds?: string[];
 };
 
+export const sidebarMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      contacts: "Contacts",
+      newBook: "New book",
+      allContacts: "All contacts",
+      favorites: "Favorites",
+      books: "Books",
+    },
+    de: {
+      contacts: "Kontakte",
+      newBook: "Neues Kontaktbuch",
+      allContacts: "Alle Kontakte",
+      favorites: "Favoriten",
+      books: "Kontaktbücher",
+    },
+  },
+});
+
 /**
  * Contacts sidebar with books and quick create actions.
  */
 export default function ContactsSidebar(props: Props) {
+  const locale = useLocale();
+  const t = () => sidebarMessages.resolve([locale()]).t;
   const adminBookIds = props.adminBookIds ?? [];
   const vt = (key: string) => `contacts-sidebar-${key}`;
   const renderBookItem = (book: ContactBook, mode: "mobile" | "desktop") => {
@@ -45,12 +68,12 @@ export default function ContactsSidebar(props: Props) {
 
   return (
     <AppWorkspace.Sidebar collapsible>
-      <AppWorkspace.SidebarMobileTrigger label="Contacts" />
+      <AppWorkspace.SidebarMobileTrigger label={t().contacts} />
 
       <AppWorkspace.SidebarMobile>
         <AppWorkspace.SidebarMobileItems>
           <ContactsSpotlightButton variant="sidebar-mobile" />
-          <CreateBookButton label="New book" />
+          <CreateBookButton label={t().newBook} />
         </AppWorkspace.SidebarMobileItems>
         <AppWorkspace.SidebarMobileBody scrollPreserveKey="contacts-sidebar-mobile">
           <AppWorkspace.SidebarSection>
@@ -61,20 +84,20 @@ export default function ContactsSidebar(props: Props) {
               active={props.active === "all"}
               viewTransitionName={vt("all-mobile")}
             >
-              All contacts
+              {t().allContacts}
             </AppWorkspace.SidebarItem>
             <AppWorkspace.SidebarItem
               href="/app/contacts?favorites=true"
               navigation="document"
               icon="ti ti-star"
               active={props.active === "favorites"}
-              title="Favorites"
+              title={t().favorites}
               viewTransitionName={vt("favorites-mobile")}
             >
-              Favorites
+              {t().favorites}
             </AppWorkspace.SidebarItem>
           </AppWorkspace.SidebarSection>
-          <AppWorkspace.SidebarSection title="Books">
+          <AppWorkspace.SidebarSection title={t().books}>
             {props.books.map((book) => renderBookItem(book, "mobile"))}
           </AppWorkspace.SidebarSection>
         </AppWorkspace.SidebarMobileBody>
@@ -86,7 +109,7 @@ export default function ContactsSidebar(props: Props) {
         </div>
         <AppWorkspace.SidebarIconGrid sidebarMode="collapsed">
           <ContactsSpotlightButton variant="icon" />
-          <CreateBookButton variant="icon" label="New book" />
+          <CreateBookButton variant="icon" label={t().newBook} />
         </AppWorkspace.SidebarIconGrid>
 
         <AppWorkspace.SidebarBody scrollPreserveKey="contacts-sidebar">
@@ -96,30 +119,30 @@ export default function ContactsSidebar(props: Props) {
               navigation="document"
               icon="ti ti-users"
               active={props.active === "all"}
-              title="All contacts"
+              title={t().allContacts}
               viewTransitionName={vt("all-desktop")}
             >
-              All contacts
+              {t().allContacts}
             </AppWorkspace.SidebarItem>
             <AppWorkspace.SidebarItem
               href="/app/contacts?favorites=true"
               navigation="document"
               icon="ti ti-star"
               active={props.active === "favorites"}
-              title="Favorites"
+              title={t().favorites}
               viewTransitionName={vt("favorites-desktop")}
             >
-              Favorites
+              {t().favorites}
             </AppWorkspace.SidebarItem>
           </AppWorkspace.SidebarSection>
 
-          <AppWorkspace.SidebarSection title="Books">
+          <AppWorkspace.SidebarSection title={t().books}>
             {props.books.map((book) => renderBookItem(book, "desktop"))}
           </AppWorkspace.SidebarSection>
         </AppWorkspace.SidebarBody>
 
         <AppWorkspace.SidebarFooter sidebarMode="expanded">
-          <CreateBookButton buttonVariant="ghost" class="w-full justify-start" label="New book" />
+          <CreateBookButton buttonVariant="ghost" class="w-full justify-start" label={t().newBook} />
         </AppWorkspace.SidebarFooter>
       </AppWorkspace.SidebarDesktop>
     </AppWorkspace.Sidebar>

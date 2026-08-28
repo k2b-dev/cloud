@@ -1,6 +1,6 @@
 import { AppWorkspace } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../config";
 import { contactsService } from "../service";
@@ -27,9 +27,11 @@ import {
   parseContactsQueryOptions,
   resolveSelectedContact,
 } from "./page-data";
+import { pagesMessages } from "./pages-messages";
 
 export default ssr<AuthContext>(async (c) => {
   const user = expectUserBackedActor(c);
+  const { t } = pagesMessages.resolve([getLocale(c)]);
   const search = c.req.query("search") ?? "";
   const activeTagId = c.req.query("tag_id") ?? null;
   const page = parseContactsPage(c.req.query("page"));
@@ -102,7 +104,7 @@ export default ssr<AuthContext>(async (c) => {
   const initialSelectedBookId = selectedPublicContact?.bookId ?? selectedBookIdFromUrl;
   const hasDesktopDetailSelection = Boolean(selectedPublicContact);
   return () => (
-    <Layout c={c} fullWidth title={[{ title: "Start", href: "/" }, { title: "Contacts" }]}>
+    <Layout c={c} fullWidth title={[{ title: t.breadcrumbStart, href: "/" }, { title: t.breadcrumbContacts }]}>
       <ContactsLiveEvents scope={{ kind: "all" }} initialCursor={initialLiveCursor} />
       <ContactCreateLauncher writableBooks={writableBooks} />
       <AppWorkspace>
@@ -110,13 +112,13 @@ export default ssr<AuthContext>(async (c) => {
 
         <AppWorkspace.Content>
           <ContactsWorkspaceMain
-            title={queryOptions.favorites ? "Favorites" : "All contacts"}
-            description={queryOptions.favorites ? "Your favorite contacts" : "Across your contact books"}
+            title={queryOptions.favorites ? t.favoritesTitle : t.allContactsTitle}
+            description={queryOptions.favorites ? t.favoritesDescription : t.allContactsDescription}
             total={contactsResult.total}
             search={search}
             resultHref={resultHref}
             perPage={perPage}
-            searchPlaceholder="Filter by name, company, email, or phone..."
+            searchPlaceholder={t.searchPlaceholder}
             contacts={contacts}
             bookNames={bookNames}
             showBookNames

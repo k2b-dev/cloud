@@ -10,6 +10,7 @@ import {
   TagEditor,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { type GrantableLevel, PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@valentinkolb/cloud/access/ui";
 import type { AccessEntry, Principal } from "@valentinkolb/cloud/contracts";
@@ -18,6 +19,7 @@ import { apiClient } from "@/api/client";
 import type { ContactBook, ContactTag } from "../../service";
 import { readErrorMessage } from "./api";
 import BookActions from "./BookActions";
+import { bookMessages } from "./book-messages";
 import type { BookSettingsContext } from "./BookSettingsDialog";
 import { createBlockedReconciliation, createQueuedReconciliation, settingsInteractionBlocked } from "./book-settings-reconcile";
 import DeleteBookButton from "./DeleteBookButton";
@@ -33,6 +35,8 @@ type Props = {
 
 /** Contact book settings for book administrators. */
 export default function BookSettingsForm(props: Props) {
+  const locale = useLocale();
+  const t = () => bookMessages.resolve([locale()]).t;
   const bookId = () => props.context().book.id;
   const [activeTab, setActiveTab] = createSignal(props.initialTab ?? "general");
   const [savedName, setSavedName] = createSignal(props.context().book.name);
@@ -53,7 +57,7 @@ export default function BookSettingsForm(props: Props) {
   const nameChanged = () => name() !== savedName();
   const descriptionChanged = () => description() !== savedDescription();
   const changeCount = () => Number(nameChanged()) + Number(descriptionChanged());
-  const nameError = () => (name().trim() ? undefined : "Book name is required");
+  const nameError = () => (name().trim() ? undefined : t().bookNameRequired);
   const discardMetadata = () => {
     setName(savedName());
     setDescription(savedDescription());
@@ -75,7 +79,7 @@ export default function BookSettingsForm(props: Props) {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to update book"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().updateBookFailed));
       return response.json();
     },
     onSuccess: (book) => {
@@ -85,8 +89,8 @@ export default function BookSettingsForm(props: Props) {
       setSavedName(book.name);
       setSavedDescription(nextDescription);
       props.onWorkspaceChange();
-      toast.success("Book settings saved");
-      reconcile("The change was saved, but contact book settings could not be reloaded.");
+      toast.success(t().bookSettingsSaved);
+      reconcile(t().settingsSavedReloadFailed);
     },
     onError: (error) => prompts.error(error.message),
   });
@@ -104,7 +108,7 @@ export default function BookSettingsForm(props: Props) {
         { param: { bookId: input.bookId }, json: input.value },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to create tag"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().createTagFailed));
       return response.json();
     },
   });
@@ -115,7 +119,7 @@ export default function BookSettingsForm(props: Props) {
         { param: { bookId: input.bookId, tagId: input.tagId }, json: input.value },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to update tag"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().updateTagFailed));
       return response.json();
     },
   });
@@ -126,7 +130,7 @@ export default function BookSettingsForm(props: Props) {
         { param: { bookId: input.bookId, tagId: input.tagId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to delete tag"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().deleteTagFailed));
     },
   });
   const tagOperationPending = () =>
@@ -152,32 +156,32 @@ export default function BookSettingsForm(props: Props) {
     await createTagMutation.mutate({ bookId: bookId(), value: { ...value } });
     if (disposed) return;
     if (createTagMutation.error()) throw createTagMutation.error();
-    await completeTagWrite("Tag created", "The tag was created, but the tag list could not be reloaded.");
+    await completeTagWrite(t().tagCreated, t().tagCreatedReloadFailed);
   };
   const updateTag = async (tag: ContactTag, value: TagValue) => {
     if (disposed || settingsBusy()) return;
     await updateTagMutation.mutate({ bookId: bookId(), tagId: tag.id, value: { ...value } });
     if (disposed) return;
     if (updateTagMutation.error()) throw updateTagMutation.error();
-    await completeTagWrite("Tag updated", "The tag was updated, but the tag list could not be reloaded.");
+    await completeTagWrite(t().tagUpdated, t().tagUpdatedReloadFailed);
   };
 
   const deleteTag = async (tag: ContactTag) => {
     if (disposed || settingsBusy()) return;
     deleteTagConfirming = true;
     try {
-      const confirmed = await prompts.confirm(`Delete "${tag.name}"? It will be removed from all contacts in this book.`, {
-        title: "Delete tag",
+      const confirmed = await prompts.confirm(t().deleteTagConfirm({ name: tag.name }), {
+        title: t().deleteTagTitle,
         icon: "ti ti-trash",
         variant: "danger",
-        confirmText: "Delete",
+        confirmText: t().delete,
       });
       if (!confirmed || disposed) return;
 
       await deleteTagMutation.mutate({ bookId: bookId(), tagId: tag.id });
       if (disposed) return;
       if (deleteTagMutation.error()) throw deleteTagMutation.error();
-      await completeTagWrite("Tag deleted", "The tag was deleted, but the tag list could not be reloaded.");
+      await completeTagWrite(t().tagDeleted, t().tagDeletedReloadFailed);
     } finally {
       deleteTagConfirming = false;
     }
@@ -185,14 +189,14 @@ export default function BookSettingsForm(props: Props) {
 
   const requestControllers = new Set<AbortController>();
   const runRequest = async <T,>(request: (signal: AbortSignal) => Promise<T>): Promise<T> => {
-    if (disposed) throw new DOMException("Contact book settings were closed", "AbortError");
-    if (settingsBusy()) throw new Error("Another contact book settings change is still in progress");
+    if (disposed) throw new DOMException(t().settingsClosedAbort, "AbortError");
+    if (settingsBusy()) throw new Error(t().settingsChangeInProgress);
     const controller = new AbortController();
     requestControllers.add(controller);
     setOwnerRequestCount((count) => count + 1);
     try {
       const result = await request(controller.signal);
-      if (disposed) throw new DOMException("Contact book settings were closed", "AbortError");
+      if (disposed) throw new DOMException(t().settingsClosedAbort, "AbortError");
       return result;
     } finally {
       requestControllers.delete(controller);
@@ -206,11 +210,11 @@ export default function BookSettingsForm(props: Props) {
         { param: { bookId: input.bookId }, json: { principal: input.principal, permission: input.permission } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to grant access"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().grantAccessFailed));
       return response.json();
     });
     props.onWorkspaceChange();
-    reconcile("Access was granted, but the permission list could not be reloaded.");
+    reconcile(t().accessGrantedReloadFailed);
     return created;
   };
   const updateAccess = async (input: { bookId: string; accessId: string; permission: GrantableLevel }): Promise<void> => {
@@ -219,10 +223,10 @@ export default function BookSettingsForm(props: Props) {
         { param: { bookId: input.bookId, accessId: input.accessId }, json: { permission: input.permission } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to update access"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().updateAccessFailed));
     });
     props.onWorkspaceChange();
-    reconcile("Access was updated, but the permission list could not be reloaded.");
+    reconcile(t().accessUpdatedReloadFailed);
   };
   const revokeAccess = async (input: { bookId: string; accessId: string }): Promise<void> => {
     await runRequest(async (abortSignal) => {
@@ -230,10 +234,10 @@ export default function BookSettingsForm(props: Props) {
         { param: { bookId: input.bookId, accessId: input.accessId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to revoke access"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().revokeAccessFailed));
     });
     props.onWorkspaceChange();
-    reconcile("Access was revoked, but the permission list could not be reloaded.");
+    reconcile(t().accessRevokedReloadFailed);
   };
 
   type CreateApiKeyInput = { name: string; expiresAt: string | null; permission: GrantableLevel };
@@ -246,11 +250,11 @@ export default function BookSettingsForm(props: Props) {
         { param: { bookId: input.bookId }, json: input.value },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to create API key"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().createApiKeyFailed));
       return response.json();
     });
     props.onWorkspaceChange();
-    reconcile("The API key was created, but the API key list could not be reloaded.");
+    reconcile(t().apiKeyCreatedReloadFailed);
     return created;
   };
   const revokeApiKey = async (input: { bookId: string; credentialId: string }): Promise<void> => {
@@ -259,10 +263,10 @@ export default function BookSettingsForm(props: Props) {
         { param: { bookId: input.bookId, credentialId: input.credentialId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to revoke API key"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().revokeApiKeyFailed));
     });
     props.onWorkspaceChange();
-    reconcile("The API key was revoked, but the API key list could not be reloaded.");
+    reconcile(t().apiKeyRevokedReloadFailed);
   };
 
   onCleanup(() => {
@@ -313,11 +317,11 @@ export default function BookSettingsForm(props: Props) {
 
   return (
     <SettingsModal
-      title="Contact book settings"
+      title={t().settingsTitle}
       activeTab={activeTab()}
       onTabChange={(tab) => void requestTabChange(tab)}
       onClose={() => void requestClose()}
-      closeLabel="Close settings"
+      closeLabel={t().closeSettings}
     >
       <Show when={reconcileError()}>
         <div class="mx-4 mt-3 flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300" role="status">
@@ -329,22 +333,22 @@ export default function BookSettingsForm(props: Props) {
             onClick={() => void settingsCoverage.retry()}
             disabled={settingsReconciling()}
           >
-            Retry reload
+            {t().retryReload}
           </Button>
         </div>
       </Show>
-      <SettingsModal.Group title="Book">
-        <SettingsModal.Tab id="general" title="General" icon="ti ti-id" description="Name and context shown across Contacts.">
-          <SettingsGroup title="Identity" description="Describe what belongs in this contact book.">
+      <SettingsModal.Group title={t().groupBook}>
+        <SettingsModal.Tab id="general" title={t().tabGeneral} icon="ti ti-id" description={t().tabGeneralDescription}>
+          <SettingsGroup title={t().identityTitle} description={t().identityDescription}>
             <SettingsField
-              label="Book name"
-              description="Shown in navigation and when choosing a destination book."
+              label={t().bookNameLabel}
+              description={t().bookNameDescription}
               error={nameError}
               changed={nameChanged}
             >
               <TextInput
-                aria-label="Book name"
-                placeholder="Sales contacts"
+                aria-label={t().bookNameLabel}
+                placeholder={t().bookNamePlaceholder}
                 required
                 value={name}
                 onValueChange={setName}
@@ -352,16 +356,16 @@ export default function BookSettingsForm(props: Props) {
               />
             </SettingsField>
             <SettingsField
-              label="Description"
-              description="Optional context for people who can access this book."
+              label={t().descriptionLabel}
+              description={t().descriptionDescription}
               error={() => undefined}
               changed={descriptionChanged}
             >
               <TextInput
-                aria-label="Description"
+                aria-label={t().descriptionLabel}
                 multiline
                 lines={3}
-                placeholder="Optional description"
+                placeholder={t().descriptionPlaceholder}
                 value={description}
                 onValueChange={setDescription}
                 onSubmit={saveMetadata}
@@ -378,18 +382,18 @@ export default function BookSettingsForm(props: Props) {
           </SettingsModal.Footer>
         </SettingsModal.Tab>
 
-        <SettingsModal.Tab id="tags" title="Tags" icon="ti ti-tags" description="Vocabulary used to categorize contacts in this book.">
-          <SettingsGroup title="Vocabulary" description="Create tags here, then assign them from the contact editor.">
+        <SettingsModal.Tab id="tags" title={t().tabTags} icon="ti ti-tags" description={t().tabTagsDescription}>
+          <SettingsGroup title={t().vocabularyTitle} description={t().vocabularyDescription}>
             <Show when={tagReconciling()}>
               <p class="text-xs text-dimmed" role="status">
-                Reloading tags…
+                {t().reloadingTags}
               </p>
             </Show>
             <Show when={tagReconcileError()}>
               <div class="flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300" role="status">
                 <span>{tagReconcileError()}</span>
                 <Button type="button" variant="secondary" size="xs" onClick={() => void tagCoverage.retry()} disabled={tagReconciling()}>
-                  Retry reload
+                  {t().retryReload}
                 </Button>
               </div>
             </Show>
@@ -405,9 +409,9 @@ export default function BookSettingsForm(props: Props) {
         </SettingsModal.Tab>
       </SettingsModal.Group>
 
-      <SettingsModal.Group title="Sharing">
-        <SettingsModal.Tab id="access" title="Access" icon="ti ti-shield" description="Permission changes save immediately.">
-          <SettingsGroup title="People and groups" description="Choose who can read, edit, or administer this contact book.">
+      <SettingsModal.Group title={t().groupSharing}>
+        <SettingsModal.Tab id="access" title={t().tabAccess} icon="ti ti-shield" description={t().tabAccessDescription}>
+          <SettingsGroup title={t().peopleGroupsTitle} description={t().peopleGroupsDescription}>
             <Show when={props.context().accessEntries} keyed>
               {(accessEntries) => (
                 <PermissionEditor
@@ -428,18 +432,13 @@ export default function BookSettingsForm(props: Props) {
           </SettingsGroup>
         </SettingsModal.Tab>
 
-        <SettingsModal.Tab
-          id="api-keys"
-          title="API keys"
-          icon="ti ti-key"
-          description="Resource-bound credentials for integrations. Changes save immediately."
-        >
+        <SettingsModal.Tab id="api-keys" title={t().tabApiKeys} icon="ti ti-key" description={t().tabApiKeysDescription}>
           <Show when={props.context().apiKeys} keyed>
             {(apiKeys) => (
               <fieldset disabled={coverageBlocked()}>
                 <ResourceApiKeys
-                  title="Integration access"
-                  description="Create keys that can access only this contact book."
+                  title={t().integrationAccessTitle}
+                  description={t().integrationAccessDescription}
                   initialKeys={apiKeys}
                   createKey={async (input) => {
                     return createApiKey({ bookId: bookId(), value: { ...input } });
@@ -454,28 +453,23 @@ export default function BookSettingsForm(props: Props) {
         </SettingsModal.Tab>
       </SettingsModal.Group>
 
-      <SettingsModal.Group title="Data">
-        <SettingsModal.Tab
-          id="transfer"
-          title="Import & export"
-          icon="ti ti-arrows-exchange"
-          description="Bring contacts into this book or download a portable copy."
-        >
-          <SettingsGroup title="Contact data" description="Imports are previewed before anything is created.">
+      <SettingsModal.Group title={t().groupData}>
+        <SettingsModal.Tab id="transfer" title={t().tabTransfer} icon="ti ti-arrows-exchange" description={t().tabTransferDescription}>
+          <SettingsGroup title={t().contactDataTitle} description={t().contactDataDescription}>
             <BookActions bookId={bookId()} canWrite={!coverageBlocked()} onImported={props.onWorkspaceChange} />
           </SettingsGroup>
         </SettingsModal.Tab>
       </SettingsModal.Group>
 
-      <SettingsModal.Group title="Lifecycle">
+      <SettingsModal.Group title={t().groupLifecycle}>
         <SettingsModal.Tab
           id="danger"
-          title="Danger zone"
+          title={t().tabDanger}
           icon="ti ti-alert-triangle"
-          description="Permanently delete this book and every contact in it."
+          description={t().tabDangerDescription}
           tone="danger"
         >
-          <SettingsGroup title="Delete contact book" description="This action cannot be undone.">
+          <SettingsGroup title={t().deleteBookTitle} description={t().deleteBookGroupDescription}>
             <SettingsGroup.Action>
               <DeleteBookButton
                 bookId={bookId()}

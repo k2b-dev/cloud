@@ -1,6 +1,6 @@
 import { documentNavigate, type LinkNavigateEvent, navigate } from "@k2b/ssr/nav";
 import { query as queries, timed } from "@k2b/stdlib/solid";
-import { Button, FilterChip, type FilterChipSection, Pagination, ScrollArea, Tag, TextInput } from "@k2b/ui";
+import { Button, FilterChip, type FilterChipSection, Pagination, ScrollArea, Tag, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactPresenceFilter, ContactSort, ContactTag } from "../../service";
@@ -12,6 +12,7 @@ import ContactsList from "./ContactsList";
 import { listenForContactFavoriteChanges } from "./contacts-favorites";
 import { listenForContactsLiveInvalidation, requiresContactsResultsRefresh } from "./contacts-live";
 import { createContactsResultsNavigation, selectContactsResultsSnapshot } from "./contacts-results-navigation";
+import { type ResultsMessages, resultsMessages } from "./results-messages";
 import {
   buildContactsPageHref,
   buildContactsPaginationBaseHref,
@@ -67,37 +68,42 @@ const filterHref = (href: string, search: string, tagId?: string) => {
   return `${url.pathname}${url.search}`;
 };
 
-const SORT_OPTIONS: FilterChipSection[] = [
+const sortOptions = (t: ResultsMessages): FilterChipSection[] => [
   {
     options: [
-      { value: "name", label: "Name", icon: "ti ti-sort-ascending-letters" },
-      { value: "updated", label: "Recently updated", icon: "ti ti-history" },
-      { value: "created", label: "Recently created", icon: "ti ti-clock-plus" },
-      { value: "company", label: "Company", icon: "ti ti-building" },
+      { value: "name", label: t.sortName, icon: "ti ti-sort-ascending-letters" },
+      { value: "updated", label: t.sortRecentlyUpdated, icon: "ti ti-history" },
+      { value: "created", label: t.sortRecentlyCreated, icon: "ti ti-clock-plus" },
+      { value: "company", label: t.sortCompany, icon: "ti ti-building" },
     ],
   },
 ];
 
-const REACH_OPTIONS: FilterChipSection[] = [
+const reachOptions = (t: ResultsMessages): FilterChipSection[] => [
   {
-    label: "Email",
+    label: t.emailGroup,
     options: [
-      { value: "email:all", label: "Any email" },
-      { value: "email:yes", label: "Has email", icon: "ti ti-mail-check" },
-      { value: "email:no", label: "No email", icon: "ti ti-mail-off" },
+      { value: "email:all", label: t.anyEmail },
+      { value: "email:yes", label: t.hasEmail, icon: "ti ti-mail-check" },
+      { value: "email:no", label: t.noEmail, icon: "ti ti-mail-off" },
     ],
   },
   {
-    label: "Phone",
+    label: t.phoneGroup,
     options: [
-      { value: "phone:all", label: "Any phone" },
-      { value: "phone:yes", label: "Has phone", icon: "ti ti-phone-check" },
-      { value: "phone:no", label: "No phone", icon: "ti ti-phone-off" },
+      { value: "phone:all", label: t.anyPhone },
+      { value: "phone:yes", label: t.hasPhone, icon: "ti ti-phone-check" },
+      { value: "phone:no", label: t.noPhone, icon: "ti ti-phone-off" },
     ],
   },
 ];
 
-const fetchContactsResults = async (props: Pick<Props, "bookId" | "perPage">, href: string, signal: AbortSignal) => {
+const fetchContactsResults = async (
+  props: Pick<Props, "bookId" | "perPage">,
+  href: string,
+  signal: AbortSignal,
+  errorFallback: string,
+) => {
   const url = new URL(href, window.location.origin);
   const options = readContactsQueryOptions(href);
   const queryParams = {
@@ -119,7 +125,7 @@ const fetchContactsResults = async (props: Pick<Props, "bookId" | "perPage">, hr
         { init: { signal } },
       )
     : await apiClient.search.$get({ query: queryParams }, { init: { signal } });
-  if (!response.ok) throw new Error(await readErrorMessage(response, "Could not update contacts"));
+  if (!response.ok) throw new Error(await readErrorMessage(response, errorFallback));
   return await response.json();
 };
 
@@ -127,13 +133,14 @@ const loadContactsResults = async (
   props: Pick<Props, "bookId" | "perPage">,
   source: string,
   signal: AbortSignal,
+  errorFallback: string,
 ): Promise<ContactsResultsSnapshot> => {
   let href = source;
-  let payload = await fetchContactsResults(props, href, signal);
+  let payload = await fetchContactsResults(props, href, signal, errorFallback);
   const totalPages = Math.max(1, payload.pagination.total_pages);
   if (payload.pagination.page > totalPages) {
     href = buildContactsPageHref(source, totalPages);
-    payload = await fetchContactsResults(props, href, signal);
+    payload = await fetchContactsResults(props, href, signal, errorFallback);
   }
   return {
     source,
@@ -147,6 +154,8 @@ const loadContactsResults = async (
 };
 
 export default function ContactsResults(props: Props) {
+  const locale = useLocale();
+  const t = () => resultsMessages.resolve([locale()]).t;
   const initialSource = contactsResultHref(props.initialHref);
   const initialSnapshot: ContactsResultsSnapshot = {
     source: initialSource,
@@ -170,7 +179,7 @@ export default function ContactsResults(props: Props) {
     load: async (href, { abortSignal }) => {
       setFailedSource(null);
       try {
-        return await loadContactsResults(props, href, abortSignal);
+        return await loadContactsResults(props, href, abortSignal, t().couldNotUpdateContacts);
       } catch (error) {
         if (!abortSignal.aborted) setFailedSource(href);
         throw error;
@@ -299,10 +308,10 @@ export default function ContactsResults(props: Props) {
   const formAction = () => new URL(props.initialHref, "http://contacts.local").pathname;
   const resultCopy = () =>
     !current()
-      ? "Loading contacts…"
+      ? t().loadingContacts
       : committedSearch().trim()
-        ? `${current()!.total} result${current()!.total === 1 ? "" : "s"} for “${committedSearch().trim()}”`
-        : `${current()!.total} contact${current()!.total === 1 ? "" : "s"}`;
+        ? t().resultCount({ total: current()!.total, search: committedSearch().trim() })
+        : t().contactCount({ total: current()!.total });
 
   return (
     <div class="flex min-h-0 flex-1 flex-col">
@@ -324,7 +333,7 @@ export default function ContactsResults(props: Props) {
           <TextInput
             name="search"
             type="search"
-            aria-label="Filter contacts"
+            aria-label={t().filterContacts}
             placeholder={props.searchPlaceholder}
             icon="ti ti-search"
             activeIcon="ti ti-search"
@@ -335,7 +344,7 @@ export default function ContactsResults(props: Props) {
               debounce.debouncedFn(value);
             }}
             clearable
-            clearLabel="Clear search"
+            clearLabel={t().clearSearch}
             onClear={() => {
               setQuery("");
               commitImmediately("");
@@ -361,21 +370,25 @@ export default function ContactsResults(props: Props) {
           </Show>
         </form>
         <Show when={(props.tags?.length ?? 0) > 0 && props.filtersBasePath}>
-          <nav aria-label="Filter contacts by tag" class="mt-2 flex min-w-0 items-center gap-1.5 overflow-x-auto pb-0.5">
+          <nav aria-label={t().filterContactsByTag} class="mt-2 flex min-w-0 items-center gap-1.5 overflow-x-auto pb-0.5">
             <a
               href={filterHref(currentHref(), query())}
               aria-current={!props.activeTagId ? "page" : undefined}
               class="inline-flex shrink-0 transition-opacity hover:opacity-80"
             >
               <Tag selected={!props.activeTagId} size="lg">
-                All
+                {t().allTagsChip}
               </Tag>
             </a>
             {props.tags?.map((tag) => (
               <a
                 href={filterHref(currentHref(), query(), tag.id)}
                 aria-current={props.activeTagId === tag.id ? "page" : undefined}
-                title={props.showBookNames ? `${tag.name} · ${props.bookNames[tag.bookId] ?? "Contact book"}` : undefined}
+                title={
+                  props.showBookNames
+                    ? t().tagInBookTitle({ tagName: tag.name, bookName: props.bookNames[tag.bookId] ?? t().contactBookFallback })
+                    : undefined
+                }
                 class="inline-flex shrink-0 transition-opacity hover:opacity-80"
               >
                 <Tag color={tag.color} icon="ti ti-point" selected={props.activeTagId === tag.id} size="lg">
@@ -387,18 +400,18 @@ export default function ContactsResults(props: Props) {
         </Show>
         <div class="no-scrollbar mt-2 flex items-center gap-2 overflow-x-auto pb-0.5 sm:flex-wrap sm:overflow-visible">
           <FilterChip
-            label="Sort"
+            label={t().sortLabel}
             icon="ti ti-arrows-sort"
-            options={SORT_OPTIONS}
+            options={sortOptions(t())}
             value={[readContactsQueryOptions(currentHref()).sort]}
             defaultValue={["name"]}
             isActive={readContactsQueryOptions(currentHref()).sort !== "name"}
             onValueChange={(value) => updateOptions({ sort: (value[0] ?? "name") as ContactSort })}
           />
           <FilterChip
-            label="Contact info"
+            label={t().contactInfoLabel}
             icon="ti ti-address-book"
-            options={REACH_OPTIONS}
+            options={reachOptions(t())}
             value={[`email:${readContactsQueryOptions(currentHref()).email}`, `phone:${readContactsQueryOptions(currentHref()).phone}`]}
             defaultValue={["email:all", "phone:all"]}
             isActive={readContactsQueryOptions(currentHref()).email !== "all" || readContactsQueryOptions(currentHref()).phone !== "all"}
@@ -419,7 +432,7 @@ export default function ContactsResults(props: Props) {
                   if (changed) documentNavigate(currentHref(), { replace: true });
                 }}
               >
-                <i class="ti ti-users-group" /> Duplicates
+                <i class="ti ti-users-group" /> {t().duplicates}
               </Button>
               <Button
                 variant="ghost"
@@ -427,7 +440,7 @@ export default function ContactsResults(props: Props) {
                 aria-pressed={selectionMode()}
                 onClick={() => (selectionMode() ? clearSelection() : setSelectionMode(true))}
               >
-                <i class="ti ti-list-check" /> Select
+                <i class="ti ti-list-check" /> {t().select}
               </Button>
             </span>
           </Show>
@@ -452,12 +465,12 @@ export default function ContactsResults(props: Props) {
             <div class="mb-2 flex items-center justify-between gap-2 text-xs text-red-600" role="alert">
               <span>{error().message}</span>
               <Button type="button" variant="ghost" size="xs" disabled={results.refreshing()} onClick={() => void results.refresh()}>
-                Retry
+                {t().retry}
               </Button>
             </div>
           )}
         </Show>
-        <Show when={current()} fallback={<p class="py-8 text-center text-sm text-dimmed">Loading contacts…</p>}>
+        <Show when={current()} fallback={<p class="py-8 text-center text-sm text-dimmed">{t().loadingContacts}</p>}>
           {(snapshot) => (
             <>
               <ContactsList
@@ -471,12 +484,8 @@ export default function ContactsResults(props: Props) {
                 selectionMode={selectionMode()}
                 selectedIds={selectedIds()}
                 onToggleSelection={toggleSelection}
-                emptyTitle={committedSearch().trim() ? "No matching contacts" : "No contacts yet"}
-                emptyDescription={
-                  committedSearch().trim()
-                    ? "Try a different name, company, email address, or phone number."
-                    : "Create the first contact from the action above."
-                }
+                emptyTitle={committedSearch().trim() ? t().noMatchingContacts : t().noContactsYet}
+                emptyDescription={committedSearch().trim() ? t().noMatchingContactsHint : t().noContactsYetHint}
               />
               <Show when={snapshot().totalPages > 1}>
                 <div class="pt-3">

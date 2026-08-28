@@ -1,6 +1,6 @@
 import type { Paginated } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
-import { Avatar, Button, ButtonLink, DescriptionList, DetailPanel, Dropdown, IconButton, Placeholder, Tag, Tooltip } from "@k2b/ui";
+import { Avatar, Button, ButtonLink, DescriptionList, DetailPanel, Dropdown, IconButton, Placeholder, Tag, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactNote, ContactRef } from "../../service";
@@ -11,6 +11,7 @@ import ContactFavoriteButton from "./ContactFavoriteButton";
 import ContactNotesSection from "./ContactNotesSection";
 import ContactOrgTreeView from "./ContactOrgTreeView";
 import ContactQuickEdit from "./ContactQuickEdit";
+import { detailMessages } from "./detail-messages";
 import { createContactQuerySource, isCurrentQuerySnapshot, parseContactQuerySource } from "./contact-query-source";
 import { contactFavoriteKey, listenForContactFavoriteChanges } from "./contacts-favorites";
 import { listenForContactsLiveInvalidation, requiresSelectedContactRefresh } from "./contacts-live";
@@ -38,11 +39,11 @@ type Props = {
   initialFavoriteKeys: string[];
 };
 
-const formatBirthday = (value: string | null) => {
+const formatBirthday = (value: string | null, locale: string) => {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("de-DE");
+  return date.toLocaleDateString(locale);
 };
 
 const formatAddress = (address: Contact["addresses"][number]) => {
@@ -64,6 +65,8 @@ type DetailSnapshot = {
 };
 
 export default function ContactDetailPanel(props: Props) {
+  const locale = useLocale();
+  const t = () => detailMessages.resolve([locale()]).t;
   const initialTarget =
     props.initialContactId && props.initialBookId
       ? {
@@ -111,13 +114,13 @@ export default function ContactDetailPanel(props: Props) {
       const request = { bookId, contactId };
       const response = await apiClient.books[":bookId"].contacts[":contactId"].$get({ param: request }, { init: { signal: abortSignal } });
       if (response.status === 403 || response.status === 404) return { source, contact: null, favorite: false };
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to refresh contact"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().refreshContactFailed));
       const contact = await response.json();
       const favoriteResponse = await apiClient.favorites[":bookId"][":contactId"].$get(
         { param: request },
         { init: { signal: abortSignal } },
       );
-      if (!favoriteResponse.ok) throw new Error(await readErrorMessage(favoriteResponse, "Failed to load favorite state"));
+      if (!favoriteResponse.ok) throw new Error(await readErrorMessage(favoriteResponse, t().loadFavoriteFailed));
       return { source, contact, favorite: (await favoriteResponse.json()).favorite };
     },
   });
@@ -270,11 +273,11 @@ export default function ContactDetailPanel(props: Props) {
               when={detailQuery.loading() || detailQuery.refreshing()}
               fallback={
                 props.showEmpty === false ? null : (
-                  <Placeholder icon="ti ti-id" class="h-full min-h-0 justify-center" description={<>Select a contact to see details</>} />
+                  <Placeholder icon="ti ti-id" class="h-full min-h-0 justify-center" description={<>{t().selectContactHint}</>} />
                 )
               }
             >
-              <Placeholder state="loading" variant="panel" class="h-full min-h-0 justify-center" title="Loading contact" />
+              <Placeholder state="loading" variant="panel" class="h-full min-h-0 justify-center" title={t().loadingContact} />
             </Show>
           }
         >
@@ -284,11 +287,11 @@ export default function ContactDetailPanel(props: Props) {
               variant="panel"
               align="left"
               class="h-full min-h-0 justify-center"
-              title="Could not load contact"
+              title={t().couldNotLoadContact}
               description={error().message}
               action={
                 <Button variant="secondary" size="sm" onClick={retrySelectedContact}>
-                  Try again
+                  {t().tryAgain}
                 </Button>
               }
             />
@@ -309,16 +312,16 @@ export default function ContactDetailPanel(props: Props) {
         const hasOrganization = () => !!(c().parent || hasOrgTree() || actions.canEdit());
         const keyDetailItems = () => [
           {
-            term: "Name",
-            description: [c().firstName, c().lastName].filter(Boolean).join(" ") || resolveContactName(c()),
+            term: t().name,
+            description: [c().firstName, c().lastName].filter(Boolean).join(" ") || resolveContactName(c(), t().unnamedContact),
           },
-          ...(c().companyName ? [{ term: "Company", description: c().companyName }] : []),
-          ...(c().jobTitle ? [{ term: "Job title", description: c().jobTitle }] : []),
-          { term: "Book", description: props.bookNames[c().bookId] ?? c().bookId },
+          ...(c().companyName ? [{ term: t().company, description: c().companyName }] : []),
+          ...(c().jobTitle ? [{ term: t().jobTitle, description: c().jobTitle }] : []),
+          { term: t().book, description: props.bookNames[c().bookId] ?? c().bookId },
           ...(c().tags.length > 0
             ? [
                 {
-                  term: "Tags",
+                  term: t().tags,
                   description: (
                     <span class="flex flex-wrap gap-1.5">
                       <For each={c().tags}>
@@ -340,29 +343,29 @@ export default function ContactDetailPanel(props: Props) {
             fallback={
               <DetailPanel>
                 <DetailPanel.Header
-                  leading={<Avatar name={resolveContactName(c())} fallback={resolveContactInitials(c())} size="sm" />}
-                  title={resolveContactName(c())}
+                  leading={<Avatar name={resolveContactName(c(), t().unnamedContact)} fallback={resolveContactInitials(c())} size="sm" />}
+                  title={resolveContactName(c(), t().unnamedContact)}
                   subtitle={[c().jobTitle, c().companyName, props.bookNames[c().bookId]].filter(Boolean).join(" · ")}
                   primaryActions={
                     hasPrimaryActions() ? (
-                      <nav aria-label="Contact actions" class="flex flex-wrap gap-2">
+                      <nav aria-label={t().contactActions} class="flex flex-wrap gap-2">
                         <Show when={c().emails[0]}>
                           {(email) => (
                             <ButtonLink href={`mailto:${email().email}`} variant="secondary" size="sm">
-                              <i class="ti ti-mail" aria-hidden="true" /> Email
+                              <i class="ti ti-mail" aria-hidden="true" /> {t().email}
                             </ButtonLink>
                           )}
                         </Show>
                         <Show when={c().phones[0]}>
                           {(phone) => (
                             <ButtonLink href={`tel:${phone().phone}`} variant="secondary" size="sm">
-                              <i class="ti ti-phone" aria-hidden="true" /> Call
+                              <i class="ti ti-phone" aria-hidden="true" /> {t().call}
                             </ButtonLink>
                           )}
                         </Show>
                         <Show when={actions.canEdit()}>
                           <Button variant="secondary" size="sm" onClick={() => requestContactNoteComposer(c().id)}>
-                            <i class="ti ti-message" aria-hidden="true" /> Comment
+                            <i class="ti ti-message" aria-hidden="true" /> {t().comment}
                           </Button>
                         </Show>
                       </nav>
@@ -375,14 +378,14 @@ export default function ContactDetailPanel(props: Props) {
                         position="bottom-left"
                         items={[
                           {
-                            label: "Download vCard",
+                            label: t().downloadVCard,
                             icon: "ti ti-download",
                             href: `/api/contacts/books/${encodeURIComponent(c().bookId)}/contacts/${encodeURIComponent(c().id)}/export.vcf`,
                           },
                           ...(actions.canEdit()
                             ? [
                                 {
-                                  label: "Edit all fields",
+                                  label: t().editAllFields,
                                   icon: "ti ti-pencil",
                                   action: () => actions.openEditDialog(c()),
                                 },
@@ -391,7 +394,7 @@ export default function ContactDetailPanel(props: Props) {
                           ...(actions.canMove()
                             ? [
                                 {
-                                  label: "Move to another book",
+                                  label: t().moveToAnotherBook,
                                   icon: "ti ti-folder-symlink",
                                   action: () => actions.moveToBook(c()),
                                 },
@@ -399,11 +402,11 @@ export default function ContactDetailPanel(props: Props) {
                             : []),
                         ]}
                       >
-                        <Dropdown.Trigger iconOnly label="More contact actions" tooltip="More contact actions">
+                        <Dropdown.Trigger iconOnly label={t().moreContactActions} tooltip={t().moreContactActions}>
                           <i class="ti ti-dots" aria-hidden="true" />
                         </Dropdown.Trigger>
                       </Dropdown.Root>
-                      <IconButton label="Close contact detail panel" onClick={() => clearSelectedContactInUrl()}>
+                      <IconButton label={t().closeDetailPanel} onClick={() => clearSelectedContactInUrl()}>
                         <i class="ti ti-x" aria-hidden="true" />
                       </IconButton>
                     </>
@@ -412,11 +415,11 @@ export default function ContactDetailPanel(props: Props) {
 
                 <DetailPanel.Body scrollPreserveKey="contacts-detail">
                   <DetailPanel.Summary
-                    title="Overview"
+                    title={t().overview}
                     actions={
                       actions.canEdit() && !quickEditing() ? (
                         <Button variant="ghost" size="sm" onClick={() => setQuickEditing(true)}>
-                          <i class="ti ti-pencil" aria-hidden="true" /> Quick edit
+                          <i class="ti ti-pencil" aria-hidden="true" /> {t().quickEdit}
                         </Button>
                       ) : undefined
                     }
@@ -442,9 +445,9 @@ export default function ContactDetailPanel(props: Props) {
                   </DetailPanel.Summary>
 
                   <Show when={hasContactInformation()}>
-                    <DetailPanel.Group label="Contact information">
+                    <DetailPanel.Group label={t().contactInformation}>
                       <Show when={hasReach()}>
-                        <DetailPanel.Section title="Reach" icon="ti ti-at" tone="accent">
+                        <DetailPanel.Section title={t().reach} icon="ti ti-at" tone="accent">
                           <div class="flex flex-col gap-1">
                             <For each={c().emails}>
                               {(email) => (
@@ -452,7 +455,7 @@ export default function ContactDetailPanel(props: Props) {
                                   href={`mailto:${email.email}`}
                                   leading={<i class="ti ti-mail" aria-hidden="true" />}
                                   title={<span class="break-all">{email.email}</span>}
-                                  description={email.label ?? "Email"}
+                                  description={email.label ?? t().email}
                                 />
                               )}
                             </For>
@@ -462,7 +465,7 @@ export default function ContactDetailPanel(props: Props) {
                                   href={`tel:${phone.phone}`}
                                   leading={<i class="ti ti-phone" aria-hidden="true" />}
                                   title={phone.phone}
-                                  description={phone.label ?? "Phone"}
+                                  description={phone.label ?? t().phone}
                                 />
                               )}
                             </For>
@@ -475,7 +478,7 @@ export default function ContactDetailPanel(props: Props) {
                                       <i class="ti ti-world mt-0.5 shrink-0 text-dimmed" aria-hidden="true" />
                                       <span class="min-w-0">
                                         <span class="block break-all text-secondary">{website.url}</span>
-                                        <span class="block text-xs text-dimmed">{website.label ?? "Website"}</span>
+                                        <span class="block text-xs text-dimmed">{website.label ?? t().website}</span>
                                       </span>
                                     </div>
                                   }
@@ -487,7 +490,7 @@ export default function ContactDetailPanel(props: Props) {
                                       rel="noopener noreferrer"
                                       leading={<i class="ti ti-world" aria-hidden="true" />}
                                       title={<span class="break-all">{website.url}</span>}
-                                      description={website.label ?? "Website"}
+                                      description={website.label ?? t().website}
                                       trailing={<i class="ti ti-external-link" aria-hidden="true" />}
                                     />
                                   )}
@@ -499,7 +502,7 @@ export default function ContactDetailPanel(props: Props) {
                       </Show>
 
                       <Show when={c().addresses.length > 0}>
-                        <DetailPanel.Section title="Addresses" icon="ti ti-map-pin" tone="neutral" collapsible>
+                        <DetailPanel.Section title={t().addresses} icon="ti ti-map-pin" tone="neutral" collapsible>
                           <div class="flex flex-col gap-3">
                             <For each={c().addresses}>
                               {(address) => (
@@ -521,9 +524,9 @@ export default function ContactDetailPanel(props: Props) {
                   </Show>
 
                   <Show when={hasAdditionalDetails()}>
-                    <DetailPanel.Group label="Additional details">
+                    <DetailPanel.Group label={t().additionalDetails}>
                       <Show when={c().bankAccounts.length > 0}>
-                        <DetailPanel.Section title="Bank details" icon="ti ti-building-bank" tone="neutral" collapsible>
+                        <DetailPanel.Section title={t().bankDetails} icon="ti ti-building-bank" tone="neutral" collapsible>
                           <div class="flex flex-col gap-3">
                             <For each={c().bankAccounts}>
                               {(account) => (
@@ -552,35 +555,37 @@ export default function ContactDetailPanel(props: Props) {
                       </Show>
 
                       <Show when={hasPersonal()}>
-                        <DetailPanel.Section title="Personal" icon="ti ti-user" tone="neutral" collapsible defaultOpen>
+                        <DetailPanel.Section title={t().personal} icon="ti ti-user" tone="neutral" collapsible defaultOpen>
                           <DescriptionList
                             layout="rows"
                             size="sm"
                             items={[
-                              ...(hasFormalName() && c().firstName ? [{ term: "First name", description: c().firstName }] : []),
-                              ...(hasFormalName() && c().lastName ? [{ term: "Last name", description: c().lastName }] : []),
-                              ...(c().birthday ? [{ term: "Birthday", description: formatBirthday(c().birthday) ?? c().birthday }] : []),
-                              ...(c().salutation ? [{ term: "Salutation", description: c().salutation }] : []),
-                              ...(c().pronouns ? [{ term: "Pronouns", description: c().pronouns }] : []),
-                              ...(c().preferredLanguage ? [{ term: "Language", description: c().preferredLanguage }] : []),
+                              ...(hasFormalName() && c().firstName ? [{ term: t().firstName, description: c().firstName }] : []),
+                              ...(hasFormalName() && c().lastName ? [{ term: t().lastName, description: c().lastName }] : []),
+                              ...(c().birthday
+                                ? [{ term: t().birthday, description: formatBirthday(c().birthday, locale()) ?? c().birthday }]
+                                : []),
+                              ...(c().salutation ? [{ term: t().salutation, description: c().salutation }] : []),
+                              ...(c().pronouns ? [{ term: t().pronouns, description: c().pronouns }] : []),
+                              ...(c().preferredLanguage ? [{ term: t().language, description: c().preferredLanguage }] : []),
                             ]}
                           />
                         </DetailPanel.Section>
                       </Show>
 
                       <Show when={hasWork()}>
-                        <DetailPanel.Section title="Work" icon="ti ti-briefcase" tone="accent" collapsible defaultOpen>
+                        <DetailPanel.Section title={t().work} icon="ti ti-briefcase" tone="accent" collapsible defaultOpen>
                           <DescriptionList
                             layout="rows"
                             size="sm"
                             items={[
-                              ...(c().companyName ? [{ term: "Company", description: c().companyName }] : []),
-                              ...(c().department ? [{ term: "Department", description: c().department }] : []),
-                              ...(c().jobTitle ? [{ term: "Job title", description: c().jobTitle }] : []),
+                              ...(c().companyName ? [{ term: t().company, description: c().companyName }] : []),
+                              ...(c().department ? [{ term: t().department, description: c().department }] : []),
+                              ...(c().jobTitle ? [{ term: t().jobTitle, description: c().jobTitle }] : []),
                               ...(c().vatId
                                 ? [
                                     {
-                                      term: "VAT ID",
+                                      term: t().vatId,
                                       description: <span class="break-all font-mono">{c().vatId}</span>,
                                     },
                                   ]
@@ -593,21 +598,21 @@ export default function ContactDetailPanel(props: Props) {
                   </Show>
 
                   <Show when={hasOrganization()}>
-                    <DetailPanel.Group label="Organization context">
+                    <DetailPanel.Group label={t().organizationContext}>
                       <DetailPanel.Section
-                        title="Organization"
+                        title={t().organization}
                         icon="ti ti-hierarchy"
                         tone="accent"
                         actions={
                           <>
                             <Show when={hasOrgTree()}>
                               <Button variant="ghost" size="sm" loading={actions.orgTreeLoading()} onClick={() => actions.openOrgTree(c())}>
-                                <i class="ti ti-hierarchy" aria-hidden="true" /> Tree
+                                <i class="ti ti-hierarchy" aria-hidden="true" /> {t().tree}
                               </Button>
                             </Show>
                             <Show when={actions.canEdit()}>
                               <Button variant="ghost" size="sm" onClick={() => actions.openAddMemberDialog(c())}>
-                                <i class="ti ti-plus" aria-hidden="true" /> Add member
+                                <i class="ti ti-plus" aria-hidden="true" /> {t().addMember}
                               </Button>
                             </Show>
                           </>
@@ -626,8 +631,8 @@ export default function ContactDetailPanel(props: Props) {
                                   })
                                 }
                                 leading={<i class="ti ti-arrow-up" aria-hidden="true" />}
-                                title={resolveContactName(parent())}
-                                description="Parent contact"
+                                title={resolveContactName(parent(), t().unnamedContact)}
+                                description={t().parentContact}
                                 trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
                               />
                             )}
@@ -652,21 +657,21 @@ export default function ContactDetailPanel(props: Props) {
                                           class="contact-avatar flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium"
                                           aria-hidden="true"
                                         >
-                                          {(resolveContactName(member as ContactRef) || "?").charAt(0).toUpperCase()}
+                                          {(resolveContactName(member as ContactRef, t().unnamedContact) || "?").charAt(0).toUpperCase()}
                                         </span>
                                       }
-                                      title={resolveContactName(member as ContactRef)}
+                                      title={resolveContactName(member as ContactRef, t().unnamedContact)}
                                       description={[member.companyName, member.jobTitle].filter(Boolean).join(" · ") || undefined}
                                       trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
                                     />
                                     <Show when={actions.canEdit()}>
-                                      <Tooltip.Anchor content="Remove from members">
+                                      <Tooltip.Anchor content={t().removeFromMembers}>
                                         <IconButton
                                           variant="ghost"
                                           size="xs"
                                           onClick={() => actions.unlinkMember(member, c())}
                                           class="shrink-0 text-dimmed opacity-100 hover:text-red-500 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100"
-                                          label={`Remove ${resolveContactName(member as ContactRef)} from members`}
+                                          label={t().removeMemberLabel({ name: resolveContactName(member as ContactRef, t().unnamedContact) })}
                                         >
                                           <i class="ti ti-unlink" aria-hidden="true" />
                                         </IconButton>
@@ -678,7 +683,7 @@ export default function ContactDetailPanel(props: Props) {
                             </ul>
                           </Show>
                           <Show when={!c().parent && c().members.length === 0}>
-                            <p class="px-2 py-1 text-sm text-dimmed">No hierarchy yet.</p>
+                            <p class="px-2 py-1 text-sm text-dimmed">{t().noHierarchyYet}</p>
                           </Show>
                         </div>
                       </DetailPanel.Section>

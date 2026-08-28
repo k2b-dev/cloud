@@ -58,7 +58,11 @@ export const createContactFavoriteMutationLifecycle = (initialSourceKey: string)
   };
 };
 
-export const saveContactFavorite = async (change: ContactFavoriteChange, abortSignal: AbortSignal): Promise<void> => {
+export const saveContactFavorite = async (
+  change: ContactFavoriteChange,
+  abortSignal: AbortSignal,
+  errorFallback = "Could not update favorite",
+): Promise<void> => {
   const response = await apiClient.favorites[":bookId"][":contactId"].$put(
     {
       param: { bookId: change.bookId, contactId: change.contactId },
@@ -66,7 +70,7 @@ export const saveContactFavorite = async (change: ContactFavoriteChange, abortSi
     },
     { init: { signal: abortSignal } },
   );
-  if (!response.ok) throw new Error(await readErrorMessage(response, "Could not update favorite"));
+  if (!response.ok) throw new Error(await readErrorMessage(response, errorFallback));
   window.dispatchEvent(new CustomEvent<ContactFavoriteChange>(FAVORITE_EVENT, { detail: change }));
 };
 

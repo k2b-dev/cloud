@@ -1,6 +1,6 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations, query } from "@k2b/stdlib/solid";
-import { dialogCore, panelDialogOptions, prompts, toast } from "@k2b/ui";
+import { dialogCore, panelDialogOptions, prompts, toast, useLocale } from "@k2b/ui";
 import { type Accessor, createEffect, createMemo, onCleanup, type Setter } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactRef, ContactTree, ContactTreeNode } from "../../service";
@@ -8,6 +8,7 @@ import { resolveContactName } from "../../shared";
 import AddMemberDialog from "./AddMemberDialog";
 import { readErrorMessage } from "./api";
 import ContactUpsertForm from "./ContactUpsertForm";
+import { detailMessages } from "./detail-messages";
 import { createContactQuerySource, isCurrentQuerySnapshot, parseContactQuerySource } from "./contact-query-source";
 import { setSelectedContactInUrl } from "./context";
 
@@ -19,6 +20,8 @@ export const createContactDetailActions = (config: {
   setDetailMode: Setter<"details" | "tree">;
   invalidateDetail: () => Promise<void>;
 }) => {
+  const locale = useLocale();
+  const t = () => detailMessages.resolve([locale()]).t;
   let nextOrgTreeRevision = 0;
   let preparingAction = false;
   let disposed = false;
@@ -47,12 +50,12 @@ export const createContactDetailActions = (config: {
         { init: { signal: abortSignal } },
       );
 
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to move contact"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().moveContactFailed));
 
       return await response.json();
     },
     onSuccess: (moved) => {
-      toast.success("Contact moved");
+      toast.success(t().contactMoved);
       navigateTo(`/app/contacts/${moved.bookId}?contact=${moved.id}&contactBook=${moved.bookId}`);
     },
     onError: (error) => {
@@ -69,11 +72,11 @@ export const createContactDetailActions = (config: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to remove member"));
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().removeMemberFailed));
     },
     onSuccess: () => {
-      toast.success("Member removed");
-      void config.invalidateDetail().catch(() => toast.error("The member was removed, but the contact could not be reloaded."));
+      toast.success(t().memberRemoved);
+      void config.invalidateDetail().catch(() => toast.error(t().memberRemovedReloadFailed));
     },
     onError: (error) => {
       void prompts.error(error.message);
@@ -91,7 +94,7 @@ export const createContactDetailActions = (config: {
         { init: { signal: abortSignal } },
       );
 
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to load org tree"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().loadOrgTreeFailed));
 
       return { source, tree: await response.json() };
     },
@@ -113,7 +116,7 @@ export const createContactDetailActions = (config: {
   const openAddMemberDialog = async (parent: Contact) => {
     const member = await dialogCore.open<Contact | null>((close) => <AddMemberDialog parent={parent} close={close} />, panelDialogOptions);
     if (!member || disposed) return;
-    void config.invalidateDetail().catch(() => toast.error("The member was added, but the contact could not be reloaded."));
+    void config.invalidateDetail().catch(() => toast.error(t().memberAddedReloadFailed));
   };
 
   const openEditDialog = async (selectedContact: Contact) => {
@@ -123,7 +126,7 @@ export const createContactDetailActions = (config: {
           mode="edit"
           bookId={selectedContact.bookId}
           initialContact={selectedContact}
-          title={`Edit ${resolveContactName(selectedContact)}`}
+          title={t().editContactTitle({ name: resolveContactName(selectedContact, t().unnamedContact) })}
           icon="ti ti-pencil"
           onCancel={() => close(undefined)}
           onSaved={(contact) => close(contact)}
@@ -152,20 +155,20 @@ export const createContactDetailActions = (config: {
     preparingAction = true;
     try {
       if (targetOptions.length === 0) {
-        await prompts.alert("There is no other writable contact book available.", {
-          title: "No target book",
+        await prompts.alert(t().noTargetBookDescription, {
+          title: t().noTargetBookTitle,
           icon: "ti ti-cube-off",
         });
         return;
       }
       const result = await prompts.form({
-        title: "Move Contact",
+        title: t().moveContactTitle,
         icon: "ti ti-arrows-transfer-up-down",
-        confirmText: "Move",
+        confirmText: t().move,
         fields: {
           targetBookId: {
             type: "select",
-            label: "Move this contact to which book?",
+            label: t().moveTargetLabel,
             required: true,
             options: targetOptions.map((entry) => ({ id: entry.id, label: entry.name, icon: "ti ti-cube" })),
           },
@@ -181,14 +184,17 @@ export const createContactDetailActions = (config: {
   const unlinkMember = async (member: ContactRef, parent: Contact) => {
     if (disposed || preparingAction || moveMutation.loading() || unlinkMemberMutation.loading()) return;
     const intent = { bookId: parent.bookId, memberId: member.id };
-    const message = `Remove "${resolveContactName(member)}" from members of "${resolveContactName(parent)}"? The contact stays - only the link is removed.`;
+    const message = t().removeMemberConfirm({
+      member: resolveContactName(member, t().unnamedContact),
+      parent: resolveContactName(parent, t().unnamedContact),
+    });
     preparingAction = true;
     try {
       const confirmed = await prompts.confirm(message, {
-        title: "Remove member",
+        title: t().removeMemberTitle,
         icon: "ti ti-unlink",
-        confirmText: "Remove",
-        cancelText: "Cancel",
+        confirmText: t().remove,
+        cancelText: t().cancel,
       });
       if (!confirmed || disposed) return;
       await unlinkMemberMutation.mutate(intent);

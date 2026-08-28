@@ -12,7 +12,7 @@ const trimOrNull = (value: string | null | undefined): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
-export const resolveContactName = (contact: NameLike): string => {
+export const resolveContactName = (contact: NameLike, unnamedFallback = "Unnamed contact"): string => {
   const fullName = [trimOrNull(contact.firstName), trimOrNull(contact.lastName)].filter(Boolean).join(" ");
   return (
     trimOrNull(contact.label) ??
@@ -20,7 +20,7 @@ export const resolveContactName = (contact: NameLike): string => {
     trimOrNull(contact.companyName) ??
     trimOrNull(contact.emails?.[0]?.email) ??
     trimOrNull(contact.phones?.[0]?.phone) ??
-    "Unnamed contact"
+    unnamedFallback
   );
 };
 

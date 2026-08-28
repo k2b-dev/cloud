@@ -13,6 +13,7 @@ import {
 import { type ServiceAccountCredential, serviceAccountCredentials } from "@valentinkolb/cloud/services";
 import { err, fail, ok, type PageParams, type Paginated, type Result } from "@k2b/stdlib";
 import { sql } from "bun";
+import { conflictError, contactsMessages, notFoundError } from "./messages";
 import { isUuid } from "./shared";
 
 type DbBookAccess = {
@@ -35,9 +36,10 @@ export type ContactBookApiKey = ServiceAccountCredential & {
 /**
  * Links one `auth.access` entry to one contact book.
  */
-export const addBookAccess = async (bookId: string, accessId: string): Promise<Result<void>> => {
+export const addBookAccess = async (bookId: string, accessId: string, locale?: string): Promise<Result<void>> => {
+  const t = contactsMessages(locale);
   if (!isUuid(bookId) || !isUuid(accessId)) {
-    return fail(err.notFound("Book or access entry"));
+    return fail(notFoundError(t.bookOrAccessEntryNotFound));
   }
 
   try {
@@ -49,10 +51,10 @@ export const addBookAccess = async (bookId: string, accessId: string): Promise<R
   } catch (error: unknown) {
     const dbError = error as { code?: string };
     if (dbError.code === "23505") {
-      return fail(err.conflict("Book access entry"));
+      return fail(conflictError(t.bookAccessEntryExists));
     }
     if (dbError.code === "23503") {
-      return fail(err.notFound("Book or access entry"));
+      return fail(notFoundError(t.bookOrAccessEntryNotFound));
     }
     throw error;
   }
@@ -153,9 +155,11 @@ export const grantBookAccess = async (config: {
   bookId: string;
   principal: Principal;
   permission: PermissionLevel;
+  locale?: string;
 }): Promise<Result<AccessEntry>> => {
+  const t = contactsMessages(config.locale);
   if (!isUuid(config.bookId)) {
-    return fail(err.notFound("Book"));
+    return fail(notFoundError(t.bookNotFound));
   }
 
   const existing = await listBookAccess(config.bookId);
@@ -182,11 +186,7 @@ export const grantBookAccess = async (config: {
     return false;
   });
   if (duplicate) {
-    return fail({
-      code: "CONFLICT",
-      message: "This principal already has access to this book",
-      status: 409,
-    });
+    return fail(conflictError(t.principalAlreadyHasAccess));
   }
 
   const created = await createAccess({

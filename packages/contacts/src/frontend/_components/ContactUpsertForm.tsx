@@ -1,17 +1,19 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, PanelDialog, prompts, TextInput, toast } from "@k2b/ui";
+import { Button, ButtonLink, PanelDialog, prompts, TextInput, toast, useLocale } from "@k2b/ui";
 import { type Accessor, createSignal, onCleanup, type Setter, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Contact, ContactRef } from "../../service";
 import { resolveContactName } from "../../shared";
 import { readErrorMessage } from "./api";
 import { openBookSettingsDialog } from "./BookSettingsDialog";
+import { type ContactFormText, contactFormErrorMessage, contactFormMessages, contactRowLabels } from "./contact-form-messages";
 import ContactSearchPicker from "./ContactSearchPicker";
 import ContactTagsPicker from "./ContactTagsPicker";
 import { AddressFields, BankAccountFields, ReachFields } from "./ContactUpsertForm.fields";
 import {
   buildContactPayload,
+  type ContactRowLabels,
   type ContactUpsertInitialValues,
   contactToUpsertDraft,
   createContactUpsertDraft,
@@ -20,8 +22,8 @@ import {
   type EditableEmail,
   type EditablePhone,
   type EditableWebsite,
-  EMPTY_ADDRESS,
-  EMPTY_BANK_ACCOUNT,
+  emptyAddressRow,
+  emptyBankAccountRow,
 } from "./ContactUpsertForm.model";
 
 type ContactUpsertMode = "create" | "edit";
@@ -62,68 +64,82 @@ type IdentitySectionProps = {
   openParentPicker: () => void;
 };
 
-const IdentitySection = (props: IdentitySectionProps) => (
-  <PanelDialog.Section title="Identity" subtitle="Name, parent contact, and book tags." icon="ti ti-id">
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-      <TextInput label="First Name" placeholder="Max" icon="ti ti-user" value={props.firstName} onValueChange={props.setFirstName} />
-      <TextInput label="Last Name" placeholder="Mustermann" icon="ti ti-user" value={props.lastName} onValueChange={props.setLastName} />
-      <div class="md:col-span-2">
+const IdentitySection = (props: IdentitySectionProps) => {
+  const locale = useLocale();
+  const t = () => contactFormMessages.resolve([locale()]).t;
+  return (
+    <PanelDialog.Section title={t().identityTitle} subtitle={t().identitySubtitle} icon="ti ti-id">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
         <TextInput
-          label="Nickname"
-          placeholder="e.g. Alex"
-          description="Shown as the primary name in lists and the detail header. Falls back to first + last name when empty."
+          label={t().firstName}
+          placeholder={t().firstNamePlaceholder}
           icon="ti ti-user"
-          value={props.label}
-          onValueChange={props.setLabel}
+          value={props.firstName}
+          onValueChange={props.setFirstName}
         />
-      </div>
-      <div class="md:col-span-2">
-        <div class="text-label mb-1.5 block text-xs">
-          Belongs to <span class="font-normal text-dimmed">(optional)</span>
-        </div>
-        <p class="mb-2 text-[11px] text-dimmed">
-          Link this contact under a parent (e.g. an employee under their company). Cycles are blocked by the server.
-        </p>
-        <Show
-          when={props.parentRef()}
-          fallback={
-            <Button variant="ghost" size="xs" class="w-fit text-xs text-dimmed hover:text-primary" onClick={props.openParentPicker}>
-              <i class="ti ti-corner-down-right" /> Pick a parent contact
-            </Button>
-          }
-        >
-          {(parent) => (
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="inline-flex items-center gap-1.5 rounded-md bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-                <i class="ti ti-corner-down-right text-[10px]" />
-                {resolveContactName(parent())}
-              </span>
-              <Button variant="ghost" size="xs" class="text-xs text-dimmed hover:text-primary" onClick={props.openParentPicker}>
-                Change
-              </Button>
-              <Button variant="ghost" size="xs" class="text-xs text-dimmed hover:text-red-500" onClick={() => props.setParentRef(null)}>
-                Clear
-              </Button>
-            </div>
-          )}
-        </Show>
-      </div>
-      <div class="md:col-span-2">
-        <div class="text-label mb-1.5 block text-xs">
-          Tags <span class="font-normal text-dimmed">(optional)</span>
-        </div>
-        <p class="mb-2 text-[11px] text-dimmed">Categorize the contact (e.g. „VIP", „Lead", „Supplier"). Tags are scoped to this book.</p>
-        <ContactTagsPicker
-          bookId={props.bookId}
-          selectedIds={props.tagIds()}
-          onChange={props.setTagIds}
-          onManage={async () => (await openBookSettingsDialog({ bookId: props.bookId, initialTab: "tags" })).workspaceChanged}
-          compact
+        <TextInput
+          label={t().lastName}
+          placeholder={t().lastNamePlaceholder}
+          icon="ti ti-user"
+          value={props.lastName}
+          onValueChange={props.setLastName}
         />
+        <div class="md:col-span-2">
+          <TextInput
+            label={t().nickname}
+            placeholder={t().nicknamePlaceholder}
+            description={t().nicknameDescription}
+            icon="ti ti-user"
+            value={props.label}
+            onValueChange={props.setLabel}
+          />
+        </div>
+        <div class="md:col-span-2">
+          <div class="text-label mb-1.5 block text-xs">
+            {t().belongsTo} <span class="font-normal text-dimmed">{t().optionalSuffix}</span>
+          </div>
+          <p class="mb-2 text-[11px] text-dimmed">{t().belongsToHint}</p>
+          <Show
+            when={props.parentRef()}
+            fallback={
+              <Button variant="ghost" size="xs" class="w-fit text-xs text-dimmed hover:text-primary" onClick={props.openParentPicker}>
+                <i class="ti ti-corner-down-right" /> {t().pickParentContact}
+              </Button>
+            }
+          >
+            {(parent) => (
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="inline-flex items-center gap-1.5 rounded-md bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                  <i class="ti ti-corner-down-right text-[10px]" />
+                  {resolveContactName(parent(), t().unnamedContact)}
+                </span>
+                <Button variant="ghost" size="xs" class="text-xs text-dimmed hover:text-primary" onClick={props.openParentPicker}>
+                  {t().change}
+                </Button>
+                <Button variant="ghost" size="xs" class="text-xs text-dimmed hover:text-red-500" onClick={() => props.setParentRef(null)}>
+                  {t().clear}
+                </Button>
+              </div>
+            )}
+          </Show>
+        </div>
+        <div class="md:col-span-2">
+          <div class="text-label mb-1.5 block text-xs">
+            {t().tags} <span class="font-normal text-dimmed">{t().optionalSuffix}</span>
+          </div>
+          <p class="mb-2 text-[11px] text-dimmed">{t().tagsHint}</p>
+          <ContactTagsPicker
+            bookId={props.bookId}
+            selectedIds={props.tagIds()}
+            onChange={props.setTagIds}
+            onManage={async () => (await openBookSettingsDialog({ bookId: props.bookId, initialTab: "tags" })).workspaceChanged}
+            compact
+          />
+        </div>
       </div>
-    </div>
-  </PanelDialog.Section>
-);
+    </PanelDialog.Section>
+  );
+};
 
 type PersonalSectionProps = {
   birthday: Accessor<string>;
@@ -136,34 +152,44 @@ type PersonalSectionProps = {
   setPreferredLanguage: Setter<string>;
 };
 
-const PersonalSection = (props: PersonalSectionProps) => (
-  <PanelDialog.Section title="Personal" subtitle="Optional personal profile details." icon="ti ti-user-heart">
-    <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-      <TextInput label="Birthday" placeholder="1990-01-31" icon="ti ti-cake" value={props.birthday} onValueChange={props.setBirthday} />
-      <TextInput
-        label="Salutation / Title"
-        placeholder="Dr., Prof., Ms., Mr."
-        icon="ti ti-id-badge-2"
-        value={props.salutation}
-        onValueChange={props.setSalutation}
-      />
-      <TextInput
-        label="Pronouns"
-        placeholder="she/her, he/him, they/them"
-        icon="ti ti-user-heart"
-        value={props.pronouns}
-        onValueChange={props.setPronouns}
-      />
-      <TextInput
-        label="Preferred Language"
-        placeholder="de, en, fr"
-        icon="ti ti-language"
-        value={props.preferredLanguage}
-        onValueChange={props.setPreferredLanguage}
-      />
-    </div>
-  </PanelDialog.Section>
-);
+const PersonalSection = (props: PersonalSectionProps) => {
+  const locale = useLocale();
+  const t = () => contactFormMessages.resolve([locale()]).t;
+  return (
+    <PanelDialog.Section title={t().personalTitle} subtitle={t().personalSubtitle} icon="ti ti-user-heart">
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <TextInput
+          label={t().birthday}
+          placeholder={t().birthdayPlaceholder}
+          icon="ti ti-cake"
+          value={props.birthday}
+          onValueChange={props.setBirthday}
+        />
+        <TextInput
+          label={t().salutation}
+          placeholder={t().salutationPlaceholder}
+          icon="ti ti-id-badge-2"
+          value={props.salutation}
+          onValueChange={props.setSalutation}
+        />
+        <TextInput
+          label={t().pronouns}
+          placeholder={t().pronounsPlaceholder}
+          icon="ti ti-user-heart"
+          value={props.pronouns}
+          onValueChange={props.setPronouns}
+        />
+        <TextInput
+          label={t().preferredLanguage}
+          placeholder={t().preferredLanguagePlaceholder}
+          icon="ti ti-language"
+          value={props.preferredLanguage}
+          onValueChange={props.setPreferredLanguage}
+        />
+      </div>
+    </PanelDialog.Section>
+  );
+};
 
 type WorkSectionProps = {
   companyName: Accessor<string>;
@@ -176,42 +202,46 @@ type WorkSectionProps = {
   setJobTitle: Setter<string>;
 };
 
-const WorkSection = (props: WorkSectionProps) => (
-  <PanelDialog.Section title="Work" subtitle="Company, role, department, and billing identifiers." icon="ti ti-briefcase">
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-      <TextInput
-        label="Company"
-        placeholder="Example GmbH"
-        description="Shown as a chip in the contact header."
-        icon="ti ti-building"
-        value={props.companyName}
-        onValueChange={props.setCompanyName}
-      />
-      <TextInput
-        label="VAT ID"
-        placeholder="DE123456789"
-        description="Country prefix + ID, e.g. DE123456789."
-        icon="ti ti-receipt-2"
-        value={props.vatId}
-        onValueChange={props.setVatId}
-      />
-      <TextInput
-        label="Department"
-        placeholder="Sales"
-        icon="ti ti-hierarchy"
-        value={props.department}
-        onValueChange={props.setDepartment}
-      />
-      <TextInput
-        label="Job Title"
-        placeholder="Account Manager"
-        icon="ti ti-briefcase"
-        value={props.jobTitle}
-        onValueChange={props.setJobTitle}
-      />
-    </div>
-  </PanelDialog.Section>
-);
+const WorkSection = (props: WorkSectionProps) => {
+  const locale = useLocale();
+  const t = () => contactFormMessages.resolve([locale()]).t;
+  return (
+    <PanelDialog.Section title={t().workTitle} subtitle={t().workSubtitle} icon="ti ti-briefcase">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <TextInput
+          label={t().company}
+          placeholder={t().companyPlaceholder}
+          description={t().companyDescription}
+          icon="ti ti-building"
+          value={props.companyName}
+          onValueChange={props.setCompanyName}
+        />
+        <TextInput
+          label={t().vatId}
+          placeholder={t().vatIdPlaceholder}
+          description={t().vatIdDescription}
+          icon="ti ti-receipt-2"
+          value={props.vatId}
+          onValueChange={props.setVatId}
+        />
+        <TextInput
+          label={t().department}
+          placeholder={t().departmentPlaceholder}
+          icon="ti ti-hierarchy"
+          value={props.department}
+          onValueChange={props.setDepartment}
+        />
+        <TextInput
+          label={t().jobTitle}
+          placeholder={t().jobTitlePlaceholder}
+          icon="ti ti-briefcase"
+          value={props.jobTitle}
+          onValueChange={props.setJobTitle}
+        />
+      </div>
+    </PanelDialog.Section>
+  );
+};
 
 type FooterContentProps = {
   mode: ContactUpsertMode;
@@ -223,52 +253,56 @@ type FooterContentProps = {
   onSave: () => void;
 };
 
-const FooterContent = (props: FooterContentProps) => (
-  <div class="flex w-full flex-wrap items-center justify-between gap-2">
-    <div>
-      {props.mode === "edit" && (
-        <Button
-          variant="danger"
-          size="sm"
-          aria-label="Delete contact"
-          disabled={props.saving || props.deleting}
-          loading={props.deleting}
-          onClick={props.onDelete}
-        >
-          <i class="ti ti-trash" />
-          Delete
-        </Button>
-      )}
-    </div>
+const FooterContent = (props: FooterContentProps) => {
+  const locale = useLocale();
+  const t = () => contactFormMessages.resolve([locale()]).t;
+  return (
+    <div class="flex w-full flex-wrap items-center justify-between gap-2">
+      <div>
+        {props.mode === "edit" && (
+          <Button
+            variant="danger"
+            size="sm"
+            aria-label={t().deleteContactAria}
+            disabled={props.saving || props.deleting}
+            loading={props.deleting}
+            onClick={props.onDelete}
+          >
+            <i class="ti ti-trash" />
+            {t().delete}
+          </Button>
+        )}
+      </div>
 
-    <div class="flex flex-wrap items-center gap-2">
-      <Show
-        when={props.backHref}
-        fallback={
-          <Show when={props.onCancel}>
-            <Button variant="secondary" size="sm" onClick={() => props.onCancel?.()}>
-              Cancel
-            </Button>
-          </Show>
-        }
-      >
-        <ButtonLink href={props.backHref!} variant="secondary" size="sm">
-          Cancel
-        </ButtonLink>
-      </Show>
-      <Button
-        size="sm"
-        aria-label={props.mode === "create" ? "Create contact" : "Save contact changes"}
-        disabled={props.saving || props.deleting}
-        loading={props.saving}
-        onClick={props.onSave}
-      >
-        <i class={props.mode === "create" ? "ti ti-plus" : "ti ti-device-floppy"} />
-        {props.mode === "create" ? "Create Contact" : "Save Changes"}
-      </Button>
+      <div class="flex flex-wrap items-center gap-2">
+        <Show
+          when={props.backHref}
+          fallback={
+            <Show when={props.onCancel}>
+              <Button variant="secondary" size="sm" onClick={() => props.onCancel?.()}>
+                {t().cancel}
+              </Button>
+            </Show>
+          }
+        >
+          <ButtonLink href={props.backHref!} variant="secondary" size="sm">
+            {t().cancel}
+          </ButtonLink>
+        </Show>
+        <Button
+          size="sm"
+          aria-label={props.mode === "create" ? t().createContactAria : t().saveChangesAria}
+          disabled={props.saving || props.deleting}
+          loading={props.saving}
+          onClick={props.onSave}
+        >
+          <i class={props.mode === "create" ? "ti ti-plus" : "ti ti-device-floppy"} />
+          {props.mode === "create" ? t().createContact : t().saveChanges}
+        </Button>
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 type SaveContactConfig = {
   mode: ContactUpsertMode;
@@ -277,7 +311,7 @@ type SaveContactConfig = {
   payload: ReturnType<typeof buildContactPayload>;
 };
 
-const saveContact = async (config: SaveContactConfig, abortSignal: AbortSignal): Promise<Contact> => {
+const saveContact = async (config: SaveContactConfig, text: ContactFormText, abortSignal: AbortSignal): Promise<Contact> => {
   if (config.mode === "create") {
     const response = await apiClient.books[":bookId"].contacts.$post(
       {
@@ -286,7 +320,7 @@ const saveContact = async (config: SaveContactConfig, abortSignal: AbortSignal):
       },
       { init: { signal: abortSignal } },
     );
-    if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to create contact"));
+    if (!response.ok) throw new Error(await readErrorMessage(response, text.createFailed));
     return await response.json();
   }
 
@@ -301,11 +335,15 @@ const saveContact = async (config: SaveContactConfig, abortSignal: AbortSignal):
     },
     { init: { signal: abortSignal } },
   );
-  if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to update contact"));
+  if (!response.ok) throw new Error(await readErrorMessage(response, text.updateFailed));
   return await response.json();
 };
 
-const deleteContact = async (intent: { bookId: string; contact: Contact }, abortSignal: AbortSignal): Promise<Contact> => {
+const deleteContact = async (
+  intent: { bookId: string; contact: Contact },
+  text: ContactFormText,
+  abortSignal: AbortSignal,
+): Promise<Contact> => {
   const response = await apiClient.books[":bookId"].contacts[":contactId"].$delete(
     {
       param: {
@@ -315,12 +353,16 @@ const deleteContact = async (intent: { bookId: string; contact: Contact }, abort
     },
     { init: { signal: abortSignal } },
   );
-  if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to delete contact"));
+  if (!response.ok) throw new Error(await readErrorMessage(response, text.deleteFailed));
   return intent.contact;
 };
 
-const afterSave = (config: { mode: ContactUpsertMode; bookId: string; onSaved?: (contact: Contact) => void }, contact: Contact) => {
-  toast.success(config.mode === "create" ? "Contact created" : "Contact updated");
+const afterSave = (
+  config: { mode: ContactUpsertMode; bookId: string; onSaved?: (contact: Contact) => void },
+  text: ContactFormText,
+  contact: Contact,
+) => {
+  toast.success(config.mode === "create" ? text.contactCreated : text.contactUpdated);
   if (config.onSaved) {
     config.onSaved(contact);
     return;
@@ -328,8 +370,8 @@ const afterSave = (config: { mode: ContactUpsertMode; bookId: string; onSaved?: 
   navigateTo(detailHref(config.bookId, contact.id));
 };
 
-const afterDelete = (config: { bookId: string; onDeleted?: () => void }, contact: Contact) => {
-  toast.success("Contact deleted");
+const afterDelete = (config: { bookId: string; onDeleted?: () => void }, text: ContactFormText, contact: Contact) => {
+  toast.success(text.contactDeleted);
   if (config.onDeleted) {
     config.onDeleted();
     return;
@@ -344,8 +386,9 @@ const createContactFormState = (
   initialContact: Contact | null,
   defaultParent: ContactRef | null | undefined,
   initialValues: ContactUpsertInitialValues | undefined,
+  rowLabels: ContactRowLabels,
 ) => {
-  const draft = initialContact ? contactToUpsertDraft(initialContact) : createContactUpsertDraft(initialValues);
+  const draft = initialContact ? contactToUpsertDraft(initialContact, rowLabels) : createContactUpsertDraft(initialValues, rowLabels);
   const [label, setLabel] = createSignal(draft.label);
   const [firstName, setFirstName] = createSignal(draft.firstName);
   const [lastName, setLastName] = createSignal(draft.lastName);
@@ -409,8 +452,10 @@ const createContactFormState = (
  * Shared contact upsert form (create + edit) for manual books.
  */
 export default function ContactUpsertForm(props: Props) {
+  const locale = useLocale();
+  const t = () => contactFormMessages.resolve([locale()]).t;
   const initialContact = props.mode === "edit" ? (props.initialContact ?? null) : null;
-  const form = createContactFormState(initialContact, props.defaultParent, props.initialValues);
+  const form = createContactFormState(initialContact, props.defaultParent, props.initialValues, contactRowLabels(t()));
   const {
     label,
     setLabel,
@@ -483,14 +528,14 @@ export default function ContactUpsertForm(props: Props) {
     });
 
   const upsertMutation = mutations.create<Contact, SaveContactConfig>({
-    mutation: (intent, { abortSignal }) => saveContact(intent, abortSignal),
-    onSuccess: (contact) => afterSave({ mode: props.mode, bookId: props.bookId, onSaved: props.onSaved }, contact),
+    mutation: (intent, { abortSignal }) => saveContact(intent, t(), abortSignal),
+    onSuccess: (contact) => afterSave({ mode: props.mode, bookId: props.bookId, onSaved: props.onSaved }, t(), contact),
     onError: (error) => prompts.error(error.message),
   });
 
   const removeMutation = mutations.create<Contact, { bookId: string; contact: Contact }>({
-    mutation: (intent, { abortSignal }) => deleteContact(intent, abortSignal),
-    onSuccess: (contact) => afterDelete({ bookId: props.bookId, onDeleted: props.onDeleted }, contact),
+    mutation: (intent, { abortSignal }) => deleteContact(intent, t(), abortSignal),
+    onSuccess: (contact) => afterDelete({ bookId: props.bookId, onDeleted: props.onDeleted }, t(), contact),
     onError: (error) => prompts.error(error.message),
   });
 
@@ -505,16 +550,16 @@ export default function ContactUpsertForm(props: Props) {
     const intent = { bookId: props.bookId, contact: initialContact };
     setConfirmingDelete(true);
     try {
-      const confirmed = await prompts.confirm(`Delete "${resolveContactName(intent.contact)}"? This cannot be undone.`, {
-        title: "Delete Contact",
+      const confirmed = await prompts.confirm(t().deleteConfirm({ name: resolveContactName(intent.contact, t().unnamedContact) }), {
+        title: t().deleteContactTitle,
         icon: "ti ti-trash",
         variant: "danger",
-        confirmText: "Delete",
-        cancelText: "Cancel",
+        confirmText: t().delete,
+        cancelText: t().cancel,
       });
       if (confirmed && !disposed) void removeMutation.mutate(intent);
     } catch (error) {
-      if (!disposed) void prompts.error(error instanceof Error ? error.message : "Could not confirm contact deletion");
+      if (!disposed) void prompts.error(error instanceof Error ? error.message : t().deleteConfirmFailed);
     } finally {
       if (!disposed) setConfirmingDelete(false);
     }
@@ -530,7 +575,7 @@ export default function ContactUpsertForm(props: Props) {
         payload: { ...payload, tagIds: [...(payload.tagIds ?? [])] },
       });
     } catch (error) {
-      void prompts.error(error instanceof Error ? error.message : "Failed to prepare contact");
+      void prompts.error(contactFormErrorMessage(error, t(), t().prepareFailed));
     }
   };
 
@@ -553,7 +598,7 @@ export default function ContactUpsertForm(props: Props) {
           onSelect={(contact) => close(contact)}
         />
       ),
-      { title: "Pick a parent contact", icon: "ti ti-corner-down-right", size: "medium" },
+      { title: t().pickParentContact, icon: "ti ti-corner-down-right", size: "medium" },
     );
     if (!picked) return;
     setParentRef({
@@ -570,7 +615,7 @@ export default function ContactUpsertForm(props: Props) {
     <PanelDialog>
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden" data-contacts-editor="true">
         <PanelDialog.Header
-          title={props.title ?? (props.mode === "create" ? "New Contact" : "Edit Contact")}
+          title={props.title ?? (props.mode === "create" ? t().newContactTitle : t().editContactTitle)}
           subtitle={props.subtitle}
           icon={props.icon ?? (props.mode === "create" ? "ti ti-user-plus" : "ti ti-pencil")}
           close={handleCancel}
@@ -601,12 +646,12 @@ export default function ContactUpsertForm(props: Props) {
           <div class="flex flex-wrap items-center gap-2">
             <Show when={!showPersonal()}>
               <Button variant="ghost" size="sm" onClick={() => setShowPersonal(true)}>
-                <i class="ti ti-user-heart" /> Add personal details
+                <i class="ti ti-user-heart" /> {t().addPersonalDetails}
               </Button>
             </Show>
             <Show when={!showWork()}>
               <Button variant="ghost" size="sm" onClick={() => setShowWork(true)}>
-                <i class="ti ti-briefcase" /> Add work details
+                <i class="ti ti-briefcase" /> {t().addWorkDetails}
               </Button>
             </Show>
             <Show when={!showAddresses()}>
@@ -615,10 +660,10 @@ export default function ContactUpsertForm(props: Props) {
                 size="sm"
                 onClick={() => {
                   setShowAddresses(true);
-                  if (addresses().length === 0) setAddresses([{ ...EMPTY_ADDRESS }]);
+                  if (addresses().length === 0) setAddresses([emptyAddressRow(contactRowLabels(t()))]);
                 }}
               >
-                <i class="ti ti-map-pin" /> Add address
+                <i class="ti ti-map-pin" /> {t().addAddress}
               </Button>
             </Show>
             <Show when={!showBankAccounts()}>
@@ -627,10 +672,10 @@ export default function ContactUpsertForm(props: Props) {
                 size="sm"
                 onClick={() => {
                   setShowBankAccounts(true);
-                  if (bankAccounts().length === 0) setBankAccounts([{ ...EMPTY_BANK_ACCOUNT }]);
+                  if (bankAccounts().length === 0) setBankAccounts([emptyBankAccountRow(contactRowLabels(t()))]);
                 }}
               >
-                <i class="ti ti-building-bank" /> Add bank details
+                <i class="ti ti-building-bank" /> {t().addBankDetails}
               </Button>
             </Show>
           </div>

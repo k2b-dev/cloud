@@ -51,11 +51,45 @@ export type ContactUpsertInitialValues = {
 };
 
 /**
+ * Stable identifiers for client-side validation failures. The model is
+ * locale-agnostic: it throws English base text plus a key, and the rendering
+ * component maps the key through its message catalog.
+ */
+export type ContactFormValidationKey = "websiteUrl" | "addressFields" | "addressCountryCode" | "bankFields" | "birthdayFormat";
+
+export class ContactFormValidationError extends Error {
+  readonly key: ContactFormValidationKey;
+
+  constructor(key: ContactFormValidationKey, message: string) {
+    super(message);
+    this.name = "ContactFormValidationError";
+    this.key = key;
+  }
+}
+
+/** Display labels seeded into new contact-point rows; callers pass localized values. */
+export type ContactRowLabels = {
+  email: string;
+  phone: string;
+  website: string;
+  bank: string;
+  address: string;
+};
+
+export const DEFAULT_ROW_LABELS: ContactRowLabels = {
+  email: "Email",
+  phone: "Telephone",
+  website: "Website",
+  bank: "Bank",
+  address: "Address",
+};
+
+/**
  * Builds the editable form shape without dropping values that are outside a
  * compact editor. This lets focused editors patch a few common fields while
  * still sending the complete contact payload expected by the API.
  */
-export const contactToUpsertDraft = (contact: Contact): ContactUpsertDraft => ({
+export const contactToUpsertDraft = (contact: Contact, rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): ContactUpsertDraft => ({
   label: contact.label ?? "",
   firstName: contact.firstName ?? "",
   lastName: contact.lastName ?? "",
@@ -69,45 +103,39 @@ export const contactToUpsertDraft = (contact: Contact): ContactUpsertDraft => ({
   preferredLanguage: contact.preferredLanguage ?? "",
   parentRef: contact.parent,
   tagIds: contact.tags.map((tag) => tag.id),
-  emails: initialEmailRows(contact),
-  phones: initialPhoneRows(contact),
-  addresses: initialAddressRows(contact),
-  websites: initialWebsiteRows(contact),
-  bankAccounts: initialBankAccountRows(contact),
+  emails: initialEmailRows(contact, rowLabels),
+  phones: initialPhoneRows(contact, rowLabels),
+  addresses: initialAddressRows(contact, rowLabels),
+  websites: initialWebsiteRows(contact, rowLabels),
+  bankAccounts: initialBankAccountRows(contact, rowLabels),
 });
 
-const DEFAULT_EMAIL_LABEL = "Email";
-const DEFAULT_PHONE_LABEL = "Telephone";
-const DEFAULT_WEBSITE_LABEL = "Website";
-const DEFAULT_BANK_ACCOUNT_LABEL = "Bank";
-const DEFAULT_ADDRESS_LABEL = "Address";
-
-export const EMPTY_EMAIL: EditableEmail = {
-  label: DEFAULT_EMAIL_LABEL,
+export const emptyEmailRow = (rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditableEmail => ({
+  label: rowLabels.email,
   email: "",
-};
+});
 
-export const EMPTY_PHONE: EditablePhone = {
-  label: DEFAULT_PHONE_LABEL,
+export const emptyPhoneRow = (rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditablePhone => ({
+  label: rowLabels.phone,
   phone: "",
-};
+});
 
-export const EMPTY_WEBSITE: EditableWebsite = {
-  label: DEFAULT_WEBSITE_LABEL,
+export const emptyWebsiteRow = (rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditableWebsite => ({
+  label: rowLabels.website,
   url: "",
-};
+});
 
-export const EMPTY_BANK_ACCOUNT: EditableBankAccount = {
-  label: DEFAULT_BANK_ACCOUNT_LABEL,
+export const emptyBankAccountRow = (rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditableBankAccount => ({
+  label: rowLabels.bank,
   accountHolderName: "",
   iban: "",
   bic: "",
   bankName: "",
   note: "",
-};
+});
 
-export const EMPTY_ADDRESS: EditableAddress = {
-  label: DEFAULT_ADDRESS_LABEL,
+export const emptyAddressRow = (rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditableAddress => ({
+  label: rowLabels.address,
   recipientName: "",
   companyName: "",
   line1: "",
@@ -116,43 +144,43 @@ export const EMPTY_ADDRESS: EditableAddress = {
   city: "",
   stateRegion: "",
   countryCode: "DE",
-};
+});
 
-export const initialEmailRows = (contact: Contact | null): EditableEmail[] => {
-  if (!contact) return [{ ...EMPTY_EMAIL }];
+export const initialEmailRows = (contact: Contact | null, rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditableEmail[] => {
+  if (!contact) return [emptyEmailRow(rowLabels)];
   return contact.emails.length > 0
     ? contact.emails.map((email) => ({
-        label: email.label?.trim() || DEFAULT_EMAIL_LABEL,
+        label: email.label?.trim() || rowLabels.email,
         email: email.email,
       }))
-    : [{ ...EMPTY_EMAIL }];
+    : [emptyEmailRow(rowLabels)];
 };
 
-export const initialPhoneRows = (contact: Contact | null): EditablePhone[] => {
-  if (!contact) return [{ ...EMPTY_PHONE }];
+export const initialPhoneRows = (contact: Contact | null, rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditablePhone[] => {
+  if (!contact) return [emptyPhoneRow(rowLabels)];
   return contact.phones.length > 0
     ? contact.phones.map((phone) => ({
-        label: phone.label?.trim() || DEFAULT_PHONE_LABEL,
+        label: phone.label?.trim() || rowLabels.phone,
         phone: phone.phone,
       }))
-    : [{ ...EMPTY_PHONE }];
+    : [emptyPhoneRow(rowLabels)];
 };
 
-export const initialWebsiteRows = (contact: Contact | null): EditableWebsite[] => {
-  if (!contact) return [{ ...EMPTY_WEBSITE }];
+export const initialWebsiteRows = (contact: Contact | null, rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditableWebsite[] => {
+  if (!contact) return [emptyWebsiteRow(rowLabels)];
   return contact.websites.length > 0
     ? contact.websites.map((website) => ({
-        label: website.label?.trim() || DEFAULT_WEBSITE_LABEL,
+        label: website.label?.trim() || rowLabels.website,
         url: website.url,
       }))
-    : [{ ...EMPTY_WEBSITE }];
+    : [emptyWebsiteRow(rowLabels)];
 };
 
-export const initialAddressRows = (contact: Contact | null): EditableAddress[] => {
-  if (!contact) return [{ ...EMPTY_ADDRESS }];
+export const initialAddressRows = (contact: Contact | null, rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditableAddress[] => {
+  if (!contact) return [emptyAddressRow(rowLabels)];
   return contact.addresses.length > 0
     ? contact.addresses.map((address) => ({
-        label: address.label?.trim() || DEFAULT_ADDRESS_LABEL,
+        label: address.label?.trim() || rowLabels.address,
         recipientName: address.recipientName ?? "",
         companyName: address.companyName ?? "",
         line1: address.line1,
@@ -162,13 +190,13 @@ export const initialAddressRows = (contact: Contact | null): EditableAddress[] =
         stateRegion: address.stateRegion ?? "",
         countryCode: address.countryCode,
       }))
-    : [{ ...EMPTY_ADDRESS }];
+    : [emptyAddressRow(rowLabels)];
 };
 
-export const initialBankAccountRows = (contact: Contact | null): EditableBankAccount[] => {
+export const initialBankAccountRows = (contact: Contact | null, rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS): EditableBankAccount[] => {
   if (!contact) return [];
   return contact.bankAccounts.map((account) => ({
-    label: account.label?.trim() || DEFAULT_BANK_ACCOUNT_LABEL,
+    label: account.label?.trim() || rowLabels.bank,
     accountHolderName: account.accountHolderName,
     iban: account.iban,
     bic: account.bic ?? "",
@@ -177,7 +205,10 @@ export const initialBankAccountRows = (contact: Contact | null): EditableBankAcc
   }));
 };
 
-export const createContactUpsertDraft = (initialValues: ContactUpsertInitialValues = {}): ContactUpsertDraft => ({
+export const createContactUpsertDraft = (
+  initialValues: ContactUpsertInitialValues = {},
+  rowLabels: ContactRowLabels = DEFAULT_ROW_LABELS,
+): ContactUpsertDraft => ({
   label: initialValues.label?.trim() ?? "",
   firstName: "",
   lastName: "",
@@ -191,10 +222,10 @@ export const createContactUpsertDraft = (initialValues: ContactUpsertInitialValu
   preferredLanguage: "",
   parentRef: null,
   tagIds: [],
-  emails: [{ ...EMPTY_EMAIL, email: initialValues.email?.trim() ?? "" }],
-  phones: [{ ...EMPTY_PHONE }],
-  addresses: [{ ...EMPTY_ADDRESS }],
-  websites: [{ ...EMPTY_WEBSITE }],
+  emails: [{ ...emptyEmailRow(rowLabels), email: initialValues.email?.trim() ?? "" }],
+  phones: [emptyPhoneRow(rowLabels)],
+  addresses: [emptyAddressRow(rowLabels)],
+  websites: [emptyWebsiteRow(rowLabels)],
   bankAccounts: [],
 });
 
@@ -227,7 +258,8 @@ const normalizeWebsites = (rows: EditableWebsite[]) =>
 
 const validateWebsites = (websites: ReturnType<typeof normalizeWebsites>) => {
   for (const website of websites) {
-    if (!isSafeWebsiteUrl(website.url)) throw new Error("Website URL must start with http:// or https://");
+    if (!isSafeWebsiteUrl(website.url))
+      throw new ContactFormValidationError("websiteUrl", "Website URL must start with http:// or https://");
   }
 };
 
@@ -255,8 +287,10 @@ const normalizeAddresses = (rows: EditableAddress[]) =>
 
 const validateAddresses = (addresses: ReturnType<typeof normalizeAddresses>) => {
   for (const address of addresses) {
-    if (!address.line1 || !address.postalCode || !address.city) throw new Error("Addresses need line1, postal code, and city");
-    if (address.countryCode.length !== 2) throw new Error("Address country code must be 2 letters");
+    if (!address.line1 || !address.postalCode || !address.city)
+      throw new ContactFormValidationError("addressFields", "Addresses need line1, postal code, and city");
+    if (address.countryCode.length !== 2)
+      throw new ContactFormValidationError("addressCountryCode", "Address country code must be 2 letters");
   }
 };
 
@@ -274,14 +308,15 @@ const normalizeBankAccounts = (rows: EditableBankAccount[]) =>
 
 const validateBankAccounts = (bankAccounts: ReturnType<typeof normalizeBankAccounts>) => {
   for (const account of bankAccounts) {
-    if (!account.accountHolderName || !account.iban) throw new Error("Bank details need account holder name and IBAN");
+    if (!account.accountHolderName || !account.iban)
+      throw new ContactFormValidationError("bankFields", "Bank details need account holder name and IBAN");
   }
 };
 
 const normalizeBirthday = (value: string): string | null => {
   const birthday = value.trim();
   if (birthday && !/^\d{4}-\d{2}-\d{2}$/.test(birthday)) {
-    throw new Error("Birthday must use format YYYY-MM-DD");
+    throw new ContactFormValidationError("birthdayFormat", "Birthday must use format YYYY-MM-DD");
   }
   return birthday || null;
 };

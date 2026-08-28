@@ -1,4 +1,4 @@
-import { Placeholder, Tag, Tooltip } from "@k2b/ui";
+import { Placeholder, Tag, Tooltip, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { Contact } from "../../service";
 import { resolveContactInitials, resolveContactName } from "../../shared";
@@ -12,6 +12,7 @@ import {
   setSelectedContactInUrl,
   shouldHandleContactDetailClick,
 } from "./context";
+import { resultsMessages } from "./results-messages";
 
 type Props = {
   contacts: Contact[];
@@ -38,6 +39,8 @@ const contactContext = (contact: Contact) => {
 };
 
 export default function ContactsList(props: Props) {
+  const locale = useLocale();
+  const t = () => resultsMessages.resolve([locale()]).t;
   const [selectedKey, setSelectedKey] = createSignal<string | null>(
     contactKey(props.initialSelectedContactId, props.initialSelectedBookId),
   );
@@ -98,8 +101,8 @@ export default function ContactsList(props: Props) {
       fallback={
         <Placeholder
           icon="ti ti-address-book"
-          title={props.emptyTitle ?? "No contacts"}
-          description={props.emptyDescription ?? "No contacts are available in this view."}
+          title={props.emptyTitle ?? t().noContacts}
+          description={props.emptyDescription ?? t().noContactsInView}
           variant="panel"
           class="h-full min-h-56 justify-center"
         />
@@ -108,12 +111,12 @@ export default function ContactsList(props: Props) {
       <ul
         ref={listRef}
         class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1.5"
-        aria-label="Contacts"
+        aria-label={t().contactsListLabel}
         onKeyDown={moveFocus}
       >
         <For each={props.contacts}>
           {(contact) => {
-            const name = () => resolveContactName(contact);
+            const name = () => resolveContactName(contact, t().unnamedContact);
             const email = () => primaryEmail(contact);
             const phone = () => primaryPhone(contact);
             const context = () => contactContext(contact);
@@ -130,7 +133,7 @@ export default function ContactsList(props: Props) {
                       type="checkbox"
                       class="h-4 w-4"
                       checked={isChecked()}
-                      aria-label={`Select ${name()}`}
+                      aria-label={t().selectContact({ name: name() })}
                       onChange={() => props.onToggleSelection?.(contact.id)}
                     />
                   </label>
@@ -139,7 +142,7 @@ export default function ContactsList(props: Props) {
                   href={buildContactDetailHref(props.detailBaseHref, contact.id, contact.bookId)}
                   class="flex w-full min-w-0 items-center gap-3 rounded-[var(--ui-radius-control)] py-2.5 pl-3 pr-[3rem] text-left focus-ui [@media(min-width:640px)]:pr-[7rem]"
                   classList={{ "pl-10": props.selectionMode }}
-                  aria-label={`Open ${name()}`}
+                  aria-label={t().openContact({ name: name() })}
                   aria-current={isSelected() ? "true" : undefined}
                   data-contact-row
                   onClick={(event) => {
@@ -177,9 +180,12 @@ export default function ContactsList(props: Props) {
                       </Show>
                       <Show when={contact.parent}>
                         {(parent) => (
-                          <span class="inline-flex min-w-0 items-center gap-1 truncate" title={`Part of ${resolveContactName(parent())}`}>
+                          <span
+                            class="inline-flex min-w-0 items-center gap-1 truncate"
+                            title={t().partOf({ name: resolveContactName(parent(), t().unnamedContact) })}
+                          >
                             <i class="ti ti-corner-down-right shrink-0 text-[11px]" />
-                            <span class="truncate">{resolveContactName(parent())}</span>
+                            <span class="truncate">{resolveContactName(parent(), t().unnamedContact)}</span>
                           </span>
                         )}
                       </Show>
@@ -213,11 +219,11 @@ export default function ContactsList(props: Props) {
                 <span class="absolute right-3 top-1/2 z-10 flex -translate-y-1/2 items-center gap-1 sm:right-4">
                   <Show when={phone()}>
                     {(number) => (
-                      <Tooltip.Anchor content={`Call ${name()}`}>
+                      <Tooltip.Anchor content={t().callContact({ name: name() })}>
                         <a
                           href={`tel:${number()}`}
                           class="focus-ui hidden h-7 w-7 items-center justify-center rounded text-dimmed hover:bg-[var(--ui-hover)] hover:text-primary sm:flex"
-                          aria-label={`Call ${name()}`}
+                          aria-label={t().callContact({ name: name() })}
                         >
                           <i class="ti ti-phone text-sm" />
                         </a>
@@ -226,11 +232,11 @@ export default function ContactsList(props: Props) {
                   </Show>
                   <Show when={email()}>
                     {(address) => (
-                      <Tooltip.Anchor content={`Email ${name()}`}>
+                      <Tooltip.Anchor content={t().emailContact({ name: name() })}>
                         <a
                           href={`mailto:${address()}`}
                           class="focus-ui hidden h-7 w-7 items-center justify-center rounded text-dimmed hover:bg-[var(--ui-hover)] hover:text-primary sm:flex"
-                          aria-label={`Email ${name()}`}
+                          aria-label={t().emailContact({ name: name() })}
                         >
                           <i class="ti ti-mail text-sm" />
                         </a>

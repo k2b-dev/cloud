@@ -1,9 +1,12 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
-import { IconButton } from "@k2b/ui";
+import { IconButton, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
+import { bookMessages } from "./book-messages";
 import { openBookSettingsDialog } from "./BookSettingsDialog";
 
 export default function BookSettingsButton(props: { bookId: string; bookName: string }) {
+  const locale = useLocale();
+  const t = () => bookMessages.resolve([locale()]).t;
   const [open, setOpen] = createSignal(false);
 
   const openSettings = async () => {
@@ -21,7 +24,7 @@ export default function BookSettingsButton(props: { bookId: string; bookName: st
     <IconButton
       size="xs"
       variant="ghost"
-      label={`Open settings for ${props.bookName}`}
+      label={t().openSettingsFor({ name: props.bookName })}
       disabled={open()}
       onClick={() => void openSettings()}
     >

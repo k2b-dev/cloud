@@ -1,10 +1,11 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, CheckboxCard, prompts } from "@k2b/ui";
+import { Button, ButtonLink, CheckboxCard, prompts, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { CreateContactInput } from "../../service";
 import { resolveContactName } from "../../shared";
 import { readErrorMessage } from "./api";
+import { bookMessages } from "./book-messages";
 
 type Props = {
   bookId: string;
@@ -22,6 +23,8 @@ const MAX_IMPORT_FILE_BYTES = 10_000_000;
 
 /** Inline preview + commit for a vCard import. Lives inside a prompts.dialog. */
 function ImportDialog(props: { bookId: string; close: (created: number) => void }) {
+  const locale = useLocale();
+  const t = () => bookMessages.resolve([locale()]).t;
   const [stage, setStage] = createSignal<"upload" | "preview" | "committing">("upload");
   const [filename, setFilename] = createSignal<string>("");
   const [candidates, setCandidates] = createSignal<ImportCandidate[]>([]);
@@ -38,7 +41,7 @@ function ImportDialog(props: { bookId: string; close: (created: number) => void 
         },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to parse vCard"));
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().parseVcardFailed));
       const data = await res.json();
       return data.candidates;
     },
@@ -61,12 +64,12 @@ function ImportDialog(props: { bookId: string; close: (created: number) => void 
         },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to import contacts"));
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().importContactsFailed));
       return await res.json();
     },
     onSuccess: (result) => {
       if (result.failures.length > 0) {
-        prompts.error(`Imported ${result.created}, ${result.failures.length} failed: ${result.failures[0]}`);
+        prompts.error(t().importPartialFailure({ created: result.created, failed: result.failures.length, first: result.failures[0] ?? "" }));
       }
       props.close(result.created);
     },
@@ -88,7 +91,7 @@ function ImportDialog(props: { bookId: string; close: (created: number) => void 
     const file = input.files?.[0];
     if (!file) return;
     if (file.size > MAX_IMPORT_FILE_BYTES) {
-      prompts.error("vCard files are limited to 10 MB");
+      prompts.error(t().vcardTooLarge);
       input.value = "";
       return;
     }
@@ -120,7 +123,7 @@ function ImportDialog(props: { bookId: string; close: (created: number) => void 
   const submit = () => {
     const chosen = candidates().filter((_, i) => selected().has(i));
     if (chosen.length === 0) {
-      prompts.error("Pick at least one contact to import");
+      prompts.error(t().pickAtLeastOne);
       return;
     }
     setStage("committing");
@@ -130,28 +133,23 @@ function ImportDialog(props: { bookId: string; close: (created: number) => void 
   return (
     <div class="flex flex-col gap-3">
       <Show when={stage() === "upload"}>
-        <p class="text-xs text-dimmed">
-          Upload a vCard file (.vcf). Multiple contacts in one file are supported. After upload you'll see a preview where you can pick
-          which contacts to import.
-        </p>
+        <p class="text-xs text-dimmed">{t().uploadHint}</p>
         <label class="paper flex cursor-pointer flex-col items-center gap-2 px-6 py-8 text-sm text-dimmed transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
           <i class="ti ti-upload text-2xl" />
-          <span>{previewMutation.loading() ? "Reading…" : "Click to choose a .vcf file"}</span>
+          <span>{previewMutation.loading() ? t().reading : t().chooseVcfFile}</span>
           <input type="file" accept=".vcf,text/vcard" class="hidden" onChange={handleFileChange} />
         </label>
       </Show>
 
       <Show when={stage() === "preview"}>
         <div class="flex items-center justify-between gap-2">
-          <span class="text-xs text-dimmed">
-            {filename()} — {candidates().length} contact{candidates().length === 1 ? "" : "s"} found
-          </span>
+          <span class="text-xs text-dimmed">{t().previewSummary({ filename: filename(), count: candidates().length })}</span>
           <div class="flex items-center gap-1">
             <Button variant="ghost" size="xs" class="text-xs text-dimmed hover:text-primary" onClick={selectAll}>
-              Select all
+              {t().selectAll}
             </Button>
             <Button variant="ghost" size="xs" class="text-xs text-dimmed hover:text-primary" onClick={selectNone}>
-              Select none
+              {t().selectNone}
             </Button>
           </div>
         </div>
@@ -160,16 +158,16 @@ function ImportDialog(props: { bookId: string; close: (created: number) => void 
             {(item, index) => (
               <li>
                 <CheckboxCard
-                  label={resolveContactName(item.candidate as Parameters<typeof resolveContactName>[0]) || "Unnamed"}
+                  label={resolveContactName(item.candidate as Parameters<typeof resolveContactName>[0], t().unnamedContact)}
                   description={
                     [
                       item.candidate.companyName,
                       item.candidate.emails?.[0]?.email,
                       item.candidate.phones?.[0]?.phone,
-                      item.match ? `exists as ${item.match.existingName}` : null,
+                      item.match ? t().existsAs({ name: item.match.existingName }) : null,
                     ]
                       .filter(Boolean)
-                      .join(" · ") || "New contact"
+                      .join(" · ") || t().newContact
                   }
                   icon={item.match ? "ti ti-alert-circle" : "ti ti-user-plus"}
                   value={() => selected().has(index())}
@@ -189,18 +187,18 @@ function ImportDialog(props: { bookId: string; close: (created: number) => void 
               setSelected(new Set<number>());
             }}
           >
-            Back
+            {t().back}
           </Button>
           <Button size="sm" onClick={submit} disabled={selected().size === 0} loading={commitMutation.loading()}>
             <i class="ti ti-check" />
-            Import {selected().size} contact{selected().size === 1 ? "" : "s"}
+            {t().importCount({ count: selected().size })}
           </Button>
         </div>
       </Show>
 
       <Show when={stage() === "committing"}>
         <div class="flex items-center justify-center gap-2 py-8 text-sm text-dimmed">
-          <i class="ti ti-loader-2 animate-spin" /> Importing…
+          <i class="ti ti-loader-2 animate-spin" /> {t().importing}
         </div>
       </Show>
     </div>
@@ -208,9 +206,11 @@ function ImportDialog(props: { bookId: string; close: (created: number) => void 
 }
 
 export default function BookActions(props: Props) {
+  const locale = useLocale();
+  const t = () => bookMessages.resolve([locale()]).t;
   const openImport = async () => {
     const created = await prompts.dialog<number>((close) => <ImportDialog bookId={props.bookId} close={close} />, {
-      title: "Import contacts",
+      title: t().importContactsTitle,
       icon: "ti ti-upload",
       size: "large",
     });
@@ -222,15 +222,15 @@ export default function BookActions(props: Props) {
   return (
     <div class="flex flex-wrap items-center gap-2">
       <Show when={props.canWrite}>
-        <Button variant="secondary" size="sm" onClick={openImport} title="Import contacts from a vCard file">
-          <i class="ti ti-upload" /> Import vCard
+        <Button variant="secondary" size="sm" onClick={openImport} title={t().importTooltip}>
+          <i class="ti ti-upload" /> {t().importVcard}
         </Button>
       </Show>
-      <ButtonLink href={`/api/contacts/books/${props.bookId}/export.vcf`} variant="secondary" size="sm" title="Export as vCard">
-        <i class="ti ti-address-book" /> Export vCard
+      <ButtonLink href={`/api/contacts/books/${props.bookId}/export.vcf`} variant="secondary" size="sm" title={t().exportAsVcard}>
+        <i class="ti ti-address-book" /> {t().exportVcard}
       </ButtonLink>
-      <ButtonLink href={`/api/contacts/books/${props.bookId}/export.csv`} variant="secondary" size="sm" title="Export as CSV">
-        <i class="ti ti-file-type-csv" /> Export CSV
+      <ButtonLink href={`/api/contacts/books/${props.bookId}/export.csv`} variant="secondary" size="sm" title={t().exportAsCsv}>
+        <i class="ti ti-file-type-csv" /> {t().exportCsv}
       </ButtonLink>
     </div>
   );

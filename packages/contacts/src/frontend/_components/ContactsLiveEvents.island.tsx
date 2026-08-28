@@ -1,5 +1,7 @@
 import { currentPathWithQuery } from "@k2b/ssr/nav";
+import { i18n } from "@k2b/stdlib";
 import { retry } from "@k2b/sync/browser";
+import { useLocale } from "@k2b/ui";
 import { createLiveWebSocket } from "@valentinkolb/cloud/browser/live";
 import { onCleanup, onMount } from "solid-js";
 import {
@@ -18,6 +20,24 @@ type Props = {
 };
 
 const ACTIVE_EDITOR_SELECTOR = '[data-contacts-editor="true"]';
+
+export const liveEventsMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      bookMetadataChanged: "Contact book metadata changed",
+      updateNotApplied: "Could not apply a Contacts update",
+      liveAccessChanged: "Live access changed or expired.",
+      bookAccessChanged: "Contact book access changed",
+    },
+    de: {
+      bookMetadataChanged: "Kontaktbuch geändert",
+      updateNotApplied: "Eine Änderung in Kontakte konnte nicht übernommen werden",
+      liveAccessChanged: "Der Zugriff wurde geändert oder ist abgelaufen.",
+      bookAccessChanged: "Zugriff auf das Kontaktbuch geändert",
+    },
+  },
+});
 
 const waitForEditorsToClose = (signal: AbortSignal): Promise<void> => {
   if (!document.querySelector(ACTIVE_EDITOR_SELECTOR)) return Promise.resolve();
@@ -38,6 +58,8 @@ const waitForEditorsToClose = (signal: AbortSignal): Promise<void> => {
 };
 
 export default function ContactsLiveEvents(props: Props) {
+  const locale = useLocale();
+  const t = () => liveEventsMessages.resolve([locale()]).t;
   onMount(() => {
     const lifecycle = new AbortController();
     let reloading = false;
@@ -61,7 +83,7 @@ export default function ContactsLiveEvents(props: Props) {
       apply: async (event, controls) => {
         if (reloading || lifecycle.signal.aborted) return false;
         if (requiresContactsShellRefresh(event)) {
-          controls.terminate({ code: "shell_changed", message: "Contact book metadata changed" });
+          controls.terminate({ code: "shell_changed", message: t().bookMetadataChanged });
           await waitForEditorsToClose(lifecycle.signal);
           replaceCurrentPage();
           return false;
@@ -75,7 +97,7 @@ export default function ContactsLiveEvents(props: Props) {
         });
       },
       onFailure: async (_error, controls) => {
-        controls.terminate({ code: "refresh_failed", message: "Could not apply a Contacts update" });
+        controls.terminate({ code: "refresh_failed", message: t().updateNotApplied });
         await waitForEditorsToClose(lifecycle.signal);
         replaceCurrentPage();
       },
@@ -91,15 +113,14 @@ export default function ContactsLiveEvents(props: Props) {
           payload: { scope: props.scope, fromCursor: cursor },
         }) satisfies ContactLiveClientMessage,
       parse: parseContactLiveServerMessage,
-      classifyClose: ({ code, reason }) =>
-        code === 1008 ? { code: reason || "access_denied", message: "Live access changed or expired." } : null,
+      classifyClose: ({ code, reason }) => (code === 1008 ? { code: reason || "access_denied", message: t().liveAccessChanged } : null),
       onMessage: (message, controls) => {
         if (message.type === CONTACTS_LIVE_WS_TYPE.ready) {
           controls.markApplied(message.payload.cursor);
           return;
         }
         if (message.type === CONTACTS_LIVE_WS_TYPE.scopeChanged) {
-          controls.terminate({ code: "scope_changed", message: "Contact book access changed" });
+          controls.terminate({ code: "scope_changed", message: t().bookAccessChanged });
           if (message.payload.change === "gained") {
             void waitForEditorsToClose(lifecycle.signal).then(replaceCurrentPage);
           } else {

@@ -1,15 +1,18 @@
 import { DataTable, type DataTableColumn, Pagination, StatCell, StatGrid } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
+import { getLocale } from "@valentinkolb/cloud/server";
 import { AdminLayout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
 import { ssr } from "../config";
 import { contactsService } from "../service";
 import { projectBooks } from "../service/public-resources";
 import AdminBookActions from "./_components/AdminBookActions.island";
+import { pagesMessages } from "./pages-messages";
 
 const PER_PAGE = 100;
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = pagesMessages.resolve([getLocale(c)]);
   const search = (c.req.query("search") ?? "").trim();
   const pageRaw = Number.parseInt(c.req.query("page") ?? "1", 10);
   const page = Number.isFinite(pageRaw) && pageRaw > 0 ? pageRaw : 1;
@@ -27,56 +30,54 @@ export default ssr<AuthContext>(async (c) => {
   const baseUrl = search ? `/admin/contacts?search=${encodeURIComponent(search)}&page=` : "/admin/contacts?page=";
   type BookRow = (typeof books.items)[number];
   const columns: DataTableColumn<BookRow>[] = [
-    { id: "book", header: "Book", value: (book) => book.name },
-    { id: "description", header: "Description", value: (book) => book.description, cellClass: "max-w-xl" },
-    { id: "contacts", header: "Contacts", value: (book) => book.contactCount, cellClass: "whitespace-nowrap tabular-nums" },
-    { id: "permissions", header: "Permissions", value: (book) => book.permissionCount, cellClass: "whitespace-nowrap" },
+    { id: "book", header: t.columnBook, value: (book) => book.name },
+    { id: "description", header: t.columnDescription, value: (book) => book.description, cellClass: "max-w-xl" },
+    { id: "contacts", header: t.columnContacts, value: (book) => book.contactCount, cellClass: "whitespace-nowrap tabular-nums" },
+    { id: "permissions", header: t.columnPermissions, value: (book) => book.permissionCount, cellClass: "whitespace-nowrap" },
     {
       id: "actions",
-      header: "Settings",
+      header: t.columnSettings,
       headerClass: "w-px text-right",
       cellClass: "text-right whitespace-nowrap",
     },
   ];
 
   return () => (
-    <AdminLayout c={c} title="Contacts">
+    <AdminLayout c={c} title={t.adminTitle}>
       <div class="app-rows">
         <div class="min-w-0" style="view-transition-name: admin-contacts-title">
-          <h1 class="text-base font-semibold text-primary">Contacts</h1>
+          <h1 class="text-base font-semibold text-primary">{t.adminTitle}</h1>
         </div>
 
         <StatGrid columns={4}>
           <StatCell
-            label="Books"
+            label={t.statBooks}
             value={summary.total}
-            sub={search ? "filtered" : "contact books"}
+            sub={search ? t.statBooksFiltered : t.statBooksAll}
             accent={{ tone: "blue", icon: "ti ti-cube" }}
           />
           <StatCell
-            label="Orphaned"
+            label={t.statOrphaned}
             value={summary.orphaned}
-            sub={summary.orphaned > 0 ? "no access" : "all reachable"}
+            sub={summary.orphaned > 0 ? t.statOrphanedNoAccess : t.statOrphanedAllReachable}
             valueClass={summary.orphaned > 0 ? "text-red-500" : "text-primary"}
             accent={summary.orphaned > 0 ? { tone: "red", icon: "ti ti-alert-circle" } : undefined}
           />
-          <StatCell label="Access entries" value={summary.totalPermissions} sub={search ? "in search" : "across all books"} />
-          <StatCell label="Contacts" value={summary.totalContacts} sub={search ? "in search" : "all contacts"} />
+          <StatCell label={t.statAccessEntries} value={summary.totalPermissions} sub={search ? t.statInSearch : t.statAcrossAllBooks} />
+          <StatCell label={t.statContacts} value={summary.totalContacts} sub={search ? t.statInSearch : t.statAllContacts} />
         </StatGrid>
 
         <section class="paper overflow-hidden" style="view-transition-name: admin-contacts-table">
           <div class="flex flex-col gap-2 px-3 py-3">
             <div>
-              <h2 class="text-xs font-semibold text-primary">Books</h2>
-              <p class="text-[10px] text-dimmed">
-                {publicBooks.length} of {books.total} contact books
-              </p>
+              <h2 class="text-xs font-semibold text-primary">{t.booksHeading}</h2>
+              <p class="text-[10px] text-dimmed">{t.booksCount({ count: publicBooks.length, total: books.total })}</p>
             </div>
             <SearchBar
               action="/admin/contacts"
               value={search}
-              placeholder="Search contact books by name..."
-              ariaLabel="Search contact books"
+              placeholder={t.adminSearchPlaceholder}
+              ariaLabel={t.adminSearchLabel}
             />
           </div>
           <DataTable
@@ -85,7 +86,7 @@ export default ssr<AuthContext>(async (c) => {
             getRowId={(book) => book.id}
             hoverRows
             class="overflow-x-auto"
-            empty={search ? `No contact books matching "${search}".` : "No contact books found."}
+            empty={search ? t.emptyFiltered({ search }) : t.emptyAll}
             renderCell={({ row: book, col }) => {
               if (col.id === "book") {
                 return (
@@ -97,8 +98,8 @@ export default ssr<AuthContext>(async (c) => {
               }
               if (col.id === "description") {
                 return (
-                  <span class="block truncate" title={book.description ?? "No description"}>
-                    {book.description || <span class="italic">No description</span>}
+                  <span class="block truncate" title={book.description ?? t.noDescription}>
+                    {book.description || <span class="italic">{t.noDescription}</span>}
                   </span>
                 );
               }
@@ -112,7 +113,7 @@ export default ssr<AuthContext>(async (c) => {
                         : "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                     }`}
                   >
-                    {book.permissionCount} access {book.permissionCount === 1 ? "entry" : "entries"}
+                    {t.accessEntryCount({ count: book.permissionCount })}
                   </span>
                 );
               }

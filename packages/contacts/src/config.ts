@@ -5,6 +5,15 @@ export const app = defineApp({
   name: "Contacts",
   icon: "ti ti-address-book",
   description: "Business contact books with structured emails, phones, and postal addresses.",
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: {
+        name: "Kontakte",
+        description: "Geschäftliche Kontaktbücher mit E-Mail-Adressen, Telefonnummern und Postanschriften.",
+      },
+    },
+  },
   appearance: {
     accent: "#4f46e5",
     background: {

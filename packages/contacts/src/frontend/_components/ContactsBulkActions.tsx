@@ -1,10 +1,11 @@
 import { documentNavigate } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, dialogCore, IconButton, MultiSelectInput, PanelDialog, panelDialogOptions, prompts, Tooltip, toast } from "@k2b/ui";
+import { Button, dialogCore, IconButton, MultiSelectInput, PanelDialog, panelDialogOptions, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ContactTag } from "../../service";
 import { readErrorMessage } from "./api";
+import { type ResultsMessages, resultsMessages } from "./results-messages";
 
 type BookOption = { id: string; name: string };
 
@@ -25,16 +26,16 @@ const saveBlob = (blob: Blob, filename: string) => {
   setTimeout(() => URL.revokeObjectURL(href), 0);
 };
 
-const chooseTags = (tags: ContactTag[]) =>
+const chooseTags = (tags: ContactTag[], t: ResultsMessages) =>
   dialogCore.open<string[] | null>((close) => {
     const [selected, setSelected] = createSignal<string[]>([]);
     return (
       <PanelDialog>
-        <PanelDialog.Header title="Add tags" subtitle="Existing contact tags stay unchanged." icon="ti ti-tags" close={() => close(null)} />
+        <PanelDialog.Header title={t.addTags} subtitle={t.addTagsSubtitle} icon="ti ti-tags" close={() => close(null)} />
         <PanelDialog.Body>
           <MultiSelectInput
-            label="Tags"
-            placeholder="Choose tags"
+            label={t.tagsLabel}
+            placeholder={t.chooseTags}
             icon="ti ti-tags"
             value={selected}
             onValueChange={setSelected}
@@ -46,10 +47,10 @@ const chooseTags = (tags: ContactTag[]) =>
           <span />
           <div class="flex items-center gap-2">
             <Button variant="ghost" size="sm" onClick={() => close(null)}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button size="sm" disabled={selected().length === 0} onClick={() => close(selected())}>
-              Add tags
+              {t.addTags}
             </Button>
           </div>
         </PanelDialog.Footer>
@@ -67,6 +68,8 @@ export default function ContactsBulkActions(props: {
   onClear: () => void;
   onChanged: () => Promise<void> | void;
 }) {
+  const locale = useLocale();
+  const t = () => resultsMessages.resolve([locale()]).t;
   const [preparing, setPreparing] = createSignal(false);
   let disposed = false;
 
@@ -80,7 +83,7 @@ export default function ContactsBulkActions(props: {
           },
           { init: { signal: abortSignal } },
         );
-        if (!response.ok) throw new Error(await readErrorMessage(response, "Could not add tags"));
+        if (!response.ok) throw new Error(await readErrorMessage(response, t().couldNotAddTags));
         return { action: "tags", contactCount: intent.contactIds.length };
       }
 
@@ -92,7 +95,7 @@ export default function ContactsBulkActions(props: {
           },
           { init: { signal: abortSignal } },
         );
-        if (!response.ok) throw new Error(await readErrorMessage(response, "Could not move contacts"));
+        if (!response.ok) throw new Error(await readErrorMessage(response, t().couldNotMoveContacts));
         return { action: "move", contactCount: intent.contactIds.length };
       }
 
@@ -104,7 +107,7 @@ export default function ContactsBulkActions(props: {
           },
           { init: { signal: abortSignal } },
         );
-        if (!response.ok) throw new Error(await readErrorMessage(response, "Could not export contacts"));
+        if (!response.ok) throw new Error(await readErrorMessage(response, t().couldNotExportContacts));
         return { action: "export", blob: await response.blob() };
       }
 
@@ -115,7 +118,7 @@ export default function ContactsBulkActions(props: {
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Could not delete contacts"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().couldNotDeleteContacts));
       return { action: "delete", contactCount: intent.contactIds.length };
     },
     onSuccess: (result) => {
@@ -125,11 +128,11 @@ export default function ContactsBulkActions(props: {
       }
 
       if (result.action === "tags") {
-        toast.success(`Tags added to ${result.contactCount} contact${result.contactCount === 1 ? "" : "s"}`);
+        toast.success(t().tagsAddedToContacts({ count: result.contactCount }));
       } else if (result.action === "move") {
-        toast.success(`${result.contactCount} contact${result.contactCount === 1 ? "" : "s"} moved`);
+        toast.success(t().contactsMoved({ count: result.contactCount }));
       } else {
-        toast.success(`${result.contactCount} contact${result.contactCount === 1 ? "" : "s"} deleted`);
+        toast.success(t().contactsDeleted({ count: result.contactCount }));
       }
 
       props.onClear();
@@ -159,13 +162,13 @@ export default function ContactsBulkActions(props: {
     try {
       if (action === "tags") {
         if (tags.length === 0) {
-          await prompts.alert("Create a tag in book settings before assigning tags.", {
-            title: "No tags available",
+          await prompts.alert(t().noTagsAvailableHint, {
+            title: t().noTagsAvailable,
             icon: "ti ti-tags-off",
           });
           return;
         }
-        const tagIds = await chooseTags(tags);
+        const tagIds = await chooseTags(tags, t());
         if (tagIds && !disposed) void runMutation.mutate({ action, bookId, contactIds, tagIds: [...tagIds] });
         return;
       }
@@ -173,18 +176,18 @@ export default function ContactsBulkActions(props: {
       if (action === "move") {
         const targets = writableBooks.filter((book) => book.id !== bookId);
         if (targets.length === 0) {
-          await prompts.alert("There is no other writable contact book.", { title: "No target book", icon: "ti ti-folder-off" });
+          await prompts.alert(t().noTargetBookHint, { title: t().noTargetBook, icon: "ti ti-folder-off" });
           return;
         }
         const result = await prompts.form({
-          title: `Move ${contactIds.length} contact${contactIds.length === 1 ? "" : "s"}`,
+          title: t().moveContactsTitle({ count: contactIds.length }),
           icon: "ti ti-folder-symlink",
-          confirmText: "Move",
+          confirmText: t().moveAction,
           fields: {
             targetBookId: {
               type: "select",
-              label: "Target book",
-              description: "Book-scoped tags and links to contacts outside this selection are removed.",
+              label: t().targetBook,
+              description: t().moveConsequence,
               required: true,
               options: targets.map((book) => ({ id: book.id, label: book.name, icon: "ti ti-address-book" })),
             },
@@ -195,17 +198,19 @@ export default function ContactsBulkActions(props: {
       }
 
       if (action === "delete") {
-        const confirmed = await prompts.confirm(
-          `Permanently delete ${contactIds.length} selected contact${contactIds.length === 1 ? "" : "s"}? Notes and contact details will also be deleted.`,
-          { title: "Delete contacts", icon: "ti ti-trash", confirmText: "Delete", variant: "danger" },
-        );
+        const confirmed = await prompts.confirm(t().deleteContactsConfirm({ count: contactIds.length }), {
+          title: t().deleteContactsTitle,
+          icon: "ti ti-trash",
+          confirmText: t().deleteAction,
+          variant: "danger",
+        });
         if (confirmed && !disposed) void runMutation.mutate({ action, bookId, contactIds });
         return;
       }
 
       if (!disposed) void runMutation.mutate({ action, bookId, contactIds });
     } catch (error) {
-      if (!disposed) void prompts.error(error instanceof Error ? error.message : "Could not prepare bulk action");
+      if (!disposed) void prompts.error(error instanceof Error ? error.message : t().couldNotPrepareBulkAction);
     } finally {
       if (!disposed) setPreparing(false);
     }
@@ -216,24 +221,24 @@ export default function ContactsBulkActions(props: {
 
   return (
     <div class="mt-2 flex flex-wrap items-center gap-2 rounded-[var(--ui-radius-control)] bg-[var(--ui-selected)] p-2">
-      <span class="mr-auto text-xs font-medium text-primary tabular-nums">{props.selectedIds().length} selected</span>
+      <span class="mr-auto text-xs font-medium text-primary tabular-nums">{t().selectedCount({ count: props.selectedIds().length })}</span>
       <Button variant="ghost" size="sm" onClick={props.onSelectVisible} disabled={props.visibleIds().length === 0}>
-        Select page
+        {t().selectPage}
       </Button>
       <Button variant="ghost" size="sm" onClick={() => void prepare("tags")} disabled={busy() || noSelection()}>
-        <i class="ti ti-tags" /> Tag
+        <i class="ti ti-tags" /> {t().tagAction}
       </Button>
       <Button variant="ghost" size="sm" onClick={() => void prepare("move")} disabled={busy() || noSelection()}>
-        <i class="ti ti-folder-symlink" /> Move
+        <i class="ti ti-folder-symlink" /> {t().moveAction}
       </Button>
       <Button variant="ghost" size="sm" onClick={() => void prepare("export")} disabled={busy() || noSelection()}>
-        <i class="ti ti-download" /> Export
+        <i class="ti ti-download" /> {t().exportAction}
       </Button>
       <Button variant="danger" size="sm" onClick={() => void prepare("delete")} disabled={busy() || noSelection()}>
-        <i class="ti ti-trash" /> Delete
+        <i class="ti ti-trash" /> {t().deleteAction}
       </Button>
-      <Tooltip.Anchor content="Exit selection">
-        <IconButton size="xs" label="Exit selection" onClick={props.onClear}>
+      <Tooltip.Anchor content={t().exitSelection}>
+        <IconButton size="xs" label={t().exitSelection} onClick={props.onClear}>
           <i class="ti ti-x" />
         </IconButton>
       </Tooltip.Anchor>

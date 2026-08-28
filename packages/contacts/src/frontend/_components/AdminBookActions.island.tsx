@@ -1,11 +1,12 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { query } from "@k2b/stdlib/solid";
-import { Button, Dropdown, Placeholder, prompts } from "@k2b/ui";
+import { Button, Dropdown, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { type GrantableLevel, PermissionEditor } from "@valentinkolb/cloud/access/ui";
 import type { AccessEntry, Principal } from "@valentinkolb/cloud/contracts";
 import { createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { readErrorMessage } from "./api";
+import { bookMessages } from "./book-messages";
 import { createQueuedReconciliation } from "./book-settings-reconcile";
 
 type AdminBookActionsProps = {
@@ -14,11 +15,13 @@ type AdminBookActionsProps = {
 };
 
 const PermissionDialogBody = (props: AdminBookActionsProps) => {
+  const locale = useLocale();
+  const t = () => bookMessages.resolve([locale()]).t;
   const entries = query.create<string, AccessEntry[]>({
     source: () => props.bookId,
     load: async (bookId, { abortSignal }) => {
       const response = await apiClient.admin.books[":bookId"].access.$get({ param: { bookId } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to load contact book permissions."));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().loadPermissionsFailed));
       return response.json();
     },
   });
@@ -29,17 +32,17 @@ const PermissionDialogBody = (props: AdminBookActionsProps) => {
     setReconciling(state.reconciling);
     setReconcileError(state.error);
   });
-  const reconcile = () => coverage.run("The change was saved, but contact book access could not be reloaded.");
+  const reconcile = () => coverage.run(t().accessSavedReloadFailed);
   const coverageBlocked = () => reconciling() || reconcileError() !== null;
   const requestControllers = new Set<AbortController>();
   const runRequest = async <T,>(request: (signal: AbortSignal) => Promise<T>): Promise<T> => {
-    if (disposed) throw new DOMException("Contact book permissions were closed", "AbortError");
-    if (coverageBlocked() || requestControllers.size > 0) throw new Error("Another permission change is still in progress");
+    if (disposed) throw new DOMException(t().permissionsClosedAbort, "AbortError");
+    if (coverageBlocked() || requestControllers.size > 0) throw new Error(t().permissionChangeInProgress);
     const controller = new AbortController();
     requestControllers.add(controller);
     try {
       const result = await request(controller.signal);
-      if (disposed) throw new DOMException("Contact book permissions were closed", "AbortError");
+      if (disposed) throw new DOMException(t().permissionsClosedAbort, "AbortError");
       return result;
     } finally {
       requestControllers.delete(controller);
@@ -51,7 +54,7 @@ const PermissionDialogBody = (props: AdminBookActionsProps) => {
         { param: { bookId: input.bookId }, json: { principal: input.principal, permission: input.permission } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to grant access."));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().adminGrantAccessFailed));
       return response.json();
     });
     reconcile();
@@ -63,7 +66,7 @@ const PermissionDialogBody = (props: AdminBookActionsProps) => {
         { param: { bookId: input.bookId, accessId: input.accessId }, json: { permission: input.permission } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to update access."));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().adminUpdateAccessFailed));
     });
     reconcile();
   };
@@ -73,7 +76,7 @@ const PermissionDialogBody = (props: AdminBookActionsProps) => {
         { param: { bookId: input.bookId, accessId: input.accessId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to revoke access."));
+      if (!response.ok) throw new Error(await readErrorMessage(response, t().adminRevokeAccessFailed));
     });
     reconcile();
   };
@@ -86,8 +89,8 @@ const PermissionDialogBody = (props: AdminBookActionsProps) => {
 
   return (
     <div class="flex w-full max-w-full flex-col gap-2">
-      <p class="text-xs text-dimmed">Manage who can access this contact book.</p>
-      <Show when={!entries.loading()} fallback={<Placeholder state="loading" variant="compact" title="Loading contact book access" />}>
+      <p class="text-xs text-dimmed">{t().manageAccessHint}</p>
+      <Show when={!entries.loading()} fallback={<Placeholder state="loading" variant="compact" title={t().loadingAccess} />}>
         <Show
           when={entries.data()}
           keyed
@@ -95,11 +98,11 @@ const PermissionDialogBody = (props: AdminBookActionsProps) => {
             <Placeholder
               state="error"
               variant="compact"
-              title="Could not load contact book access"
+              title={t().loadAccessErrorTitle}
               description={entries.error()?.message}
               action={
                 <Button type="button" variant="secondary" size="sm" onClick={() => void entries.refresh()}>
-                  Retry
+                  {t().retry}
                 </Button>
               }
             />
@@ -126,7 +129,7 @@ const PermissionDialogBody = (props: AdminBookActionsProps) => {
         <div class="flex items-center justify-between gap-2 text-xs text-amber-700 dark:text-amber-300" role="status">
           <span>{reconcileError()}</span>
           <Button type="button" variant="secondary" size="sm" onClick={() => void coverage.retry()} disabled={reconciling()}>
-            Retry reload
+            {t().retryReload}
           </Button>
         </div>
       </Show>
@@ -140,6 +143,8 @@ const openPermissionDialog = async (props: AdminBookActionsProps) => {
 };
 
 const AdminBookActions = (props: AdminBookActionsProps) => {
+  const locale = useLocale();
+  const t = () => bookMessages.resolve([locale()]).t;
   return (
     <Dropdown.Root
       position="bottom-left"
@@ -149,14 +154,14 @@ const AdminBookActions = (props: AdminBookActionsProps) => {
           items: [
             {
               icon: "ti ti-shield",
-              label: "Permissions",
+              label: t().permissionsLabel,
               action: () => void openPermissionDialog(props),
             },
           ],
         },
       ]}
     >
-      <Dropdown.Trigger iconOnly label={`Manage permissions for ${props.bookName}`} size="xs" tooltip="Manage permissions">
+      <Dropdown.Trigger iconOnly label={t().managePermissionsFor({ name: props.bookName })} size="xs" tooltip={t().managePermissions}>
         <i class="ti ti-settings text-sm" />
       </Dropdown.Trigger>
     </Dropdown.Root>
