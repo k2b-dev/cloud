@@ -1,10 +1,20 @@
 import { err, fail, ok, type Result } from "@k2b/stdlib";
-import { type AuthContext, auth, getUserBackedActor, jsonResponse, rateLimit, requiresAuth, respond, v } from "@valentinkolb/cloud/server";
+import {
+  type AuthContext,
+  auth,
+  getLocale,
+  getUserBackedActor,
+  jsonResponse,
+  rateLimit,
+  requiresAuth,
+  respond,
+} from "@valentinkolb/cloud/server";
 import { weatherService } from "@valentinkolb/cloud/services";
-import { type Context, Hono } from "hono";
-import { describeRoute } from "hono-openapi";
-import { z } from "zod";
+import { type Context, Hono, type ValidationTargets } from "hono";
+import { describeRoute, validator as honoValidator } from "hono-openapi";
+import { type ZodType, z } from "zod";
 import { CurrentWeatherSchema, WeatherDataSchema, WeatherLocationIdSchema } from "../contracts";
+import { weatherMessages } from "../messages";
 import { weatherSettingsRouter } from "./settings";
 import widgetRoutes from "./widgets";
 
@@ -70,9 +80,21 @@ const ForecastByCityQuerySchema = z.object({
   q: z.string().trim().min(1).max(120),
 });
 
+const localizedV = <Target extends keyof ValidationTargets, T extends ZodType>(
+  target: Target,
+  schema: T,
+  message: (c: Context<AuthContext>) => string,
+) =>
+  honoValidator(target, schema, (result, c: Context<AuthContext>) => {
+    if (!result.success) return c.json({ message: message(c) }, 400);
+  });
+
+const localizedMessage = (select: (t: ReturnType<typeof weatherMessages.resolve>["t"]) => string) => (c: Context<AuthContext>) =>
+  select(weatherMessages.resolve([getLocale(c)]).t);
+
 const requireUserBackedActor = (c: Context<AuthContext>): Result<NonNullable<ReturnType<typeof getUserBackedActor>>> => {
   const user = getUserBackedActor(c);
-  if (!user) return fail(err.forbidden("Weather saved locations require a user-backed actor"));
+  if (!user) return fail(err.forbidden(weatherMessages.resolve([getLocale(c)]).t.savedLocationsNeedUser));
   return ok(user);
 };
 
@@ -91,20 +113,19 @@ const locationsApi = new Hono<AuthContext>()
         401: jsonResponse(ErrorResponseSchema, "Unauthorized"),
       },
     }),
-    v("json", CreateLocationSchema),
+    localizedV(
+      "json",
+      CreateLocationSchema,
+      localizedMessage((t) => t.invalidLocationInput),
+    ),
     async (c) => {
+      const { t } = weatherMessages.resolve([getLocale(c)]);
       const user = requireUserBackedActor(c);
       if (!user.ok) return respond(c, user);
       const { name, state, lat, lon } = c.req.valid("json");
 
-      return respond(
-        c,
-        weatherService.location.saved.create({
-          userId: user.data.id,
-          data: { name, state, lat, lon },
-        }),
-        201,
-      );
+      const result = await weatherService.location.saved.create({ userId: user.data.id, data: { name, state, lat, lon } });
+      return respond(c, result.ok ? result : fail({ ...result.error, message: t.addLocationFailed }), 201);
     },
   )
   .delete(
@@ -121,8 +142,13 @@ const locationsApi = new Hono<AuthContext>()
         404: jsonResponse(ErrorResponseSchema, "Location not found"),
       },
     }),
-    v("param", LocationParamSchema),
+    localizedV(
+      "param",
+      LocationParamSchema,
+      localizedMessage((t) => t.invalidLocationId),
+    ),
     async (c) => {
+      const { t } = weatherMessages.resolve([getLocale(c)]);
       const user = requireUserBackedActor(c);
       if (!user.ok) return respond(c, user);
       const { id } = c.req.valid("param");
@@ -132,8 +158,13 @@ const locationsApi = new Hono<AuthContext>()
           id,
           userId: user.data.id,
         });
-        if (!result.ok) return result;
-        return ok({ message: "Location deleted" });
+        if (!result.ok) {
+          return fail({
+            ...result.error,
+            message: result.error.code === "NOT_FOUND" ? t.capabilityLocationNotFound : t.removeLocationFailed,
+          });
+        }
+        return ok({ message: t.locationDeleted });
       });
     },
   );
@@ -163,15 +194,20 @@ const app = new Hono<AuthContext>()
         500: jsonResponse(ErrorResponseSchema, "Failed to fetch weather"),
       },
     }),
-    v("query", WeatherQuerySchema),
+    localizedV(
+      "query",
+      WeatherQuerySchema,
+      localizedMessage((t) => t.invalidCoordinates),
+    ),
     async (c) => {
+      const { t } = weatherMessages.resolve([getLocale(c)]);
       const { lat, lon } = c.req.valid("query");
       c.header("Cache-Control", "no-store");
 
       return respond(c, async () => {
         const data = await weatherService.forecast.get({ lat, lon });
         if (!data) {
-          return fail(err.internal("Failed to fetch weather data"));
+          return fail(err.internal(t.fetchWeatherFailed));
         }
         return ok(data);
       });
@@ -190,14 +226,19 @@ const app = new Hono<AuthContext>()
         500: jsonResponse(ErrorResponseSchema, "Failed to fetch weather"),
       },
     }),
-    v("query", WeatherQuerySchema),
+    localizedV(
+      "query",
+      WeatherQuerySchema,
+      localizedMessage((t) => t.invalidCoordinates),
+    ),
     async (c) => {
+      const { t } = weatherMessages.resolve([getLocale(c)]);
       const { lat, lon } = c.req.valid("query");
 
       return respond(c, async () => {
         const data = await weatherService.forecast.current.get({ lat, lon });
         if (!data) {
-          return fail(err.internal("Failed to fetch weather data"));
+          return fail(err.internal(t.fetchWeatherFailed));
         }
         return ok(data);
       });
@@ -217,10 +258,23 @@ const app = new Hono<AuthContext>()
         500: jsonResponse(ErrorResponseSchema, "Failed to fetch weather"),
       },
     }),
-    v("query", ForecastByCityQuerySchema),
+    localizedV(
+      "query",
+      ForecastByCityQuerySchema,
+      localizedMessage((t) => t.invalidSearchQuery),
+    ),
     async (c) => {
+      const { t } = weatherMessages.resolve([getLocale(c)]);
       const { q } = c.req.valid("query");
-      return respond(c, weatherService.forecast.getByCityName({ query: q }));
+      const result = await weatherService.forecast.getByCityName({ query: q });
+      if (result.ok) return respond(c, result);
+      const message =
+        result.error.code === "NOT_FOUND"
+          ? t.cityForecastUnavailable
+          : result.error.code === "BAD_INPUT"
+            ? t.cityQueryRequired
+            : t.fetchWeatherFailed;
+      return respond(c, fail({ ...result.error, message }));
     },
   )
   // Public: Geo search proxy
@@ -236,15 +290,25 @@ const app = new Hono<AuthContext>()
         500: jsonResponse(ErrorResponseSchema, "Geo service unavailable"),
       },
     }),
-    v("query", GeoSearchQuerySchema),
+    localizedV(
+      "query",
+      GeoSearchQuerySchema,
+      localizedMessage((t) => t.invalidSearchQuery),
+    ),
     async (c) => {
+      const { t } = weatherMessages.resolve([getLocale(c)]);
       const { q, country } = c.req.valid("query");
       return respond(c, async () => {
         const result = await weatherService.location.city.list({
           pagination: { page: 1, perPage: 25 },
           filter: { query: q, country },
         });
-        if (!result.ok) return result;
+        if (!result.ok) {
+          return fail({
+            ...result.error,
+            message: result.error.code === "BAD_INPUT" ? t.onlyGermanCitySearch : t.locationSearchUnavailable,
+          });
+        }
         return ok(result.data.items);
       });
     },

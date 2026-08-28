@@ -1,16 +1,33 @@
+import { useLocale } from "@k2b/ui";
 import { weatherUiService } from "@valentinkolb/cloud/services/weather/ui";
 import type { DailyForecastPayload } from "../../contracts";
+import { weatherMessages } from "../../messages";
 
-const formatDay = (dateStr: string): string => {
-  const date = new Date(dateStr);
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+const calendarDate = (value: Date, timeZone: string): string => {
+  const parts = new Intl.DateTimeFormat("en", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(value);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((entry) => entry.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+};
 
-  if (date.toDateString() === today.toDateString()) return "Today";
-  if (date.toDateString() === tomorrow.toDateString()) return "Tomorrow";
+const nextCalendarDate = (date: string): string => {
+  const next = new Date(`${date}T12:00:00Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
+};
 
-  return date.toLocaleDateString("en-US", { weekday: "short", day: "numeric" });
+const formatDay = (
+  dateStr: string,
+  locale: string,
+  referenceTime: string | undefined,
+  todayLabel: string,
+  tomorrowLabel: string,
+): string => {
+  const today = calendarDate(referenceTime ? new Date(referenceTime) : new Date(), "Europe/Berlin");
+
+  if (dateStr === today) return todayLabel;
+  if (dateStr === nextCalendarDate(today)) return tomorrowLabel;
+
+  return new Intl.DateTimeFormat(locale, { weekday: "short", day: "numeric", timeZone: "UTC" }).format(new Date(`${dateStr}T12:00:00Z`));
 };
 
 type DailyForecastProps = {
@@ -19,6 +36,8 @@ type DailyForecastProps = {
   size?: "sm" | "md" | "lg";
   /** Show temperature bar visualization (default: true) */
   showBar?: boolean;
+  /** Stable reference instant for Today/Tomorrow labels in hydrated displays. */
+  referenceTime?: string;
 };
 
 const sizeClasses = {
@@ -60,7 +79,11 @@ const sizeClasses = {
   },
 };
 
-export default function DailyForecast({ daily, size = "md", showBar = true }: DailyForecastProps) {
+export default function DailyForecast({ daily, size = "md", showBar = true, referenceTime }: DailyForecastProps) {
+  const locale = useLocale();
+  const t = () => weatherMessages.resolve([locale()]).t;
+  const number = (value: number, maximumFractionDigits = 0) => new Intl.NumberFormat(locale(), { maximumFractionDigits }).format(value);
+  const percent = (value: number) => new Intl.NumberFormat(locale(), { style: "percent", maximumFractionDigits: 0 }).format(value / 100);
   const s = sizeClasses[size];
 
   if (daily.length === 0) return null;
@@ -72,7 +95,7 @@ export default function DailyForecast({ daily, size = "md", showBar = true }: Da
           class={`grid min-w-0 grid-cols-[minmax(4.75rem,6.5rem)_1.75rem_minmax(0,1fr)_auto] items-center ${s.gap} ${s.py}`}
           role="listitem"
         >
-          <span class={`${s.day} truncate font-medium`}>{formatDay(d.date)}</span>
+          <span class={`${s.day} truncate font-medium`}>{formatDay(d.date, locale(), referenceTime, t().today, t().tomorrow)}</span>
           <i
             class={`ti ti-${weatherUiService.getTablerIcon(d.icon)} ${
               s.icon
@@ -80,12 +103,15 @@ export default function DailyForecast({ daily, size = "md", showBar = true }: Da
             aria-hidden="true"
           />
           <div class="flex min-w-0 items-center gap-2">
-            <span class={`${s.temp} w-8 shrink-0 text-right text-dimmed`}>{weatherUiService.formatTemp(d.tempMin)}</span>
+            <span class={`${s.temp} w-8 shrink-0 text-right text-dimmed`}>{number(d.tempMin, 1)}°</span>
             {showBar && (
               <div
                 class="h-1.5 min-w-8 flex-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800"
                 role="img"
-                aria-label={`Temperature range from ${weatherUiService.formatTemp(d.tempMin)} to ${weatherUiService.formatTemp(d.tempMax)}`}
+                aria-label={t().temperatureRange({
+                  min: `${number(d.tempMin, 1)}°`,
+                  max: `${number(d.tempMax, 1)}°`,
+                })}
               >
                 <div
                   class="h-full bg-linear-to-r from-blue-400 via-emerald-400 to-amber-400 rounded-full"
@@ -97,18 +123,18 @@ export default function DailyForecast({ daily, size = "md", showBar = true }: Da
               </div>
             )}
             <span class={`${s.temp} w-8 shrink-0 font-medium ${weatherUiService.getTempColorClass(d.tempMax)}`}>
-              {weatherUiService.formatTemp(d.tempMax)}
+              {number(d.tempMax, 1)}°
             </span>
           </div>
           <div class={`flex items-center justify-end gap-2 ${s.meta}`}>
             {d.precipitationProbability != null && d.precipitationProbability > 0 && (
               <span class={`${s.rain} whitespace-nowrap text-blue-500`}>
-                <i class={`ti ti-droplet ${s.rainIcon}`} aria-hidden="true" /> {d.precipitationProbability}%
+                <i class={`ti ti-droplet ${s.rainIcon}`} aria-hidden="true" /> {percent(d.precipitationProbability)}
               </span>
             )}
             {d.sunshine > 0 && (
               <span class={`${s.sun} whitespace-nowrap text-amber-500`}>
-                <i class={`ti ti-sun ${s.sunIcon}`} aria-hidden="true" /> {Math.round(d.sunshine / 60)}h
+                <i class={`ti ti-sun ${s.sunIcon}`} aria-hidden="true" /> {number(d.sunshine / 60)} h
               </span>
             )}
           </div>

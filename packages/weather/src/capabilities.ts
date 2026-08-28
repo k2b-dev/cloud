@@ -14,21 +14,22 @@ import {
 import { type AuditActor, audit, weatherService } from "@valentinkolb/cloud/services";
 import { z } from "zod";
 import { CurrentWeatherSchema, WeatherDataSchema, WeatherIconSchema, WeatherLocationIdSchema } from "./contracts";
+import { resolveWeatherMessages, type WeatherMessages } from "./messages";
 
 const MAX_CURSOR_OFFSET = 10_000;
 const WEATHER_LOCATIONS_APPROVAL_SCOPE = "locations";
 
-const unavailable = <T>(): CapabilityInvocationResult<T> =>
+const unavailable = <T>(t: WeatherMessages): CapabilityInvocationResult<T> =>
   fail({
     code: "WEATHER_UNAVAILABLE",
-    message: "Weather data is unavailable",
+    message: t.capabilityWeatherUnavailable,
     status: 500,
   });
 
-const citySearchUnavailable = <T>(): CapabilityInvocationResult<T> =>
+const citySearchUnavailable = <T>(t: WeatherMessages): CapabilityInvocationResult<T> =>
   fail({
     code: "WEATHER_CITY_SEARCH_UNAVAILABLE",
-    message: "Weather city search is unavailable",
+    message: t.capabilityCitySearchUnavailable,
     status: 500,
   });
 
@@ -133,7 +134,8 @@ const LocationDeleteDataSchema = z
 const encodeCursor = (page: number, limit: number): string =>
   Buffer.from(JSON.stringify({ v: 1, page, limit }), "utf8").toString("base64url");
 
-export const decodeWeatherCapabilityCursor = (cursor: string | undefined, limit: number): Result<number> => {
+export const decodeWeatherCapabilityCursor = (cursor: string | undefined, limit: number, locale = "en"): Result<number> => {
+  const { t } = resolveWeatherMessages(locale);
   if (!cursor) return ok(1);
   try {
     const value = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as { v?: unknown; page?: unknown; limit?: unknown };
@@ -143,16 +145,16 @@ export const decodeWeatherCapabilityCursor = (cursor: string | undefined, limit:
       (Number(value.page) - 1) * limit <= MAX_CURSOR_OFFSET &&
       value.limit === limit
       ? ok(Number(value.page))
-      : fail(err.badInput("Invalid cursor"));
+      : fail(err.badInput(t.capabilityInvalidCursor));
   } catch {
-    return fail(err.badInput("Invalid cursor"));
+    return fail(err.badInput(t.capabilityInvalidCursor));
   }
 };
 
 const requireUserId = (context: CapabilityExecutionContext): Result<string> =>
   context.accessSubject.type === "user"
     ? ok(context.accessSubject.userId)
-    : fail(err.forbidden("Weather capabilities require a user-backed actor"));
+    : fail(err.forbidden(resolveWeatherMessages(context.locale).t.capabilityNeedsUser));
 
 const locationHref = (locationId: string): string => `/app/weather/${locationId}`;
 
@@ -172,6 +174,7 @@ const locationPageResult = <T>(page: Paginated<unknown>, data: T, refs?: Capabil
   });
 
 const runSearch = async (input: UniversalSearchInput, context: CapabilityExecutionContext) => {
+  const { t } = resolveWeatherMessages(context.locale);
   const userId = requireUserId(context);
   if (!userId.ok) return userId;
 
@@ -188,7 +191,10 @@ const runSearch = async (input: UniversalSearchInput, context: CapabilityExecuti
       preview: entry.state ?? undefined,
       icon: "ti ti-temperature-celsius",
       priority: 6,
-      metadata: [{ label: "Type", value: "Location" }, ...(entry.state ? [{ label: "State", value: entry.state }] : [])],
+      metadata: [
+        { label: t.capabilityType, value: t.capabilityLocationValue },
+        ...(entry.state ? [{ label: t.capabilityState, value: entry.state }] : []),
+      ],
       links: [{ rel: "open", href: locationHref(entry.id) }],
     };
   });
@@ -196,9 +202,10 @@ const runSearch = async (input: UniversalSearchInput, context: CapabilityExecuti
 };
 
 const runLocationList = async (input: z.infer<typeof LocationListInputSchema>, context: CapabilityExecutionContext) => {
+  const { t } = resolveWeatherMessages(context.locale);
   const userId = requireUserId(context);
   if (!userId.ok) return userId;
-  const cursor = decodeWeatherCapabilityCursor(input.cursor, input.limit);
+  const cursor = decodeWeatherCapabilityCursor(input.cursor, input.limit, context.locale);
   if (!cursor.ok) return cursor;
 
   const page = await weatherService.location.saved.list({
@@ -206,7 +213,7 @@ const runLocationList = async (input: z.infer<typeof LocationListInputSchema>, c
     pagination: { page: cursor.data, perPage: input.limit },
   });
   if (page.hasNext && page.page * page.perPage > MAX_CURSOR_OFFSET) {
-    return fail(err.badInput("Saved location pagination exceeds the supported window"));
+    return fail(err.badInput(t.capabilityPaginationExceeded));
   }
   const locations = page.items.map((location) => {
     const data = mapLocation(location);
@@ -224,14 +231,15 @@ const runLocationList = async (input: z.infer<typeof LocationListInputSchema>, c
 };
 
 const runLocationRead = async (input: z.infer<typeof LocationReadInputSchema>, context: CapabilityExecutionContext) => {
+  const { t } = resolveWeatherMessages(context.locale);
   const userId = requireUserId(context);
   if (!userId.ok) return userId;
   const location = await weatherService.location.saved.get({ id: input.id, userId: userId.data });
-  if (!location) return fail(err.notFound("Location"));
+  if (!location) return fail({ code: "NOT_FOUND", message: t.capabilityLocationNotFound, status: 404 });
   const data = mapLocation(location);
   return ok({
     data,
-    summary: `Read saved weather location “${data.name}”.`,
+    summary: t.capabilityReadLocation({ name: data.name }),
     refs: [{ type: "weather.location", id: data.id }],
     links: [{ rel: "open" as const, href: locationHref(data.id) }],
   });
@@ -251,7 +259,9 @@ const resolveForecastSource = async (
   const userId = requireUserId(context);
   if (!userId.ok) return userId;
   const location = await weatherService.location.saved.get({ id: source.locationId, userId: userId.data });
-  return location ? ok({ lat: String(location.lat), lon: String(location.lon), locationId: location.id }) : fail(err.notFound("Location"));
+  return location
+    ? ok({ lat: String(location.lat), lon: String(location.lon), locationId: location.id })
+    : fail({ code: "NOT_FOUND", message: resolveWeatherMessages(context.locale).t.capabilityLocationNotFound, status: 404 });
 };
 
 const forecastIdentity = (locationId: string | null) =>
@@ -326,55 +336,61 @@ const projectWeatherData = (value: unknown) => {
 };
 
 const runCurrentForecast = async (input: z.infer<typeof ForecastInputSchema>, context: CapabilityExecutionContext) => {
+  const { locale, t } = resolveWeatherMessages(context.locale);
   const source = await resolveForecastSource(input.source, context);
   if (!source.ok) return source;
   try {
     const data = await weatherService.forecast.current.get({ lat: source.data.lat, lon: source.data.lon });
-    if (!data) return unavailable();
+    if (!data) return unavailable(t);
     const projected = projectCurrentWeather(data);
     return projected.success
       ? ok({
           data: projected.data,
-          summary: `Read current weather for “${projected.data.stationName}”: ${projected.data.temperature} °C.`,
+          summary: t.capabilityCurrentSummary({
+            station: projected.data.stationName === "Unknown" ? t.unknownStation : projected.data.stationName,
+            temperature: new Intl.NumberFormat(locale, { maximumFractionDigits: 1 }).format(projected.data.temperature),
+          }),
           ...forecastIdentity(source.data.locationId),
         })
-      : unavailable();
+      : unavailable(t);
   } catch {
-    return unavailable();
+    return unavailable(t);
   }
 };
 
 const runForecast = async (input: z.infer<typeof ForecastInputSchema>, context: CapabilityExecutionContext) => {
+  const { t } = resolveWeatherMessages(context.locale);
   const source = await resolveForecastSource(input.source, context);
   if (!source.ok) return source;
   try {
     const data = await weatherService.forecast.get({ lat: source.data.lat, lon: source.data.lon });
-    if (!data) return unavailable();
+    if (!data) return unavailable(t);
     const projected = projectWeatherData(data);
     return projected.success
       ? ok({
           data: projected.data,
-          summary: `Read weather forecast for “${projected.data.current.stationName}”.`,
+          summary: t.capabilityForecastSummary({ station: projected.data.current.stationName }),
           ...forecastIdentity(source.data.locationId),
         })
-      : unavailable();
+      : unavailable(t);
   } catch {
-    return unavailable();
+    return unavailable(t);
   }
 };
 
 const runCitySearch = async (input: z.infer<typeof CitySearchInputSchema>, context: CapabilityExecutionContext) => {
+  const { t } = resolveWeatherMessages(context.locale);
   try {
     const result = await weatherService.location.city.list({
       pagination: { page: 1, perPage: input.limit },
       signal: context.signal,
       filter: { query: input.query, country: "DE" },
     });
-    if (!result.ok) return result;
+    if (!result.ok) return citySearchUnavailable(t);
     const data = CitySearchDataSchema.safeParse(result.data.items.slice(0, input.limit));
-    return data.success ? ok({ data: data.data }) : citySearchUnavailable();
+    return data.success ? ok({ data: data.data }) : citySearchUnavailable(t);
   } catch {
-    return citySearchUnavailable();
+    return citySearchUnavailable(t);
   }
 };
 
@@ -414,14 +430,15 @@ const runLocationCreate = async (input: z.infer<typeof LocationCreateInputSchema
       metadata: { capability: "weather.location.create" },
     },
     async () => {
+      const { t } = resolveWeatherMessages(context.locale);
       const userId = requireUserId(context);
       if (!userId.ok) return userId;
       const result = await weatherService.location.saved.create({ userId: userId.data, data: input });
-      if (!result.ok) return result;
+      if (!result.ok) return fail({ ...result.error, message: t.addLocationFailed });
       const data = mapLocation(result.data);
       return ok({
         data,
-        summary: `Saved ${data.name} for weather forecasts.`,
+        summary: t.capabilitySavedSummary({ name: data.name }),
         refs: [{ type: "weather.location", id: data.id }],
         links: [{ rel: "open" as const, href: locationHref(data.id) }],
       });
@@ -437,17 +454,18 @@ const runLocationDelete = async (input: z.infer<typeof LocationTargetInputSchema
       metadata: { capability: "weather.location.delete" },
     },
     async () => {
+      const { t } = resolveWeatherMessages(context.locale);
       const userId = requireUserId(context);
       if (!userId.ok) return userId;
       const location = await weatherService.location.saved.get({ id: input.locationId, userId: userId.data });
-      if (!location) return fail(err.notFound("Location"));
+      if (!location) return fail({ code: "NOT_FOUND", message: t.capabilityLocationNotFound, status: 404 });
       const result = await weatherService.location.saved.remove({ id: input.locationId, userId: userId.data });
       return result.ok
         ? ok({
             data: { locationId: input.locationId, deleted: true as const },
-            summary: `Deleted ${mapLocation(location).name} from your saved weather locations.`,
+            summary: t.capabilityDeletedSummary({ name: mapLocation(location).name }),
           })
-        : result;
+        : fail({ ...result.error, message: t.removeLocationFailed });
     },
   );
 
@@ -537,15 +555,16 @@ export const weatherCapabilities = defineCapabilities({
       idempotency: "none",
       approval: "rememberable",
       review: async (input, context) => {
+        const { t } = resolveWeatherMessages(context.locale);
         const userId = requireUserId(context);
         if (!userId.ok) return userId;
         return ok({
-          message: `Save ${input.name} for weather forecasts.`,
+          message: t.capabilitySaveReview({ name: input.name }),
           details: [
-            { label: "Location", value: input.name },
-            ...(input.state ? [{ label: "State or region", value: input.state }] : []),
-            { label: "Latitude", value: String(input.lat) },
-            { label: "Longitude", value: String(input.lon) },
+            { label: t.location, value: input.name },
+            ...(input.state ? [{ label: t.stateOrRegion, value: input.state }] : []),
+            { label: t.latitude, value: String(input.lat) },
+            { label: t.longitude, value: String(input.lon) },
           ],
           approvalScope: WEATHER_LOCATIONS_APPROVAL_SCOPE,
         });
@@ -561,14 +580,15 @@ export const weatherCapabilities = defineCapabilities({
       openWorld: false,
       idempotency: "none",
       review: async (input, context) => {
+        const { t } = resolveWeatherMessages(context.locale);
         const userId = requireUserId(context);
         if (!userId.ok) return userId;
         const location = await weatherService.location.saved.get({ id: input.locationId, userId: userId.data });
-        if (!location) return fail(err.notFound("Location"));
+        if (!location) return fail({ code: "NOT_FOUND", message: t.capabilityLocationNotFound, status: 404 });
         const name = location.name.trim().slice(0, 120);
         return ok({
-          message: `Permanently delete saved weather location ${name}.`,
-          details: [{ label: "Location", value: name }],
+          message: t.capabilityDeleteReview({ name }),
+          details: [{ label: t.location, value: name }],
           links: [{ rel: "open" as const, href: locationHref(location.id) }],
         });
       },

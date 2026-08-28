@@ -77,6 +77,8 @@ const serviceAccountContext = {
   signal: new AbortController().signal,
 } satisfies CapabilityExecutionContext;
 
+const germanUserContext = { ...userContext, locale: "de-CH" } satisfies CapabilityExecutionContext;
+
 const location = {
   id: locationId,
   name: "Ulm",
@@ -255,6 +257,34 @@ describe("weather capabilities", () => {
 
     expect(get).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ ok: true, data: { summary: "Read saved weather location “Ulm”." } });
+  });
+
+  test("localizes capability outcomes from the caller locale without changing stable codes", async () => {
+    const get = spyOn(weatherService.location.saved, "get").mockResolvedValue(location);
+    const current = spyOn(weatherService.forecast.current, "get").mockResolvedValue(currentWeather);
+
+    const read = await weatherCapabilities.queries["location.read"].run({ id: locationId }, germanUserContext);
+    const forecast = await weatherCapabilities.queries["forecast.current"].run(
+      { source: { kind: "saved", locationId } },
+      germanUserContext,
+    );
+    const review = await weatherCapabilities.actions["location.delete"].review!({ locationId }, germanUserContext);
+
+    expect(get).toHaveBeenCalled();
+    expect(current).toHaveBeenCalled();
+    expect(read).toMatchObject({ ok: true, data: { summary: "Gespeicherten Wetterort „Ulm“ gelesen." } });
+    expect(forecast).toMatchObject({ ok: true, data: { summary: "Aktuelles Wetter für „Ulm“ gelesen: 22 °C." } });
+    expect(review).toMatchObject({
+      ok: true,
+      data: {
+        message: "Den gespeicherten Wetterort Ulm endgültig löschen.",
+        details: [{ label: "Ort", value: "Ulm" }],
+      },
+    });
+
+    get.mockResolvedValue(null);
+    const missing = await weatherCapabilities.queries["location.read"].run({ id: locationId }, germanUserContext);
+    expect(missing).toEqual({ ok: false, error: { code: "NOT_FOUND", message: "Ort nicht gefunden", status: 404 } });
   });
 
   test("resolves an owned saved location through the existing forecast service", async () => {

@@ -1,8 +1,9 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, openSpotlightSearch, prompts, toast } from "@k2b/ui";
+import { AppWorkspace, Button, openSpotlightSearch, prompts, toast, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup } from "solid-js";
 import { apiClient } from "@/api/client";
+import { weatherMessages } from "../messages";
 
 type GeoResult = {
   name: string;
@@ -12,29 +13,37 @@ type GeoResult = {
   state?: string;
 };
 
-const locationDescription = (location: GeoResult) =>
-  [location.state, location.country].filter(Boolean).join(", ") || `${location.lat.toFixed(4)}, ${location.lon.toFixed(4)}`;
+const locationDescription = (location: GeoResult, locale: string) => {
+  const coordinate = new Intl.NumberFormat(locale, { maximumFractionDigits: 4 });
+  return (
+    [location.state, location.country].filter(Boolean).join(", ") ||
+    `${coordinate.format(location.lat)}, ${coordinate.format(location.lon)}`
+  );
+};
 
-const searchLocations = async ({ query, abortSignal }: { query: string; abortSignal: AbortSignal }) => {
+const searchLocations = async ({ query, abortSignal, locale }: { query: string; abortSignal: AbortSignal; locale: string }) => {
+  const { t } = weatherMessages.resolve([locale]);
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
 
   const res = await apiClient.geo.search.$get({ query: { q: trimmed, country: "DE" } }, { init: { signal: abortSignal } });
   if (!res.ok) {
     const data = (await res.json()) as { message?: string };
-    throw new Error(data.message ?? "City search failed");
+    throw new Error(data.message ?? t.citySearchFailed);
   }
 
   const locations = (await res.json()) as GeoResult[];
   return locations.map((location) => ({
     label: location.name,
-    desc: locationDescription(location),
+    desc: locationDescription(location, locale),
     icon: "ti ti-map-pin",
     value: location,
   }));
 };
 
 const AddLocationButton = (props: { variant?: "button" | "sidebar" | "overview" }) => {
+  const locale = useLocale();
+  const t = () => weatherMessages.resolve([locale()]).t;
   const [selecting, setSelecting] = createSignal(false);
   let disposed = false;
   const addMutation = mutations.create<{ id: string }, GeoResult>({
@@ -52,12 +61,12 @@ const AddLocationButton = (props: { variant?: "button" | "sidebar" | "overview" 
       );
       if (!res.ok) {
         const data = (await res.json()) as { message?: string };
-        throw new Error(data.message ?? "Failed to add location");
+        throw new Error(data.message ?? t().addLocationFailed);
       }
       return (await res.json()) as { id: string };
     },
     onSuccess: (result) => {
-      toast.success("Location added");
+      toast.success(t().locationAdded);
       navigateTo(`/app/weather/${result.id}`);
     },
     onError: (err) => {
@@ -75,13 +84,13 @@ const AddLocationButton = (props: { variant?: "button" | "sidebar" | "overview" 
     setSelecting(true);
     try {
       const selected = await openSpotlightSearch<GeoResult>({
-        resolve: searchLocations,
-        title: "Add location",
+        resolve: ({ query, abortSignal }) => searchLocations({ query, abortSignal, locale: locale() }),
+        title: t().addLocation,
         icon: "ti ti-map-pin",
-        placeholder: "Search for a city in Germany...",
+        placeholder: t().citySearchPlaceholder,
         minQueryLength: 2,
-        emptyText: "Type at least 2 characters.",
-        noResultsText: "No German cities found.",
+        emptyText: t().citySearchMinimum,
+        noResultsText: t().citySearchEmpty,
         size: "small",
       });
       if (!disposed && selected?.value) await addMutation.mutate({ ...selected.value });
@@ -98,7 +107,7 @@ const AddLocationButton = (props: { variant?: "button" | "sidebar" | "overview" 
         disabled={loading()}
         onClick={() => void selectLocation()}
       >
-        Add Location
+        {t().addLocation}
       </AppWorkspace.SidebarItem>
     );
   }
@@ -115,8 +124,8 @@ const AddLocationButton = (props: { variant?: "button" | "sidebar" | "overview" 
           <i class={loading() ? "ti ti-loader-2 animate-spin" : "ti ti-map-pin-plus"} aria-hidden="true" />
         </span>
         <span class="min-w-0">
-          <span class="block text-sm font-medium text-primary">Add location</span>
-          <span class="mt-0.5 block text-xs text-dimmed">Search German cities and save a forecast.</span>
+          <span class="block text-sm font-medium text-primary">{t().addLocation}</span>
+          <span class="mt-0.5 block text-xs text-dimmed">{t().addLocationDescription}</span>
         </span>
       </button>
     );
@@ -129,10 +138,10 @@ const AddLocationButton = (props: { variant?: "button" | "sidebar" | "overview" 
       class="w-full"
       onClick={() => void selectLocation()}
       loading={loading()}
-      loadingLabel="Adding location"
+      loadingLabel={t().addingLocation}
     >
       <i class="ti ti-plus" aria-hidden="true" />
-      Add location
+      {t().addLocation}
     </Button>
   );
 };

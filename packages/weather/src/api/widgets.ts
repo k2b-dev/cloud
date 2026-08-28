@@ -1,8 +1,8 @@
 import type { WidgetBlock, WidgetListItem, WidgetResponse } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, getUserBackedActor } from "@valentinkolb/cloud/server";
 import { logger, weatherService } from "@valentinkolb/cloud/services";
 import { Hono } from "hono";
-import { getUserBackedActor } from "@valentinkolb/cloud/server";
+import { type WeatherMessages, weatherConditionLabel, weatherMessages } from "../messages";
 
 const log = logger("weather");
 
@@ -19,40 +19,67 @@ const log = logger("weather");
  */
 const LOCATION_LIMIT = 7;
 
-const ICON_MAP: Record<string, { ti: string; verbal: string }> = {
-  "clear-day": { ti: "ti ti-sun", verbal: "clear" },
-  "clear-night": { ti: "ti ti-moon", verbal: "clear" },
-  "partly-cloudy-day": { ti: "ti ti-cloud-filled", verbal: "partly cloudy" },
-  "partly-cloudy-night": { ti: "ti ti-cloud-filled", verbal: "partly cloudy" },
-  cloudy: { ti: "ti ti-cloud", verbal: "cloudy" },
-  fog: { ti: "ti ti-mist", verbal: "fog" },
-  rain: { ti: "ti ti-cloud-rain", verbal: "rain" },
-  sleet: { ti: "ti ti-cloud-rain", verbal: "sleet" },
-  snow: { ti: "ti ti-snowflake", verbal: "snow" },
-  wind: { ti: "ti ti-wind", verbal: "windy" },
-  thunderstorm: { ti: "ti ti-bolt", verbal: "thunderstorm" },
-  hail: { ti: "ti ti-cloud-rain", verbal: "hail" },
+const ICON_MAP: Record<string, string> = {
+  "clear-day": "ti ti-sun",
+  "clear-night": "ti ti-moon",
+  "partly-cloudy-day": "ti ti-cloud-filled",
+  "partly-cloudy-night": "ti ti-cloud-filled",
+  cloudy: "ti ti-cloud",
+  fog: "ti ti-mist",
+  rain: "ti ti-cloud-rain",
+  sleet: "ti ti-cloud-rain",
+  snow: "ti ti-snowflake",
+  wind: "ti ti-wind",
+  thunderstorm: "ti ti-bolt",
+  hail: "ti ti-cloud-rain",
 };
 
-const iconFor = (icon: string) => ICON_MAP[icon] ?? { ti: "ti ti-cloud", verbal: icon };
-
-const unavailableBody = (message: string): WidgetResponse => ({
-  title: "Weather",
-  icon: "ti ti-cloud",
-  href: "/app/weather",
-  blocks: [
-    {
-      kind: "status",
-      tone: "error",
-      title: "Weather unavailable",
-      message,
-      icon: "ti ti-alert-circle",
-      grow: true,
-    },
-  ],
+const iconFor = (icon: string, t: WeatherMessages) => ({
+  ti: ICON_MAP[icon] ?? "ti ti-cloud",
+  verbal: weatherConditionLabel(icon, t),
 });
 
+export const weatherWidgetUnavailableBody = (locale: string, message?: string): WidgetResponse => {
+  const { t } = weatherMessages.resolve([locale]);
+  return {
+    title: t.appName,
+    icon: "ti ti-cloud",
+    href: "/app/weather",
+    blocks: [
+      {
+        kind: "status",
+        tone: "error",
+        title: t.widgetUnavailable,
+        message: message ?? t.widgetLocationsFailed,
+        icon: "ti ti-alert-circle",
+        grow: true,
+      },
+    ],
+  };
+};
+
+export const weatherWidgetEmptyBody = (locale: string): WidgetResponse => {
+  const { t } = weatherMessages.resolve([locale]);
+  return {
+    title: t.appName,
+    icon: "ti ti-cloud",
+    href: "/app/weather",
+    blocks: [
+      {
+        kind: "hero",
+        icon: "ti ti-map-pin-plus",
+        tone: "blue",
+        title: t.widgetNoLocations,
+        subtitle: t.widgetNoLocationsHint,
+      },
+    ],
+  };
+};
+
 const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/current", async (c) => {
+  const { locale, t } = weatherMessages.resolve([getLocale(c)]);
+  const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 });
+  const percent = new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: 0 });
   const user = getUserBackedActor(c);
   if (!user) return c.body(null, 403);
 
@@ -64,25 +91,11 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/current", a
       userId: user.id,
       error: error instanceof Error ? error.message : String(error),
     });
-    return c.json(unavailableBody("Saved locations could not be loaded."));
+    return c.json(weatherWidgetUnavailableBody(locale));
   }
 
   if (locations.length === 0) {
-    const body: WidgetResponse = {
-      title: "Weather",
-      icon: "ti ti-cloud",
-      href: "/app/weather",
-      blocks: [
-        {
-          kind: "hero",
-          icon: "ti ti-map-pin-plus",
-          tone: "blue",
-          title: "No saved locations yet",
-          subtitle: "Add one in Weather to see forecasts here",
-        },
-      ],
-    };
-    return c.json(body);
+    return c.json(weatherWidgetEmptyBody(locale));
   }
 
   const capped = locations.slice(0, LOCATION_LIMIT);
@@ -111,40 +124,40 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/current", a
     const entry = forecasts[0]!;
     if (!entry.data) {
       const body: WidgetResponse = {
-        title: "Weather",
+        title: t.appName,
         icon: "ti ti-cloud",
         href: "/app/weather",
         blocks: [
           {
             kind: "hero",
             icon: "ti ti-cloud-off",
-            title: "Forecast unavailable",
-            subtitle: `Couldn't reach the provider for ${entry.loc.name}`,
+            title: t.widgetForecastUnavailable,
+            subtitle: t.widgetProviderFailed({ name: entry.loc.name }),
           },
         ],
       };
       return c.json(body);
     }
-    const ic = iconFor(entry.data.icon);
+    const ic = iconFor(entry.data.icon, t);
     const blocks: WidgetBlock[] = [
       {
         kind: "hero",
         icon: ic.ti,
         tone: "blue",
-        title: `${Math.round(entry.data.temperature)}°C · ${ic.verbal}`,
+        title: `${number.format(entry.data.temperature)}°C · ${ic.verbal}`,
         subtitle: entry.loc.name,
       },
       {
         kind: "pills",
         pills: [
-          { label: "wind", value: `${Math.round(entry.data.windSpeed)} km/h` },
-          ...(entry.data.humidity !== null ? [{ label: "humid", value: `${Math.round(entry.data.humidity)}%` } as const] : []),
-          ...(entry.data.pressure !== null ? [{ label: "hPa", value: Math.round(entry.data.pressure) } as const] : []),
+          { label: t.widgetWind, value: `${number.format(entry.data.windSpeed)} km/h` },
+          ...(entry.data.humidity !== null ? [{ label: t.widgetHumidity, value: percent.format(entry.data.humidity / 100) } as const] : []),
+          ...(entry.data.pressure !== null ? [{ label: "hPa", value: number.format(entry.data.pressure) } as const] : []),
         ],
       },
     ];
     const body: WidgetResponse = {
-      title: "Weather",
+      title: t.appName,
       icon: ic.ti,
       href: "/app/weather",
       blocks,
@@ -159,24 +172,24 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/current", a
         icon: "ti ti-cloud-off",
         iconTone: "zinc",
         label: loc.name,
-        sub: "no data",
+        sub: t.widgetNoData,
       };
     }
-    const ic = iconFor(data.icon);
+    const ic = iconFor(data.icon, t);
     return {
       icon: ic.ti,
       iconTone: "blue",
       label: loc.name,
       sub: ic.verbal,
-      meta: `${Math.round(data.temperature)}°C`,
+      meta: `${number.format(data.temperature)}°C`,
     };
   });
 
   const body: WidgetResponse = {
-    title: "Weather",
+    title: t.appName,
     icon: "ti ti-cloud",
     href: "/app/weather",
-    meta: locations.length > LOCATION_LIMIT ? `${LOCATION_LIMIT} of ${locations.length}` : undefined,
+    meta: locations.length > LOCATION_LIMIT ? t.widgetCount({ shown: LOCATION_LIMIT, total: locations.length }) : undefined,
     blocks: [{ kind: "list", items, grow: true }],
   };
   return c.json(body);

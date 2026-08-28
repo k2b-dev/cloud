@@ -1,11 +1,14 @@
 import { navigateTo } from "@k2b/ssr/nav";
 import { mutation } from "@k2b/stdlib/solid";
-import { Button, Dropdown, prompts, SegmentedControl, toast } from "@k2b/ui";
+import { Button, Dropdown, prompts, SegmentedControl, toast, useLocale } from "@k2b/ui";
 import { createSignal, onCleanup } from "solid-js";
 import { apiClient } from "@/api/client";
+import { weatherMessages } from "../messages";
 import { buildDisplayUrl, type DisplaySettings } from "./params";
 
 function DisplaySettingsForm(props: { onSubmit: (settings: DisplaySettings) => void }) {
+  const locale = useLocale();
+  const t = () => weatherMessages.resolve([locale()]).t;
   const [zoom, setZoom] = createSignal<"1" | "2" | "3">("2");
   const [theme, setTheme] = createSignal<"light" | "dark">("dark");
   const [view, setView] = createSignal<"simple" | "detail">("simple");
@@ -22,51 +25,53 @@ function DisplaySettingsForm(props: { onSubmit: (settings: DisplaySettings) => v
   return (
     <form onSubmit={handleSubmit} class="flex flex-col gap-4">
       <div class="flex flex-col gap-2">
-        <p class="text-sm font-medium">Zoom level</p>
+        <p class="text-sm font-medium">{t().zoomLevel}</p>
         <SegmentedControl
           value={zoom}
           onValueChange={setZoom}
           options={[
-            { value: "1", label: "Small" },
-            { value: "2", label: "Medium" },
-            { value: "3", label: "Large" },
+            { value: "1", label: t().small },
+            { value: "2", label: t().medium },
+            { value: "3", label: t().large },
           ]}
         />
       </div>
 
       <div class="flex flex-col gap-2">
-        <p class="text-sm font-medium">Theme</p>
+        <p class="text-sm font-medium">{t().theme}</p>
         <SegmentedControl
           value={theme}
           onValueChange={setTheme}
           options={[
-            { value: "light", label: "Light", icon: "ti ti-sun" },
-            { value: "dark", label: "Dark", icon: "ti ti-moon" },
+            { value: "light", label: t().lightTheme, icon: "ti ti-sun" },
+            { value: "dark", label: t().darkTheme, icon: "ti ti-moon" },
           ]}
         />
       </div>
 
       <div class="flex flex-col gap-2">
-        <p class="text-sm font-medium">View</p>
+        <p class="text-sm font-medium">{t().view}</p>
         <SegmentedControl
           value={view}
           onValueChange={setView}
           options={[
-            { value: "simple", label: "Simple", icon: "ti ti-layout-bottombar" },
-            { value: "detail", label: "Detailed", icon: "ti ti-layout-grid" },
+            { value: "simple", label: t().simple, icon: "ti ti-layout-bottombar" },
+            { value: "detail", label: t().detailed, icon: "ti ti-layout-grid" },
           ]}
         />
       </div>
 
       <Button type="submit" variant="secondary" class="mt-4 self-end">
         <i class="ti ti-external-link" aria-hidden="true" />
-        Open display
+        {t().openDisplay}
       </Button>
     </form>
   );
 }
 
 export default function LocationActions(props: { id: string; lat: number; lon: number }) {
+  const locale = useLocale();
+  const t = () => weatherMessages.resolve([locale()]).t;
   const [confirmingRemove, setConfirmingRemove] = createSignal(false);
   let disposed = false;
   const remove = mutation.create<boolean, { id: string }>({
@@ -77,14 +82,14 @@ export default function LocationActions(props: { id: string; lat: number; lon: n
         throw new Error(
           body && typeof body === "object" && "message" in body && typeof body.message === "string"
             ? body.message
-            : "Failed to remove location",
+            : t().removeLocationFailed,
         );
       }
       return true;
     },
     onSuccess: (removed) => {
       if (!removed) return;
-      toast.success("Location removed");
+      toast.success(t().locationRemoved);
       navigateTo("/app/weather");
     },
     onError: (error) => prompts.error(error.message),
@@ -100,8 +105,8 @@ export default function LocationActions(props: { id: string; lat: number; lon: n
     const id = props.id;
     setConfirmingRemove(true);
     try {
-      const confirmed = await prompts.confirm("Remove this location?", {
-        title: "Remove location",
+      const confirmed = await prompts.confirm(t().removeLocationConfirm, {
+        title: t().removeLocation,
         variant: "danger",
       });
       if (!disposed && confirmed) await remove.mutate({ id });
@@ -121,15 +126,15 @@ export default function LocationActions(props: { id: string; lat: number; lon: n
           }}
         />
       ),
-      { title: "Display settings", icon: "ti ti-device-tv" },
+      { title: t().displaySettings, icon: "ti ti-device-tv" },
     );
   };
 
   return (
-    <div class="flex items-center gap-2" role="group" aria-label="Location actions">
+    <div class="flex items-center gap-2" role="group" aria-label={t().locationActions}>
       <Button type="button" variant="secondary" size="sm" onClick={openDisplay}>
         <i class="ti ti-device-tv" aria-hidden="true" />
-        Display
+        {t().display}
       </Button>
       <Dropdown.Root
         position="bottom-left"
@@ -139,7 +144,7 @@ export default function LocationActions(props: { id: string; lat: number; lon: n
             items: [
               {
                 icon: "ti ti-trash",
-                label: "Remove location",
+                label: t().removeLocation,
                 variant: "danger",
                 action: () => void removeLocation(),
               },
@@ -147,7 +152,14 @@ export default function LocationActions(props: { id: string; lat: number; lon: n
           },
         ]}
       >
-        <Dropdown.Trigger iconOnly label="Location options" size="sm" disabled={removing()} loading={removing()} tooltip="Location options">
+        <Dropdown.Trigger
+          iconOnly
+          label={t().locationOptions}
+          size="sm"
+          disabled={removing()}
+          loading={removing()}
+          tooltip={t().locationOptions}
+        >
           <i class="ti ti-dots" aria-hidden="true" />
         </Dropdown.Trigger>
       </Dropdown.Root>

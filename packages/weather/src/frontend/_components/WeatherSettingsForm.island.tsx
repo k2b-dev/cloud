@@ -11,9 +11,11 @@ import {
   sameSettingValue,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, onCleanup } from "solid-js";
 import { apiClient } from "@/api/client";
+import { weatherMessages } from "../../messages";
 
 type Initial = {
   "weather.default_lat": string;
@@ -23,6 +25,8 @@ type Initial = {
 };
 
 export default function WeatherSettingsForm(props: { initial: Initial }) {
+  const locale = useLocale();
+  const t = () => weatherMessages.resolve([locale()]).t;
   const [draft, setDraft] = createSignal<Initial>({ ...props.initial });
   const [fieldErrors, setFieldErrors] = createSignal<Record<string, string>>({});
 
@@ -49,14 +53,14 @@ export default function WeatherSettingsForm(props: { initial: Initial }) {
     mutation: async (updates, { abortSignal }) => {
       const response = await apiClient.admin.settings.$put({ json: updates }, { init: { signal: abortSignal } });
       if (!response.ok) {
-        const { message, fields } = await readSettingsError(response, `Save failed (HTTP ${response.status})`);
+        const { message, fields } = await readSettingsError(response, t().saveFailedHttp({ status: response.status }));
         setFieldErrors(fields);
         throw new Error(message);
       }
     },
     onSuccess: () => {
       window.onbeforeunload = null;
-      toast.success("Weather settings saved");
+      toast.success(t().settingsSaved);
       refreshCurrentPath();
     },
     onError: (e) => prompts.error(e.message),
@@ -82,8 +86,8 @@ export default function WeatherSettingsForm(props: { initial: Initial }) {
   return (
     <SettingsPage
       style="view-transition-name: admin-weather-settings"
-      title="Weather"
-      subtitle="Geocoding, default location, and cache behavior."
+      title={t().appName}
+      subtitle={t().settingsSubtitle}
       icon="ti ti-cloud-sun"
       scrollPreserveKey="weather-admin"
       footer={
@@ -95,14 +99,11 @@ export default function WeatherSettingsForm(props: { initial: Initial }) {
         />
       }
     >
-      <SettingsSection title="Forecast Source" subtitle="External forecast and location lookup services." icon="ti ti-info-circle">
+      <SettingsSection title={t().forecastSource} subtitle={t().forecastSourceDescription} icon="ti ti-info-circle">
         <div class="flex flex-col gap-2 text-xs text-dimmed">
+          <p>{t().forecastSourceBody}</p>
           <p>
-            The weather app uses <strong>Bright Sky</strong> for forecast data. Set the default coordinates shown to users and tune the
-            Redis cache TTL for refresh frequency.
-          </p>
-          <p>
-            Location search depends on your geocoding service at{" "}
+            {t().geocodingBody}{" "}
             <a href="https://github.com/ValentinKolb/geo" target="_blank" class="underline" rel="noreferrer">
               github.com/ValentinKolb/geo
             </a>
@@ -111,37 +112,37 @@ export default function WeatherSettingsForm(props: { initial: Initial }) {
         </div>
       </SettingsSection>
 
-      <SettingsSection title="Default Location" subtitle="Fallback coordinates shown in weather widgets." icon="ti ti-map-pin">
+      <SettingsSection title={t().defaultLocation} subtitle={t().defaultLocationDescription} icon="ti ti-map-pin">
         <SettingsField
-          label="Default Latitude"
-          description="Default latitude shown in weather widgets"
+          label={t().defaultLatitude}
+          description={t().defaultLatitudeDescription}
           error={() => fieldErrors()["weather.default_lat"]}
           changed={() => isChanged("weather.default_lat")}
         >
           <TextInput
             value={() => draft()["weather.default_lat"]}
             onValueChange={(v) => update("weather.default_lat", v)}
-            placeholder="e.g. 48.401082"
+            placeholder={t().exampleLatitude}
           />
         </SettingsField>
         <SettingsField
-          label="Default Longitude"
-          description="Default longitude shown in weather widgets"
+          label={t().defaultLongitude}
+          description={t().defaultLongitudeDescription}
           error={() => fieldErrors()["weather.default_lon"]}
           changed={() => isChanged("weather.default_lon")}
         >
           <TextInput
             value={() => draft()["weather.default_lon"]}
             onValueChange={(v) => update("weather.default_lon", v)}
-            placeholder="e.g. 9.987608"
+            placeholder={t().exampleLongitude}
           />
         </SettingsField>
       </SettingsSection>
 
-      <SettingsSection title="Refresh" subtitle="How long forecast data can be reused before refetching." icon="ti ti-clock">
+      <SettingsSection title={t().refresh} subtitle={t().refreshDescription} icon="ti ti-clock">
         <SettingsField
-          label="Cache TTL (minutes)"
-          description="How long weather data is cached before fetching fresh data"
+          label={t().cacheMinutes}
+          description={t().cacheMinutesDescription}
           error={() => fieldErrors()["weather.cache_minutes"]}
           changed={() => isChanged("weather.cache_minutes")}
         >
@@ -156,10 +157,10 @@ export default function WeatherSettingsForm(props: { initial: Initial }) {
         </SettingsField>
       </SettingsSection>
 
-      <SettingsSection title="Location Search" subtitle="Geocoding endpoint used by the app search UI." icon="ti ti-search">
+      <SettingsSection title={t().locationSearch} subtitle={t().locationSearchDescription} icon="ti ti-search">
         <SettingsField
-          label="Geo API URL"
-          description="Geocoding API URL for location search"
+          label={t().geoApiUrl}
+          description={t().geoApiUrlDescription}
           error={() => fieldErrors()["weather.geo_url"]}
           changed={() => isChanged("weather.geo_url")}
         >
@@ -167,7 +168,7 @@ export default function WeatherSettingsForm(props: { initial: Initial }) {
             value={() => draft()["weather.geo_url"]}
             onValueChange={(v) => update("weather.geo_url", v)}
             type="url"
-            placeholder="e.g. https://geocoding.example.com/search"
+            placeholder={t().geoApiExample}
           />
         </SettingsField>
       </SettingsSection>

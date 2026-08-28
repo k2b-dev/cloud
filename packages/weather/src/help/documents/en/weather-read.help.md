@@ -2,11 +2,11 @@
 id: weather-read
 title: Read a forecast
 icon: ti ti-cloud-sun
-description: Use current, hourly, daily, detail, radar, and display views for the right time horizon.
+description: Choose current, hourly, daily, radar, and display views for the time horizon you need.
 order: 110
 ---
 
-Choose the forecast section by the decision you need to make.
+Choose the forecast section that matches the decision you need to make.
 
 ## Forecast views {icon="layout-list"}
 
@@ -14,18 +14,18 @@ Choose the forecast section by the decision you need to make.
 - **Current conditions:** Use for what is happening near the saved coordinates now.
 - **Hourly forecast:** Use for timing during the rest of the day and the next available hours.
 - **Daily forecast:** Use for the broader trend across the available days.
-- **Details:** Use for additional values that do not fit the primary summary.
+- **Current measurements:** Use for pressure, dew point, visibility, and sunshine duration.
 - **Rain radar:** Use for the movement and proximity of precipitation rather than a single probability value.
-- **Display:** Use on a shared or unattended screen. Choose the density, theme, and zoom before leaving it open.
+- **Display:** Use on a shared or unattended screen. Choose the density, theme, and size before leaving it open.
 :::
 
 ## Interpret carefully {icon="point"}
 
 - A saved city represents coordinates, not every street or neighborhood within the city.
-- Forecast values describe expected conditions and can change as the provider receives newer data.
+- Forecast values describe expected conditions and can change when the provider receives newer data.
 - Compare the hourly forecast with radar when near-term rain timing matters.
-- Use daily values for planning, not as an exact schedule for one hour.
+- Use daily values for planning, not as an exact schedule for a particular hour.
 
 :::info Refresh behavior
-The app and display reuse cached forecast data according to the configured cache duration. A reload may show the same values until newer provider data is available.
+The app and display reuse cached forecast data for the configured duration. Reloading may show the same values until newer provider data is available.
 :::

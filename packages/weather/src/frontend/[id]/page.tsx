@@ -1,9 +1,10 @@
-import { AppWorkspace, Placeholder } from "@k2b/ui";
+import { AppWorkspace, Placeholder, useLocale } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getLocale } from "@valentinkolb/cloud/server";
 import { type WeatherData, weatherService } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
+import { weatherMessages } from "../../messages";
 import { DailyForecast, HourlyForecast, RadarCard } from "../_components";
 import LocationSidebar from "../_components/LocationSidebar";
 import LocationActions from "../LocationActions.island";
@@ -37,11 +38,15 @@ function CurrentConditionStat(props: { label: string; value: string; icon: strin
 }
 
 function WeatherDetail({ location, data }: { location: Location; data: WeatherData }) {
+  const locale = useLocale();
+  const t = () => weatherMessages.resolve([locale()]).t;
+  const number = (value: number, maximumFractionDigits = 0) => new Intl.NumberFormat(locale(), { maximumFractionDigits }).format(value);
+  const percent = (value: number) => new Intl.NumberFormat(locale(), { style: "percent", maximumFractionDigits: 0 }).format(value / 100);
   const { current, hourly, daily } = data;
 
   return (
-    <article class="flex flex-col gap-2 p-[var(--ui-space-shell)]" aria-label={`Weather for ${location.name}`}>
-      <section class="relative flex flex-col items-center gap-3 py-5" aria-label="Current weather">
+    <article class="flex flex-col gap-2 p-[var(--ui-space-shell)]" aria-label={t().weatherFor({ name: location.name })}>
+      <section class="relative flex flex-col items-center gap-3 py-5" aria-label={t().currentWeather}>
         <div class="flex w-full justify-end sm:absolute sm:right-0 sm:top-0">
           <LocationActions id={location.id} lat={location.lat} lon={location.lon} />
         </div>
@@ -59,35 +64,36 @@ function WeatherDetail({ location, data }: { location: Location; data: WeatherDa
           />
           <span
             class={`text-5xl font-light ${weatherService.ui.getTempColorClass(current.temperature)}`}
-            title={`Temperature ${weatherService.ui.formatTemp(current.temperature)}`}
+            title={`${t().temperature} ${number(current.temperature, 1)}°`}
             style="view-transition-name: weather-temp"
           >
-            {weatherService.ui.formatTemp(current.temperature)}
+            {number(current.temperature, 1)}°
           </span>
         </div>
         <dl class="flex items-center gap-6 text-sm">
           <div class="flex flex-col gap-0.5">
             <div class="text-dimmed">
-              <dt class="inline">Humidity</dt> <dd class="inline text-secondary font-medium">{current.humidity ?? "-"}%</dd>
+              <dt class="inline">{t().humidity}</dt>{" "}
+              <dd class="inline text-secondary font-medium">{current.humidity == null ? "-" : percent(current.humidity)}</dd>
             </div>
             <div class="text-dimmed">
-              <dt class="inline">Clouds</dt> <dd class="inline text-secondary font-medium">{current.cloudCover}%</dd>
+              <dt class="inline">{t().clouds}</dt> <dd class="inline text-secondary font-medium">{percent(current.cloudCover)}</dd>
             </div>
           </div>
           <div class="flex flex-col gap-0.5">
             <div class="text-dimmed">
-              <dt class="inline">Wind</dt> <dd class="inline text-secondary font-medium">{current.windSpeed} km/h</dd>
+              <dt class="inline">{t().wind}</dt> <dd class="inline text-secondary font-medium">{number(current.windSpeed)} km/h</dd>
             </div>
             <div class="text-dimmed">
-              <dt class="inline">Rain</dt> <dd class="inline text-secondary font-medium">{current.precipitation} mm</dd>
+              <dt class="inline">{t().rain}</dt> <dd class="inline text-secondary font-medium">{number(current.precipitation, 1)} mm</dd>
             </div>
           </div>
         </dl>
       </section>
 
       {hourly.length > 0 && (
-        <section class="paper p-4" aria-label="Hourly forecast">
-          <h2 class="section-label mb-3">Hourly</h2>
+        <section class="paper p-4" aria-label={t().hourlyForecast}>
+          <h2 class="section-label mb-3">{t().hourly}</h2>
           <HourlyForecast hourly={hourly} scrollPreserveKey={`weather-hourly-${location.id}`} />
         </section>
       )}
@@ -95,36 +101,36 @@ function WeatherDetail({ location, data }: { location: Location; data: WeatherDa
       <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
         <div class="flex flex-col gap-2">
           {daily.length > 0 && (
-            <section class="paper p-4" aria-label="7-day forecast">
-              <h2 class="section-label mb-3">7-day forecast</h2>
+            <section class="paper p-4" aria-label={t().sevenDayForecast}>
+              <h2 class="section-label mb-3">{t().sevenDayForecast}</h2>
               <DailyForecast daily={daily} />
             </section>
           )}
 
-          <section class="paper p-4" aria-label="Current conditions">
-            <h2 class="section-label mb-3">Current conditions</h2>
+          <section class="paper p-4" aria-label={t().currentConditions}>
+            <h2 class="section-label mb-3">{t().currentConditions}</h2>
             <div class="grid grid-cols-2 gap-x-6 gap-y-4">
               <CurrentConditionStat
-                label="Pressure"
-                value={current.pressure != null ? `${current.pressure} hPa` : "-"}
+                label={t().pressure}
+                value={current.pressure != null ? `${number(current.pressure)} hPa` : "-"}
                 icon="ti ti-gauge"
                 tone="zinc"
               />
               <CurrentConditionStat
-                label="Dew point"
-                value={current.dewPoint != null ? `${current.dewPoint}°` : "-"}
+                label={t().dewPoint}
+                value={current.dewPoint != null ? `${number(current.dewPoint, 1)}°` : "-"}
                 icon="ti ti-droplet"
                 tone="blue"
               />
               <CurrentConditionStat
-                label="Visibility"
-                value={current.visibility != null ? `${(current.visibility / 1000).toFixed(1)} km` : "-"}
+                label={t().visibility}
+                value={current.visibility != null ? `${number(current.visibility / 1000, 1)} km` : "-"}
                 icon="ti ti-eye"
                 tone="zinc"
               />
               <CurrentConditionStat
-                label="Sunshine"
-                value={current.sunshine != null ? `${current.sunshine} min` : "-"}
+                label={t().sunshine}
+                value={current.sunshine != null ? `${number(current.sunshine)} min` : "-"}
                 icon="ti ti-sun"
                 tone="amber"
               />
@@ -132,8 +138,8 @@ function WeatherDetail({ location, data }: { location: Location; data: WeatherDa
           </section>
         </div>
 
-        <section class="paper p-4" aria-label="Rain radar">
-          <h2 class="section-label mb-3">Rain radar</h2>
+        <section class="paper p-4" aria-label={t().rainRadar}>
+          <h2 class="section-label mb-3">{t().rainRadar}</h2>
           <RadarCard showLegend />
         </section>
       </div>
@@ -142,6 +148,7 @@ function WeatherDetail({ location, data }: { location: Location; data: WeatherDa
 }
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = weatherMessages.resolve([getLocale(c)]);
   const user = expectUserBackedActor(c);
   const id = c.req.param("id") ?? "";
 
@@ -156,7 +163,7 @@ export default ssr<AuthContext>(async (c) => {
         c={c}
         fullWidth
         workspaceSidebarCollapsible={false}
-        title={[{ title: "Start", href: "/" }, { title: "Weather", href: "/app/weather" }, { title: "Not Found" }]}
+        title={[{ title: t.start, href: "/" }, { title: t.appName, href: "/app/weather" }, { title: t.notFound }]}
       >
         <div class="min-h-0 min-w-0 flex-1 overflow-hidden">
           <AppWorkspace>
@@ -166,8 +173,8 @@ export default ssr<AuthContext>(async (c) => {
                 <Placeholder
                   state="error"
                   variant="panel"
-                  title="Location not found"
-                  description="Choose another saved location or add a new city."
+                  title={t.locationNotFound}
+                  description={t.locationNotFoundDescription}
                   icon="ti ti-map-pin-off"
                   class="h-full"
                 />
@@ -201,7 +208,7 @@ export default ssr<AuthContext>(async (c) => {
       c={c}
       fullWidth
       workspaceSidebarCollapsible={false}
-      title={[{ title: "Start", href: "/" }, { title: "Weather", href: "/app/weather" }, { title: activeLocation.name }]}
+      title={[{ title: t.start, href: "/" }, { title: t.appName, href: "/app/weather" }, { title: activeLocation.name }]}
     >
       <div class="min-h-0 min-w-0 flex-1 overflow-hidden">
         <AppWorkspace>
@@ -215,8 +222,8 @@ export default ssr<AuthContext>(async (c) => {
                 <Placeholder
                   state="error"
                   variant="panel"
-                  title="Weather data unavailable"
-                  description="DWD currently provides forecast data only for locations in Germany."
+                  title={t.weatherUnavailable}
+                  description={t.weatherUnavailableGermany}
                   icon="ti ti-cloud-off"
                   class="h-full"
                   action={<LocationActions id={activeLocation.id} lat={activeLocation.lat} lon={activeLocation.lon} />}

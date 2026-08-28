@@ -6,6 +6,15 @@ export const app = defineApp({
   name: "Weather",
   icon: "ti ti-temperature-celsius",
   description: "Forecasts, saved locations, and weather widgets.",
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: {
+        name: "Wetter",
+        description: "Vorhersagen, gespeicherte Orte und Wetter-Widgets.",
+      },
+    },
+  },
   appearance: {
     accent: "#0369a1",
     background: {

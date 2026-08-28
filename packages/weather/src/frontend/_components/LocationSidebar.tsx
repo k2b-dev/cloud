@@ -1,5 +1,6 @@
-import { AppWorkspace } from "@k2b/ui";
+import { AppWorkspace, useLocale } from "@k2b/ui";
 import { type WeatherData, weatherService } from "@valentinkolb/cloud/services";
+import { weatherMessages } from "../../messages";
 import AddLocationButton from "../AddLocation.island";
 
 type Location = {
@@ -17,6 +18,9 @@ type Props = {
 };
 
 export default function LocationSidebar(props: Props) {
+  const locale = useLocale();
+  const t = () => weatherMessages.resolve([locale()]).t;
+  const temperature = (value: number) => `${new Intl.NumberFormat(locale(), { maximumFractionDigits: 1 }).format(value)}°`;
   const activeLocation = props.locations.find((location) => location.id === props.activeId);
 
   const renderLocation = (loc: Location, mode: "desktop" | "mobile") => {
@@ -37,7 +41,7 @@ export default function LocationSidebar(props: Props) {
           <span class="flex flex-col leading-tight">
             <span>{loc.name}</span>
             <span class="mt-0.5 text-[0.6875rem] font-normal text-dimmed">
-              {data?.current ? <span class={tempClass}>{weatherService.ui.formatTemp(data.current.temperature)}</span> : "No forecast"}
+              {data?.current ? <span class={tempClass}>{temperature(data.current.temperature)}</span> : t().noForecast}
               {mode === "desktop" && loc.state ? <span class="ml-1">· {loc.state}</span> : null}
             </span>
           </span>
@@ -48,7 +52,7 @@ export default function LocationSidebar(props: Props) {
 
   return (
     <AppWorkspace.Sidebar>
-      <AppWorkspace.SidebarMobileTrigger label={activeLocation?.name ?? "Weather"} />
+      <AppWorkspace.SidebarMobileTrigger label={activeLocation?.name ?? t().appName} />
 
       <AppWorkspace.SidebarMobile>
         <AppWorkspace.SidebarMobileItems>
@@ -63,7 +67,7 @@ export default function LocationSidebar(props: Props) {
         <div class="flex min-h-0 flex-1 flex-col gap-3">
           <AddLocationButton />
           <AppWorkspace.SidebarBody scrollPreserveKey="weather-locations">
-            <AppWorkspace.SidebarSection title="Locations">
+            <AppWorkspace.SidebarSection title={t().locations}>
               {props.locations.map((loc) => renderLocation(loc, "desktop"))}
             </AppWorkspace.SidebarSection>
           </AppWorkspace.SidebarBody>

@@ -1,9 +1,11 @@
+import { useLocale } from "@k2b/ui";
 import { weatherUiService } from "@valentinkolb/cloud/services/weather/ui";
 import type { HourlyForecastPayload } from "../../contracts";
+import { weatherMessages } from "../../messages";
 
-const formatHour = (timestamp: string, isFirst: boolean): string => {
-  if (isFirst) return "Now";
-  return new Date(timestamp).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+const formatHour = (timestamp: string, isFirst: boolean, locale: string, now: string): string => {
+  if (isFirst) return now;
+  return new Intl.DateTimeFormat(locale, { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Berlin" }).format(new Date(timestamp));
 };
 
 type HourlyForecastProps = {
@@ -49,6 +51,10 @@ const sizeClasses = {
 };
 
 export default function HourlyForecast({ hourly, limit, size = "md", showNow = true, scrollPreserveKey }: HourlyForecastProps) {
+  const locale = useLocale();
+  const t = () => weatherMessages.resolve([locale()]).t;
+  const number = (value: number, maximumFractionDigits = 0) => new Intl.NumberFormat(locale(), { maximumFractionDigits }).format(value);
+  const percent = (value: number) => new Intl.NumberFormat(locale(), { style: "percent", maximumFractionDigits: 0 }).format(value / 100);
   const items = limit ? hourly.slice(0, limit) : hourly;
   const s = sizeClasses[size];
 
@@ -58,26 +64,24 @@ export default function HourlyForecast({ hourly, limit, size = "md", showNow = t
     <div
       class={`flex ${s.container} overflow-x-auto pb-1`}
       role="list"
-      aria-label="Hourly temperature forecast"
+      aria-label={t().hourlyTemperatureForecast}
       data-scroll-preserve={scrollPreserveKey}
     >
       {items.map((h, idx) => (
         <div class={`flex flex-col items-center gap-1 ${s.minWidth} flex-1`} role="listitem">
           <span class={`${s.time} ${idx === 0 && showNow ? "text-secondary font-medium" : "text-dimmed"}`}>
-            {formatHour(h.timestamp, idx === 0 && showNow)}
+            {formatHour(h.timestamp, idx === 0 && showNow, locale(), t().now)}
           </span>
           <div class="flex items-center gap-1">
             <i
               class={`ti ti-${weatherUiService.getTablerIcon(h.icon)} ${s.icon} ${weatherUiService.getTempColorClass(h.temperature)}`}
               aria-hidden="true"
             />
-            <span class={`${s.temp} font-medium ${weatherUiService.getTempColorClass(h.temperature)}`}>
-              {weatherUiService.formatTemp(h.temperature)}
-            </span>
+            <span class={`${s.temp} font-medium ${weatherUiService.getTempColorClass(h.temperature)}`}>{number(h.temperature, 1)}°</span>
           </div>
           {h.precipitationProbability != null && h.precipitationProbability > 0 ? (
             <span class={`${s.rain} text-blue-500`}>
-              <i class={`ti ti-droplet ${s.rainIcon}`} aria-hidden="true" /> {h.precipitationProbability}%
+              <i class={`ti ti-droplet ${s.rainIcon}`} aria-hidden="true" /> {percent(h.precipitationProbability)}
             </span>
           ) : (
             <span class={`${s.rain} text-transparent`} aria-hidden="true">

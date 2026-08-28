@@ -1,8 +1,9 @@
 import { timing } from "@k2b/stdlib";
 import { timed } from "@k2b/stdlib/solid";
-import { Button, NoticeCard } from "@k2b/ui";
+import { Button, NoticeCard, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { WeatherDataPayload } from "../../contracts";
+import { weatherMessages } from "../../messages";
 import { DetailDisplayView, DisplayUnavailable, SimpleDisplayView } from "./DisplayViews";
 import { displayInitialRefreshDelayMs, displayRefreshBackoffMs } from "./runtime";
 import { createWeatherDisplayQuery } from "./weather-display-query";
@@ -20,9 +21,11 @@ type PublicWeatherDisplayProps = {
 };
 
 export default function PublicWeatherDisplay(props: PublicWeatherDisplayProps) {
+  const locale = useLocale();
+  const t = () => weatherMessages.resolve([locale()]).t;
   const [now, setNow] = createSignal(props.initialNow);
   const [refreshedAt, setRefreshedAt] = createSignal<string | null>(null);
-  const weather = createWeatherDisplayQuery(props);
+  const weather = createWeatherDisplayQuery(props, locale);
   let disposed = false;
   let failures = 0;
   let refreshTimer: ReturnType<typeof setTimeout> | undefined;
@@ -108,9 +111,9 @@ export default function PublicWeatherDisplay(props: PublicWeatherDisplayProps) {
     <>
       <Show when={weather.error() && weather.data()}>
         <div class="fixed inset-x-4 bottom-4 z-10 mx-auto max-w-lg">
-          <NoticeCard tone="warning" title="Weather could not be refreshed" detail={weather.error()!.message}>
+          <NoticeCard tone="warning" title={t().refreshFailed} detail={weather.error()!.message}>
             <Button variant="secondary" size="sm" onClick={() => schedule(0)}>
-              Retry
+              {t().retry}
             </Button>
           </NoticeCard>
         </div>
@@ -119,7 +122,7 @@ export default function PublicWeatherDisplay(props: PublicWeatherDisplayProps) {
         when={weather.data()}
         fallback={
           <DisplayUnavailable
-            message={weather.error()?.message ?? "The forecast provider is not responding right now."}
+            message={weather.error()?.message ?? t().providerUnavailable}
             refreshSeconds={props.refreshSeconds}
             refreshedAt={refreshedAt()}
             retrying
