@@ -1,5 +1,32 @@
-import { NoticeCard, ColorInput, CopyButton, TextInput } from "@k2b/ui";
+import { i18n } from "@k2b/stdlib";
+import { ColorInput, CopyButton, NoticeCard, TextInput, useLocale } from "@k2b/ui";
 import { batch, createSignal } from "solid-js";
+
+export const colorMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      hint: "Edit any field and the other formats update automatically.",
+      colorPicker: "Color Picker",
+      hexDescription: "6-digit hex color code",
+      rgbDescription: "Red, Green, Blue — each 0–255",
+      hslDescription: "Hue 0–360, Saturation 0–100%, Lightness 0–100%",
+      invalidHex: "Invalid HEX format",
+      invalidRgb: "Invalid RGB format",
+      invalidHsl: "Invalid HSL format",
+    },
+    de: {
+      hint: "Ändere ein Feld und die anderen Formate werden automatisch aktualisiert.",
+      colorPicker: "Farbauswahl",
+      hexDescription: "6-stelliger Hex-Farbcode",
+      rgbDescription: "Rot, Grün und Blau, jeweils 0 bis 255",
+      hslDescription: "Farbton 0 bis 360, Sättigung und Helligkeit 0 bis 100 %",
+      invalidHex: "Gib einen gültigen HEX-Wert an.",
+      invalidRgb: "Gib einen gültigen RGB-Wert an.",
+      invalidHsl: "Gib einen gültigen HSL-Wert an.",
+    },
+  },
+});
 
 // Conversion helpers
 
@@ -76,6 +103,8 @@ const parseHsl = (s: string): [number, number, number] | null => {
 type Source = "hex" | "rgb" | "hsl" | "picker";
 
 export default function ColorConverter() {
+  const locale = useLocale();
+  const t = () => colorMessages.resolve([locale()]).t;
   const [hex, setHex] = createSignal("#3b82f6");
   const [rgb, setRgb] = createSignal("59, 130, 246");
   const [hsl, setHsl] = createSignal("217, 91%, 60%");
@@ -119,7 +148,7 @@ export default function ColorConverter() {
           setHsl(`${h}, ${s}%, ${l}%`);
           setHslError(undefined);
         } else if (hex().replace("#", "").length >= 6) {
-          setHexError("Invalid HEX format");
+          setHexError(t().invalidHex);
         }
       } else if (source === "rgb") {
         const c = parseRgb(rgb());
@@ -132,7 +161,7 @@ export default function ColorConverter() {
           setHsl(`${hh}, ${s}%, ${l}%`);
           setHslError(undefined);
         } else if (rgb().trim().length > 0) {
-          setRgbError("Invalid RGB format");
+          setRgbError(t().invalidRgb);
         }
       } else if (source === "hsl") {
         const c = parseHsl(hsl());
@@ -145,7 +174,7 @@ export default function ColorConverter() {
           setRgb(`${r}, ${g}, ${b}`);
           setRgbError(undefined);
         } else if (hsl().trim().length > 0) {
-          setHslError("Invalid HSL format");
+          setHslError(t().invalidHsl);
         }
       }
     });
@@ -158,7 +187,7 @@ export default function ColorConverter() {
     <div class="flex flex-col gap-4">
       <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
         <i class="ti ti-info-circle shrink-0 mt-0.5" />
-        <span>Edit any field and the other formats update automatically.</span>
+        <span>{t().hint}</span>
       </NoticeCard>
 
       <div class="paper p-4 flex flex-col gap-4">
@@ -170,7 +199,7 @@ export default function ColorConverter() {
           />
           <div class="flex-1">
             <ColorInput
-              label="Color Picker"
+              label={t().colorPicker}
               value={pickerColor}
               onValueChange={(v) => {
                 setPickerColor(v);
@@ -185,7 +214,7 @@ export default function ColorConverter() {
           <div class="flex-1">
             <TextInput
               label="HEX"
-              description="6-digit hex color code"
+              description={t().hexDescription}
               placeholder="#000000"
               icon="ti ti-hash"
               value={hex}
@@ -204,7 +233,7 @@ export default function ColorConverter() {
           <div class="flex-1">
             <TextInput
               label="RGB"
-              description="Red, Green, Blue — each 0–255"
+              description={t().rgbDescription}
               placeholder="255, 255, 255"
               icon="ti ti-palette"
               value={rgb}
@@ -223,7 +252,7 @@ export default function ColorConverter() {
           <div class="flex-1">
             <TextInput
               label="HSL"
-              description="Hue 0–360, Saturation 0–100%, Lightness 0–100%"
+              description={t().hslDescription}
               placeholder="0, 100%, 50%"
               icon="ti ti-color-swatch"
               value={hsl}

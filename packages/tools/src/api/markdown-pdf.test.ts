@@ -152,6 +152,26 @@ describe("Markdown to PDF API", () => {
     }
   });
 
+  test("localizes the human message for a German request locale with a stable code", async () => {
+    const app = createMarkdownPdfRoutes({
+      authenticate: pass,
+      rateLimiter: pass,
+      render: async () => Promise.reject(new GotenbergRenderError("not_configured", "secret URL")),
+    });
+
+    const response = await app.request("/pdf", {
+      method: "POST",
+      headers: { "content-type": "application/json", "accept-language": "de-CH" },
+      body: JSON.stringify({ markdown: "# Cloud" }),
+    });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({
+      code: "renderer_not_configured",
+      message: "Das PDF-Rendering ist nicht eingerichtet.",
+    });
+  });
+
   test("publishes the authenticated binary OpenAPI operation", async () => {
     const spec = await generateSpecs(createMarkdownPdfRoutes({ authenticate: pass, rateLimiter: pass }));
     const operation = spec.paths?.["/pdf"]?.post;

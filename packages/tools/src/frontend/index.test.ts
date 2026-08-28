@@ -12,7 +12,8 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { createToolsPageRoutes } = await import("./index");
-const { toolById } = await import("./tools/registry");
+const { resolveRegistry } = await import("./tools/registry");
+const { toolById } = resolveRegistry("en");
 
 const pass: MiddlewareHandler<AuthContext> = async (_context, next) => next();
 const routes = createToolsPageRoutes({

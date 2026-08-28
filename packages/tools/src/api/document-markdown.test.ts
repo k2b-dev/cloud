@@ -287,6 +287,26 @@ describe("Document to Markdown API", () => {
     });
   });
 
+  test("localizes the human message for a German request locale with a stable code", async () => {
+    const app = createDocumentMarkdownRoutes({
+      authenticate: pass,
+      rateLimiter: pass,
+      extract: async () => {
+        throw new Error("must not run");
+      },
+    });
+    const base = multipartRequest("{\\rtf1 Cloud}", `${"a".repeat(252)}.rtf`);
+    const request = { ...base, headers: { ...base.headers, "accept-language": "de-CH" } };
+
+    const response = await app.request("/markdown", request);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      code: "malformed",
+      message: "Der Dateiname darf höchstens 255 Zeichen lang sein.",
+    });
+  });
+
   test("publishes the documented multipart operation", async () => {
     const spec = await generateSpecs(createDocumentMarkdownRoutes({ authenticate: pass, rateLimiter: pass }));
     const operation = spec.paths?.["/markdown"]?.post;

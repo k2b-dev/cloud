@@ -17,9 +17,11 @@ import {
   Select,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { type WebhookMessages, webhookMessages } from "./webhook-messages";
 import { assertOk, createWebhookQueries, type Endpoint, type WebhookLog } from "./webhook-queries";
 
 type Mode = "receive" | "send";
@@ -44,11 +46,11 @@ const DEFAULT_STATE: WebhookTesterInitialState = {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const parseMethod = (value: string): Method | null => METHODS.find((method) => method === value.toUpperCase()) ?? null;
 
-const MODE_OPTIONS: FilterChipSection[] = [
+const modeOptions = (t: WebhookMessages): FilterChipSection[] => [
   {
     options: [
-      { value: "receive", label: "Receive", icon: "ti ti-inbox" },
-      { value: "send", label: "Send", icon: "ti ti-send" },
+      { value: "receive", label: t.modeReceive, icon: "ti ti-inbox" },
+      { value: "send", label: t.modeSend, icon: "ti ti-send" },
     ],
   },
 ];
@@ -79,12 +81,12 @@ export const parseWebhookTesterState = (url: URL): WebhookTesterInitialState => 
 const isWebhookLog = (value: unknown): value is WebhookLog =>
   Boolean(value && typeof value === "object" && "id" in value && typeof value.id === "string");
 
-const assertWebhookLog = (value: unknown): WebhookLog => {
+const assertWebhookLog = (value: unknown, message: string): WebhookLog => {
   if (isWebhookLog(value)) return value;
-  throw new Error("Unexpected webhook response.");
+  throw new Error(message);
 };
 
-const formatDate = (value: string | null) => (value ? new Date(value).toLocaleString() : "-");
+const formatDate = (value: string | null, locale: string) => (value ? new Date(value).toLocaleString(locale) : "-");
 const shortBody = (value: string | null) => {
   if (!value) return "-";
   const compact = value.replace(/\s+/g, " ").trim();
@@ -122,11 +124,11 @@ const formatPrettyValue = (value: unknown): string => {
   return JSON.stringify(value, null, 2);
 };
 
-const parseHeaders = (raw: string): Record<string, string> => {
+const parseHeaders = (raw: string, invalidMessage: string): Record<string, string> => {
   const trimmed = raw.trim();
   if (!trimmed) return {};
   const parsed = JSON.parse(trimmed);
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Headers must be a JSON object.");
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(invalidMessage);
   return Object.fromEntries(Object.entries(parsed).map(([key, value]) => [key, String(value)]));
 };
 
@@ -146,6 +148,8 @@ const statusClass = (status: number | null, error: string | null) => {
 };
 
 function RequestSearchInput(props: { value: string; onSearch: (value: string) => Promise<void> | void }) {
+  const locale = useLocale();
+  const t = () => webhookMessages.resolve([locale()]).t;
   const [value, setValue] = createSignal(props.value);
   const [focused, setFocused] = createSignal(false);
   const [pending, setPending] = createSignal(false);
@@ -162,7 +166,7 @@ function RequestSearchInput(props: { value: string; onSearch: (value: string) =>
       <TextInput
         type="search"
         icon="ti ti-search"
-        placeholder="Search requests..."
+        placeholder={t().searchPlaceholder}
         value={value}
         onValueChange={(next) => {
           setValue(next);
@@ -177,6 +181,8 @@ function RequestSearchInput(props: { value: string; onSearch: (value: string) =>
 }
 
 export default function WebhookTester(props: { initialState?: WebhookTesterInitialState; baseHref?: string }) {
+  const locale = useLocale();
+  const t = () => webhookMessages.resolve([locale()]).t;
   const [routeState, setRouteState] = createSignal<WebhookTesterInitialState>(props.initialState ?? DEFAULT_STATE);
   const [targetUrl, setTargetUrl] = createSignal("");
   const [sendMethod, setSendMethod] = createSignal<Method>("POST");
@@ -202,7 +208,7 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
   const endpointOptions = (): FilterChipSection[] => [
     {
       options: [
-        { value: "all", label: "All endpoints", icon: "ti ti-world" },
+        { value: "all", label: t().allEndpoints, icon: "ti ti-world" },
         ...(endpointsQuery.data() ?? []).map((endpoint) => ({
           value: endpoint.id,
           label: endpoint.name,
@@ -271,7 +277,7 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
     mutation: async (intent, { abortSignal }) => {
       const response = await apiClient.webhooks.send.$post({ json: intent }, { init: { signal: abortSignal } });
       await assertOk(response);
-      return assertWebhookLog(await response.json());
+      return assertWebhookLog(await response.json(), t().unexpectedResponse);
     },
   });
 
@@ -307,7 +313,7 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
     if (writesBlocked()) return;
     const name = nameInput.trim();
     if (!name) {
-      toast.error("Enter an endpoint name.");
+      toast.error(t().enterEndpointName);
       return;
     }
     const startedAtRevision = routeRevision;
@@ -315,7 +321,7 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
     if (disposed) return;
     const error = createEndpointMutation.error();
     if (error) {
-      toast.error(error.message || "Endpoint could not be created.");
+      toast.error(error.message || t().endpointCreateFailed);
       return;
     }
     const endpoint = createEndpointMutation.data()!;
@@ -323,12 +329,12 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
       await reconcile([endpointsQuery.invalidate()]);
     } catch {
       if (disposed) return;
-      toast.error("Endpoint created, but the endpoint list could not be refreshed.");
+      toast.error(t().endpointCreatedRefreshFailed);
       return;
     }
     if (disposed) return;
     if (routeRevision === startedAtRevision) commitRoute({ mode: "receive", endpointId: endpoint.id, requestId: null });
-    toast.success("Endpoint created.");
+    toast.success(t().endpointCreated);
   };
 
   const openCreateEndpoint = async () => {
@@ -336,12 +342,12 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
     promptingCreate = true;
     try {
       const result = await prompts.form({
-        title: "New endpoint",
+        title: t().newEndpoint,
         icon: "ti ti-webhook",
         fields: {
-          name: { type: "text", label: "Name", required: true, placeholder: "e.g. Stripe test" },
+          name: { type: "text", label: t().nameLabel, required: true, placeholder: t().namePlaceholder },
         },
-        confirmText: "Create",
+        confirmText: t().create,
       });
       if (disposed || !result) return;
       await createEndpoint(String(result.name ?? ""));
@@ -357,21 +363,21 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
     if (disposed) return;
     const error = deleteEndpointMutation.error();
     if (error) {
-      toast.error(error.message || "Endpoint could not be deleted.");
+      toast.error(error.message || t().endpointDeleteFailed);
       return;
     }
     try {
       await reconcile([endpointsQuery.invalidate(), logsQuery.invalidate()]);
     } catch {
       if (disposed) return;
-      toast.error("Endpoint deleted, but webhook data could not be refreshed.");
+      toast.error(t().endpointDeletedRefreshFailed);
       return;
     }
     if (disposed) return;
     if (routeRevision === startedAtRevision && routeState().endpointId === endpoint.id) {
       commitRoute({ endpointId: null, requestId: null });
     }
-    toast.success("Endpoint deleted.");
+    toast.success(t().endpointDeleted);
   };
 
   const sendRequest = async () => {
@@ -381,14 +387,14 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
       const intent = {
         url: targetUrl(),
         method: sendMethod(),
-        headers: parseHeaders(headers()),
+        headers: parseHeaders(headers(), t().headersMustBeJsonObject),
         body: body(),
       };
       await sendRequestMutation.mutate(intent);
       if (disposed) return;
       const error = sendRequestMutation.error();
       if (error) {
-        toast.error(error.message || "Request failed.");
+        toast.error(error.message || t().requestFailed);
         return;
       }
       const log = sendRequestMutation.data()!;
@@ -398,34 +404,34 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
         } catch {
           if (disposed) return;
           if (routeRevision === startedAtRevision) {
-            toast.error("Request sent, but request logs could not be refreshed.");
+            toast.error(t().requestSentRefreshFailed);
             return;
           }
         }
       }
       if (disposed) return;
       if (routeRevision === startedAtRevision) commitRoute({ mode: "send", requestId: log.id });
-      toast.success("Request sent.");
+      toast.success(t().requestSent);
     } catch (error) {
       if (error instanceof Error) toast.error(error.message);
     }
   };
 
-  const endpointColumns: DataTableColumn<Endpoint>[] = [
-    { id: "name", header: "Name", value: "name", class: "min-w-[160px]" },
-    { id: "url", header: "URL", value: (row) => absoluteEndpointUrl(row), class: "min-w-[260px]" },
-    { id: "requests", header: "Requests", value: "requestCount", class: "w-24" },
-    { id: "last", header: "Last request", value: (row) => formatDate(row.lastRequestAt), class: "min-w-[150px]" },
+  const endpointColumns = (): DataTableColumn<Endpoint>[] => [
+    { id: "name", header: t().colName, value: "name", class: "min-w-[160px]" },
+    { id: "url", header: t().colUrl, value: (row) => absoluteEndpointUrl(row), class: "min-w-[260px]" },
+    { id: "requests", header: t().colRequests, value: "requestCount", class: "w-24" },
+    { id: "last", header: t().colLastRequest, value: (row) => formatDate(row.lastRequestAt, locale()), class: "min-w-[150px]" },
     { id: "actions", header: "", value: (row) => row.id, class: "w-14" },
   ];
 
-  const logColumns: DataTableColumn<WebhookLog>[] = [
-    { id: "method", header: "Method", value: "method", class: "w-20" },
-    { id: "target", header: "Target", value: (row) => row.path || row.url, class: "min-w-[240px]" },
-    { id: "status", header: "Status", value: (row) => row.responseStatus ?? row.error ?? "logged", class: "w-24" },
-    { id: "contentType", header: "Content type", value: "requestContentType", class: "min-w-[140px]" },
-    { id: "body", header: "Body", value: (row) => shortBody(row.requestBody), class: "min-w-[260px]" },
-    { id: "created", header: "Time", value: (row) => formatDate(row.createdAt), class: "min-w-[160px]" },
+  const logColumns = (): DataTableColumn<WebhookLog>[] => [
+    { id: "method", header: t().colMethod, value: "method", class: "w-20" },
+    { id: "target", header: t().colTarget, value: (row) => row.path || row.url, class: "min-w-[240px]" },
+    { id: "status", header: t().colStatus, value: (row) => row.responseStatus ?? row.error ?? "logged", class: "w-24" },
+    { id: "contentType", header: t().colContentType, value: "requestContentType", class: "min-w-[140px]" },
+    { id: "body", header: t().colBody, value: (row) => shortBody(row.requestBody), class: "min-w-[260px]" },
+    { id: "created", header: t().colTime, value: (row) => formatDate(row.createdAt, locale()), class: "min-w-[160px]" },
   ];
 
   const renderEndpointCell: DataTableRenderCell<Endpoint> = (ctx) => {
@@ -441,7 +447,7 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
     if (ctx.col.id === "actions") {
       return (
         <IconButton
-          label={`Delete endpoint ${ctx.row.name}`}
+          label={t().deleteEndpoint({ name: ctx.row.name })}
           variant="danger"
           size="sm"
           disabled={writesBlocked()}
@@ -458,7 +464,7 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
     if (ctx.col.id === "method")
       return <span class={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${methodClass(ctx.row.method)}`}>{ctx.row.method}</span>;
     if (ctx.col.id === "status") {
-      const label = ctx.row.error ? "Error" : ctx.row.responseStatus ? String(ctx.row.responseStatus) : "Logged";
+      const label = ctx.row.error ? t().statusError : ctx.row.responseStatus ? String(ctx.row.responseStatus) : t().statusLogged;
       return (
         <span class={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${statusClass(ctx.row.responseStatus, ctx.row.error)}`}>{label}</span>
       );
@@ -474,8 +480,8 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
   const clearFilters = () => commitRoute({ endpointId: null, method: null, query: "", requestId: null });
   const totalLabel = () => {
     const count = logsQuery.data()?.length ?? 0;
-    const base = count === 1 ? "1 request" : `${count} requests`;
-    return logsQuery.loading() ? "Loading requests..." : hasActiveFilters() ? `${base} filtered` : base;
+    if (logsQuery.loading()) return t().loadingRequests;
+    return hasActiveFilters() ? t().requestCountFiltered({ count }) : t().requestCount({ count });
   };
   const retryReads = () => void Promise.all([endpointsQuery.refresh(), logsQuery.refresh()]).catch(() => undefined);
   const refreshLogs = () => void logsQuery.refresh().catch(() => undefined);
@@ -484,7 +490,7 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
     <div class="flex min-h-0 min-w-0 flex-1">
       <AppWorkspace class="min-h-0 flex-1">
         <AppWorkspace.Sidebar>
-          <AppWorkspace.SidebarMobileTrigger label="Webhook Tester" />
+          <AppWorkspace.SidebarMobileTrigger label={t().workspaceTitle} />
           <AppWorkspace.SidebarMobile>
             <AppWorkspace.SidebarMobileItems scrollPreserveKey="webhook-tester-mobile-modes">
               <AppWorkspace.SidebarItem
@@ -492,14 +498,14 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
                 icon="ti ti-inbox"
                 onClick={() => commitRoute({ mode: "receive", requestId: null }, { replace: false })}
               >
-                Receive
+                {t().modeReceive}
               </AppWorkspace.SidebarItem>
               <AppWorkspace.SidebarItem
                 active={routeState().mode === "send"}
                 icon="ti ti-send"
                 onClick={() => commitRoute({ mode: "send", endpointId: null, requestId: null }, { replace: false })}
               >
-                Send
+                {t().modeSend}
               </AppWorkspace.SidebarItem>
             </AppWorkspace.SidebarMobileItems>
             <AppWorkspace.SidebarMobileBody scrollPreserveKey="webhook-tester-mobile-sidebar">
@@ -530,8 +536,8 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
             <div class="flex min-h-0 flex-1 flex-col gap-2">
               <div class="flex items-center justify-between gap-3" style="view-transition-name: tools-webhook-title">
                 <div class="min-w-0">
-                  <h1 class="min-w-0 text-base font-semibold text-primary">Webhook tester</h1>
-                  <p class="mt-0.5 text-xs text-dimmed">Create receive URLs, send test calls, and inspect stored request logs.</p>
+                  <h1 class="min-w-0 text-base font-semibold text-primary">{t().heading}</h1>
+                  <p class="mt-0.5 text-xs text-dimmed">{t().subtitle}</p>
                 </div>
                 <Show when={routeState().mode === "receive"}>
                   <Button
@@ -542,23 +548,21 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
                     onClick={() => void openCreateEndpoint()}
                   >
                     <i class="ti ti-plus text-sm" />
-                    Add
+                    {t().add}
                   </Button>
                 </Show>
               </div>
 
               <NoticeCard tone="warning" icon={false} bodyClass="flex items-start gap-2">
                 <i class="ti ti-alert-triangle mt-0.5 shrink-0" />
-                <span>
-                  Webhook tester data is stored on the server. Endpoint names, requests, headers, and bodies are logged for inspection.
-                </span>
+                <span>{t().dataNotice}</span>
               </NoticeCard>
 
               <Show when={endpointsQuery.error() ?? logsQuery.error()}>
                 {(error) => (
-                  <NoticeCard tone="danger" title="Webhook data could not be refreshed" detail={error().message}>
+                  <NoticeCard tone="danger" title={t().refreshFailedTitle} detail={error().message}>
                     <Button variant="secondary" size="sm" onClick={retryReads}>
-                      Retry
+                      {t().retry}
                     </Button>
                   </NoticeCard>
                 )}
@@ -584,17 +588,17 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
               >
                 <section class="flex flex-col gap-2">
                   <div class="flex items-center justify-between gap-2">
-                    <h2 class="text-sm font-semibold text-primary">Endpoints</h2>
-                    <span class="text-xs text-dimmed">{endpointsQuery.data()?.length ?? 0} endpoints</span>
+                    <h2 class="text-sm font-semibold text-primary">{t().endpoints}</h2>
+                    <span class="text-xs text-dimmed">{t().endpointCount({ count: endpointsQuery.data()?.length ?? 0 })}</span>
                   </div>
                   <DataTable
                     rows={endpointsQuery.data() ?? []}
-                    columns={endpointColumns}
+                    columns={endpointColumns()}
                     getRowId={(row) => row.id}
                     selectedRowId={routeState().endpointId}
                     onRowClick={(row) => commitRoute({ mode: "receive", endpointId: row.id, requestId: null })}
                     renderCell={renderEndpointCell}
-                    empty="No endpoints yet."
+                    empty={t().noEndpoints}
                     density="compact"
                     class="max-h-48 overflow-auto"
                     scrollPreserveKey="webhook-endpoints-table"
@@ -606,16 +610,16 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
                 <RequestSearchInput value={routeState().query} onSearch={(query) => commitRoute({ query, requestId: null })} />
                 <div class="flex flex-wrap items-center gap-2">
                   <FilterChip
-                    label="Mode"
+                    label={t().filterMode}
                     icon="ti ti-arrows-exchange"
-                    options={MODE_OPTIONS}
+                    options={modeOptions(t())}
                     value={[routeState().mode]}
                     onValueChange={(value) => commitRoute({ mode: (value[0] ?? "receive") as Mode, requestId: null })}
                     defaultValue={["receive"]}
                   />
                   <Show when={routeState().mode === "receive"}>
                     <FilterChip
-                      label="Webhook"
+                      label={t().filterWebhook}
                       icon="ti ti-webhook"
                       options={endpointOptions()}
                       value={[routeState().endpointId ?? "all"]}
@@ -627,7 +631,7 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
                     />
                   </Show>
                   <FilterChip
-                    label="Method"
+                    label={t().filterMethod}
                     icon="ti ti-code"
                     options={METHOD_OPTIONS}
                     value={selectedMethodFilter()}
@@ -636,26 +640,24 @@ export default function WebhookTester(props: { initialState?: WebhookTesterIniti
                   <Show when={hasActiveFilters()}>
                     <Button variant="secondary" size="sm" class="text-red-600 dark:text-red-400" onClick={clearFilters}>
                       <i class="ti ti-x" />
-                      Clear
+                      {t().clear}
                     </Button>
                   </Show>
                   <span class="text-xs text-dimmed">{totalLabel()}</span>
                   <Button variant="secondary" size="sm" class="ml-auto" onClick={refreshLogs}>
                     <i class="ti ti-refresh" />
-                    Refresh
+                    {t().refresh}
                   </Button>
                 </div>
 
                 <DataTable
                   rows={logsQuery.data() ?? []}
-                  columns={logColumns}
+                  columns={logColumns()}
                   getRowId={(row) => row.id}
                   selectedRowId={routeState().requestId}
                   onRowClick={(row) => commitRoute({ requestId: row.id }, { replace: false })}
                   renderCell={renderLogCell}
-                  empty={
-                    routeState().mode === "receive" ? "No incoming requests match this view." : "No outgoing requests match this view."
-                  }
+                  empty={routeState().mode === "receive" ? t().emptyIncoming : t().emptyOutgoing}
                   density="compact"
                   fillHeight
                   class="paper flex-1 min-h-0 overflow-auto"
@@ -689,25 +691,27 @@ function WebhookSidebarBody(props: {
   onMode: (mode: Mode) => void;
   onEndpoint: (endpointId: string | null) => void;
 }) {
+  const locale = useLocale();
+  const t = () => webhookMessages.resolve([locale()]).t;
   return (
     <>
-      <AppWorkspace.SidebarSection title="Requests">
+      <AppWorkspace.SidebarSection title={t().sidebarRequests}>
         <AppWorkspace.SidebarItem icon="ti ti-inbox" active={props.mode === "receive"} onClick={() => props.onMode("receive")}>
-          Receive
+          {t().modeReceive}
         </AppWorkspace.SidebarItem>
         <AppWorkspace.SidebarItem icon="ti ti-send" active={props.mode === "send"} onClick={() => props.onMode("send")}>
-          Send
+          {t().modeSend}
         </AppWorkspace.SidebarItem>
       </AppWorkspace.SidebarSection>
 
-      <AppWorkspace.SidebarSection title="Webhooks">
+      <AppWorkspace.SidebarSection title={t().sidebarWebhooks}>
         <AppWorkspace.SidebarItem
           icon="ti ti-world"
           active={props.mode === "receive" && !props.activeEndpointId}
           onClick={() => props.onEndpoint(null)}
           meta={props.endpoints.length}
         >
-          All endpoints
+          {t().allEndpoints}
         </AppWorkspace.SidebarItem>
         <For each={props.endpoints}>
           {(endpoint) => (
@@ -740,30 +744,32 @@ function SendPanel(props: {
   setBody: (value: string) => void;
   onSend: () => void;
 }) {
+  const locale = useLocale();
+  const t = () => webhookMessages.resolve([locale()]).t;
   return (
     <section class="paper p-4">
       <div class="mb-3 flex items-start justify-between gap-3">
         <div class="min-w-0">
-          <h2 class="text-sm font-semibold text-primary">Send request</h2>
-          <p class="mt-0.5 text-xs text-dimmed">Call an external webhook from the server and log the response.</p>
+          <h2 class="text-sm font-semibold text-primary">{t().sendRequestTitle}</h2>
+          <p class="mt-0.5 text-xs text-dimmed">{t().sendRequestSubtitle}</p>
         </div>
         <Button
           size="sm"
           class="shrink-0"
           loading={props.pending}
-          loadingLabel="Sending"
+          loadingLabel={t().sending}
           disabled={props.blocked || !props.targetUrl().trim()}
           onClick={props.onSend}
         >
           <i class="ti ti-send text-sm" />
-          Send
+          {t().send}
         </Button>
       </div>
 
       <div class="grid grid-cols-1 gap-2 lg:grid-cols-[10rem_1fr]">
-        <Select label="Method" value={props.method} onValueChange={(value) => props.setMethod(value as Method)} options={METHODS} />
+        <Select label={t().methodLabel} value={props.method} onValueChange={(value) => props.setMethod(value as Method)} options={METHODS} />
         <TextInput
-          label="Target URL"
+          label={t().targetUrlLabel}
           type="url"
           placeholder="https://example.com/webhook"
           value={props.targetUrl}
@@ -773,11 +779,11 @@ function SendPanel(props: {
 
       <div class="mt-2 grid grid-cols-1 gap-2 lg:grid-cols-2">
         <div class="flex min-w-0 flex-col gap-1">
-          <TextInput label="Headers" multiline lines={7} value={props.headers} onValueChange={props.setHeaders} />
+          <TextInput label={t().headersLabel} multiline lines={7} value={props.headers} onValueChange={props.setHeaders} />
         </div>
         <div class="flex min-w-0 flex-col gap-1">
           <TextInput
-            label="Body"
+            label={t().bodyLabel}
             multiline
             lines={7}
             value={props.body}
@@ -791,7 +797,9 @@ function SendPanel(props: {
 }
 
 export function RequestDetail(props: { log: WebhookLog; endpoint: Endpoint | null | undefined; onClose: () => void }) {
-  const title = () => props.endpoint?.name ?? (props.log.direction === "incoming" ? "Incoming request" : "Outgoing request");
+  const locale = useLocale();
+  const t = () => webhookMessages.resolve([locale()]).t;
+  const title = () => props.endpoint?.name ?? (props.log.direction === "incoming" ? t().incomingRequest : t().outgoingRequest);
   const location = () => props.log.path || props.log.url;
   return (
     <DetailPanel>
@@ -807,11 +815,11 @@ export function RequestDetail(props: { log: WebhookLog; endpoint: Endpoint | nul
             </span>
           </span>
         }
-        meta={<span title={formatDate(props.log.createdAt)}>{formatDate(props.log.createdAt)}</span>}
+        meta={<span title={formatDate(props.log.createdAt, locale())}>{formatDate(props.log.createdAt, locale())}</span>}
         actions={
           <>
-            <CopyButton text={JSON.stringify(props.log, null, 2)} label="Copy JSON" variant="secondary" size="sm" />
-            <IconButton label="Close request details" onClick={props.onClose}>
+            <CopyButton text={JSON.stringify(props.log, null, 2)} label={t().copyJson} variant="secondary" size="sm" />
+            <IconButton label={t().closeRequestDetails} onClick={props.onClose}>
               <i class="ti ti-x" aria-hidden="true" />
             </IconButton>
           </>
@@ -819,30 +827,30 @@ export function RequestDetail(props: { log: WebhookLog; endpoint: Endpoint | nul
       />
 
       <DetailPanel.Body scrollPreserveKey={`webhook-request-detail-${props.log.id}`}>
-        <DetailPanel.Summary title="Overview">
+        <DetailPanel.Summary title={t().overview}>
           <DescriptionList
             layout="rows"
             size="sm"
             items={[
               {
-                term: "Status",
-                description: props.log.error ? "Error" : props.log.responseStatus ? String(props.log.responseStatus) : "Logged",
+                term: t().colStatus,
+                description: props.log.error ? t().statusError : props.log.responseStatus ? String(props.log.responseStatus) : t().statusLogged,
               },
-              { term: "Duration", description: props.log.durationMs === null ? "-" : `${props.log.durationMs} ms` },
-              { term: "Content type", description: props.log.requestContentType ?? "-" },
-              { term: "Query", description: props.log.query || "-" },
+              { term: t().duration, description: props.log.durationMs === null ? "-" : `${props.log.durationMs} ms` },
+              { term: t().contentType, description: props.log.requestContentType ?? "-" },
+              { term: t().queryLabel, description: props.log.query || "-" },
             ]}
           />
         </DetailPanel.Summary>
 
-        <DetailPanel.Group label="Request data">
-          <LogBlock title="Request headers" value={props.log.requestHeaders} />
-          <LogBlock title="Request body" value={props.log.requestBody ?? "-"} />
+        <DetailPanel.Group label={t().requestData}>
+          <LogBlock title={t().requestHeaders} value={props.log.requestHeaders} />
+          <LogBlock title={t().requestBody} value={props.log.requestBody ?? "-"} />
         </DetailPanel.Group>
 
-        <DetailPanel.Group label="Response data">
-          <LogBlock title="Response headers" value={props.log.responseHeaders ?? "-"} />
-          <LogBlock title="Response body" value={props.log.responseBody ?? props.log.error ?? "-"} />
+        <DetailPanel.Group label={t().responseData}>
+          <LogBlock title={t().responseHeaders} value={props.log.responseHeaders ?? "-"} />
+          <LogBlock title={t().responseBody} value={props.log.responseBody ?? props.log.error ?? "-"} />
         </DetailPanel.Group>
       </DetailPanel.Body>
     </DetailPanel>
@@ -850,6 +858,8 @@ export function RequestDetail(props: { log: WebhookLog; endpoint: Endpoint | nul
 }
 
 const LogBlock = (props: { title: string; value: unknown }) => {
+  const locale = useLocale();
+  const t = () => webhookMessages.resolve([locale()]).t;
   const [raw, setRaw] = createSignal(false);
   const parsed = () => parseJsonLike(props.value);
   const rawText = () => stringifyBlock(props.value);
@@ -867,9 +877,9 @@ const LogBlock = (props: { title: string; value: unknown }) => {
       actions={
         <>
           <Button variant="secondary" size="xs" class="text-[11px]" onClick={() => setRaw(!raw())}>
-            {raw() ? "Pretty" : "Raw"}
+            {raw() ? t().pretty : t().raw}
           </Button>
-          <CopyButton text={rawText()} label="Copy" variant="secondary" size="xs" class="text-[11px]" />
+          <CopyButton text={rawText()} label={t().copy} variant="secondary" size="xs" class="text-[11px]" />
         </>
       }
     >

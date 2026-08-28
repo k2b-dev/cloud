@@ -1,7 +1,16 @@
-import { AppWorkspace } from "@k2b/ui";
-import type { JSX } from "solid-js";
+import { i18n } from "@k2b/stdlib";
+import { AppWorkspace, useLocale } from "@k2b/ui";
+import { createMemo, type JSX } from "solid-js";
 import ToolSearchButton from "./ToolSearchButton.island";
-import { categories, categoryOrder, tools } from "./tools/registry";
+import { categoryOrder, type LocalizedTool, resolveRegistry } from "./tools/registry";
+
+export const toolsWorkspaceMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: { overview: "Overview" },
+    de: { overview: "Übersicht" },
+  },
+});
 
 type ToolsWorkspaceProps = {
   activeToolId?: string;
@@ -10,7 +19,11 @@ type ToolsWorkspaceProps = {
 };
 
 export const ToolsWorkspace = (props: ToolsWorkspaceProps) => {
-  const renderItem = (tool: (typeof tools)[number]) => (
+  const locale = useLocale();
+  const t = () => toolsWorkspaceMessages.resolve([locale()]).t;
+  const registry = createMemo(() => resolveRegistry(locale()));
+
+  const renderItem = (tool: LocalizedTool) => (
     <AppWorkspace.SidebarItem
       href={`/tools/${tool.id}`}
       navigation="document"
@@ -26,10 +39,10 @@ export const ToolsWorkspace = (props: ToolsWorkspaceProps) => {
   const categoryNavigation = (sidebarMode?: "expanded") => (
     <>
       {categoryOrder.map((category) => {
-        const items = tools.filter((tool) => tool.category === category);
+        const items = registry().tools.filter((tool) => tool.category === category);
         if (items.length === 0) return null;
         return (
-          <AppWorkspace.SidebarSection title={categories[category].label} sidebarMode={sidebarMode}>
+          <AppWorkspace.SidebarSection title={registry().categories[category].label} sidebarMode={sidebarMode}>
             {items.map(renderItem)}
           </AppWorkspace.SidebarSection>
         );
@@ -45,10 +58,12 @@ export const ToolsWorkspace = (props: ToolsWorkspaceProps) => {
           <AppWorkspace.SidebarMobile>
             <AppWorkspace.SidebarMobileItems scrollPreserveKey="tools-sidebar-mobile">
               <AppWorkspace.SidebarItem href="/tools" navigation="document" icon="ti ti-layout-grid" active={!props.activeToolId}>
-                Overview
+                {t().overview}
               </AppWorkspace.SidebarItem>
               <ToolSearchButton variant="sidebar-mobile" />
-              {tools.filter((tool) => tool.featured).map(renderItem)}
+              {registry()
+                .tools.filter((tool) => tool.featured)
+                .map(renderItem)}
             </AppWorkspace.SidebarMobileItems>
             <AppWorkspace.SidebarMobileBody scrollPreserveKey="tools-sidebar-mobile-body">
               {categoryNavigation()}
@@ -61,7 +76,7 @@ export const ToolsWorkspace = (props: ToolsWorkspaceProps) => {
                   href="/tools"
                   navigation="document"
                   icon="ti ti-layout-grid"
-                  label="Overview"
+                  label={t().overview}
                   active={!props.activeToolId}
                 />
                 <ToolSearchButton variant="icon" registerShortcut />

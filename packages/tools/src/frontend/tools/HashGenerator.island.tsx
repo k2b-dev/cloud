@@ -1,9 +1,29 @@
-import { crypto } from "@k2b/stdlib";
-import { CopyButton, TextInput } from "@k2b/ui";
+import { crypto, i18n } from "@k2b/stdlib";
+import { CopyButton, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createSignal } from "solid-js";
 import { ToolCodeBlock } from "./ToolOutput";
 
+export const hashMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      inputLabel: "Input",
+      inputDescription: "The text will be hashed in real-time as you type",
+      inputPlaceholder: "Text to hash...",
+      notCryptographic: "Not cryptographic",
+    },
+    de: {
+      inputLabel: "Eingabe",
+      inputDescription: "Der Hash wird während der Eingabe aktualisiert",
+      inputPlaceholder: "Text zum Hashen...",
+      notCryptographic: "Nicht kryptografisch",
+    },
+  },
+});
+
 export default function HashGenerator() {
+  const locale = useLocale();
+  const t = () => hashMessages.resolve([locale()]).t;
   const [input, setInput] = createSignal("");
   const [sha256, setSha256] = createSignal("");
   const [fnv1a, setFnv1a] = createSignal("");
@@ -35,9 +55,9 @@ export default function HashGenerator() {
     <div class="flex flex-col gap-4">
       <div class="paper p-4">
         <TextInput
-          label="Input"
-          description="The text will be hashed in real-time as you type"
-          placeholder="Text to hash..."
+          label={t().inputLabel}
+          description={t().inputDescription}
+          placeholder={t().inputPlaceholder}
           multiline
           icon="ti ti-text-caption"
           value={input}
@@ -47,7 +67,7 @@ export default function HashGenerator() {
 
       <div class="paper p-4 flex flex-col gap-3">
         <HashOutput label="SHA-256" value={sha256()} />
-        <HashOutput label="FNV-1a" value={fnv1a()} warning="Not cryptographic" />
+        <HashOutput label="FNV-1a" value={fnv1a()} warning={t().notCryptographic} />
       </div>
     </div>
   );

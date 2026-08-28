@@ -18,7 +18,6 @@ export const DEFAULT_ADJ: Adjustments = {
 
 export const PRESETS: Record<string, Preset> = {
   none: {
-    label: "None",
     brightness: 1,
     contrast: 1,
     saturation: 1,
@@ -29,7 +28,6 @@ export const PRESETS: Record<string, Preset> = {
     grain: 0,
   },
   vintage: {
-    label: "Vintage",
     brightness: 1.1,
     contrast: 1.1,
     saturation: 1.3,
@@ -40,7 +38,6 @@ export const PRESETS: Record<string, Preset> = {
     grain: 0.1,
   },
   grayscale: {
-    label: "B&W",
     brightness: 1,
     contrast: 1.1,
     saturation: 0,
@@ -51,7 +48,6 @@ export const PRESETS: Record<string, Preset> = {
     grain: 0,
   },
   dramatic: {
-    label: "Dramatic",
     brightness: 0.9,
     contrast: 1.4,
     saturation: 1.2,
@@ -62,7 +58,6 @@ export const PRESETS: Record<string, Preset> = {
     grain: 0,
   },
   soft: {
-    label: "Soft",
     brightness: 1.05,
     contrast: 0.95,
     saturation: 0.9,
@@ -73,7 +68,6 @@ export const PRESETS: Record<string, Preset> = {
     grain: 0,
   },
   warm: {
-    label: "Warm",
     brightness: 1.05,
     contrast: 1.05,
     saturation: 1.1,
@@ -84,7 +78,6 @@ export const PRESETS: Record<string, Preset> = {
     grain: 0,
   },
   cool: {
-    label: "Cool",
     brightness: 1,
     contrast: 1.05,
     saturation: 0.9,
@@ -95,7 +88,6 @@ export const PRESETS: Record<string, Preset> = {
     grain: 0,
   },
   faded: {
-    label: "Faded",
     brightness: 1.1,
     contrast: 0.85,
     saturation: 0.7,

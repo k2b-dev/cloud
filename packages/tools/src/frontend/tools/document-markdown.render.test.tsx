@@ -12,6 +12,8 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { DocumentMarkdownView, markdownDownloadName, validateDocumentMarkdownFile } = await import("./DocumentMarkdown.island.tsx");
+const { documentMarkdownMessages } = await import("@/api/document-markdown-messages");
+const en = documentMarkdownMessages.resolve(["en"]).t;
 
 const renderView = (props: Parameters<typeof DocumentMarkdownView>[0] = {}) =>
   renderToString(() => createComponent(DocumentMarkdownView, props));
@@ -89,8 +91,12 @@ describe("Document to Markdown tool", () => {
   });
 
   test("rejects oversized files and long filenames before upload", () => {
-    expect(validateDocumentMarkdownFile({ name: "report.pdf", size: 20 * 1024 * 1024 })).toBeNull();
-    expect(validateDocumentMarkdownFile({ name: "report.pdf", size: 20 * 1024 * 1024 + 1 })).toBe("The document exceeds the 20 MB limit.");
-    expect(validateDocumentMarkdownFile({ name: `${"a".repeat(252)}.pdf`, size: 1 })).toBe("The filename must not exceed 255 characters.");
+    expect(validateDocumentMarkdownFile({ name: "report.pdf", size: 20 * 1024 * 1024 }, en)).toBeNull();
+    expect(validateDocumentMarkdownFile({ name: "report.pdf", size: 20 * 1024 * 1024 + 1 }, en)).toBe(
+      "The document exceeds the 20 MB limit.",
+    );
+    expect(validateDocumentMarkdownFile({ name: `${"a".repeat(252)}.pdf`, size: 1 }, en)).toBe(
+      "The filename must not exceed 255 characters.",
+    );
   });
 });

@@ -2,7 +2,17 @@ import type { MarkupElement, MarkupPoint } from "./types";
 
 type MarkupBounds = { x: number; y: number; w: number; h: number };
 export type MarkupResizeHandle = "nw" | "ne" | "sw" | "se" | "start" | "end" | "size";
-type MarkupHandle = { id: MarkupResizeHandle; point: MarkupPoint; label: string; cursor: string };
+/** Message keys for handle accessibility labels; the rendering component resolves them against its locale. */
+export type MarkupHandleLabel =
+  | "resizeFromTopLeft"
+  | "resizeFromTopRight"
+  | "resizeFromBottomLeft"
+  | "resizeFromBottomRight"
+  | "moveArrowStart"
+  | "moveArrowEnd"
+  | "resizeCircle"
+  | "resizeText";
+type MarkupHandle = { id: MarkupResizeHandle; point: MarkupPoint; label: MarkupHandleLabel; cursor: string };
 
 const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
 const toPixels = (point: MarkupPoint, width: number, height: number) => ({ x: point.x * width, y: point.y * height });
@@ -253,20 +263,20 @@ export const markupHandles = (element: MarkupElement, width: number, height: num
   if (element.kind === "redaction" || (element.kind === "shape" && element.shape === "rectangle")) {
     const bounds = rectFromPoints(element.start, element.end);
     return [
-      { id: "nw", point: { x: bounds.x, y: bounds.y }, label: "Resize from top left", cursor: "nwse-resize" },
-      { id: "ne", point: { x: bounds.x + bounds.w, y: bounds.y }, label: "Resize from top right", cursor: "nesw-resize" },
-      { id: "sw", point: { x: bounds.x, y: bounds.y + bounds.h }, label: "Resize from bottom left", cursor: "nesw-resize" },
-      { id: "se", point: { x: bounds.x + bounds.w, y: bounds.y + bounds.h }, label: "Resize from bottom right", cursor: "nwse-resize" },
+      { id: "nw", point: { x: bounds.x, y: bounds.y }, label: "resizeFromTopLeft", cursor: "nwse-resize" },
+      { id: "ne", point: { x: bounds.x + bounds.w, y: bounds.y }, label: "resizeFromTopRight", cursor: "nesw-resize" },
+      { id: "sw", point: { x: bounds.x, y: bounds.y + bounds.h }, label: "resizeFromBottomLeft", cursor: "nesw-resize" },
+      { id: "se", point: { x: bounds.x + bounds.w, y: bounds.y + bounds.h }, label: "resizeFromBottomRight", cursor: "nwse-resize" },
     ];
   }
   if (element.kind === "shape" && element.shape === "arrow") {
     return [
-      { id: "start", point: element.start, label: "Move arrow start", cursor: "move" },
-      { id: "end", point: element.end, label: "Move arrow end", cursor: "move" },
+      { id: "start", point: element.start, label: "moveArrowStart", cursor: "move" },
+      { id: "end", point: element.end, label: "moveArrowEnd", cursor: "move" },
     ];
   }
   if (element.kind === "shape" && element.shape === "circle") {
-    return [{ id: "end", point: element.end, label: "Resize circle", cursor: "nwse-resize" }];
+    return [{ id: "end", point: element.end, label: "resizeCircle", cursor: "nwse-resize" }];
   }
   if (element.kind === "text") {
     const bounds = markupBounds(element, width, height);
@@ -274,7 +284,7 @@ export const markupHandles = (element: MarkupElement, width: number, height: num
       {
         id: "size",
         point: { x: bounds.x + bounds.w, y: bounds.y + bounds.h },
-        label: "Resize text",
+        label: "resizeText",
         cursor: "nwse-resize",
       },
     ];

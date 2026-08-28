@@ -72,4 +72,4 @@ export type ImageEntry = {
 export type CropAspect = "free" | "1:1" | "4:3" | "16:9" | "3:2";
 export type CropRect = { x: number; y: number; w: number; h: number };
 export type ExportFormat = "webp" | "jpeg" | "png";
-export type Preset = { label: string } & Omit<Adjustments, "freeRotation" | "flipH" | "flipV">;
+export type Preset = Omit<Adjustments, "freeRotation" | "flipH" | "flipV">;

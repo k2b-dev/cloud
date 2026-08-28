@@ -12,6 +12,8 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { MarkdownPdfView, MINIMAL_CUSTOM_CSS, markdownPdfFilename, validateMarkdownPdfInput } = await import("./MarkdownPdf.island.tsx");
+const { markdownPdfMessages } = await import("@/api/markdown-pdf-messages");
+const en = markdownPdfMessages.resolve(["en"]).t;
 const renderView = (props: Parameters<typeof MarkdownPdfView>[0] = {}) => renderToString(() => createComponent(MarkdownPdfView, props));
 
 describe("Markdown to PDF tool", () => {
@@ -62,10 +64,10 @@ describe("Markdown to PDF tool", () => {
     expect(markdownPdfFilename("bad/name")).toBe("name.pdf");
     expect(markdownPdfFilename(".pdf")).toBe("document.pdf");
     expect(markdownPdfFilename("x".repeat(255))).toHaveLength(255);
-    expect(validateMarkdownPdfInput("", "document", "", "document.pdf")).toBe("Enter Markdown before generating a PDF.");
-    expect(validateMarkdownPdfInput("Cloud", "custom", "", "document.pdf")).toBe("Enter CSS for the Custom template.");
-    expect(validateMarkdownPdfInput("Cloud", "custom", MINIMAL_CUSTOM_CSS, "")).toBe("Enter a PDF filename.");
-    expect(validateMarkdownPdfInput("🫶".repeat(Math.floor((256 * 1024) / 4) + 1), "document", "", "document.pdf")).toBe(
+    expect(validateMarkdownPdfInput("", "document", "", "document.pdf", en)).toBe("Enter Markdown before generating a PDF.");
+    expect(validateMarkdownPdfInput("Cloud", "custom", "", "document.pdf", en)).toBe("Enter CSS for the Custom template.");
+    expect(validateMarkdownPdfInput("Cloud", "custom", MINIMAL_CUSTOM_CSS, "", en)).toBe("Enter a PDF filename.");
+    expect(validateMarkdownPdfInput("🫶".repeat(Math.floor((256 * 1024) / 4) + 1), "document", "", "document.pdf", en)).toBe(
       "Markdown exceeds the 256 KiB limit.",
     );
   });

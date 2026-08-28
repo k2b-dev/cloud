@@ -26,4 +26,31 @@ describe("toolsHelp", () => {
     expect(toolsHelp.getMarkdown("tools-image-converter")).toContain("Multiple files download together");
     expect(toolsHelp.getMarkdown("tools-safety")).toContain("Generators, encoders, color conversion");
   });
+
+  test("translates every article to German with matching icon and order", () => {
+    const english = toolsHelp.documentsByLocale?.en ?? [];
+    const german = toolsHelp.documentsByLocale?.de ?? [];
+
+    expect(german.map((document) => document.id)).toEqual(english.map((document) => document.id));
+    for (const document of german) {
+      const base = english.find((candidate) => candidate.id === document.id);
+      expect(base).toBeDefined();
+      expect(document.icon).toBe(base!.icon!);
+      expect(document.order).toBe(base!.order);
+    }
+
+    expect(toolsHelp.getMarkdown("tools-start", "de")).toContain("Tools ist ein Arbeitsbereich");
+    expect(toolsHelp.getMarkdown("tools-choose", "de")).toContain("Die Tools-Übersicht gruppiert die Werkzeuge");
+    expect(toolsHelp.getMarkdown("tools-document-markdown", "de")).toContain("führt keine OCR aus");
+    expect(toolsHelp.getMarkdown("tools-markdown-pdf", "de")).toContain("kein eigenes `cld tools`-Kommando");
+    expect(toolsHelp.getMarkdown("tools-image-converter", "de")).toContain("ohne sie hochzuladen");
+    expect(toolsHelp.getMarkdown("tools-safety", "de")).toContain("Ein Hash ist keine Verschlüsselung");
+  });
+
+  test("resolves regional and unknown locales through the fallback chain", () => {
+    expect(toolsHelp.getMarkdown("tools-start", "de-CH")).toBe(toolsHelp.getMarkdown("tools-start", "de")!);
+    expect(toolsHelp.getMarkdown("tools-start", "de-CH")).toContain("Tools ist ein Arbeitsbereich");
+    expect(toolsHelp.getMarkdown("tools-start", "fr")).toBe(toolsHelp.getMarkdown("tools-start")!);
+    expect(toolsHelp.getMarkdown("tools-start", "fr")).toContain("Tools is a workspace for small generators");
+  });
 });

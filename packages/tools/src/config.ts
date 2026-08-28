@@ -6,6 +6,12 @@ export const app = defineApp({
   icon: "ti ti-tools",
   description: "Utility tools for day-to-day work tasks.",
   appearance: { accent: "#475569", background: { from: "#64748b" } },
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: { description: "Praktische Werkzeuge für alltägliche Aufgaben." },
+    },
+  },
   basePath: "/tools",
   baseUrl: "http://app-tools:3000",
   nav: {

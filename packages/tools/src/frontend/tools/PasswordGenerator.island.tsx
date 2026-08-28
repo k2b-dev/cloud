@@ -1,9 +1,71 @@
-import { password as pwdGen } from "@k2b/stdlib";
+import { i18n, password as pwdGen } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/browser";
-import { NoticeCard, Button, SegmentedControl, Slider, Switch } from "@k2b/ui";
+import { Button, NoticeCard, SegmentedControl, Slider, Switch, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, type JSX } from "solid-js";
 
 type PasswordMode = "random" | "memorable" | "pin";
+
+export const passwordMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      passwordType: "Password type",
+      modeRandom: "Random",
+      modeMemorable: "Memorable",
+      modePin: "PIN",
+      randomTitle: "Random passwords",
+      randomBody:
+        "Use a longer random password for the strongest general-purpose protection. Add numbers and symbols when the password should be stronger and harder to guess.",
+      memorableTitle: "Memorable passwords",
+      memorableBody:
+        "Readable word-based passwords are easier to type and remember. You can still add a random number or symbol when password rules require extra variation.",
+      pinTitle: "PIN passwords",
+      pinBody: "Use a short numeric PIN when a device or lock screen only allows digits.",
+      characters: "Characters",
+      uppercase: "Uppercase",
+      numbers: "Numbers",
+      symbols: "Symbols",
+      words: "Words",
+      capitalizeFirstLetter: "Capitalize first letter",
+      useFullWords: "Use full words",
+      addNumber: "Add number",
+      addSymbol: "Add symbol",
+      digits: "Digits",
+      generatedPassword: "Generated password",
+      copied: "Copied",
+      copyPassword: "Copy password",
+      refreshPassword: "Refresh password",
+    },
+    de: {
+      passwordType: "Passworttyp",
+      modeRandom: "Zufällig",
+      modeMemorable: "Merkbar",
+      modePin: "PIN",
+      randomTitle: "Zufällige Passwörter",
+      randomBody:
+        "Ein langes zufälliges Passwort eignet sich für die meisten Anmeldungen. Aktiviere Zahlen und Symbole, wenn die Passwortregeln sie verlangen.",
+      memorableTitle: "Merkbare Passwörter",
+      memorableBody:
+        "Passwörter aus Wörtern lassen sich leichter eingeben und merken. Ergänze eine zufällige Zahl oder ein Symbol, wenn die Passwortregeln es verlangen.",
+      pinTitle: "PIN-Passwörter",
+      pinBody: "Verwende eine kurze numerische PIN nur, wenn ein Gerät oder Sperrbildschirm ausschließlich Ziffern zulässt.",
+      characters: "Zeichen",
+      uppercase: "Großbuchstaben",
+      numbers: "Zahlen",
+      symbols: "Symbole",
+      words: "Wörter",
+      capitalizeFirstLetter: "Ersten Buchstaben großschreiben",
+      useFullWords: "Ganze Wörter verwenden",
+      addNumber: "Zahl hinzufügen",
+      addSymbol: "Symbol hinzufügen",
+      digits: "Ziffern",
+      generatedPassword: "Erstelltes Passwort",
+      copied: "Kopiert",
+      copyPassword: "Passwort kopieren",
+      refreshPassword: "Passwort neu generieren",
+    },
+  },
+});
 
 const randomCharTone = (char: string): string => {
   if (/\d/.test(char)) return "text-blue-600 dark:text-blue-300";
@@ -69,23 +131,22 @@ const OutputPreview = (props: { mode: () => PasswordMode; value: () => string })
   );
 };
 
-const MODE_INFO: Record<PasswordMode, { title: string; body: string }> = {
-  random: {
-    title: "Random passwords",
-    body: "Use a longer random password for the strongest general-purpose protection. Add numbers and symbols when the password should be stronger and harder to guess.",
-  },
-  memorable: {
-    title: "Memorable passwords",
-    body: "Readable word-based passwords are easier to type and remember. You can still add a random number or symbol when password rules require extra variation.",
-  },
-  pin: {
-    title: "PIN passwords",
-    body: "Use a short numeric PIN when a device or lock screen only allows digits.",
-  },
-};
-
 export default function PasswordGenerator() {
+  const locale = useLocale();
+  const t = () => passwordMessages.resolve([locale()]).t;
   const [mode, setMode] = createSignal<PasswordMode>("random");
+
+  const modeInfo = (): { title: string; body: string } => {
+    const messages = t();
+    switch (mode()) {
+      case "memorable":
+        return { title: messages.memorableTitle, body: messages.memorableBody };
+      case "pin":
+        return { title: messages.pinTitle, body: messages.pinBody };
+      default:
+        return { title: messages.randomTitle, body: messages.randomBody };
+    }
+  };
   const [randomLength, setRandomLength] = createSignal(20);
   const [randomUppercase, setRandomUppercase] = createSignal(true);
   const [randomNumbers, setRandomNumbers] = createSignal(true);
@@ -146,18 +207,18 @@ export default function PasswordGenerator() {
       <SegmentedControl
         value={mode}
         onValueChange={setMode}
-        aria-label="Password type"
+        ariaLabel={t().passwordType}
         options={[
-          { value: "random", label: "Random", icon: "ti ti-arrows-shuffle" },
-          { value: "memorable", label: "Memorable", icon: "ti ti-bulb" },
-          { value: "pin", label: "PIN", icon: "ti ti-hash" },
+          { value: "random", label: t().modeRandom, icon: "ti ti-arrows-shuffle" },
+          { value: "memorable", label: t().modeMemorable, icon: "ti ti-bulb" },
+          { value: "pin", label: t().modePin, icon: "ti ti-hash" },
         ]}
       />
 
       <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
         <i class="ti ti-info-circle shrink-0 mt-0.5" />
         <div class="text-sm">
-          <strong>{MODE_INFO[mode()].title}</strong> {MODE_INFO[mode()].body}
+          <strong>{modeInfo().title}</strong> {modeInfo().body}
         </div>
       </NoticeCard>
 
@@ -165,34 +226,34 @@ export default function PasswordGenerator() {
         <div class="flex flex-col gap-5">
           {mode() === "random" && (
             <>
-              <RangeField label="Characters" value={randomLength} onChange={setRandomLength} min={8} max={64} />
+              <RangeField label={t().characters} value={randomLength} onChange={setRandomLength} min={8} max={64} />
               <ToggleRow columns="sm:grid-cols-2 xl:grid-cols-3">
-                <InlineToggle label="Uppercase" value={randomUppercase} onChange={(value) => setRandomCharset("uppercase", value)} />
-                <InlineToggle label="Numbers" value={randomNumbers} onChange={(value) => setRandomCharset("numbers", value)} />
-                <InlineToggle label="Symbols" value={randomSymbols} onChange={(value) => setRandomCharset("symbols", value)} />
+                <InlineToggle label={t().uppercase} value={randomUppercase} onChange={(value) => setRandomCharset("uppercase", value)} />
+                <InlineToggle label={t().numbers} value={randomNumbers} onChange={(value) => setRandomCharset("numbers", value)} />
+                <InlineToggle label={t().symbols} value={randomSymbols} onChange={(value) => setRandomCharset("symbols", value)} />
               </ToggleRow>
             </>
           )}
 
           {mode() === "memorable" && (
             <>
-              <RangeField label="Words" value={memorableWords} onChange={setMemorableWords} min={3} max={8} />
+              <RangeField label={t().words} value={memorableWords} onChange={setMemorableWords} min={3} max={8} />
               <ToggleRow columns="sm:grid-cols-2 xl:grid-cols-4">
-                <InlineToggle label="Capitalize first letter" value={memorableCapitalize} onChange={setMemorableCapitalize} />
-                <InlineToggle label="Use full words" value={memorableFullWords} onChange={setMemorableFullWords} />
-                <InlineToggle label="Add number" value={memorableNumber} onChange={setMemorableNumber} />
-                <InlineToggle label="Add symbol" value={memorableSymbol} onChange={setMemorableSymbol} />
+                <InlineToggle label={t().capitalizeFirstLetter} value={memorableCapitalize} onChange={setMemorableCapitalize} />
+                <InlineToggle label={t().useFullWords} value={memorableFullWords} onChange={setMemorableFullWords} />
+                <InlineToggle label={t().addNumber} value={memorableNumber} onChange={setMemorableNumber} />
+                <InlineToggle label={t().addSymbol} value={memorableSymbol} onChange={setMemorableSymbol} />
               </ToggleRow>
             </>
           )}
 
-          {mode() === "pin" && <RangeField label="Digits" value={pinLength} onChange={setPinLength} min={4} max={12} />}
+          {mode() === "pin" && <RangeField label={t().digits} value={pinLength} onChange={setPinLength} min={4} max={12} />}
         </div>
       </section>
 
       <section class="flex flex-col gap-3">
         <div>
-          <h2 class="text-base font-semibold text-primary">Generated password</h2>
+          <h2 class="text-base font-semibold text-primary">{t().generatedPassword}</h2>
         </div>
         <div class="paper p-4">
           <OutputPreview mode={mode} value={password} />
@@ -202,11 +263,11 @@ export default function PasswordGenerator() {
       <div class="grid gap-3 sm:grid-cols-2">
         <Button class="justify-center" onClick={copyPassword}>
           <i class={`ti ${copied() ? "ti-check" : "ti-copy"}`} />
-          {copied() ? "Copied" : "Copy password"}
+          {copied() ? t().copied : t().copyPassword}
         </Button>
         <Button variant="secondary" class="justify-center" onClick={refresh}>
           <i class="ti ti-refresh" />
-          Refresh password
+          {t().refreshPassword}
         </Button>
       </div>
     </div>

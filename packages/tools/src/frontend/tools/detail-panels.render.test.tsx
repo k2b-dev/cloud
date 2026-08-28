@@ -145,7 +145,7 @@ describe("Tools detail panels", () => {
     expect(html).toContain("Cancel");
     expect(html).toMatch(/<button aria-label="Add images"[^>]* disabled /);
     expect(html).toMatch(/<button aria-label="Remove image"[^>]* disabled /);
-    expect(html).toMatch(/<button[^>]* disabled ><span class="k2b-button__label"><i class="ti ti-download"><\/i> Export image/);
+    expect(html).toMatch(/<button[^>]* disabled ><span class="k2b-button__label"><i class="ti ti-download"><\/i> (?:<!--!\$-->)?Export image/);
     expect(html.match(/k2b-detail-panel__body/g)).toHaveLength(1);
   });
 });

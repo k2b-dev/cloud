@@ -15,9 +15,11 @@ import {
   Slider,
   Switch,
   Tooltip,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { DEFAULT_ADJ, PRESETS } from "./image-processor/constants";
+import { imageProcessorMessages, type PresetLabelKey, presetLabelKeys } from "./image-processor/messages";
 import { type CropHandle, createCropRect, moveCropRect, resizeCropRect, toPixelCropRect } from "./image-processor/crop-geometry";
 import { buildImagePipeline, makePreviewSource, rotatedImageDimensions } from "./image-processor/image-processing";
 import MarkupOverlay from "./image-processor/MarkupOverlay";
@@ -43,12 +45,12 @@ const PREVIEW_ZOOM_STEP = 1.2;
 type SizedMarkupTool = "pen" | "highlighter" | "shape" | "text";
 type MarkupSelection = { imageId: string; elementId: string };
 const MARKUP_COLORS = [
-  { value: "#111827", label: "Black" },
-  { value: "#ef4444", label: "Red" },
-  { value: "#f59e0b", label: "Amber" },
-  { value: "#22c55e", label: "Green" },
-  { value: "#3b82f6", label: "Blue" },
-  { value: "#ffffff", label: "White" },
+  { value: "#111827", labelKey: "colorBlack" },
+  { value: "#ef4444", labelKey: "colorRed" },
+  { value: "#f59e0b", labelKey: "colorAmber" },
+  { value: "#22c55e", labelKey: "colorGreen" },
+  { value: "#3b82f6", labelKey: "colorBlue" },
+  { value: "#ffffff", labelKey: "colorWhite" },
 ] as const;
 
 // ====================================
@@ -63,6 +65,10 @@ type ImageProcessorViewProps = {
 
 /** @internal Controlled render seam; the route-facing island below remains zero-prop. */
 export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
+  const locale = useLocale();
+  const t = () => imageProcessorMessages.resolve([locale()]).t;
+  const presetLabel = (key: string) => (key in presetLabelKeys ? t()[presetLabelKeys[key as PresetLabelKey]] : key);
+
   // --- Image list ---
   const [images, setImages] = createSignal<ImageEntry[]>([...(props.initialImages ?? [])]);
   const [activeIndex, setActiveIndex] = createSignal(0);
@@ -111,8 +117,11 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   const adj = createMemo(() => activeImage()?.adj ?? DEFAULT_ADJ);
   const activeImageSubtitle = () => {
     const image = activeImage();
-    if (!image) return "No image selected";
-    return `${image.source.width} × ${image.source.height} px${image.file ? ` · ${(image.file.size / 1024).toFixed(0)} KB` : ""}`;
+    if (!image) return t().noImageSelected;
+    const { width, height } = image.source;
+    return image.file
+      ? t().subtitleDimensionsSize({ width, height, kb: (image.file.size / 1024).toFixed(0) })
+      : t().subtitleDimensions({ width, height });
   };
   const selectedMarkupId = createMemo(() => {
     const image = activeImage();
@@ -232,13 +241,13 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
             cropBounds: { ...FULL_CROP_BOUNDS },
           });
         } catch (loadError) {
-          const reason = loadError instanceof Error ? loadError.message : "The file could not be decoded";
-          failures.push(`Could not load "${file.name}": ${reason}`);
+          const reason = loadError instanceof Error ? loadError.message : t().fileDecodeFailed;
+          failures.push(t().couldNotLoadFile({ name: file.name, reason }));
         }
       }
       if (entries.length === 0) {
-        const firstFailure = failures[0] ?? "The selected files could not be decoded";
-        throw new Error(failures.length > 1 ? `No images could be loaded. ${firstFailure}` : firstFailure);
+        const firstFailure = failures[0] ?? t().selectedFilesDecodeFailed;
+        throw new Error(failures.length > 1 ? t().noImagesLoaded({ detail: firstFailure }) : firstFailure);
       }
 
       const wasEmpty = images().length === 0;
@@ -247,7 +256,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
       await rebuildBasePreview();
       const firstFailure = failures[0];
       if (firstFailure) {
-        setError(failures.length === 1 ? firstFailure : `${failures.length} images could not be loaded. ${firstFailure}`);
+        setError(failures.length === 1 ? firstFailure : t().someImagesLoadFailed({ count: failures.length, detail: firstFailure }));
       }
     },
     onError: (err) => {
@@ -258,11 +267,11 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   const loadFiles = (files: File[]) => {
     if (files.length === 0) return;
     if (cropActive() || cropBusy()) {
-      setError("Apply or cancel the crop before adding images");
+      setError(t().applyOrCancelCrop);
       return;
     }
     if (loadMutation.loading()) {
-      setError("Wait for the current images to finish loading");
+      setError(t().waitForLoading);
       return;
     }
     setError("");
@@ -275,7 +284,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
       loadFiles(files);
     } catch (selectionError) {
       if (selectionError instanceof Error && selectionError.message === "File dialog cancelled") return;
-      setError(selectionError instanceof Error ? selectionError.message : "Could not open the image picker");
+      setError(selectionError instanceof Error ? selectionError.message : t().pickerFailed);
     }
   };
 
@@ -333,7 +342,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
       setError("");
     } catch (e) {
       if (request !== previewRequest || activeImage()?.id !== entry.id) return;
-      setError(e instanceof Error ? `Could not build the preview: ${e.message}` : "Could not build the image preview");
+      setError(e instanceof Error ? t().previewBuildFailed({ reason: e.message }) : t().previewBuildFailedGeneric);
     } finally {
       if (request === previewRequest && activeImage()?.id === entry.id) setPreviewBusy(false);
     }
@@ -416,7 +425,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
       setBasePreview("");
       await rebuildBasePreview();
     } catch (cropError) {
-      setError(cropError instanceof Error ? cropError.message : "Cropping failed");
+      setError(cropError instanceof Error ? cropError.message : t().croppingFailed);
     } finally {
       setCropBusy(false);
     }
@@ -454,7 +463,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
       setBasePreview("");
       await rebuildBasePreview();
     } catch (cropError) {
-      setError(cropError instanceof Error ? cropError.message : "Resetting the crop failed");
+      setError(cropError instanceof Error ? cropError.message : t().resetCropFailed);
     } finally {
       setCropBusy(false);
     }
@@ -582,13 +591,13 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     const color = markupColor();
     const size = markupSizes().text / 1_000;
     const result = await prompts.form({
-      title: "Add text",
+      title: t().addTextTitle,
       icon: "ti ti-text-resize",
-      confirmText: "Add",
+      confirmText: t().addTextAction,
       fields: {
         text: {
           type: "text" as const,
-          label: "Text",
+          label: t().textFieldLabel,
           required: true,
         },
       },
@@ -650,10 +659,10 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
   const clearMarkup = async () => {
     const image = activeImage();
     if (!image || image.markup.length === 0) return;
-    const confirmed = await prompts.confirm("Remove all markup from this image?", {
-      title: "Clear markup",
+    const confirmed = await prompts.confirm(t().clearMarkupConfirm, {
+      title: t().clearMarkup,
       icon: "ti ti-eraser",
-      confirmText: "Clear",
+      confirmText: t().clearMarkupAction,
       variant: "danger",
     });
     if (!confirmed) return;
@@ -686,7 +695,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
           try {
             const active = activeImage();
             const entries = mode === "all" ? images() : active ? [active] : [];
-            if (entries.length === 0) throw new Error("No image is available to export");
+            if (entries.length === 0) throw new Error(t().noImageToExport);
 
             setProgress(0);
             for (let i = 0; i < entries.length; i++) {
@@ -706,9 +715,8 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
             }
             close();
           } catch (exportFailure) {
-            const reason = exportFailure instanceof Error ? exportFailure.message : "Unknown export error";
-            const prefix = completed > 0 ? `Export stopped after ${completed} of ${count} images. ` : "";
-            setExportError(`${prefix}${reason}`);
+            const reason = exportFailure instanceof Error ? exportFailure.message : t().unknownExportError;
+            setExportError(completed > 0 ? `${t().exportStopped({ completed, count })} ${reason}` : reason);
           } finally {
             setExporting(false);
           }
@@ -717,7 +725,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
         return (
           <div class="flex flex-col gap-4 min-w-70">
             <Select
-              label="Format"
+              label={t().formatLabel}
               icon="ti ti-file-type-jpg"
               value={fmt}
               onValueChange={(v) => setFmt(v as ExportFormat)}
@@ -729,7 +737,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
             />
             <Show when={fmt() !== "png"}>
               <Slider
-                label="Quality"
+                label={t().qualityLabel}
                 value={qual}
                 onValueChange={setQual}
                 min={0.1}
@@ -742,8 +750,8 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
             <div class="grid grid-cols-2 gap-2">
               <NumberInput
                 name="image-export-max-width"
-                label="Max width"
-                placeholder="Auto"
+                label={t().maxWidth}
+                placeholder={t().autoPlaceholder}
                 value={mw}
                 onValueChange={setMw}
                 min={1}
@@ -752,8 +760,8 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
               />
               <NumberInput
                 name="image-export-max-height"
-                label="Max height"
-                placeholder="Auto"
+                label={t().maxHeight}
+                placeholder={t().autoPlaceholder}
                 value={mh}
                 onValueChange={setMh}
                 min={1}
@@ -761,7 +769,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                 showSteppers={false}
               />
             </div>
-            <p class="text-xs text-dimmed">Leave empty to keep original size</p>
+            <p class="text-xs text-dimmed">{t().keepOriginalSize}</p>
 
             <Show when={exportError()}>
               <NoticeCard tone="danger" icon={false} bodyClass="flex items-center gap-2">
@@ -783,18 +791,18 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
 
             <div class="flex gap-2 justify-end">
               <Button variant="secondary" size="sm" onClick={() => close()} disabled={exporting()}>
-                Cancel
+                {t().cancel}
               </Button>
-              <Button size="sm" onClick={doExport} loading={exporting()} loadingLabel="Exporting">
+              <Button size="sm" onClick={doExport} loading={exporting()} loadingLabel={t().exporting}>
                 <i class="ti ti-download" />
-                {mode === "all" ? `Export ${count}` : "Export"}
+                {mode === "all" ? t().exportCountAction({ count }) : t().exportAction}
               </Button>
             </div>
           </div>
         );
       },
       {
-        title: mode === "all" ? `Export ${count} Images` : "Export Image",
+        title: mode === "all" ? t().exportImagesTitle({ count }) : t().exportImageTitle,
         icon: "ti ti-download",
       },
     );
@@ -856,7 +864,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     const dropped = Array.from(e.dataTransfer?.files ?? []);
     const files = dropped.filter((f) => f.type.startsWith("image/"));
     if (dropped.length > 0 && files.length === 0) {
-      setError("Drop an image file to add it");
+      setError(t().dropImageFile);
       return;
     }
     loadFiles(files);
@@ -942,17 +950,17 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
     <div class="flex flex-col gap-[var(--ui-space-section)]">
       <Show when={markupTool() === "shape"}>
         <div class="flex min-w-0 flex-col gap-2">
-          <SectionLabel label="Shape" />
+          <SectionLabel label={t().shape} />
           <div class="max-w-full overflow-x-auto scrollbar">
             <SegmentedControl<MarkupShapeKind>
               options={[
-                { value: "rectangle", label: "Rectangle", icon: "ti ti-rectangle" },
-                { value: "circle", label: "Circle", icon: "ti ti-circle" },
-                { value: "arrow", label: "Arrow", icon: "ti ti-arrow-up-right" },
+                { value: "rectangle", label: t().shapeRectangle, icon: "ti ti-rectangle" },
+                { value: "circle", label: t().shapeCircle, icon: "ti ti-circle" },
+                { value: "arrow", label: t().shapeArrow, icon: "ti ti-arrow-up-right" },
               ]}
               value={markupShape}
               onValueChange={setMarkupShape}
-              aria-label="Shape type"
+              aria-label={t().shapeType}
             />
           </div>
         </div>
@@ -960,7 +968,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
 
       <Show when={isSizedMarkupTool(markupTool())}>
         <div class="flex flex-col gap-2">
-          <SectionLabel label="Color" />
+          <SectionLabel label={t().color} />
           <div class="flex flex-wrap items-center gap-2">
             <For each={MARKUP_COLORS}>
               {(color) => (
@@ -970,19 +978,19 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                   classList={{ "ring-2 ring-blue-500 ring-offset-1": markupColor() === color.value }}
                   style={{ "background-color": color.value }}
                   onClick={() => setMarkupColor(color.value)}
-                  aria-label={`Use ${color.label}`}
+                  aria-label={t().useColor({ color: t()[color.labelKey] })}
                   aria-pressed={markupColor() === color.value}
                 />
               )}
             </For>
-            <Tooltip.Anchor content="Custom color">
-              <ColorInput compact label="Custom color" value={markupColor} onValueChange={setMarkupColor} />
+            <Tooltip.Anchor content={t().customColor}>
+              <ColorInput compact label={t().customColor} value={markupColor} onValueChange={setMarkupColor} />
             </Tooltip.Anchor>
           </div>
         </div>
 
         <Slider
-          label={markupTool() === "text" ? "Text size" : "Size"}
+          label={markupTool() === "text" ? t().textSize : t().size}
           value={markupSize}
           onValueChange={setMarkupSize}
           min={markupSizeRange().min}
@@ -1006,16 +1014,16 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
           onDragOver={(e) => e.preventDefault()}
           onDrop={handleDrop}
           role="region"
-          aria-label="Image processor canvas"
+          aria-label={t().canvasLabel}
         >
           <div
             ref={previewViewportRef}
             class="relative min-h-75 min-w-0 flex-1 overflow-auto bg-[var(--ui-surface)] p-[var(--ui-space-shell)]"
           >
             <Show when={!inspectorOpen()}>
-              <Tooltip.Anchor content="Open image controls">
+              <Tooltip.Anchor content={t().openImageControls}>
                 <IconButton
-                  label="Open image controls"
+                  label={t().openImageControls}
                   class="absolute right-[var(--ui-space-shell)] top-[var(--ui-space-shell)] z-10 lg:hidden"
                   onClick={() => setInspectorOpen(true)}
                 >
@@ -1035,7 +1043,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
             <Show when={!hasImages() && !loadMutation.loading()}>
               <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 text-dimmed">
                 <i class="ti ti-photo text-4xl" />
-                <p class="text-sm font-medium">No image selected</p>
+                <p class="text-sm font-medium">{t().noImageSelected}</p>
               </div>
             </Show>
 
@@ -1059,7 +1067,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           <img
                             ref={imgRef}
                             src={basePreview()}
-                            alt="Preview"
+                            alt={t().previewAlt}
                             class="block h-full w-full object-fill thumbnail"
                             style={{ filter: cssFilter() }}
                             draggable={false}
@@ -1164,7 +1172,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
           <Show when={images().length > 1}>
             <nav
               class="flex flex-none items-center gap-2 overflow-x-auto bg-[var(--ui-surface-subtle)] px-[var(--ui-space-shell)] py-[var(--ui-space-section)] scrollbar"
-              aria-label="Images"
+              aria-label={t().filmstripLabel}
             >
               <For each={images()}>
                 {(image, index) => (
@@ -1174,7 +1182,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                     classList={{ "ring-2 ring-blue-500": activeIndex() === index() }}
                     onClick={() => switchImage(index())}
                     disabled={cropActive()}
-                    aria-label={`Open ${image.name}`}
+                    aria-label={t().openImage({ name: image.name })}
                     aria-current={activeIndex() === index() ? "true" : undefined}
                     title={image.name}
                   >
@@ -1197,14 +1205,14 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
         <DetailPanel>
           <DetailPanel.Header
             icon="ti ti-photo"
-            title={activeImage()?.name ?? "Image controls"}
+            title={activeImage()?.name ?? t().imageControls}
             subtitle={activeImageSubtitle()}
             actions={
               <>
                 <Show when={hasImages()}>
-                  <Tooltip.Anchor content="Add images">
+                  <Tooltip.Anchor content={t().addImages}>
                     <IconButton
-                      label="Add images"
+                      label={t().addImages}
                       size="sm"
                       class="h-8 w-8 shrink-0"
                       onClick={selectFiles}
@@ -1213,9 +1221,9 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                       <i class="ti ti-photo-plus" aria-hidden="true" />
                     </IconButton>
                   </Tooltip.Anchor>
-                  <Tooltip.Anchor content="Remove image">
+                  <Tooltip.Anchor content={t().removeImage}>
                     <IconButton
-                      label="Remove image"
+                      label={t().removeImage}
                       size="sm"
                       class="h-8 w-8 shrink-0 text-red-600 dark:text-red-400"
                       onClick={() => removeImage(activeIndex())}
@@ -1225,7 +1233,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                     </IconButton>
                   </Tooltip.Anchor>
                 </Show>
-                <IconButton label="Show image canvas" size="sm" class="h-8 w-8 shrink-0 lg:hidden" onClick={() => setInspectorOpen(false)}>
+                <IconButton label={t().showImageCanvas} size="sm" class="h-8 w-8 shrink-0 lg:hidden" onClick={() => setInspectorOpen(false)}>
                   <i class="ti ti-x" aria-hidden="true" />
                 </IconButton>
               </>
@@ -1234,19 +1242,19 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
               <Show
                 when={hasImages()}
                 fallback={
-                  <Button size="sm" class="w-full" onClick={selectFiles} loading={loadMutation.loading()} loadingLabel="Adding images">
-                    <i class="ti ti-photo-plus" aria-hidden="true" /> Add images
+                  <Button size="sm" class="w-full" onClick={selectFiles} loading={loadMutation.loading()} loadingLabel={t().addingImages}>
+                    <i class="ti ti-photo-plus" aria-hidden="true" /> {t().addImages}
                   </Button>
                 }
               >
                 <SegmentedControl<"edit" | "markup">
                   options={[
-                    { value: "edit", label: "Edit", icon: "ti ti-adjustments-horizontal" },
-                    { value: "markup", label: "Markup", icon: "ti ti-pencil" },
+                    { value: "edit", label: t().editMode, icon: "ti ti-adjustments-horizontal" },
+                    { value: "markup", label: t().markupMode, icon: "ti ti-pencil" },
                   ]}
                   value={editorMode}
                   onValueChange={changeEditorMode}
-                  aria-label="Editor mode"
+                  aria-label={t().editorMode}
                 />
               </Show>
             }
@@ -1260,7 +1268,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
               >
                 <i class="ti ti-alert-circle shrink-0" />
                 <span class="min-w-0 flex-1">{error()}</span>
-                <IconButton label="Dismiss error" size="xs" class="h-6 w-6 shrink-0 text-current" onClick={() => setError("")}>
+                <IconButton label={t().dismissError} size="xs" class="h-6 w-6 shrink-0 text-current" onClick={() => setError("")}>
                   <i class="ti ti-x" />
                 </IconButton>
               </div>
@@ -1268,13 +1276,13 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
 
             <Show when={hasImages()}>
               <DetailPanel.Summary
-                title="Preview"
+                title={t().previewTitle}
                 actions={<span class="text-xs tabular-nums text-dimmed">{Math.round(previewZoom() * 100)}%</span>}
               >
                 <div class="flex items-center gap-1">
-                  <Tooltip.Anchor content="Zoom out">
+                  <Tooltip.Anchor content={t().zoomOut}>
                     <IconButton
-                      label="Zoom out"
+                      label={t().zoomOut}
                       size="sm"
                       class="h-8 w-8"
                       onClick={() => setClampedPreviewZoom(previewZoom() / PREVIEW_ZOOM_STEP)}
@@ -1283,9 +1291,9 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                       <i class="ti ti-minus" />
                     </IconButton>
                   </Tooltip.Anchor>
-                  <Tooltip.Anchor content="Zoom in">
+                  <Tooltip.Anchor content={t().zoomIn}>
                     <IconButton
-                      label="Zoom in"
+                      label={t().zoomIn}
                       size="sm"
                       class="h-8 w-8"
                       onClick={() => setClampedPreviewZoom(previewZoom() * PREVIEW_ZOOM_STEP)}
@@ -1294,8 +1302,8 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                       <i class="ti ti-plus" />
                     </IconButton>
                   </Tooltip.Anchor>
-                  <Tooltip.Anchor content="Fit image">
-                    <IconButton label="Fit image" size="sm" class="h-8 w-8" onClick={fitPreview}>
+                  <Tooltip.Anchor content={t().fitImage}>
+                    <IconButton label={t().fitImage} size="sm" class="h-8 w-8" onClick={fitPreview}>
                       <i class="ti ti-focus-centered" />
                     </IconButton>
                   </Tooltip.Anchor>
@@ -1303,19 +1311,19 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
               </DetailPanel.Summary>
 
               <Show when={editorMode() === "markup"}>
-                <DetailPanel.Group label="Markup controls">
-                  <DetailPanel.Section title="Tool" icon="ti ti-pencil" tone="accent">
+                <DetailPanel.Group label={t().markupControls}>
+                  <DetailPanel.Section title={t().tool} icon="ti ti-pencil" tone="accent">
                     <div class="flex flex-col gap-2">
                       <div class="grid grid-cols-7 gap-1">
                         <For
                           each={[
-                            { value: "select" as const, label: "Select", icon: "ti-selector" },
-                            { value: "pen" as const, label: "Pen", icon: "ti-pencil" },
-                            { value: "highlighter" as const, label: "Highlight", icon: "ti-highlight" },
-                            { value: "redact" as const, label: "Redact", icon: "ti-square" },
-                            { value: "shape" as const, label: "Shape", icon: "ti-shape" },
-                            { value: "text" as const, label: "Text", icon: "ti-text-resize" },
-                            { value: "eraser" as const, label: "Erase strokes", icon: "ti-eraser" },
+                            { value: "select" as const, label: t().toolSelect, icon: "ti-selector" },
+                            { value: "pen" as const, label: t().toolPen, icon: "ti-pencil" },
+                            { value: "highlighter" as const, label: t().toolHighlight, icon: "ti-highlight" },
+                            { value: "redact" as const, label: t().toolRedact, icon: "ti-square" },
+                            { value: "shape" as const, label: t().toolShape, icon: "ti-shape" },
+                            { value: "text" as const, label: t().toolText, icon: "ti-text-resize" },
+                            { value: "eraser" as const, label: t().toolEraser, icon: "ti-eraser" },
                           ]}
                         >
                           {(tool) => (
@@ -1334,19 +1342,19 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                         </For>
                       </div>
                       <div class="flex items-center gap-1">
-                        <Tooltip.Anchor content="Undo">
-                          <IconButton label="Undo markup" size="sm" class="h-8 w-8" onClick={undoMarkup} disabled={!canUndoMarkup()}>
+                        <Tooltip.Anchor content={t().undo}>
+                          <IconButton label={t().undoMarkup} size="sm" class="h-8 w-8" onClick={undoMarkup} disabled={!canUndoMarkup()}>
                             <i class="ti ti-arrow-back-up" />
                           </IconButton>
                         </Tooltip.Anchor>
-                        <Tooltip.Anchor content="Redo">
-                          <IconButton label="Redo markup" size="sm" class="h-8 w-8" onClick={redoMarkup} disabled={!canRedoMarkup()}>
+                        <Tooltip.Anchor content={t().redo}>
+                          <IconButton label={t().redoMarkup} size="sm" class="h-8 w-8" onClick={redoMarkup} disabled={!canRedoMarkup()}>
                             <i class="ti ti-arrow-forward-up" />
                           </IconButton>
                         </Tooltip.Anchor>
-                        <Tooltip.Anchor content="Delete selected markup">
+                        <Tooltip.Anchor content={t().deleteSelectedMarkup}>
                           <IconButton
-                            label="Delete selected markup"
+                            label={t().deleteSelectedMarkup}
                             size="sm"
                             class="h-8 w-8 text-red-600 dark:text-red-400"
                             onClick={deleteSelectedMarkup}
@@ -1355,9 +1363,9 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                             <i class="ti ti-trash" />
                           </IconButton>
                         </Tooltip.Anchor>
-                        <Tooltip.Anchor content="Clear markup">
+                        <Tooltip.Anchor content={t().clearMarkup}>
                           <IconButton
-                            label="Clear markup"
+                            label={t().clearMarkup}
                             size="sm"
                             class="h-8 w-8 text-red-600 dark:text-red-400"
                             onClick={clearMarkup}
@@ -1370,7 +1378,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                     </div>
                   </DetailPanel.Section>
                   <Show when={markupTool() === "shape" || isSizedMarkupTool(markupTool())}>
-                    <DetailPanel.Section title="Style" icon="ti ti-palette" tone="neutral">
+                    <DetailPanel.Section title={t().style} icon="ti ti-palette" tone="neutral">
                       <MarkupSettings />
                     </DetailPanel.Section>
                   </Show>
@@ -1379,28 +1387,28 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
 
               <Show when={editorMode() === "edit"}>
                 <>
-                  <DetailPanel.Group label="Geometry">
+                  <DetailPanel.Group label={t().geometry}>
                     {/* Crop */}
-                    <DetailPanel.Section title="Crop" icon="ti ti-crop" tone="accent">
+                    <DetailPanel.Section title={t().crop} icon="ti ti-crop" tone="accent">
                       <div class="flex flex-col gap-2">
                         <div class="flex gap-2">
                           <Show
                             when={cropActive()}
                             fallback={
                               <Button variant="secondary" size="sm" class="flex-1" onClick={startCrop} disabled={cropBusy()}>
-                                <i class="ti ti-crop" /> Crop
+                                <i class="ti ti-crop" /> {t().crop}
                               </Button>
                             }
                           >
-                            <Button size="sm" class="flex-1" onClick={applyCrop} loading={cropBusy()} loadingLabel="Applying">
-                              <i class="ti ti-check" /> Apply
+                            <Button size="sm" class="flex-1" onClick={applyCrop} loading={cropBusy()} loadingLabel={t().applying}>
+                              <i class="ti ti-check" /> {t().apply}
                             </Button>
                           </Show>
                           <Dropdown.Root
                             position="bottom-left"
                             items={(
                               [
-                                ["free", "Free"],
+                                ["free", t().aspectFree],
                                 ["1:1", "1:1"],
                                 ["4:3", "4:3"],
                                 ["16:9", "16:9"],
@@ -1413,28 +1421,28 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                             }))}
                           >
                             <Dropdown.Trigger variant="secondary" size="sm">
-                              {cropAspect() === "free" ? "Free" : cropAspect()} <i class="ti ti-chevron-down text-[10px]" />
+                              {cropAspect() === "free" ? t().aspectFree : cropAspect()} <i class="ti ti-chevron-down text-[10px]" />
                             </Dropdown.Trigger>
                           </Dropdown.Root>
                           <Show when={!cropActive() && activeImage()?.cropped}>
-                            <IconButton label="Reset crop" size="sm" onClick={resetCrop} loading={cropBusy()} loadingLabel="Resetting crop">
+                            <IconButton label={t().resetCrop} size="sm" onClick={resetCrop} loading={cropBusy()} loadingLabel={t().resettingCrop}>
                               <i class="ti ti-arrow-back-up" />
                             </IconButton>
                           </Show>
                         </div>
                         <Show when={cropActive()}>
                           <Button variant="secondary" size="sm" class="w-full" onClick={cancelCrop} disabled={cropBusy()}>
-                            Cancel
+                            {t().cancel}
                           </Button>
                         </Show>
                       </div>
                     </DetailPanel.Section>
 
                     {/* Transform */}
-                    <DetailPanel.Section title="Transform" icon="ti ti-transform" tone="neutral">
+                    <DetailPanel.Section title={t().transform} icon="ti ti-transform" tone="neutral">
                       <div class="flex flex-col gap-2">
                         <Slider
-                          label="Rotation"
+                          label={t().rotation}
                           value={() => adj().freeRotation}
                           onValueChange={(v) => setAdj("freeRotation", v)}
                           min={-180}
@@ -1445,28 +1453,28 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           formatValue={(v) => `${v > 0 ? "+" : ""}${v}\u00b0`}
                         />
                         <div class="grid grid-cols-2 gap-2">
-                          <Switch label="Flip H" value={() => adj().flipH} onValueChange={(v) => setAdj("flipH", v)} />
-                          <Switch label="Flip V" value={() => adj().flipV} onValueChange={(v) => setAdj("flipV", v)} />
+                          <Switch label={t().flipH} value={() => adj().flipH} onValueChange={(v) => setAdj("flipH", v)} />
+                          <Switch label={t().flipV} value={() => adj().flipV} onValueChange={(v) => setAdj("flipV", v)} />
                         </div>
                       </div>
                     </DetailPanel.Section>
                   </DetailPanel.Group>
 
-                  <DetailPanel.Group label="Appearance">
+                  <DetailPanel.Group label={t().appearance}>
                     {/* Adjustments */}
                     <DetailPanel.Section
-                      title="Adjustments"
+                      title={t().adjustments}
                       icon="ti ti-adjustments-horizontal"
                       tone="accent"
                       actions={
                         <Button variant="ghost" size="xs" onClick={resetAdjustments}>
-                          Reset
+                          {t().reset}
                         </Button>
                       }
                     >
                       <div class="flex flex-col gap-2">
                         <Slider
-                          label="Brightness"
+                          label={t().brightness}
                           value={() => adj().brightness}
                           onValueChange={(v) => setAdj("brightness", v)}
                           min={0.5}
@@ -1477,7 +1485,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           formatValue={(v) => `${Math.round(v * 100)}%`}
                         />
                         <Slider
-                          label="Contrast"
+                          label={t().contrast}
                           value={() => adj().contrast}
                           onValueChange={(v) => setAdj("contrast", v)}
                           min={0.5}
@@ -1488,7 +1496,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           formatValue={(v) => `${Math.round(v * 100)}%`}
                         />
                         <Slider
-                          label="Saturation"
+                          label={t().saturation}
                           value={() => adj().saturation}
                           onValueChange={(v) => setAdj("saturation", v)}
                           min={0}
@@ -1499,7 +1507,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           formatValue={(v) => `${Math.round(v * 100)}%`}
                         />
                         <Slider
-                          label="Hue"
+                          label={t().hue}
                           value={() => adj().hueRotate}
                           onValueChange={(v) => setAdj("hueRotate", v)}
                           min={0}
@@ -1509,7 +1517,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           formatValue={(v) => `${v}\u00b0`}
                         />
                         <Slider
-                          label="Blur"
+                          label={t().blur}
                           value={() => adj().blur}
                           onValueChange={(v) => setAdj("blur", v)}
                           min={0}
@@ -1519,7 +1527,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           formatValue={(v) => `${v.toFixed(1)}px`}
                         />
                         <Slider
-                          label="Sepia"
+                          label={t().sepia}
                           value={() => adj().sepia}
                           onValueChange={(v) => setAdj("sepia", v)}
                           min={0}
@@ -1529,7 +1537,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           formatValue={(v) => `${Math.round(v * 100)}%`}
                         />
                         <Slider
-                          label="Vignette"
+                          label={t().vignette}
                           value={() => adj().vignette}
                           onValueChange={(v) => setAdj("vignette", v)}
                           min={0}
@@ -1539,7 +1547,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                           formatValue={(v) => `${Math.round(v * 100)}%`}
                         />
                         <Slider
-                          label="Grain"
+                          label={t().grain}
                           value={() => adj().grain}
                           onValueChange={(v) => setAdj("grain", v)}
                           min={0}
@@ -1552,12 +1560,12 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                     </DetailPanel.Section>
 
                     {/* Presets */}
-                    <DetailPanel.Section title="Presets" icon="ti ti-wand" tone="neutral">
+                    <DetailPanel.Section title={t().presets} icon="ti ti-wand" tone="neutral">
                       <div class="grid grid-cols-4 gap-1">
-                        <For each={Object.entries(PRESETS)}>
-                          {([key, preset]) => (
+                        <For each={Object.keys(PRESETS)}>
+                          {(key) => (
                             <Button variant="secondary" size="sm" onClick={() => applyPreset(key)}>
-                              {preset.label}
+                              {presetLabel(key)}
                             </Button>
                           )}
                         </For>
@@ -1565,28 +1573,28 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                     </DetailPanel.Section>
 
                     {/* Copy / Paste Edits */}
-                    <DetailPanel.Section title="Edits" icon="ti ti-copy" tone="neutral">
+                    <DetailPanel.Section title={t().edits} icon="ti ti-copy" tone="neutral">
                       <div class="grid grid-cols-3 gap-1">
-                        <Button variant="secondary" size="sm" onClick={copyEdits} title="Copy adjustments from this image">
-                          <i class="ti ti-copy" /> Copy
+                        <Button variant="secondary" size="sm" onClick={copyEdits} title={t().copyAdjustmentsTitle}>
+                          <i class="ti ti-copy" /> {t().copy}
                         </Button>
                         <Button
                           variant="secondary"
                           size="sm"
                           onClick={pasteEdits}
                           disabled={!clipboard()}
-                          title="Paste adjustments to this image"
+                          title={t().pasteAdjustmentsTitle}
                         >
-                          <i class="ti ti-clipboard" /> Paste
+                          <i class="ti ti-clipboard" /> {t().paste}
                         </Button>
                         <Button
                           variant="secondary"
                           size="sm"
                           onClick={pasteEditsAll}
                           disabled={!clipboard()}
-                          title="Paste adjustments to all images"
+                          title={t().pasteAdjustmentsAllTitle}
                         >
-                          <i class="ti ti-clipboard-check" /> All
+                          <i class="ti ti-clipboard-check" /> {t().pasteAll}
                         </Button>
                       </div>
                     </DetailPanel.Section>
@@ -1599,7 +1607,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
           <Show when={hasImages()}>
             <footer class="flex flex-none flex-col gap-2">
               <Button size="sm" class="w-full" onClick={() => showExportModal("single")} disabled={cropActive() || cropBusy()}>
-                <i class="ti ti-download" /> Export image
+                <i class="ti ti-download" /> {t().exportImage}
               </Button>
               <Show when={images().length > 1}>
                 <Button
@@ -1609,7 +1617,7 @@ export function ImageProcessorView(props: ImageProcessorViewProps = {}) {
                   onClick={() => showExportModal("all")}
                   disabled={cropActive() || cropBusy()}
                 >
-                  <i class="ti ti-download" /> Export all ({images().length})
+                  <i class="ti ti-download" /> {t().exportAll({ count: images().length })}
                 </Button>
               </Show>
             </footer>

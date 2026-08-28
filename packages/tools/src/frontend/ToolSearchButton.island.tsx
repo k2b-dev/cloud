@@ -1,5 +1,5 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { fuzzy } from "@k2b/stdlib";
+import { fuzzy, i18n } from "@k2b/stdlib";
 import {
   AppWorkspace,
   isSpotlightShortcut,
@@ -7,9 +7,30 @@ import {
   SPOTLIGHT_SHORTCUT_TITLE,
   SpotlightButton,
   type SpotlightButtonVariant,
+  useLocale,
 } from "@k2b/ui";
-import { onCleanup, onMount } from "solid-js";
-import { categories, categoryOrder, type ToolDef, toolSearchText, tools } from "./tools/registry";
+import { createMemo, onCleanup, onMount } from "solid-js";
+import { categoryOrder, type LocalizedTool, resolveRegistry } from "./tools/registry";
+
+export const toolSearchMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      searchTools: "Search tools",
+      searchToolsLabel: "Search Tools",
+      searchPlaceholder: "Search tools...",
+      noResults: "No tools found.",
+      searchToolsWithShortcut: ({ shortcut }: { shortcut: string }) => `Search tools (${shortcut})`,
+    },
+    de: {
+      searchTools: "Werkzeuge suchen",
+      searchToolsLabel: "Werkzeuge suchen",
+      searchPlaceholder: "Werkzeuge suchen...",
+      noResults: "Keine Werkzeuge gefunden.",
+      searchToolsWithShortcut: ({ shortcut }) => `Werkzeuge suchen (${shortcut})`,
+    },
+  },
+});
 
 type Props = {
   variant?: SpotlightButtonVariant;
@@ -18,25 +39,31 @@ type Props = {
 
 const categoryRank = new Map(categoryOrder.map((category, index) => [category, index]));
 
-const orderedTools = [...tools].sort((a, b) => {
-  if (Boolean(a.featured) !== Boolean(b.featured)) return a.featured ? -1 : 1;
-  const categoryDiff = (categoryRank.get(a.category) ?? 0) - (categoryRank.get(b.category) ?? 0);
-  return categoryDiff === 0 ? a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) : categoryDiff;
-});
-
-const toolHref = (tool: ToolDef) => `/tools/${tool.id}`;
+const toolHref = (tool: LocalizedTool) => `/tools/${tool.id}`;
 
 export default function ToolSearchButton(props: Props) {
+  const locale = useLocale();
+  const t = () => toolSearchMessages.resolve([locale()]).t;
+  const registry = createMemo(() => resolveRegistry(locale()));
+  const orderedTools = createMemo(() =>
+    [...registry().tools].sort((a, b) => {
+      if (Boolean(a.featured) !== Boolean(b.featured)) return a.featured ? -1 : 1;
+      const categoryDiff = (categoryRank.get(a.category) ?? 0) - (categoryRank.get(b.category) ?? 0);
+      return categoryDiff === 0 ? a.name.localeCompare(b.name, registry().locale, { sensitivity: "base" }) : categoryDiff;
+    }),
+  );
+
   const openSearch = async () => {
-    const selected = await openSpotlightSearch<ToolDef>({
-      title: "Search tools",
+    const selected = await openSpotlightSearch<LocalizedTool>({
+      title: t().searchTools,
       icon: "ti ti-tools",
-      placeholder: "Search tools...",
+      placeholder: t().searchPlaceholder,
       minQueryLength: 0,
-      noResultsText: "No tools found.",
+      noResultsText: t().noResults,
       resolve: ({ query }) => {
         const needle = query.trim().toLowerCase();
-        const matches = needle ? fuzzy.filter(needle, orderedTools, { key: toolSearchText }).map((hit) => hit.item) : orderedTools;
+        const { categories, searchText } = registry();
+        const matches = needle ? fuzzy.filter(needle, orderedTools(), { key: searchText }).map((hit) => hit.item) : orderedTools();
 
         return matches.map((tool) => ({
           value: tool,
@@ -63,16 +90,16 @@ export default function ToolSearchButton(props: Props) {
   });
 
   if (props.variant === "icon") {
-    return <AppWorkspace.SidebarIconAction icon="ti ti-search" label="Search tools" onClick={() => void openSearch()} />;
+    return <AppWorkspace.SidebarIconAction icon="ti ti-search" label={t().searchTools} onClick={() => void openSearch()} />;
   }
 
   return (
     <SpotlightButton
       variant={props.variant}
-      label="Search Tools"
+      label={t().searchToolsLabel}
       onClick={openSearch}
-      title={`Search tools (${SPOTLIGHT_SHORTCUT_TITLE})`}
-      ariaLabel="Search tools"
+      title={t().searchToolsWithShortcut({ shortcut: SPOTLIGHT_SHORTCUT_TITLE })}
+      ariaLabel={t().searchTools}
     />
   );
 }

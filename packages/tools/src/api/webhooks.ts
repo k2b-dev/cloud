@@ -1,8 +1,11 @@
-import { type AuthContext, auth, err, fail, ok, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, err, fail, getLocale, ok, respond, v } from "@valentinkolb/cloud/server";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
-import { sanitizeHeaders, webhookTesterService } from "../service/webhooks";
+import { sanitizeHeaders, WebhookSendError, webhookTesterService } from "../service/webhooks";
+import { sendErrorMessage, webhookApiMessages } from "./webhooks-messages";
+
+const messages = (c: Context<AuthContext>) => webhookApiMessages.resolve([getLocale(c)]).t;
 
 const HeaderRecordSchema = z.record(z.string(), z.string().max(4_000)).default({});
 
@@ -42,7 +45,7 @@ const readBody = async (c: Context<AuthContext>): Promise<{ ok: true; body: stri
       total += value.byteLength;
       if (total > MAX_INCOMING_BODY_BYTES) {
         await reader.cancel();
-        return { ok: false, response: await respond(c, fail(err.badInput("Request body is too large"))) };
+        return { ok: false, response: await respond(c, fail(err.badInput(messages(c).bodyTooLarge))) };
       }
       chunks.push(decoder.decode(value, { stream: true }));
     }
@@ -64,7 +67,7 @@ type UserBackedActorResult = { ok: true; user: AuthContext["Variables"]["user"] 
 
 const requireUserBackedActor = (c: Context<AuthContext>): UserBackedActorResult => {
   const user = getUserBackedActor(c);
-  if (!user) return { ok: false, response: respond(c, fail(err.forbidden("Tools webhooks require a user-backed actor"))) };
+  if (!user) return { ok: false, response: respond(c, fail(err.forbidden(messages(c).userBackedActorRequired))) };
   return { ok: true, user };
 };
 
@@ -83,7 +86,7 @@ const receiveWebhook = async (c: Context<AuthContext>, token: string): Promise<A
     body: body.body,
     contentType: c.req.header("content-type") ?? null,
   });
-  if (!log) return respond(c, fail(err.notFound("Webhook endpoint")));
+  if (!log) return respond(c, fail({ ...err.notFound("Webhook endpoint"), message: messages(c).endpointNotFound }));
   return respond(c, ok({ ok: true, logId: log.id }));
 };
 
@@ -107,7 +110,7 @@ const app = new Hono<AuthContext>()
     const userResult = requireUserBackedActor(c);
     if (!userResult.ok) return userResult.response;
     const user = userResult.user;
-    const endpoint = await webhookTesterService.createEndpoint(user.id, c.req.valid("json").name);
+    const endpoint = await webhookTesterService.createEndpoint(user.id, c.req.valid("json").name, messages(c).defaultEndpointName);
     return respond(c, ok(endpoint), 201);
   })
   .delete("/endpoints/:endpointId", async (c) => {
@@ -115,7 +118,7 @@ const app = new Hono<AuthContext>()
     if (!userResult.ok) return userResult.response;
     const user = userResult.user;
     const deleted = await webhookTesterService.deleteEndpoint(user.id, c.req.param("endpointId")!);
-    if (!deleted) return respond(c, fail(err.notFound("Endpoint")));
+    if (!deleted) return respond(c, fail({ ...err.notFound("Endpoint"), message: messages(c).endpointNotFoundShort }));
     return c.body(null, 204);
   })
   .get("/endpoints/:endpointId/logs", async (c) => {
@@ -172,7 +175,10 @@ const app = new Hono<AuthContext>()
       const log = await webhookTesterService.send(user.id, c.req.valid("json"));
       return respond(c, ok(log));
     } catch (error) {
-      return respond(c, fail(err.badInput(error instanceof Error ? error.message : "Request failed")));
+      if (error instanceof WebhookSendError) {
+        return respond(c, fail(err.badInput(sendErrorMessage(messages(c), error.code))));
+      }
+      return respond(c, fail(err.badInput(error instanceof Error ? error.message : messages(c).requestFailed)));
     }
   });
 

@@ -1,7 +1,50 @@
-import { NoticeCard, Button, Chart, CopyButton } from "@k2b/ui";
+import { i18n } from "@k2b/stdlib";
+import { Button, Chart, CopyButton, NoticeCard, useLocale } from "@k2b/ui";
 import { batch, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { ToolCodeBlock } from "./ToolOutput";
+
+export const speedTestMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      phasePing: "Pinging server",
+      phaseDownload: "Measuring download",
+      phaseUpload: "Measuring upload",
+      phaseDone: "Done",
+      phaseError: "Error",
+      unknownError: "unknown error",
+      dataNotice:
+        "This tool sends random test data to the cloud server to measure your connection. The data is generated in your browser and discarded server-side — nothing is stored.",
+      runAgain: "Run again",
+      startTest: "Start test",
+      stop: "Stop",
+      terminalTitle: "Run from your terminal",
+      cliHintBefore: "Use the Cloud CLI or pipe the script into your runtime. Append ",
+      cliHintAfter: " for structured output.",
+      cliRuntimeAria: "CLI runtime",
+    },
+    de: {
+      phasePing: "Ping wird gemessen",
+      phaseDownload: "Download wird gemessen",
+      phaseUpload: "Upload wird gemessen",
+      phaseDone: "Fertig",
+      phaseError: "Fehler",
+      unknownError: "unbekannter Fehler",
+      dataNotice:
+        "Dieses Werkzeug sendet zufällige Testdaten an den Cloud-Server, um deine Verbindung zu messen. Die Daten werden im Browser erzeugt und serverseitig verworfen. Nichts wird gespeichert.",
+      runAgain: "Erneut testen",
+      startTest: "Test starten",
+      stop: "Stoppen",
+      terminalTitle: "Im Terminal ausführen",
+      cliHintBefore: "Nutze die Cloud CLI oder übergib das Skript an deine Laufzeitumgebung. Ergänze ",
+      cliHintAfter: " für strukturierte Ausgabe an.",
+      cliRuntimeAria: "Laufzeitumgebung",
+    },
+  },
+});
+
+type SpeedTestMessages = ReturnType<typeof speedTestMessages.resolve>["t"];
 
 type Phase = "idle" | "ping" | "download" | "upload" | "done" | "error";
 
@@ -40,14 +83,14 @@ const DOWNLOAD_PER_STREAM = 25 * 1024 * 1024;
 const UPLOAD_PARALLEL = 4;
 const UPLOAD_PER_STREAM = 12 * 1024 * 1024;
 
-const phaseLabel: Record<Phase, string> = {
+const phaseLabel = (t: SpeedTestMessages): Record<Phase, string> => ({
   idle: "",
-  ping: "Pinging server",
-  download: "Measuring download",
-  upload: "Measuring upload",
-  done: "Done",
-  error: "Error",
-};
+  ping: t.phasePing,
+  download: t.phaseDownload,
+  upload: t.phaseUpload,
+  done: t.phaseDone,
+  error: t.phaseError,
+});
 
 const formatRate = (mbps: number | null): string => {
   if (mbps === null) return "—";
@@ -78,6 +121,8 @@ const stddev = (samples: number[]): number => {
 };
 
 export default function SpeedTest(props: SpeedTestProps) {
+  const locale = useLocale();
+  const t = () => speedTestMessages.resolve([locale()]).t;
   const [phase, setPhase] = createSignal<Phase>("idle");
   const [download, setDownload] = createSignal<number | null>(null);
   const [upload, setUpload] = createSignal<number | null>(null);
@@ -269,7 +314,7 @@ export default function SpeedTest(props: SpeedTestProps) {
         setPhase("idle");
         return;
       }
-      setError((err as Error).message ?? "unknown error");
+      setError((err as Error).message ?? t().unknownError);
       setPhase("error");
     }
   };
@@ -288,10 +333,7 @@ export default function SpeedTest(props: SpeedTestProps) {
     <div class="flex flex-col gap-4">
       <NoticeCard tone="warning" icon={false} bodyClass="flex items-center gap-2">
         <i class="ti ti-cloud-upload shrink-0" />
-        <span>
-          This tool sends random test data to the cloud server to measure your connection. The data is generated in your browser and
-          discarded server-side — nothing is stored.
-        </span>
+        <span>{t().dataNotice}</span>
       </NoticeCard>
 
       <div class="paper p-4 flex flex-col gap-4">
@@ -332,16 +374,16 @@ export default function SpeedTest(props: SpeedTestProps) {
             fallback={
               <Button onClick={run}>
                 <i class="ti ti-player-play" />
-                {phase() === "done" || phase() === "error" ? "Run again" : "Start test"}
+                {phase() === "done" || phase() === "error" ? t().runAgain : t().startTest}
               </Button>
             }
           >
             <Button variant="secondary" onClick={stop}>
-              <i class="ti ti-player-stop" /> Stop
+              <i class="ti ti-player-stop" /> {t().stop}
             </Button>
             <span class="text-sm text-dimmed flex items-center gap-1.5">
               <i class="ti ti-loader-2 animate-spin" />
-              {phaseLabel[phase()]}…
+              {phaseLabel(t())[phase()]}…
             </span>
           </Show>
         </div>
@@ -357,13 +399,14 @@ export default function SpeedTest(props: SpeedTestProps) {
         <div class="paper p-4 flex flex-col gap-3">
           <div class="flex items-end justify-between gap-3 flex-wrap">
             <div>
-              <h2 class="text-sm font-semibold">Run from your terminal</h2>
+              <h2 class="text-sm font-semibold">{t().terminalTitle}</h2>
               <p class="text-xs text-dimmed">
-                Use the Cloud CLI or pipe the script into your runtime. Append <code class="text-[11px]">--json</code> for structured
-                output.
+                {t().cliHintBefore}
+                <code class="text-[11px]">--json</code>
+                {t().cliHintAfter}
               </p>
             </div>
-            <div class="flex items-center gap-0.5 text-xs" role="tablist" aria-label="CLI runtime">
+            <div class="flex items-center gap-0.5 text-xs" role="tablist" aria-label={t().cliRuntimeAria}>
               <For
                 each={[
                   { value: "cloud" as CliVariant, label: "Cloud CLI" },

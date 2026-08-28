@@ -1,6 +1,7 @@
-import { AutocompleteEditor, Button, MarkdownEditor, NoticeCard, Select, TextInput } from "@k2b/ui";
+import { AutocompleteEditor, Button, MarkdownEditor, NoticeCard, Select, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { type MarkdownPdfMessages, markdownPdfMessages } from "@/api/markdown-pdf-messages";
 
 export type MarkdownPdfTemplateId = "document" | "report" | "compact" | "custom";
 
@@ -14,11 +15,11 @@ type MarkdownPdfViewProps = {
   initialPreviewUrl?: string;
 };
 
-const TEMPLATE_OPTIONS = [
-  { id: "document", label: "Document", description: "Neutral typography and balanced A4 spacing." },
-  { id: "report", label: "Report", description: "Formal headings, tables, and report styling." },
-  { id: "compact", label: "Compact", description: "Dense layout for technical notes and runbooks." },
-  { id: "custom", label: "Custom", description: "Use your own complete print stylesheet." },
+const templateOptions = (t: MarkdownPdfMessages) => [
+  { id: "document", label: t.templateDocument, description: t.templateDocumentDescription },
+  { id: "report", label: t.templateReport, description: t.templateReportDescription },
+  { id: "compact", label: t.templateCompact, description: t.templateCompactDescription },
+  { id: "custom", label: t.templateCustom, description: t.templateCustomDescription },
 ];
 
 export const MINIMAL_CUSTOM_CSS = `@page { size: A4; margin: 20mm; }
@@ -44,22 +45,23 @@ export const validateMarkdownPdfInput = (
   templateId: MarkdownPdfTemplateId,
   customCss: string,
   filename: string,
+  t: MarkdownPdfMessages,
 ): string | null => {
-  if (!markdown.trim()) return "Enter Markdown before generating a PDF.";
-  if (byteLength(markdown) > MAX_MARKDOWN_BYTES) return "Markdown exceeds the 256 KiB limit.";
-  if (templateId === "custom" && !customCss.trim()) return "Enter CSS for the Custom template.";
-  if (templateId === "custom" && byteLength(customCss) > MAX_CUSTOM_CSS_BYTES) return "Custom CSS exceeds the 32 KiB limit.";
-  if (!filename.trim()) return "Enter a PDF filename.";
-  if (filename.length > 255) return "The filename must not exceed 255 characters.";
+  if (!markdown.trim()) return t.enterMarkdown;
+  if (byteLength(markdown) > MAX_MARKDOWN_BYTES) return t.markdownTooLarge;
+  if (templateId === "custom" && !customCss.trim()) return t.enterCss;
+  if (templateId === "custom" && byteLength(customCss) > MAX_CUSTOM_CSS_BYTES) return t.cssTooLarge;
+  if (!filename.trim()) return t.enterFilename;
+  if (filename.length > 255) return t.filenameTooLong;
   return null;
 };
 
-const responseError = async (response: Response): Promise<string> => {
-  if (response.status === 401) return "Sign in to generate PDFs.";
-  if (response.status === 429) return "Too many PDF renders. Wait a moment and try again.";
+const responseError = async (response: Response, t: MarkdownPdfMessages): Promise<string> => {
+  if (response.status === 401) return t.signInToGenerate;
+  if (response.status === 429) return t.tooManyRenders;
   const data: unknown = await response.json().catch(() => null);
   if (data && typeof data === "object" && "message" in data && typeof data.message === "string") return data.message;
-  return "The PDF could not be generated.";
+  return t.pdfFailed;
 };
 
 const downloadBlob = (blob: Blob, filename: string): void => {
@@ -72,6 +74,8 @@ const downloadBlob = (blob: Blob, filename: string): void => {
 };
 
 export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
+  const locale = useLocale();
+  const t = () => markdownPdfMessages.resolve([locale()]).t;
   const [markdown, setMarkdown] = createSignal(props.initialMarkdown ?? "");
   const [templateId, setTemplateId] = createSignal<MarkdownPdfTemplateId>(props.initialTemplateId ?? "document");
   const [customCss, setCustomCss] = createSignal(
@@ -109,7 +113,7 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
 
   const generate = async () => {
     cancel();
-    const validation = validateMarkdownPdfInput(markdown(), templateId(), customCss(), filename());
+    const validation = validateMarkdownPdfInput(markdown(), templateId(), customCss(), filename(), t());
     if (validation) {
       setError(validation);
       return;
@@ -135,9 +139,9 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
         },
         { init: { signal: controller.signal } },
       );
-      if (!response.ok) throw new Error(await responseError(response));
+      if (!response.ok) throw new Error(await responseError(response, t()));
       const blob = await response.blob();
-      if (blob.type !== "application/pdf") throw new Error("The server returned an unexpected file type.");
+      if (blob.type !== "application/pdf") throw new Error(t().unexpectedFileType);
       if (revision !== requestRevision) return;
       const nextUrl = URL.createObjectURL(blob);
       revokePreview();
@@ -146,7 +150,7 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
       setRenderedInput(snapshot);
     } catch (cause) {
       if (controller.signal.aborted || revision !== requestRevision) return;
-      setError(cause instanceof Error ? cause.message : "The PDF could not be generated.");
+      setError(cause instanceof Error ? cause.message : t().pdfFailed);
     } finally {
       if (revision === requestRevision) {
         request = null;
@@ -177,9 +181,15 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
       <div class="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(20rem,0.92fr)_minmax(0,1.08fr)]">
         <div class="flex min-h-0 flex-col gap-4">
           <div class="grid gap-3 sm:grid-cols-2">
-            <Select label="Template" icon="ti ti-template" value={templateId} onValueChange={selectTemplate} options={TEMPLATE_OPTIONS} />
+            <Select
+              label={t().templateLabel}
+              icon="ti ti-template"
+              value={templateId}
+              onValueChange={selectTemplate}
+              options={templateOptions(t())}
+            />
             <TextInput
-              label="Filename"
+              label={t().filenameLabel}
               icon="ti ti-file-type-pdf"
               value={filename}
               onValueChange={setFilename}
@@ -190,10 +200,10 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
 
           <div class="h-[28rem] min-h-0 shrink-0 lg:h-auto lg:flex-1 lg:shrink">
             <MarkdownEditor
-              label="Markdown"
+              label={t().markdownLabel}
               value={markdown}
               onValueChange={setMarkdown}
-              placeholder="# Document title\n\nWrite or paste Markdown here…"
+              placeholder={t().markdownPlaceholder}
               lines={18}
               fill
               showStats
@@ -203,8 +213,8 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
           <Show when={templateId() === "custom"}>
             <div>
               <AutocompleteEditor
-                label="Custom CSS"
-                description="This replaces the print template. External resources are not supported. Maximum 32 KiB."
+                label={t().customCssLabel}
+                description={t().customCssDescription}
                 value={customCss}
                 onValueChange={setCustomCss}
                 placeholder={MINIMAL_CUSTOM_CSS}
@@ -216,23 +226,23 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
 
           <div class="flex items-start gap-2 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface-subtle)] px-3 py-2 text-xs leading-relaxed text-dimmed">
             <i class="ti ti-server mt-0.5 shrink-0" aria-hidden="true" />
-            <p>Markdown and CSS are sent to this Cloud server. The input and generated PDF are processed in memory and are not stored.</p>
+            <p>{t().serverNotice}</p>
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <Button variant="primary" onClick={() => void generate()} loading={busy()} loadingLabel="Generating PDF…">
-              <i class="ti ti-file-type-pdf" aria-hidden="true" /> Generate PDF
+            <Button variant="primary" onClick={() => void generate()} loading={busy()} loadingLabel={t().generatingPdf}>
+              <i class="ti ti-file-type-pdf" aria-hidden="true" /> {t().generatePdf}
             </Button>
             <Show when={busy()}>
               <Button variant="secondary" onClick={cancel}>
-                Cancel
+                {t().cancel}
               </Button>
             </Show>
           </div>
 
           <Show when={error()}>
             <div role="alert">
-              <NoticeCard tone="danger" title="PDF generation failed">
+              <NoticeCard tone="danger" title={t().generationFailedTitle}>
                 {error()}
               </NoticeCard>
             </div>
@@ -243,17 +253,17 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
           <div class="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ui-border)] px-4 py-3">
             <div class="min-w-0">
               <h2 id="markdown-pdf-heading" class="font-medium text-primary">
-                PDF preview
+                {t().previewTitle}
               </h2>
-              <p class="text-xs text-dimmed">A4 print output using the selected template.</p>
+              <p class="text-xs text-dimmed">{t().previewDescription}</p>
             </div>
             <Show when={previewUrl()}>
               <div class="flex items-center gap-2">
                 <Button variant="secondary" size="sm" onClick={openPreview}>
-                  <i class="ti ti-external-link" aria-hidden="true" /> Open
+                  <i class="ti ti-external-link" aria-hidden="true" /> {t().open}
                 </Button>
                 <Button variant="primary" size="sm" onClick={download} disabled={!pdf()}>
-                  <i class="ti ti-download" aria-hidden="true" /> Download PDF
+                  <i class="ti ti-download" aria-hidden="true" /> {t().downloadPdf}
                 </Button>
               </div>
             </Show>
@@ -261,8 +271,8 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
 
           <Show when={stale()}>
             <div class="border-b border-[var(--ui-border)] px-4 py-3">
-              <NoticeCard tone="warning" title="Preview is out of date">
-                Generate the PDF again to include your latest changes.
+              <NoticeCard tone="warning" title={t().staleTitle}>
+                {t().staleBody}
               </NoticeCard>
             </div>
           </Show>
@@ -272,17 +282,17 @@ export function MarkdownPdfView(props: MarkdownPdfViewProps = {}) {
             fallback={
               <div class="flex flex-1 flex-col items-center justify-center gap-2 p-8 text-center text-dimmed">
                 <i class="ti ti-file-type-pdf text-4xl" aria-hidden="true" />
-                <p class="font-medium text-primary">No PDF generated yet</p>
-                <p class="max-w-sm text-sm">Enter Markdown, choose a template, and generate a PDF to preview the final pages.</p>
+                <p class="font-medium text-primary">{t().emptyTitle}</p>
+                <p class="max-w-sm text-sm">{t().emptyDescription}</p>
               </div>
             }
           >
             {(url) => (
               <>
                 <p class="k2b-sr-only" role="status">
-                  PDF generation complete.
+                  {t().generationComplete}
                 </p>
-                <iframe class="min-h-[28rem] flex-1 bg-white" src={url()} title="Generated PDF preview" />
+                <iframe class="min-h-[28rem] flex-1 bg-white" src={url()} title={t().iframeTitle} />
               </>
             )}
           </Show>

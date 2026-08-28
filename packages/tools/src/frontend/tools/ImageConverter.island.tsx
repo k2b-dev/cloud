@@ -17,6 +17,7 @@ import {
   SplitButton,
   toast,
   Tooltip,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import {
@@ -28,6 +29,7 @@ import {
   rotatedDimensions,
   uniqueOutputNames,
 } from "./image-converter/image-converter";
+import { imageConverterMessages } from "./image-converter/messages";
 
 const IMAGE_ACCEPT = "image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.svg,.avif,.heic,.heif";
 
@@ -72,6 +74,8 @@ const rotateImage = (data: ImgData, rotation: ImageConverterRotation): Promise<I
 
 /** @internal Render seam for focused SSR tests; the route-facing island remains zero-prop. */
 export function ImageConverterView(props: ImageConverterViewProps = {}) {
+  const locale = useLocale();
+  const t = () => imageConverterMessages.resolve([locale()]).t;
   const [images, setImages] = createSignal<ImageConverterEntry[]>([...(props.initialImages ?? [])]);
   const [format, setFormat] = createSignal<ImageConverterFormat>("webp");
   const [quality, setQuality] = createSignal(0.85);
@@ -97,10 +101,10 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
     try {
       await new Promise<void>((resolve, reject) => {
         preview.onload = () => resolve();
-        preview.onerror = () => reject(new Error("The browser could not decode this image"));
+        preview.onerror = () => reject(new Error(t().decodeFailed));
         preview.src = previewUrl;
       });
-      if (preview.naturalWidth < 1 || preview.naturalHeight < 1) throw new Error("The image has no readable dimensions");
+      if (preview.naturalWidth < 1 || preview.naturalHeight < 1) throw new Error(t().noDimensions);
       return {
         id: imageId(),
         file,
@@ -126,15 +130,14 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
           loaded.push(await loadImage(file));
           abortSignal.throwIfAborted();
         } catch (cause) {
-          failures.push(`${file.name}: ${cause instanceof Error ? cause.message : "The image could not be loaded"}`);
+          failures.push(`${file.name}: ${cause instanceof Error ? cause.message : t().loadFallback}`);
         }
       }
 
       abortSignal.throwIfAborted();
       if (loaded.length > 0) setImages((current) => [...current, ...loaded]);
       if (failures.length > 0) {
-        const prefix = failures.length === 1 ? "One image was skipped." : `${failures.length} images were skipped.`;
-        setError(`${prefix} ${failures[0]}`);
+        setError(`${t().imagesSkipped({ count: failures.length })} ${failures[0]}`);
       }
       if (loaded.length === 0 && failures.length > 0) throw new Error(failures[0]);
     },
@@ -148,11 +151,11 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
   const addFiles = (files: File[]) => {
     if (files.length === 0) return;
     if (loadMutation.loading()) {
-      setError("Wait for the current images to finish loading");
+      setError(t().waitForLoading);
       return;
     }
     if (exportLocked()) {
-      setError("Wait for the current export to finish");
+      setError(t().waitForExport);
       return;
     }
     void loadMutation.mutate(files);
@@ -166,7 +169,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
       addFiles(selected);
     } catch (cause) {
       if (cause instanceof Error && cause.message === "File dialog cancelled") return;
-      setError(cause instanceof Error ? cause.message : "The image picker could not be opened");
+      setError(cause instanceof Error ? cause.message : t().pickerFailed);
     }
   };
 
@@ -182,10 +185,10 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
   };
 
   const clearImages = async () => {
-    const confirmed = await prompts.confirm(`Remove all ${images().length} images from the converter?`, {
-      title: "Clear images",
+    const confirmed = await prompts.confirm(t().clearConfirm({ count: images().length }), {
+      title: t().clearConfirmTitle,
       icon: "ti ti-trash",
-      confirmText: "Clear",
+      confirmText: t().clearConfirmAction,
       variant: "danger",
     });
     if (!confirmed) return;
@@ -233,7 +236,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
   const exportMutation = mutation.create<ExportResult, ExportRequest>({
     mutation: async ({ scope, destination }, { abortSignal }) => {
       const targets = scope === "selected" ? images().filter((image) => image.selected) : images();
-      if (targets.length === 0) throw new Error("Select at least one image to export");
+      if (targets.length === 0) throw new Error(t().selectAtLeastOne);
 
       const outputFormat = format();
       const outputQuality = quality();
@@ -254,10 +257,10 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
         const result = await processImage(target, outputFormat, outputQuality, outputBackground, widthLimit, heightLimit, destination);
         abortSignal.throwIfAborted();
         if (destination === "clipboard") {
-          if (!result.dataUrl) throw new Error(`Could not encode ${target.file.name} as a Base64 image`);
+          if (!result.dataUrl) throw new Error(t().encodeFailed({ name: target.file.name }));
           tags.push(buildBase64ImageTag(result.dataUrl, target.file.name, result.data));
         } else {
-          if (!result.blob) throw new Error(`Could not convert ${target.file.name}`);
+          if (!result.blob) throw new Error(t().convertFailed({ name: target.file.name }));
           blobs.push({ filename: outputNames[index]!, source: result.blob });
         }
         setProgress(((index + 1) / targets.length) * (targets.length > 1 && destination === "download" ? 80 : 100));
@@ -270,7 +273,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
         setProgress(100);
         return {
           destination,
-          message: `${targets.length} Base64 image ${targets.length === 1 ? "tag was" : "tags were"} copied`,
+          message: t().copiedTags({ count: targets.length }),
         };
       }
 
@@ -285,7 +288,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
       setProgress(100);
       return {
         destination,
-        message: `${targets.length} converted ${targets.length === 1 ? "image was" : "images were"} downloaded`,
+        message: t().downloadedImages({ count: targets.length }),
       };
     },
     onBefore: () => {
@@ -296,7 +299,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
     },
     onSuccess: ({ destination, message }) => {
       if (destination === "clipboard") {
-        toast.success(message, { title: "Copied to clipboard" });
+        toast.success(message, { title: t().copiedToClipboard });
         return;
       }
       setSuccess(message);
@@ -323,25 +326,23 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
           class="tools-image-converter relative flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--ui-surface)]"
           data-dragging={workspaceDropzone.isDragging() ? "true" : undefined}
           data-invalid-drag={workspaceDropzone.invalidDrag() ? "true" : undefined}
-          aria-label="Image converter"
+          aria-label={t().workspaceLabel}
           {...workspaceDropzone.handlers}
         >
           <header class="flex flex-none flex-wrap items-center justify-between gap-3 px-[var(--ui-space-shell)] py-[var(--ui-space-section)]">
             <div class="min-w-0">
-              <h1 class="text-base font-semibold text-primary">Images</h1>
+              <h1 class="text-base font-semibold text-primary">{t().heading}</h1>
               <p class="text-xs text-dimmed">
-                {images().length === 0
-                  ? "Add mixed image formats and sizes"
-                  : `${images().length} ${images().length === 1 ? "image" : "images"}`}
+                {images().length === 0 ? t().emptySubtitle : t().imageCount({ count: images().length })}
               </p>
             </div>
             <div class="flex items-center gap-2">
               <Show when={images().length > 0}>
                 <Button variant="secondary" size="sm" onClick={selectFiles} disabled={loadMutation.loading() || exportMutation.loading()}>
-                  <i class="ti ti-photo-plus" aria-hidden="true" /> Add images
+                  <i class="ti ti-photo-plus" aria-hidden="true" /> {t().addImages}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={clearImages} disabled={loadMutation.loading() || exportMutation.loading()}>
-                  Clear all
+                  {t().clearAll}
                 </Button>
               </Show>
             </div>
@@ -353,13 +354,13 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
               <div class="flex min-h-80 flex-1 items-center justify-center p-[var(--ui-space-shell)]">
                 <FileDropzone
                   class="w-full max-w-xl"
-                  aria-label="Choose images to convert"
+                  aria-label={t().dropzoneLabel}
                   accept={IMAGE_ACCEPT}
                   multiple
                   busy={loadMutation.loading() || exportLocked()}
-                  title="Drop images here or click to choose"
-                  subtitle="Mix formats and sizes; conversion stays in this browser"
-                  hint="Static images supported by your browser"
+                  title={t().dropzoneTitle}
+                  subtitle={t().dropzoneSubtitle}
+                  hint={t().dropzoneHint}
                   icon="ti ti-photo-plus"
                   onDrop={addFiles}
                 />
@@ -368,14 +369,14 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
           >
             <div class="flex flex-none items-center justify-between gap-3 px-[var(--ui-space-shell)] py-2">
               <Checkbox
-                label="Select all"
+                label={t().selectAll}
                 value={allSelected}
                 indeterminate={hasSelection() && !allSelected()}
                 disabled={loadMutation.loading() || exportMutation.loading()}
                 onValueChange={toggleAll}
               />
               <Show when={hasSelection()}>
-                <span class="text-xs tabular-nums text-dimmed">{selectedCount()} selected</span>
+                <span class="text-xs tabular-nums text-dimmed">{t().selectedCount({ count: selectedCount() })}</span>
               </Show>
             </div>
 
@@ -383,7 +384,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
               <div
                 class="grid grid-cols-[repeat(auto-fill,minmax(min(100%,12rem),1fr))] gap-[var(--ui-space-section)]"
                 role="list"
-                aria-label="Images to convert"
+                aria-label={t().listLabel}
               >
                 <For each={images()}>
                   {(image) => {
@@ -398,23 +399,23 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                         <div class="tools-image-converter-card__preview relative aspect-square overflow-hidden bg-[var(--ui-surface)] p-3">
                           <img
                             src={image.previewUrl}
-                            alt={`Preview of ${image.file.name}`}
+                            alt={t().previewAlt({ name: image.file.name })}
                             class="h-full w-full object-contain transition-transform"
                             style={{ transform: `rotate(${image.rotation}deg)` }}
                             draggable={false}
                           />
                           <div class="tools-image-converter-card__selection absolute left-2 top-2">
                             <Checkbox
-                              aria-label={`Select ${image.file.name}`}
+                              aria-label={t().selectImage({ name: image.file.name })}
                               value={image.selected}
                               disabled={loadMutation.loading() || exportMutation.loading()}
                               onValueChange={(selected) => toggleImage(image.id, selected)}
                             />
                           </div>
                           <div class="tools-image-converter-card__actions absolute right-2 top-2 flex gap-1">
-                            <Tooltip.Anchor content="Rotate clockwise">
+                            <Tooltip.Anchor content={t().rotateClockwise}>
                               <IconButton
-                                label={`Rotate ${image.file.name} clockwise`}
+                                label={t().rotateImageClockwise({ name: image.file.name })}
                                 size="sm"
                                 onClick={() => rotateClockwise(image.id)}
                                 disabled={loadMutation.loading() || exportMutation.loading()}
@@ -422,9 +423,9 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                                 <i class="ti ti-rotate-clockwise" aria-hidden="true" />
                               </IconButton>
                             </Tooltip.Anchor>
-                            <Tooltip.Anchor content="Remove image">
+                            <Tooltip.Anchor content={t().removeImage}>
                               <IconButton
-                                label={`Remove ${image.file.name}`}
+                                label={t().removeNamed({ name: image.file.name })}
                                 size="sm"
                                 class="text-red-600 dark:text-red-400"
                                 onClick={() => removeImage(image.id)}
@@ -458,7 +459,7 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
             >
               <div class="flex flex-col items-center gap-2 text-center app-accent-text">
                 <i class={workspaceDropzone.invalidDrag() ? "ti ti-file-x text-3xl" : "ti ti-photo-plus text-3xl"} aria-hidden="true" />
-                <strong>{workspaceDropzone.invalidDrag() ? "Some files are not images" : "Drop images to add them"}</strong>
+                <strong>{workspaceDropzone.invalidDrag() ? t().invalidDrag : t().dropToAdd}</strong>
               </div>
             </div>
           </Show>
@@ -475,15 +476,13 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
         <DetailPanel>
           <DetailPanel.Header
             icon="ti ti-arrows-exchange"
-            title="Convert and export"
-            subtitle={
-              images().length > 0 ? `${images().length} ${images().length === 1 ? "image" : "images"} ready` : "Add images to begin"
-            }
+            title={t().panelTitle}
+            subtitle={images().length > 0 ? t().imagesReady({ count: images().length }) : t().panelEmpty}
           />
 
           <DetailPanel.Body scrollPreserveKey="image-converter-settings">
-            <DetailPanel.Group label="Output">
-              <DetailPanel.Section title="Format" icon="ti ti-photo" tone="neutral">
+            <DetailPanel.Group label={t().groupOutput}>
+              <DetailPanel.Section title={t().sectionFormat} icon="ti ti-photo" tone="neutral">
                 <SegmentedControl<ImageConverterFormat>
                   options={[
                     { value: "jpeg", label: "JPEG" },
@@ -492,13 +491,13 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                   ]}
                   value={format}
                   onValueChange={setFormat}
-                  ariaLabel="Target image format"
+                  ariaLabel={t().targetFormat}
                   disabled={exportMutation.loading()}
                 />
                 <Show when={format() !== "png"}>
                   <div class="mt-3">
                     <Slider
-                      label="Quality"
+                      label={t().quality}
                       value={quality}
                       onValueChange={setQuality}
                       min={0.1}
@@ -512,8 +511,8 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                 <Show when={format() === "jpeg"}>
                   <div class="mt-3">
                     <ColorInput
-                      label="Transparency background"
-                      description="JPEG cannot keep transparent pixels"
+                      label={t().transparencyBackground}
+                      description={t().transparencyDescription}
                       value={jpegBackground}
                       onValueChange={setJpegBackground}
                       disabled={exportMutation.loading()}
@@ -523,18 +522,18 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
               </DetailPanel.Section>
             </DetailPanel.Group>
 
-            <DetailPanel.Group label="Size">
+            <DetailPanel.Group label={t().groupSize}>
               <DetailPanel.Section
-                title="Maximum dimensions"
+                title={t().maxDimensions}
                 icon="ti ti-arrows-maximize"
                 tone="neutral"
-                description="Keeps the aspect ratio and never enlarges an image."
+                description={t().maxDimensionsDescription}
               >
                 <div class="grid grid-cols-2 gap-2">
                   <NumberInput
                     name="image-converter-max-width"
-                    label="Max width"
-                    placeholder="Original"
+                    label={t().maxWidth}
+                    placeholder={t().original}
                     suffix="px"
                     value={maxWidth}
                     onValueChange={setMaxWidth}
@@ -546,8 +545,8 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                   />
                   <NumberInput
                     name="image-converter-max-height"
-                    label="Max height"
-                    placeholder="Original"
+                    label={t().maxHeight}
+                    placeholder={t().original}
                     suffix="px"
                     value={maxHeight}
                     onValueChange={setMaxHeight}
@@ -562,13 +561,13 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
             </DetailPanel.Group>
 
             <Show when={error()}>
-              <NoticeCard tone="danger" title="Image conversion failed" detail={error()} />
+              <NoticeCard tone="danger" title={t().conversionFailed} detail={error()} />
             </Show>
             <Show when={success()}>
               <NoticeCard tone="success" title={success()} />
             </Show>
             <Show when={progress() !== null}>
-              <ProgressBar value={progress() ?? 0} label="Image export progress" size="sm" showValue />
+              <ProgressBar value={progress() ?? 0} label={t().exportProgress} size="sm" showValue />
             </Show>
           </DetailPanel.Body>
 
@@ -581,17 +580,17 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                   onClick={() => startExport("all", "download")}
                   items={[
                     {
-                      label: `Copy all (${images().length}) as Base64 HTML`,
+                      label: t().copyAllBase64({ count: images().length }),
                       icon: "ti ti-copy",
                       action: () => startExport("all", "clipboard"),
                     },
                   ]}
-                  menuLabel="More export options for all images"
+                  menuLabel={t().moreExportAll}
                   disabled={loadMutation.loading()}
                   loading={exportMutation.loading()}
-                  loadingLabel="Exporting"
+                  loadingLabel={t().exporting}
                 >
-                  <i class="ti ti-download" aria-hidden="true" /> Export all ({images().length})
+                  <i class="ti ti-download" aria-hidden="true" /> {t().exportAll({ count: images().length })}
                 </SplitButton>
               </Show>
               <SplitButton
@@ -600,19 +599,19 @@ export function ImageConverterView(props: ImageConverterViewProps = {}) {
                 items={[
                   {
                     label: hasSelection()
-                      ? `Copy selected (${selectedCount()}) as Base64 HTML`
-                      : `Copy all (${images().length}) as Base64 HTML`,
+                      ? t().copySelectedBase64({ count: selectedCount() })
+                      : t().copyAllBase64({ count: images().length }),
                     icon: "ti ti-copy",
                     action: () => startExport(hasSelection() ? "selected" : "all", "clipboard"),
                   },
                 ]}
-                menuLabel={hasSelection() ? "More export options for selected images" : "More export options for all images"}
+                menuLabel={hasSelection() ? t().moreExportSelected : t().moreExportAll}
                 disabled={loadMutation.loading()}
                 loading={exportMutation.loading()}
-                loadingLabel="Exporting"
+                loadingLabel={t().exporting}
               >
                 <i class="ti ti-download" aria-hidden="true" />
-                {hasSelection() ? `Export selected (${selectedCount()})` : `Export all (${images().length})`}
+                {hasSelection() ? t().exportSelected({ count: selectedCount() }) : t().exportAll({ count: images().length })}
               </SplitButton>
             </footer>
           </Show>

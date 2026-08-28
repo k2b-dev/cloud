@@ -1,7 +1,31 @@
-import { Button, CopyButton, Slider } from "@k2b/ui";
+import { i18n } from "@k2b/stdlib";
+import { Button, CopyButton, Slider, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For } from "solid-js";
 import { ToolCodeBlock } from "./ToolOutput";
+
+export const uuidMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      count: "Count",
+      countDescription: "Number of UUIDs to generate at once",
+      uuidCount: ({ count }: { count: number }) => (count === 1 ? "1 UUID" : `${count} UUIDs`),
+      copied: "Copied",
+      copyAll: "Copy All",
+    },
+    de: {
+      count: "Anzahl",
+      countDescription: "UUIDs pro Durchlauf",
+      uuidCount: ({ count }) => (count === 1 ? "1 UUID" : `${count} UUIDs`),
+      copied: "Kopiert",
+      copyAll: "Alle kopieren",
+    },
+  },
+});
+
 export default function UuidGenerator() {
+  const locale = useLocale();
+  const t = () => uuidMessages.resolve([locale()]).t;
   const [count, setCount] = createSignal(1);
   const [uuids, setUuids] = createSignal<string[]>([]);
   const [copiedAll, setCopiedAll] = createSignal(false);
@@ -23,8 +47,8 @@ export default function UuidGenerator() {
     <div class="flex min-h-0 flex-1 flex-col gap-4">
       <div class="paper p-4 flex flex-col gap-3">
         <Slider
-          label="Count"
-          description="Number of UUIDs to generate at once"
+          label={t().count}
+          description={t().countDescription}
           value={count}
           onValueChange={setCount}
           min={1}
@@ -36,11 +60,9 @@ export default function UuidGenerator() {
       {uuids().length > 0 && (
         <div class="paper flex min-h-0 flex-1 flex-col gap-2 p-4">
           <div class="flex items-center justify-between mb-1">
-            <p class="text-xs font-medium text-dimmed">
-              {uuids().length} UUID{uuids().length !== 1 ? "s" : ""}
-            </p>
+            <p class="text-xs font-medium text-dimmed">{t().uuidCount({ count: uuids().length })}</p>
             <Button variant="secondary" size="sm" onClick={copyAll}>
-              <i class={`ti ${copiedAll() ? "ti-check" : "ti-copy"}`} /> {copiedAll() ? "Copied" : "Copy All"}
+              <i class={`ti ${copiedAll() ? "ti-check" : "ti-copy"}`} /> {copiedAll() ? t().copied : t().copyAll}
             </Button>
           </div>
           <div class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">

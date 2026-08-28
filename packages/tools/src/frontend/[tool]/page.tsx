@@ -1,4 +1,4 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import type { JSX } from "solid-js";
 import { resolveSpeedtestBase } from "../../api/_url";
@@ -16,7 +16,7 @@ import MarkdownPdf from "../tools/MarkdownPdf.island";
 import MailtoGenerator from "../tools/MailtoGenerator.island";
 import PasswordGenerator from "../tools/PasswordGenerator.island";
 import QrCodeGenerator from "../tools/QrCodeGenerator.island";
-import { toolById } from "../tools/registry";
+import { resolveRegistry } from "../tools/registry";
 import SpeedTest from "../tools/SpeedTest.island";
 import UuidGenerator from "../tools/UuidGenerator.island";
 import WebhookTester, { parseWebhookTesterState, type WebhookTesterInitialState } from "../tools/WebhookTester.island";
@@ -47,7 +47,7 @@ export default ssr<AuthContext>(async (c) => {
   if (!toolId) {
     return c.redirect("/tools", 302);
   }
-  const tool = toolById(toolId);
+  const tool = resolveRegistry(getLocale(c)).toolById(toolId);
 
   if (!tool) {
     return c.redirect("/tools", 302);

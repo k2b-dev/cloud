@@ -2,23 +2,36 @@
 // depends on the optional peer `lean-qr`. Use the subpath import; this
 // app declares lean-qr as a direct dep so it's installed in the container.
 import { qr } from "@k2b/stdlib/qr";
-import { Button, ColorInput, CopyButton, DateTimePicker, Select, Slider, TextInput, Switch as Toggle } from "@k2b/ui";
+import { Button, ColorInput, CopyButton, DateTimePicker, Select, Slider, TextInput, Switch as Toggle, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, Match, Show, Switch } from "solid-js";
+import { qrMessages } from "./qr-messages";
 
 type Mode = "text" | "wifi" | "email" | "tel" | "vcard" | "event";
 
-const MODE_INFO: Record<Mode, string> = {
-  text: "Encode any text or URL into a QR code.",
-  wifi: "Scan to connect to a WiFi network automatically.",
-  email: "Scan to open a pre-filled email draft.",
-  tel: "Scan to dial a phone number.",
-  vcard: "Scan to save a digital business card.",
-  event: "Scan to add a calendar event.",
-};
-
 export default function QrCodeGenerator() {
+  const locale = useLocale();
+  const t = () => qrMessages.resolve([locale()]).t;
+
   // === Mode ===
   const [mode, setMode] = createSignal<Mode>("text");
+
+  const modeInfo = (): string => {
+    const messages = t();
+    switch (mode()) {
+      case "wifi":
+        return messages.hintWifi;
+      case "email":
+        return messages.hintEmail;
+      case "tel":
+        return messages.hintTel;
+      case "vcard":
+        return messages.hintVcard;
+      case "event":
+        return messages.hintEvent;
+      default:
+        return messages.hintText;
+    }
+  };
 
   // === Text/URL ===
   const [text, setText] = createSignal("https://example.com");
@@ -184,22 +197,22 @@ export default function QrCodeGenerator() {
       <div class="tools-qr-workbench">
         <section class="paper tools-qr-input flex flex-col gap-4 p-4">
           <header>
-            <h2 class="text-sm font-semibold text-primary">Content</h2>
-            <p class="text-xs text-dimmed">{MODE_INFO[mode()]}</p>
+            <h2 class="text-sm font-semibold text-primary">{t().contentHeading}</h2>
+            <p class="text-xs text-dimmed">{modeInfo()}</p>
           </header>
 
           <Select
-            label="Content type"
+            label={t().contentType}
             icon="ti ti-qrcode"
             value={mode}
             onValueChange={(value) => setMode(value as Mode)}
             options={[
-              { id: "text", label: "Text or URL", icon: "ti ti-link" },
-              { id: "wifi", label: "WiFi network", icon: "ti ti-wifi" },
-              { id: "email", label: "Email", icon: "ti ti-mail" },
-              { id: "tel", label: "Phone number", icon: "ti ti-phone" },
-              { id: "vcard", label: "Contact card", icon: "ti ti-address-book" },
-              { id: "event", label: "Calendar event", icon: "ti ti-calendar-event" },
+              { id: "text", label: t().typeText, icon: "ti ti-link" },
+              { id: "wifi", label: t().typeWifi, icon: "ti ti-wifi" },
+              { id: "email", label: t().typeEmail, icon: "ti ti-mail" },
+              { id: "tel", label: t().typeTel, icon: "ti ti-phone" },
+              { id: "vcard", label: t().typeVcard, icon: "ti ti-address-book" },
+              { id: "event", label: t().typeEvent, icon: "ti ti-calendar-event" },
             ]}
           />
 
@@ -207,9 +220,9 @@ export default function QrCodeGenerator() {
             <Switch>
               <Match when={mode() === "text"}>
                 <TextInput
-                  label="Link or text"
-                  description="The preview updates while you type."
-                  placeholder="URL or text to encode..."
+                  label={t().textLabel}
+                  description={t().textDescription}
+                  placeholder={t().textPlaceholder}
                   icon="ti ti-link"
                   multiline
                   lines={4}
@@ -220,18 +233,18 @@ export default function QrCodeGenerator() {
 
               <Match when={mode() === "wifi"}>
                 <TextInput
-                  label="Network name (SSID)"
-                  description="The name of the WiFi network."
-                  placeholder="MyNetwork"
+                  label={t().wifiSsidLabel}
+                  description={t().wifiSsidDescription}
+                  placeholder={t().wifiSsidPlaceholder}
                   icon="ti ti-wifi"
                   value={wifiSsid}
                   onValueChange={setWifiSsid}
                   required
                 />
                 <TextInput
-                  label="Password"
-                  description="Leave empty for open networks."
-                  placeholder="Network password"
+                  label={t().wifiPasswordLabel}
+                  description={t().wifiPasswordDescription}
+                  placeholder={t().wifiPasswordPlaceholder}
                   icon="ti ti-lock"
                   value={wifiPassword}
                   onValueChange={setWifiPassword}
@@ -239,42 +252,42 @@ export default function QrCodeGenerator() {
                 />
                 <div class="grid grid-cols-1 items-end gap-3 sm:grid-cols-2">
                   <Select
-                    label="Encryption"
+                    label={t().wifiEncryptionLabel}
                     icon="ti ti-shield-lock"
                     value={wifiEncryption}
                     onValueChange={setWifiEncryption}
                     options={[
                       { id: "WPA", label: "WPA / WPA2" },
                       { id: "WEP", label: "WEP" },
-                      { id: "nopass", label: "None (open)" },
+                      { id: "nopass", label: t().wifiEncryptionNone },
                     ]}
                   />
                   <div class="flex h-9.5 items-center">
-                    <Toggle label="Hidden network" value={wifiHidden} onValueChange={setWifiHidden} />
+                    <Toggle label={t().wifiHiddenLabel} value={wifiHidden} onValueChange={setWifiHidden} />
                   </div>
                 </div>
               </Match>
 
               <Match when={mode() === "email"}>
                 <TextInput
-                  label="To"
-                  description="Recipient email address."
-                  placeholder="recipient@example.com"
+                  label={t().emailToLabel}
+                  description={t().emailToDescription}
+                  placeholder={t().emailToPlaceholder}
                   icon="ti ti-mail"
                   value={emailTo}
                   onValueChange={setEmailTo}
                   required
                 />
                 <TextInput
-                  label="Subject"
-                  placeholder="Email subject"
+                  label={t().emailSubjectLabel}
+                  placeholder={t().emailSubjectPlaceholder}
                   icon="ti ti-text-caption"
                   value={emailSubject}
                   onValueChange={setEmailSubject}
                 />
                 <TextInput
-                  label="Body"
-                  placeholder="Email body text..."
+                  label={t().emailBodyLabel}
+                  placeholder={t().emailBodyPlaceholder}
                   icon="ti ti-align-left"
                   multiline
                   value={emailBody}
@@ -284,8 +297,8 @@ export default function QrCodeGenerator() {
 
               <Match when={mode() === "tel"}>
                 <TextInput
-                  label="Phone number"
-                  description="Include the country code for international numbers."
+                  label={t().telLabel}
+                  description={t().telDescription}
                   placeholder="+49 123 456 7890"
                   icon="ti ti-phone"
                   value={telNumber}
@@ -297,75 +310,75 @@ export default function QrCodeGenerator() {
               <Match when={mode() === "vcard"}>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <TextInput
-                    label="First name"
-                    placeholder="Jane"
+                    label={t().vcFirstNameLabel}
+                    placeholder={t().vcFirstNamePlaceholder}
                     icon="ti ti-user"
                     value={vcFirstName}
                     onValueChange={setVcFirstName}
                     required
                   />
-                  <TextInput label="Last name" placeholder="Doe" value={vcLastName} onValueChange={setVcLastName} />
+                  <TextInput label={t().vcLastNameLabel} placeholder={t().vcLastNamePlaceholder} value={vcLastName} onValueChange={setVcLastName} />
                 </div>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <TextInput label="Organization" placeholder="Acme Inc." icon="ti ti-building" value={vcOrg} onValueChange={setVcOrg} />
+                  <TextInput label={t().vcOrgLabel} placeholder={t().vcOrgPlaceholder} icon="ti ti-building" value={vcOrg} onValueChange={setVcOrg} />
                   <TextInput
-                    label="Title"
-                    placeholder="Software Engineer"
+                    label={t().vcTitleLabel}
+                    placeholder={t().vcTitlePlaceholder}
                     icon="ti ti-briefcase"
                     value={vcTitle}
                     onValueChange={setVcTitle}
                   />
                 </div>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <TextInput label="Phone" placeholder="+49 123 456 7890" icon="ti ti-phone" value={vcPhone} onValueChange={setVcPhone} />
-                  <TextInput label="Email" placeholder="jane@example.com" icon="ti ti-mail" value={vcEmail} onValueChange={setVcEmail} />
+                  <TextInput label={t().vcPhoneLabel} placeholder="+49 123 456 7890" icon="ti ti-phone" value={vcPhone} onValueChange={setVcPhone} />
+                  <TextInput label={t().vcEmailLabel} placeholder={t().vcEmailPlaceholder} icon="ti ti-mail" value={vcEmail} onValueChange={setVcEmail} />
                 </div>
                 <TextInput
-                  label="Website"
+                  label={t().vcWebsiteLabel}
                   placeholder="https://example.com"
                   icon="ti ti-world"
                   value={vcWebsite}
                   onValueChange={setVcWebsite}
                 />
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <TextInput label="Street" placeholder="123 Main St" icon="ti ti-map-pin" value={vcStreet} onValueChange={setVcStreet} />
-                  <TextInput label="City" placeholder="Berlin" value={vcCity} onValueChange={setVcCity} />
+                  <TextInput label={t().vcStreetLabel} placeholder={t().vcStreetPlaceholder} icon="ti ti-map-pin" value={vcStreet} onValueChange={setVcStreet} />
+                  <TextInput label={t().vcCityLabel} placeholder="Berlin" value={vcCity} onValueChange={setVcCity} />
                 </div>
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <TextInput label="ZIP code" placeholder="10115" value={vcZip} onValueChange={setVcZip} />
-                  <TextInput label="Country" placeholder="Germany" value={vcCountry} onValueChange={setVcCountry} />
+                  <TextInput label={t().vcZipLabel} placeholder="10115" value={vcZip} onValueChange={setVcZip} />
+                  <TextInput label={t().vcCountryLabel} placeholder={t().vcCountryPlaceholder} value={vcCountry} onValueChange={setVcCountry} />
                 </div>
               </Match>
 
               <Match when={mode() === "event"}>
                 <TextInput
-                  label="Event title"
-                  placeholder="Team meeting"
+                  label={t().evTitleLabel}
+                  placeholder={t().evTitlePlaceholder}
                   icon="ti ti-calendar-event"
                   value={evTitle}
                   onValueChange={setEvTitle}
                   required
                 />
                 <TextInput
-                  label="Location"
-                  description="Physical address or meeting link."
-                  placeholder="Room 42 or https://meet.example.com"
+                  label={t().evLocationLabel}
+                  description={t().evLocationDescription}
+                  placeholder={t().evLocationPlaceholder}
                   icon="ti ti-map-pin"
                   value={evLocation}
                   onValueChange={setEvLocation}
                 />
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <DateTimePicker
-                    label="Start"
+                    label={t().evStartLabel}
                     value={() => evStart() || null}
                     onValueChange={(value) => setEvStart(value ?? "")}
                     clearable
                   />
-                  <DateTimePicker label="End" value={() => evEnd() || null} onValueChange={(value) => setEvEnd(value ?? "")} clearable />
+                  <DateTimePicker label={t().evEndLabel} value={() => evEnd() || null} onValueChange={(value) => setEvEnd(value ?? "")} clearable />
                 </div>
                 <TextInput
-                  label="Description"
-                  placeholder="Event details..."
+                  label={t().evDescriptionLabel}
+                  placeholder={t().evDescriptionPlaceholder}
                   icon="ti ti-align-left"
                   multiline
                   value={evDescription}
@@ -379,8 +392,8 @@ export default function QrCodeGenerator() {
         <section class="paper tools-qr-preview flex flex-col gap-4 p-4" aria-live="polite">
           <header class="flex items-start justify-between gap-3">
             <div class="min-w-0">
-              <h2 class="text-sm font-semibold text-primary">Preview</h2>
-              <p class="text-xs text-dimmed">Updates automatically as you edit.</p>
+              <h2 class="text-sm font-semibold text-primary">{t().previewHeading}</h2>
+              <p class="text-xs text-dimmed">{t().previewSubtitle}</p>
             </div>
             <span class="shrink-0 rounded-[var(--ui-radius-control)] bg-[var(--ui-surface)] px-2 py-1 text-xs tabular-nums text-dimmed">
               {size()} px
@@ -395,14 +408,12 @@ export default function QrCodeGenerator() {
                   <div class="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-[var(--ui-radius-control)] border border-[var(--ui-state-icon-border)] bg-[var(--ui-state-icon-surface)] text-dimmed">
                     <i class={`ti ${payload() ? "ti-alert-circle" : "ti-qrcode-off"} text-lg`} />
                   </div>
-                  <p class="text-sm font-medium text-primary">{payload() ? "Preview unavailable" : "Add content to create a QR code"}</p>
-                  <p class="mt-0.5 text-xs text-dimmed">
-                    {payload() ? "Shorten the content or adjust its format." : "The result will appear here automatically."}
-                  </p>
+                  <p class="text-sm font-medium text-primary">{payload() ? t().previewUnavailable : t().previewEmpty}</p>
+                  <p class="mt-0.5 text-xs text-dimmed">{payload() ? t().previewUnavailableHint : t().previewEmptyHint}</p>
                 </div>
               }
             >
-              <img src={svgDataUrl()} alt="Generated QR code preview" class="tools-qr-image" />
+              <img src={svgDataUrl()} alt={t().qrAlt} class="tools-qr-image" />
             </Show>
           </div>
 
@@ -410,13 +421,13 @@ export default function QrCodeGenerator() {
             <div class="flex flex-wrap items-center justify-center gap-2">
               <Button size="sm" onClick={downloadSvg}>
                 <i class="ti ti-download" />
-                Download SVG
+                {t().downloadSvg}
               </Button>
               <Button variant="secondary" size="sm" onClick={downloadPng}>
                 <i class="ti ti-photo-down" />
                 PNG
               </Button>
-              <CopyButton text={payload()} label="Copy content" variant="secondary" size="sm" />
+              <CopyButton text={payload()} label={t().copyContent} variant="secondary" size="sm" />
             </div>
           </Show>
         </section>
@@ -424,8 +435,8 @@ export default function QrCodeGenerator() {
         <details class="paper tools-qr-advanced group p-4" open>
           <summary class="focus-ui flex cursor-pointer list-none items-center justify-between gap-3 rounded-[var(--ui-radius-control)]">
             <span>
-              <span class="block text-sm font-semibold text-primary">Export and resilience</span>
-              <span class="block text-xs font-normal text-dimmed">Colors, error correction, and PNG size.</span>
+              <span class="block text-sm font-semibold text-primary">{t().advancedTitle}</span>
+              <span class="block text-xs font-normal text-dimmed">{t().advancedSubtitle}</span>
             </span>
             <i class="ti ti-chevron-down shrink-0 text-sm text-dimmed transition-transform group-open:rotate-180" />
           </summary>
@@ -433,22 +444,22 @@ export default function QrCodeGenerator() {
           <div class="mt-4 flex flex-col gap-3">
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
               <Select
-                label="Error correction"
-                description="Higher levels remain readable after more damage."
+                label={t().ecLabel}
+                description={t().ecDescription}
                 icon="ti ti-shield-check"
                 value={ecLevel}
                 onValueChange={setEcLevel}
                 options={[
-                  { id: "L", label: "Low (~7%)" },
-                  { id: "M", label: "Medium (~15%)" },
-                  { id: "Q", label: "Quartile (~25%)" },
-                  { id: "H", label: "High (~30%)" },
+                  { id: "L", label: t().ecLow },
+                  { id: "M", label: t().ecMedium },
+                  { id: "Q", label: t().ecQuartile },
+                  { id: "H", label: t().ecHigh },
                 ]}
               />
-              <ColorInput label="Foreground" description="QR module color." value={fgColor} onValueChange={setFgColor} />
+              <ColorInput label={t().fgLabel} description={t().fgDescription} value={fgColor} onValueChange={setFgColor} />
               <ColorInput
-                label="Background"
-                description="Color behind the QR code."
+                label={t().bgLabel}
+                description={t().bgDescription}
                 value={bgColor}
                 onValueChange={setBgColor}
                 transparent
@@ -457,8 +468,8 @@ export default function QrCodeGenerator() {
               />
             </div>
             <Slider
-              label="PNG export size"
-              description="Resolution used for PNG downloads."
+              label={t().sizeLabel}
+              description={t().sizeDescription}
               value={size}
               onValueChange={setSize}
               min={100}
@@ -472,7 +483,7 @@ export default function QrCodeGenerator() {
 
       <p class="tools-local-note">
         <i class="ti ti-device-laptop" />
-        QR content is processed on this device.
+        {t().localNote}
       </p>
     </div>
   );

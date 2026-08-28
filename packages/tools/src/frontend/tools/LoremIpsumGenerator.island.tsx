@@ -1,9 +1,40 @@
+import { i18n } from "@k2b/stdlib";
 import { timed } from "@k2b/stdlib/solid";
-import { Button, SegmentedControl, Slider } from "@k2b/ui";
+import { Button, SegmentedControl, Slider, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal } from "solid-js";
 import { ToolCodeBlock } from "./ToolOutput";
 
 type Mode = "paragraphs" | "sentences" | "words";
+
+export const loremMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      paragraphs: "Paragraphs",
+      sentences: "Sentences",
+      words: "Words",
+      count: "Count",
+      countDescriptionParagraphs: "Number of paragraphs to generate",
+      countDescriptionSentences: "Number of sentences to generate",
+      countDescriptionWords: "Number of words to generate",
+      regenerate: "Regenerate",
+      copied: "Copied",
+      copyText: "Copy Text",
+    },
+    de: {
+      paragraphs: "Absätze",
+      sentences: "Sätze",
+      words: "Wörter",
+      count: "Anzahl",
+      countDescriptionParagraphs: "Absätze pro Durchlauf",
+      countDescriptionSentences: "Sätze pro Durchlauf",
+      countDescriptionWords: "Wörter pro Durchlauf",
+      regenerate: "Neu generieren",
+      copied: "Kopiert",
+      copyText: "Text kopieren",
+    },
+  },
+});
 
 const WORDS = [
   "lorem",
@@ -128,6 +159,8 @@ const generateParagraph = (): string => {
 };
 
 export default function LoremIpsumGenerator() {
+  const locale = useLocale();
+  const t = () => loremMessages.resolve([locale()]).t;
   const [mode, setMode] = createSignal<Mode>("paragraphs");
   const [count, setCount] = createSignal(3);
   const [output, setOutput] = createSignal("");
@@ -183,21 +216,32 @@ export default function LoremIpsumGenerator() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const countDescription = () => {
+    switch (mode()) {
+      case "paragraphs":
+        return t().countDescriptionParagraphs;
+      case "sentences":
+        return t().countDescriptionSentences;
+      case "words":
+        return t().countDescriptionWords;
+    }
+  };
+
   return (
     <div class="flex flex-col gap-4">
       <SegmentedControl
         options={[
-          { value: "paragraphs" as Mode, label: "Paragraphs" },
-          { value: "sentences" as Mode, label: "Sentences" },
-          { value: "words" as Mode, label: "Words" },
+          { value: "paragraphs" as Mode, label: t().paragraphs },
+          { value: "sentences" as Mode, label: t().sentences },
+          { value: "words" as Mode, label: t().words },
         ]}
         value={mode}
         onValueChange={setMode}
       />
       <div class="paper p-4 flex flex-col gap-3">
         <Slider
-          label="Count"
-          description={`Number of ${mode()} to generate`}
+          label={t().count}
+          description={countDescription()}
           value={count}
           onValueChange={setCount}
           min={1}
@@ -206,14 +250,14 @@ export default function LoremIpsumGenerator() {
           showValue
         />
         <Button size="sm" class="self-start" onClick={() => generateNow()}>
-          <i class="ti ti-refresh" /> Regenerate
+          <i class="ti ti-refresh" /> {t().regenerate}
         </Button>
       </div>
       {output() && (
         <div class="paper p-4 flex flex-col gap-3">
           <ToolCodeBlock class="max-h-96 overflow-y-auto text-sm leading-relaxed">{output()}</ToolCodeBlock>
           <Button size="sm" class="self-start" onClick={copy}>
-            <i class={`ti ${copied() ? "ti-check" : "ti-copy"}`} /> {copied() ? "Copied" : "Copy Text"}
+            <i class={`ti ${copied() ? "ti-check" : "ti-copy"}`} /> {copied() ? t().copied : t().copyText}
           </Button>
         </div>
       )}

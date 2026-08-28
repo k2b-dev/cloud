@@ -1,10 +1,48 @@
-import { encoding } from "@k2b/stdlib";
-import { Button, SegmentedControl, TextInput } from "@k2b/ui";
+import { encoding, i18n } from "@k2b/stdlib";
+import { Button, SegmentedControl, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, createSignal } from "solid-js";
 import { ToolCodeBlock } from "./ToolOutput";
 
 type Direction = "encode" | "decode";
 type Format = "base64" | "hex" | "base32";
+
+const FORMAT_NAMES: Record<Format, string> = { base64: "Base64", hex: "Hex", base32: "Base32" };
+
+export const encodingMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      encode: "Encode",
+      decode: "Decode",
+      inputTextLabel: "Input Text",
+      formatInputLabel: ({ format }: { format: string }) => `${format} Input`,
+      encodeDescription: "Plain text that will be converted to the selected format.",
+      decodeDescription: ({ format }: { format: string }) => `Paste ${format} encoded data to decode back to plain text.`,
+      encodePlaceholder: "Text to encode...",
+      decodePlaceholder: "Encoded data to decode...",
+      formatOutputLabel: ({ format }: { format: string }) => `${format} Output`,
+      decodedText: "Decoded Text",
+      invalidInput: "Invalid input",
+      copied: "Copied",
+      copy: "Copy",
+    },
+    de: {
+      encode: "Kodieren",
+      decode: "Dekodieren",
+      inputTextLabel: "Eingabetext",
+      formatInputLabel: ({ format }) => `${format}-Eingabe`,
+      encodeDescription: "Klartext, der in das gewählte Format umgewandelt wird.",
+      decodeDescription: ({ format }) => `Füge ${format}-kodierte Daten ein, um sie wieder in Klartext umzuwandeln.`,
+      encodePlaceholder: "Text zum Kodieren...",
+      decodePlaceholder: "Kodierte Daten zum Dekodieren...",
+      formatOutputLabel: ({ format }) => `${format}-Ausgabe`,
+      decodedText: "Dekodierter Text",
+      invalidInput: "Ungültige Eingabe",
+      copied: "Kopiert",
+      copy: "Kopieren",
+    },
+  },
+});
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -15,6 +53,8 @@ const getErrorMessage = (error: unknown, fallback: string): string => {
 };
 
 export default function EncodingTool() {
+  const locale = useLocale();
+  const t = () => encodingMessages.resolve([locale()]).t;
   const [direction, setDirection] = createSignal<Direction>("encode");
   const [format, setFormat] = createSignal<Format>("base64");
   const [input, setInput] = createSignal("");
@@ -55,7 +95,7 @@ export default function EncodingTool() {
         return decoder.decode(bytes);
       }
     } catch (error) {
-      setError(getErrorMessage(error, "Invalid input"));
+      setError(getErrorMessage(error, t().invalidInput));
       return "";
     }
   });
@@ -77,12 +117,12 @@ export default function EncodingTool() {
           options={[
             {
               value: "encode" as Direction,
-              label: "Encode",
+              label: t().encode,
               icon: "ti ti-arrow-right",
             },
             {
               value: "decode" as Direction,
-              label: "Decode",
+              label: t().decode,
               icon: "ti ti-arrow-left",
             },
           ]}
@@ -102,13 +142,11 @@ export default function EncodingTool() {
         />
 
         <TextInput
-          label={direction() === "encode" ? "Input Text" : `${format().charAt(0).toUpperCase() + format().slice(1)} Input`}
+          label={direction() === "encode" ? t().inputTextLabel : t().formatInputLabel({ format: FORMAT_NAMES[format()] })}
           description={
-            direction() === "encode"
-              ? "Plain text that will be converted to the selected format."
-              : `Paste ${format()} encoded data to decode back to plain text.`
+            direction() === "encode" ? t().encodeDescription : t().decodeDescription({ format: FORMAT_NAMES[format()] })
           }
-          placeholder={direction() === "encode" ? "Text to encode..." : "Encoded data to decode..."}
+          placeholder={direction() === "encode" ? t().encodePlaceholder : t().decodePlaceholder}
           multiline
           value={input}
           onValueChange={setInput}
@@ -119,12 +157,12 @@ export default function EncodingTool() {
       {output() && (
         <div class="paper p-4 flex flex-col gap-3">
           <p class="text-xs font-medium text-dimmed">
-            {direction() === "encode" ? `${format().charAt(0).toUpperCase() + format().slice(1)} Output` : "Decoded Text"}
+            {direction() === "encode" ? t().formatOutputLabel({ format: FORMAT_NAMES[format()] }) : t().decodedText}
           </p>
           <ToolCodeBlock>{output()}</ToolCodeBlock>
           <Button size="sm" class="self-start" onClick={copy}>
             <i class={`ti ${copied() ? "ti-check" : "ti-copy"}`} />
-            {copied() ? "Copied" : "Copy"}
+            {copied() ? t().copied : t().copy}
           </Button>
         </div>
       )}

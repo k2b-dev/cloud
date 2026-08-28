@@ -1,4 +1,4 @@
-import { type AuthContext, auth, jsonResponse, type RateLimitConfig, rateLimit, requiresAuth, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, type RateLimitConfig, rateLimit, requiresAuth, v } from "@valentinkolb/cloud/server";
 import {
   GotenbergRenderError,
   MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES,
@@ -11,6 +11,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { type MarkdownPdfMessages, markdownPdfMessages } from "./markdown-pdf-messages";
 
 export const MARKDOWN_PDF_MAX_REQUEST_BYTES = 320 * 1024;
 const MARKDOWN_PDF_MAX_ACTIVE_CONVERSIONS = 2;
@@ -64,9 +65,11 @@ const noStore: MiddlewareHandler<AuthContext> = async (c, next) => {
   await next();
 };
 
+const resolveMessages = (c: Parameters<typeof getLocale>[0]) => markdownPdfMessages.resolve([getLocale(c)]).t;
+
 const requestBodyLimit = bodyLimit({
   maxSize: MARKDOWN_PDF_MAX_REQUEST_BYTES,
-  onError: (c) => c.json({ code: "bad_input" as const, message: "The request body exceeds the 320 KiB limit." }, 413),
+  onError: (c) => c.json({ code: "bad_input" as const, message: resolveMessages(c).requestTooLarge }, 413),
 });
 
 const safePdfFilename = (filename: string): string => {
@@ -103,31 +106,35 @@ const pdfResponse = (pdf: Uint8Array, filename: string): Response =>
     },
   });
 
-const renderError = (error: unknown): { code: string; message: string; status: 400 | 413 | 422 | 500 | 502 | 503 | 504 } => {
+const renderError = (error: unknown, t: MarkdownPdfMessages): { code: string; message: string; status: 400 | 413 | 422 | 500 | 502 | 503 | 504 } => {
   if (error instanceof MarkdownPdfError) {
-    return {
-      code: error.code,
-      message: error.message,
-      status: error.code === "bad_input" ? 400 : 422,
-    };
+    switch (error.code) {
+      case "bad_input":
+        return { code: error.code, message: t.markdownNotRendered, status: 400 };
+      case "invalid_css":
+        return { code: error.code, message: t.invalidCss, status: 422 };
+      case "external_asset_unsupported":
+        return { code: error.code, message: t.externalAssetsUnsupported, status: 422 };
+    }
   }
   if (error instanceof GotenbergRenderError) {
     switch (error.code) {
       case "html_too_large":
+        return { code: error.code, message: t.htmlTooLarge, status: 413 };
       case "pdf_too_large":
-        return { code: error.code, message: error.message, status: 413 };
+        return { code: error.code, message: t.pdfTooLarge, status: 413 };
       case "not_configured":
-        return { code: "renderer_not_configured", message: "PDF rendering is not configured.", status: 503 };
+        return { code: "renderer_not_configured", message: t.rendererNotConfigured, status: 503 };
       case "timeout":
-        return { code: "renderer_timeout", message: "PDF rendering timed out.", status: 504 };
+        return { code: "renderer_timeout", message: t.rendererTimeout, status: 504 };
       case "bad_input":
-        return { code: "bad_input", message: "The PDF render request is invalid.", status: 400 };
+        return { code: "bad_input", message: t.renderRequestInvalid, status: 400 };
       case "bad_response":
       case "request_failed":
-        return { code: "renderer_failed", message: "The PDF renderer could not complete the request.", status: 502 };
+        return { code: "renderer_failed", message: t.rendererFailed, status: 502 };
     }
   }
-  return { code: "renderer_failed", message: "The PDF could not be generated.", status: 500 };
+  return { code: "renderer_failed", message: t.pdfFailed, status: 500 };
 };
 
 export const createMarkdownPdfRoutes = (dependencies: MarkdownPdfRouteDependencies = {}) => {
@@ -138,13 +145,13 @@ export const createMarkdownPdfRoutes = (dependencies: MarkdownPdfRouteDependenci
 
   const rejectWhenBusy: MiddlewareHandler<AuthContext> = async (c, next) => {
     if (activeConversions >= MARKDOWN_PDF_MAX_ACTIVE_CONVERSIONS) {
-      return c.json({ code: "renderer_busy" as const, message: "PDF rendering is busy. Try again in a moment." }, 503);
+      return c.json({ code: "renderer_busy" as const, message: resolveMessages(c).rendererBusy }, 503);
     }
     await next();
   };
   const reserveConversion: MiddlewareHandler<AuthContext> = async (c, next) => {
     if (activeConversions >= MARKDOWN_PDF_MAX_ACTIVE_CONVERSIONS) {
-      return c.json({ code: "renderer_busy" as const, message: "PDF rendering is busy. Try again in a moment." }, 503);
+      return c.json({ code: "renderer_busy" as const, message: resolveMessages(c).rendererBusy }, 503);
     }
     activeConversions += 1;
     try {
@@ -186,18 +193,19 @@ export const createMarkdownPdfRoutes = (dependencies: MarkdownPdfRouteDependenci
     v("json", MarkdownPdfRequestSchema),
     reserveConversion,
     async (c) => {
+      const t = resolveMessages(c);
       const input = c.req.valid("json");
       if (byteLength(input.markdown) > MARKDOWN_PDF_MAX_MARKDOWN_BYTES) {
-        return c.json({ code: "markdown_too_large" as const, message: "Markdown exceeds the 256 KiB limit." }, 413);
+        return c.json({ code: "markdown_too_large" as const, message: t.markdownTooLarge }, 413);
       }
       if (input.customCss && byteLength(input.customCss) > MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES) {
-        return c.json({ code: "css_too_large" as const, message: "Custom CSS exceeds the 32 KiB limit." }, 413);
+        return c.json({ code: "css_too_large" as const, message: t.cssTooLarge }, 413);
       }
       try {
         const result = await render({ markdown: input.markdown, templateId: input.templateId, customCss: input.customCss });
         return pdfResponse(result.pdf, input.filename);
       } catch (cause) {
-        const error = renderError(cause);
+        const error = renderError(cause, t);
         return c.json({ code: error.code, message: error.message }, error.status);
       }
     },

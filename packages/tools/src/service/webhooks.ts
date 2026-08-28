@@ -31,6 +31,23 @@ export type WebhookLog = {
   createdAt: string;
 };
 
+export type WebhookSendErrorCode = "UNSUPPORTED_PROTOCOL" | "CREDENTIALS_IN_URL" | "BLOCKED_TARGET" | "OUTGOING_LOG_FAILED";
+
+/**
+ * Send-path failure with a stable code. Messages stay English and stable for
+ * logs and direct callers; the API boundary maps `code` to a localized
+ * human-facing message.
+ */
+export class WebhookSendError extends Error {
+  constructor(
+    readonly code: WebhookSendErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = "WebhookSendError";
+  }
+}
+
 export type SendWebhookInput = {
   url: string;
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -202,13 +219,19 @@ const isBlockedTargetHost = (url: URL): boolean => {
 };
 
 const validateTargetUrl = async (url: URL): Promise<void> => {
-  if (!["http:", "https:"].includes(url.protocol)) throw new Error("Only HTTP and HTTPS URLs are allowed.");
-  if (url.username || url.password) throw new Error("URLs with embedded credentials are not allowed.");
-  if (isBlockedTargetHost(url)) throw new Error("Private, local, and link-local targets are blocked.");
+  if (!["http:", "https:"].includes(url.protocol)) {
+    throw new WebhookSendError("UNSUPPORTED_PROTOCOL", "Only HTTP and HTTPS URLs are allowed.");
+  }
+  if (url.username || url.password) {
+    throw new WebhookSendError("CREDENTIALS_IN_URL", "URLs with embedded credentials are not allowed.");
+  }
+  if (isBlockedTargetHost(url)) {
+    throw new WebhookSendError("BLOCKED_TARGET", "Private, local, and link-local targets are blocked.");
+  }
 
   const addresses = await lookup(url.hostname, { all: true, verbatim: true }).catch(() => []);
   if (addresses.some((entry) => isUnsafeAddress(entry.address))) {
-    throw new Error("Private, local, and link-local targets are blocked.");
+    throw new WebhookSendError("BLOCKED_TARGET", "Private, local, and link-local targets are blocked.");
   }
 };
 
@@ -265,8 +288,8 @@ export const webhookTesterService = {
     return rows.map(mapEndpoint);
   },
 
-  async createEndpoint(ownerUserId: string, name: string): Promise<WebhookEndpoint> {
-    const cleanName = name.trim().slice(0, 120) || "Webhook endpoint";
+  async createEndpoint(ownerUserId: string, name: string, fallbackName = "Webhook endpoint"): Promise<WebhookEndpoint> {
+    const cleanName = name.trim().slice(0, 120) || fallbackName;
     const [row]: EndpointRow[] = await sql`
       INSERT INTO tools.webhook_endpoints (owner_user_id, token, name)
       VALUES (${ownerUserId}::uuid, ${createToken()}, ${cleanName})
@@ -458,7 +481,7 @@ export const webhookTesterService = {
       )
       RETURNING *
     `;
-    if (!row) throw new Error("Outgoing request could not be logged.");
+    if (!row) throw new WebhookSendError("OUTGOING_LOG_FAILED", "Outgoing request could not be logged.");
     await cleanupLogs(ownerUserId, null);
     return mapLog(row);
   },

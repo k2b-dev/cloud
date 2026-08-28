@@ -1,4 +1,4 @@
-import { type AuthContext, auth, jsonResponse, type RateLimitConfig, rateLimit, requiresAuth, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, type RateLimitConfig, rateLimit, requiresAuth, v } from "@valentinkolb/cloud/server";
 import {
   DOCUMENT_EXTRACTION_MAX_INPUT_BYTES,
   DocumentExtractionError,
@@ -9,6 +9,7 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
+import { documentMarkdownMessages } from "./document-markdown-messages";
 
 // Public transport budget for exactly one multipart field: RFC boundary,
 // content-disposition, a 255-character filename, media type, and delimiters.
@@ -69,25 +70,28 @@ const errorStatus = (code: DocumentExtractionErrorCode): 400 | 408 | 413 | 422 |
   }
 };
 
-const documentError = (error: unknown): DocumentExtractionError =>
-  error instanceof DocumentExtractionError ? error : new DocumentExtractionError("internal", "The document could not be extracted.");
+const resolveMessages = (c: Parameters<typeof getLocale>[0]) => documentMarkdownMessages.resolve([getLocale(c)]).t;
+
+const documentError = (error: unknown, extractionFailed: string): DocumentExtractionError =>
+  error instanceof DocumentExtractionError ? error : new DocumentExtractionError("internal", extractionFailed);
 
 const requireBoundedMultipart = (): MiddlewareHandler<AuthContext> => async (c, next) => {
+  const t = resolveMessages(c);
   const contentType = c.req.header("content-type") ?? "";
   if (!contentType.toLowerCase().startsWith("multipart/form-data;")) {
-    return c.json({ code: "malformed" as const, message: "Upload one document as multipart form data." }, 400);
+    return c.json({ code: "malformed" as const, message: t.uploadMultipart }, 400);
   }
 
   const rawLength = c.req.header("content-length");
   const contentLength = rawLength && /^\d+$/u.test(rawLength) ? Number(rawLength) : Number.NaN;
   if (!Number.isSafeInteger(contentLength) || contentLength < 0) {
-    return c.json({ code: "malformed" as const, message: "A valid Content-Length header is required." }, 400);
+    return c.json({ code: "malformed" as const, message: t.contentLengthRequired }, 400);
   }
   if (contentLength > DOCUMENT_MARKDOWN_MAX_REQUEST_BYTES) {
     return c.json(
       {
         code: "input_too_large" as const,
-        message: "The document exceeds the 20 MB limit.",
+        message: t.documentTooLarge,
       },
       413,
     );
@@ -102,7 +106,7 @@ const documentBodyLimit = bodyLimit({
     c.json(
       {
         code: "input_too_large" as const,
-        message: "The document exceeds the 20 MB limit.",
+        message: resolveMessages(c).documentTooLarge,
       },
       413,
     ),
@@ -123,7 +127,7 @@ export const createDocumentMarkdownRoutes = (dependencies: DocumentMarkdownRoute
       return c.json(
         {
           code: "resource_limit" as const,
-          message: "Document conversion is busy. Try again in a moment.",
+          message: resolveMessages(c).conversionBusy,
         },
         503,
       );
@@ -135,7 +139,7 @@ export const createDocumentMarkdownRoutes = (dependencies: DocumentMarkdownRoute
       return c.json(
         {
           code: "resource_limit" as const,
-          message: "Document conversion is busy. Try again in a moment.",
+          message: resolveMessages(c).conversionBusy,
         },
         503,
       );
@@ -177,15 +181,16 @@ export const createDocumentMarkdownRoutes = (dependencies: DocumentMarkdownRoute
     v("form", DocumentMarkdownRequestSchema),
     reserveConversion,
     async (c) => {
+      const t = resolveMessages(c);
       const file = c.req.valid("form").file;
       if (file.name.length > 255) {
-        return c.json({ code: "malformed" as const, message: "The filename must not exceed 255 characters." }, 400);
+        return c.json({ code: "malformed" as const, message: t.filenameTooLong }, 400);
       }
       if (file.size > DOCUMENT_EXTRACTION_MAX_INPUT_BYTES) {
         return c.json(
           {
             code: "input_too_large" as const,
-            message: "The document exceeds the 20 MB limit.",
+            message: t.documentTooLarge,
           },
           413,
         );
@@ -199,7 +204,7 @@ export const createDocumentMarkdownRoutes = (dependencies: DocumentMarkdownRoute
         });
         return c.json({ filename: file.name, ...result }, 200);
       } catch (cause) {
-        const error = documentError(cause);
+        const error = documentError(cause, t.extractionFailed);
         return c.json({ code: error.code, message: error.message }, errorStatus(error.code));
       }
     },

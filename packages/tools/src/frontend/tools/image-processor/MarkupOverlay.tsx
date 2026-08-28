@@ -1,5 +1,7 @@
+import { useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { renderMarkupCanvas } from "./markup";
+import { imageProcessorMessages } from "./messages";
 import {
   findMarkupAtPoint,
   type MarkupResizeHandle,
@@ -58,6 +60,8 @@ const pointerSamples = (event: PointerEvent) => {
 };
 
 export default function MarkupOverlay(props: MarkupOverlayProps) {
+  const locale = useLocale();
+  const t = () => imageProcessorMessages.resolve([locale()]).t;
   const [draftElements, setDraftElements] = createSignal<MarkupElement[]>([]);
   const [hiddenIds, setHiddenIds] = createSignal<ReadonlySet<string>>(new Set<string>());
   let committedCanvas: HTMLCanvasElement | undefined;
@@ -397,7 +401,7 @@ export default function MarkupOverlay(props: MarkupOverlayProps) {
           "pointer-events-auto cursor-crosshair": props.active && props.tool !== "select" && props.tool !== "eraser",
           "pointer-events-none": !props.active,
         }}
-        aria-label={props.active ? "Image markup canvas" : undefined}
+        aria-label={props.active ? t().markupCanvas : undefined}
         tabIndex={-1}
         onPointerDown={startGesture}
         onLostPointerCapture={resetGesture}
@@ -425,7 +429,7 @@ export default function MarkupOverlay(props: MarkupOverlayProps) {
                     transform: "translate(-50%, -50%)",
                     cursor: handle.cursor,
                   }}
-                  aria-label={handle.label}
+                  aria-label={t()[handle.label]}
                   onPointerDown={(event) => startResize(handle.id, event)}
                   onLostPointerCapture={resetGesture}
                 >
