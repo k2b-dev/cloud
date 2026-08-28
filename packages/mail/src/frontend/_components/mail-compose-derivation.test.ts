@@ -73,6 +73,8 @@ const message = (overrides: Partial<MessageDetail> = {}): MessageDetail => ({
   delivery: null,
   attachments: [],
   ...overrides,
+  preview: overrides.preview ?? null,
+  hasAttachments: overrides.hasAttachments ?? false,
 });
 
 describe("deriveReplyRecipients", () => {

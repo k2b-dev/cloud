@@ -101,7 +101,7 @@ Load only the capabilities needed for the current flow. Treat returned resource 
 
 - For a cross-mailbox work queue, start with \`mail.conversation.focus\`; no mailbox lookup is needed.
 - When no mailbox is known, use \`mail.search\`, then read the returned conversation or message refs.
-- Within a known mailbox, use \`mail.mailbox.list\`, then conversation list or search, \`mail.conversation.read\`, and \`mail.message.read\` for the actual body.
+- Within a known mailbox, use compact conversation list or search previews first. Read only selected conversations; use \`mail.message.list\` for a complete thread and \`mail.message.read\` only when the exact body is needed.
 - Read attachment metadata first. Use \`mail.attachment.read-content\` only when its extracted text is needed, and report pending extraction plainly.
 - For a new message, choose a verified identity with \`mail.mailbox.identity.list\`, create the draft, and return its link unless the user also asked to send it.
 - For a reply, Reply all, or forward, read the exact source message and pass its conversation, message, and intent to \`mail.draft.create\`; let Mail derive reply recipients and threading instead of guessing them.

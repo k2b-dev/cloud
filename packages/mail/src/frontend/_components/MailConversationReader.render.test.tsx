@@ -25,6 +25,8 @@ const message: MessageDetail = {
   sentAt: now,
   from: [{ name: "Ada Lovelace", address: "ada@example.com" }],
   to: [],
+  preview: "Hello",
+  hasAttachments: false,
   replyTo: [],
   cc: [],
   flags: [],

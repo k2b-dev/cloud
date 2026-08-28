@@ -561,6 +561,8 @@ export const getConversationViewCounts = async (params: {
 export type MessageSummary = {
   id: string;
   subject: string;
+  preview: string | null;
+  hasAttachments: boolean;
   messageId: string | null;
   internalDate: string;
   sentAt: string | null;
@@ -576,6 +578,8 @@ export type MessageSummary = {
 type DbMessageSummary = {
   id: string;
   subject: string;
+  preview: string | null;
+  has_attachments: boolean;
   message_id: string | null;
   internal_date: Date | string;
   sent_at: Date | string | null;
@@ -592,6 +596,8 @@ type DbMessageSummary = {
 const mapMessageSummary = (row: DbMessageSummary): MessageSummary => ({
   id: row.id,
   subject: row.subject,
+  preview: row.preview || null,
+  hasAttachments: row.has_attachments,
   messageId: row.message_id,
   internalDate: toIso(row.internal_date),
   sentAt: row.sent_at ? toIso(row.sent_at) : null,
@@ -607,6 +613,8 @@ const mapMessageSummary = (row: DbMessageSummary): MessageSummary => ({
 const messageSummarySelect = sql`
   mc.id,
   mc.subject,
+  NULLIF(LEFT(COALESCE(mc.plain_text, ''), 240), '') AS preview,
+  EXISTS (SELECT 1 FROM mail.attachments attachment WHERE attachment.message_id = mc.id) AS has_attachments,
   mc.message_id,
   mc.internal_date,
   mc.sent_at,

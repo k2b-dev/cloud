@@ -98,13 +98,13 @@ and labels extracted Markdown as untrusted email content. Continue with the
 returned UTF-8 byte `nextOffset`; a pending or terminal status returns metadata
 without invented content.
 
-The conversation view includes its shared summary, collaboration state, local
-tags, recent messages, and meaningful collaboration activity. New activity is
-refreshed while the conversation stays open. Technical processing events remain
-in the broader activity history instead of interrupting the conversation. The
-composer shows message history only. The result is marked when earlier messages
-are not included, so a person or agent can decide whether to page through the
-complete history.
+Mail Capability lists return compact resource views with the fields needed to
+choose the next operation. Conversation and message rows include bounded content
+previews, so an agent can select relevant results without reading every message body.
+`conversation.read` includes the shared summary, collaboration state, local tags,
+and the five latest message previews. Use `message.list` to page through the
+complete history and `message.read` only for an exact body. Attachment metadata
+and extracted content remain separate bounded reads.
 
 Run `cld mail help` for mailbox, conversation, message, collaboration,
 provider, automation, and workflow commands. Run `cld mail <command> --help` before a

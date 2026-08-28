@@ -18,6 +18,8 @@ const summary = (id: string, subject: string, internalDate: string): MessageSumm
   sentAt: internalDate,
   from: [{ name: "Sender", address: "sender@example.test" }],
   to: [{ name: "Recipient", address: "recipient@example.test" }],
+  preview: null,
+  hasAttachments: false,
   flags: [],
   keywords: [],
   hydrationStatus: "complete",

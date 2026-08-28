@@ -357,11 +357,20 @@ const mapMailbox = (mailbox: Mailbox & { permission: "read" | "write" | "admin" 
   };
 };
 
-const mapMailboxListItem = (mailbox: Mailbox & { permission: "read" | "write" | "admin" }, id: string) => ({
-  ...mapMailbox(mailbox, id),
-  ref: { type: "mail.mailbox" as const, id },
-  links: [openLink(mailboxHref(id))],
-});
+const mapMailboxListItem = (mailbox: Mailbox & { permission: "read" | "write" | "admin" }, id: string) => {
+  const preview = boundedText(mailbox.description, 240).text;
+  const healthReason = mailbox.health === "active" ? null : boundedText(mailbox.healthReason, 240).text;
+  return {
+    ref: { type: "mail.mailbox" as const, id },
+    title: truncateText(mailbox.name, 160).text,
+    ...(preview ? { preview } : {}),
+    links: [openLink(mailboxHref(id))],
+    permission: mailbox.permission,
+    health: mailbox.health,
+    ...(healthReason ? { healthReason } : {}),
+    syncEnabled: mailbox.syncEnabled,
+  };
+};
 
 const mapAddress = (address: { name?: string | null; address: string }) => ({
   name: address.name == null ? null : truncateText(address.name, 200).text,
@@ -415,29 +424,39 @@ const mapDraft = (draft: MailDraft, ids: DraftPublicIds) => {
 
 const mapDraftSummary = (draft: MailDraft, ids: DraftPublicIds) => {
   const id = requirePublicId(ids.drafts, draft.id);
-  const subject = truncateText(draft.subject, 500);
-  const body = truncateText(draft.body, 1000);
+  const preview = truncateText(draft.body, 240).text;
+  const recipientValues = [...draft.to, ...draft.cc, ...draft.bcc].map((recipient) => recipient.name?.trim() || recipient.address);
+  const recipients = truncateText(recipientValues.join(", "), 320);
   return {
     ref: { type: "mail.draft" as const, id },
-    id,
-    mailboxId: requirePublicId(ids.mailboxes, draft.mailboxId),
+    title: truncateText(draft.subject || "(no subject)", 500).text,
+    ...(preview ? { preview } : {}),
+    links: [editLink(draftHref(requirePublicId(ids.mailboxes, draft.mailboxId), id))],
     conversationId: draft.conversationId ? requirePublicId(ids.conversations, draft.conversationId) : null,
     intent: draft.intent,
     senderIdentityId: requirePublicId(ids.senderIdentities, draft.senderIdentityId),
-    subject: subject.text,
-    subjectTruncated: subject.truncated,
-    bodyPreview: body.text,
-    bodyTruncated: body.truncated,
-    format: draft.format,
-    priority: draft.priority,
+    recipients: recipients.text,
+    recipientsTruncated: recipients.truncated,
     attachmentCount: draft.attachments.length,
     revision: draft.revision,
     state: draft.state,
-    createdAt: draft.createdAt,
     updatedAt: draft.updatedAt,
-    links: [editLink(draftHref(requirePublicId(ids.mailboxes, draft.mailboxId), id))],
   };
 };
+
+const mapDraftMutation = (draft: MailDraft, ids: DraftPublicIds) => ({
+  id: requirePublicId(ids.drafts, draft.id),
+  conversationId: draft.conversationId ? requirePublicId(ids.conversations, draft.conversationId) : null,
+  attachments: draft.attachments.slice(0, 50).map((attachment) => ({
+    id: requirePublicId(ids.draftAttachments, attachment.id),
+    filename: truncateText(attachment.filename, 255).text,
+    contentType: truncateText(attachment.contentType, 255).text,
+    byteLength: attachment.byteLength,
+  })),
+  attachmentsTruncated: draft.attachments.length > 50,
+  revision: draft.revision,
+  state: draft.state,
+});
 
 const mapConversation = (
   mailboxId: string,
@@ -445,37 +464,24 @@ const mapConversation = (
   ids: { conversations: Map<string, string>; folders: Map<string, string> },
 ) => {
   const id = requirePublicId(ids.conversations, conversation.id);
-  const primaryReference = boundedText(conversation.primaryReference, 500);
-  const subject = truncateText(conversation.subject, 500);
-  const participantSummary = truncateText(conversation.participantSummary, 500);
-  const preview = boundedText(conversation.preview, 1000);
+  const reference = boundedText(conversation.primaryReference, 160).text;
+  const preview = boundedText(conversation.preview, 240).text;
   return {
     ref: { type: "mail.conversation" as const, id },
-    id,
-    mailboxId,
-    primaryReference: primaryReference.text,
-    subject: subject.text,
-    subjectTruncated: subject.truncated,
-    participantSummary: participantSummary.text,
-    participantSummaryTruncated: participantSummary.truncated,
-    participantLabels: conversation.participantLabels.slice(0, 10).map((label) => truncateText(label, 128).text),
-    participantLabelsTruncated:
-      conversation.participantLabels.length > 10 || conversation.participantLabels.some((label) => truncateText(label, 128).truncated),
+    title: truncateText(conversation.subject || "(no subject)", 500).text,
+    ...(preview ? { preview } : {}),
+    links: [openLink(conversationHref(mailboxId, id))],
+    ...(reference ? { reference } : {}),
+    participants: truncateText(conversation.participantSummary, 240).text,
     latestMessageAt: conversation.latestMessageAt,
     workStatus: conversation.workStatus,
-    assigneeUserId: conversation.assigneeUserId,
-    snoozedUntil: conversation.snoozedUntil,
-    revision: conversation.revision,
-    updatedAt: conversation.updatedAt,
+    ...(conversation.snoozedUntil ? { snoozedUntil: conversation.snoozedUntil } : {}),
     unread: conversation.unread,
-    activeFolderIds: conversation.activeFolderIds.slice(0, 20).map((id) => requirePublicId(ids.folders, id)),
-    activeFolderIdsTruncated: conversation.activeFolderIds.length > 20,
+    folderIds: conversation.activeFolderIds.slice(0, 20).map((id) => requirePublicId(ids.folders, id)),
+    foldersTruncated: conversation.activeFolderIds.length > 20,
     flagged: conversation.flagged,
     hasAttachments: conversation.hasAttachments,
     messageCount: conversation.messageCount,
-    preview: preview.text,
-    previewTruncated: preview.truncated,
-    links: [openLink(conversationHref(mailboxId, id))],
   };
 };
 
@@ -508,16 +514,26 @@ const mapMessageSummary = (
   };
 };
 
-const mapNavigableMessageSummary = (
-  mailboxId: string,
-  conversationId: string | null,
-  message: MessageSummary,
-  messageIds: Map<string, string>,
-) => ({
-  ...mapMessageSummary(mailboxId, conversationId, message, messageIds),
-  ref: { type: "mail.message" as const, id: requirePublicId(messageIds, message.id) },
-  links: [openLink(messageHref(mailboxId, requirePublicId(messageIds, message.id)))],
-});
+const mapMessageListItem = (mailboxId: string, message: MessageSummary, messageIds: Map<string, string>) => {
+  const id = requirePublicId(messageIds, message.id);
+  const preview = boundedText(message.preview ?? null, 240).text;
+  return {
+    ref: { type: "mail.message" as const, id },
+    title: truncateText(message.subject || "(no subject)", 500).text,
+    ...(preview ? { preview } : {}),
+    links: [openLink(messageHref(mailboxId, id))],
+    internalDate: message.internalDate,
+    sentAt: message.sentAt,
+    from: message.from.slice(0, 3).map(mapAddress),
+    to: message.to.slice(0, 3).map(mapAddress),
+    addressesTruncated: message.from.length > 3 || message.to.length > 3,
+    unread: !message.flags.includes("\\Seen"),
+    flagged: message.flags.includes("\\Flagged"),
+    hasAttachments: message.hasAttachments ?? false,
+    contentStatus: message.hydrationStatus,
+    remoteAvailable: message.remoteAvailable,
+  };
+};
 
 const draftPublicIds = async (drafts: MailDraft[]): Promise<DraftPublicIds> => {
   const attachments = drafts.flatMap((draft) => draft.attachments);
@@ -678,7 +694,7 @@ const runSearch = async (input: UniversalSearchInput, capabilityContext: Capabil
       title: message.subject || "(no subject)",
       preview: truncateText(
         attachmentMatch?.snippet ?? message.snippet ?? message.from.map((address) => address.name || address.address).join(", "),
-        2000,
+        320,
       ).text,
       icon: "ti ti-mail",
       priority: 8,
@@ -727,7 +743,7 @@ const queryDefinitions = {
   "mailbox.list": {
     title: "List mailboxes",
     description:
-      "Normal entry for mailbox-scoped Mail work. Page through accessible mailboxes and use the returned mail.mailbox refs or IDs with conversation.list, conversation.search, folder.list, draft.list, and other mailbox-scoped tools.",
+      "Normal entry for mailbox-scoped Mail work. Returns compact mailbox identity, access, and health; use mailbox.read only for full configuration details.",
     input: c.MailboxListInputSchema,
     data: c.MailboxListDataSchema,
     openWorld: false,
@@ -745,7 +761,6 @@ const queryDefinitions = {
         limit: input.limit,
         id: (item) => item.id,
         map: (item) => mapMailboxListItem(item as Mailbox & { permission: "read" | "write" | "admin" }, requirePublicId(ids, item.id)),
-        refs: (item) => [mailboxRef(requirePublicId(ids, item.id), item.name, item.description)],
       });
     },
   },
@@ -795,8 +810,7 @@ const queryDefinitions = {
         limit: input.limit,
         id: (item) => item.id,
         map: (item) => ({
-          id: requirePublicId(ids, item.id),
-          mailboxId: scope.data.shortId,
+          ref: { type: "mail.sender-identity" as const, id: requirePublicId(ids, item.id) },
           label: truncateText(item.label, 200).text,
           displayName: truncateText(item.displayName, 200).text,
           fromAddress: item.fromAddress,
@@ -810,8 +824,6 @@ const queryDefinitions = {
           defaultReadReceipt: item.defaultReadReceipt,
           isDefault: item.isDefault,
           status: item.status as "unverified" | "verified" | "rejected",
-          createdAt: item.createdAt,
-          updatedAt: item.updatedAt,
         }),
       });
     },
@@ -838,7 +850,7 @@ const queryDefinitions = {
         cursor: input.cursor,
         limit: input.limit,
         id: (item) => item.id,
-        map: (item) => item,
+        map: ({ id, uid, displayName, permission }) => ({ id, uid, displayName, permission }),
       });
     },
   },
@@ -864,19 +876,17 @@ const queryDefinitions = {
         cursor: input.cursor,
         limit: input.limit,
         id: (item) => item.id,
-        map: ({ id, parentId, name, role, selectable, showInSidebar, total, unread }) => {
-          const boundedName = truncateText(name, 500);
+        map: ({ id, parentId, name, role, selectable, total, unread }) => {
+          const publicId = requirePublicId(ids, id);
           return {
-            id: requirePublicId(ids, id),
+            ref: { type: "mail.folder" as const, id: publicId },
             parentId: parentId ? requirePublicId(ids, parentId) : null,
-            name: boundedName.text,
-            nameTruncated: boundedName.truncated,
+            title: truncateText(name, 240).text,
             role,
             selectable,
-            showInSidebar,
             total,
             unread,
-            ...(selectable ? { links: [openLink(folderHref(scope.data.shortId, requirePublicId(ids, id)))] } : {}),
+            ...(selectable ? { links: [openLink(folderHref(scope.data.shortId, publicId))] } : {}),
           };
         },
       });
@@ -885,7 +895,7 @@ const queryDefinitions = {
   "conversation.list": {
     title: "List conversations",
     description:
-      "Browse conversations in one known mailbox without search expressions, optionally by folder, work view, or unread state. Get mailboxId from mailbox.list; use returned mail.conversation refs with conversation.read.",
+      "Browse compact conversation previews in one known mailbox, optionally by folder, work view, or unread state. The result has enough state to choose a conversation or perform provider mark/move Actions; use conversation.read for collaboration details.",
     input: c.ConversationListInputSchema,
     data: c.ConversationListDataSchema,
     openWorld: true,
@@ -918,10 +928,7 @@ const queryDefinitions = {
       const data = result.data.items.map((item) => mapConversation(scope.data.shortId, item, { conversations, folders }));
       return ok({
         data,
-        refs: [
-          { type: "mail.mailbox" as const, id: scope.data.shortId },
-          ...data.map((item) => conversationRef(item.id, item.subject, item.preview)),
-        ],
+        refs: [{ type: "mail.mailbox" as const, id: scope.data.shortId }],
         page: capabilityPage(result.data.nextCursor),
       });
     },
@@ -929,7 +936,7 @@ const queryDefinitions = {
   "conversation.focus": {
     title: "List focused mail",
     description:
-      "Direct cross-mailbox work-queue entry for active conversations; no mailbox discovery is required. Use returned mail.conversation refs with conversation.read. Use search instead for text or message lookup.",
+      "Direct cross-mailbox work-queue entry with compact previews; no mailbox discovery is required. Read only the conversations that need deeper collaboration or message context; use search instead for text lookup.",
     input: c.ConversationFocusInputSchema,
     data: c.ConversationFocusListDataSchema,
     openWorld: true,
@@ -954,23 +961,24 @@ const queryDefinitions = {
       const data = result.data.items.map((item) => {
         const conversationId = requirePublicId(conversationIds, item.id);
         const mailboxId = requirePublicId(mailboxIds, item.mailboxId);
-        const subject = truncateText(item.subject, 500);
-        const participantSummary = truncateText(item.participantSummary, 500);
+        const preview = boundedText(item.preview, 240).text;
         return {
-          ...item,
           ref: { type: "mail.conversation" as const, id: conversationId },
-          id: conversationId,
-          mailboxId,
-          subject: subject.text,
-          subjectTruncated: subject.truncated,
-          participantSummary: participantSummary.text,
-          participantSummaryTruncated: participantSummary.truncated,
+          title: truncateText(item.subject || "(no subject)", 500).text,
+          ...(preview ? { preview } : {}),
           links: [openLink(conversationHref(mailboxId, conversationId))],
+          mailboxId,
+          mailboxName: truncateText(item.mailboxName, 160).text,
+          participants: truncateText(item.participantSummary, 240).text,
+          latestMessageAt: item.latestMessageAt,
+          workStatus: item.workStatus,
+          unread: item.unread,
+          flagged: item.flagged,
+          hasAttachments: item.hasAttachments,
         };
       });
       return ok({
         data,
-        refs: data.map((item) => conversationRef(item.id, item.subject, item.participantSummary)),
         page: capabilityPage(result.data.nextCursor),
       });
     },
@@ -978,7 +986,7 @@ const queryDefinitions = {
   "conversation.search": {
     title: "Search one mailbox with filters",
     description:
-      "Structured search inside one known mailbox by sender, recipient, subject, body, date, flag, folder, or attachment. Get mailboxId from mailbox.list; use search instead when no mailbox is known, and open returned mail.conversation refs with conversation.read.",
+      "Structured search inside one known mailbox by sender, recipient, subject, body, date, flag, folder, or attachment; use search instead when no mailbox is known. Results include compact previews and exact attachment refs; read only selected results.",
     input: c.ConversationSearchInputSchema,
     data: c.ConversationSearchDataSchema,
     openWorld: true,
@@ -1026,22 +1034,24 @@ const queryDefinitions = {
         return {
           ...conversation,
           attachmentMatch: {
-            attachmentId,
-            messageId,
-            filename,
-            snippet,
-            reason: "attachment_content" as const,
-            openHref: messageHref(scope.data.shortId, messageId),
-            downloadHref: `/api/mail/mailboxes/${scope.data.shortId}/messages/${messageId}/attachments/${attachmentId}`,
+            ref: { type: "mail.attachment" as const, id: attachmentId },
+            messageRef: { type: "mail.message" as const, id: messageId },
+            title: filename?.trim() || "Unnamed attachment",
+            preview: truncateText(snippet, 240).text,
+            links: [
+              openLink(messageHref(scope.data.shortId, messageId)),
+              {
+                rel: "download" as const,
+                href: `/api/mail/mailboxes/${scope.data.shortId}/messages/${messageId}/attachments/${attachmentId}`,
+                title: filename?.trim() || "Download attachment",
+              },
+            ],
           },
         };
       });
       return ok({
         data,
-        refs: [
-          { type: "mail.mailbox" as const, id: scope.data.shortId },
-          ...data.map((item) => conversationRef(item.id, item.subject, item.preview)),
-        ],
+        refs: [{ type: "mail.mailbox" as const, id: scope.data.shortId }],
         page: capabilityPage(result.data.nextCursor),
       });
     },
@@ -1069,23 +1079,24 @@ const queryDefinitions = {
       );
       const data = result.data.map((item) => {
         const id = requirePublicId(ids, item.id);
+        const preview = boundedText(item.preview, 240).text;
         return {
-          ...item,
           ref: { type: "mail.conversation" as const, id },
-          id,
+          title: truncateText(item.subject || "(no subject)", 500).text,
+          participants: truncateText(item.participantSummary, 240).text,
+          latestMessageAt: item.latestMessageAt,
+          ...(preview ? { preview } : {}),
+          reasons: item.reasons.map((reason) => ({ ...reason, value: truncateText(reason.value, 500).text })),
           links: [openLink(conversationHref(scope.data.mailbox.shortId, id))],
         };
       });
-      return ok({
-        data,
-        refs: data.map((item) => conversationRef(item.id, item.subject, item.preview)),
-      });
+      return ok({ data });
     },
   },
   "conversation.read": {
     title: "Read conversation",
     description:
-      "Read one mail.conversation ref returned by search, conversation.list, conversation.search, or conversation.focus. Returns collaboration state, tags, and latest mail.message refs; call message.read for safe plain-text bodies.",
+      "Read one mail.conversation ref. Returns the shared summary, collaboration state, tags, and five latest message previews; use message.list for the complete paged history and call message.read only for exact bodies.",
     input: c.ConversationReadInputSchema,
     data: c.ConversationGetDataSchema,
     openWorld: true,
@@ -1111,7 +1122,7 @@ const queryDefinitions = {
           context: mailContext,
           mailboxId,
           conversationId: conversation.data,
-          limit: 50,
+          limit: 5,
           latest: true,
         }),
       ]);
@@ -1134,6 +1145,7 @@ const queryDefinitions = {
       const subject = page.data.items.findLast((item) => item.subject.trim().length > 0)?.subject;
       return ok({
         data: {
+          mailboxId: mailboxShortId,
           conversationId: input.id,
           summary: summary.data.summary,
           summaryRevision: summary.data.summaryRevision,
@@ -1144,7 +1156,7 @@ const queryDefinitions = {
             revision: state.data.revision,
           },
           tags: tags.data.tags.map(({ id, name, color, revision }) => ({ id: requirePublicId(tagIds, id), name, color, revision })),
-          messages: page.data.items.map((item) => mapNavigableMessageSummary(mailboxShortId, input.id, item, messageIds)),
+          messages: page.data.items.map((item) => mapMessageListItem(mailboxShortId, item, messageIds)),
           messagesTruncated: page.data.nextCursor !== null,
         },
         ...(subject ? { summary: capabilitySummary(`Read conversation ${quotedSubject(subject)}.`) } : {}),
@@ -1155,7 +1167,7 @@ const queryDefinitions = {
   "message.list": {
     title: "List messages",
     description:
-      "List messages in one known conversation in chronological order. Get mailboxId and conversationId from conversation.list, conversation.search, or conversation.read; use returned mail.message refs with message.read.",
+      "Page through every message in one known conversation in chronological order. Compact sender, recipient, state, attachment, and body previews help select which mail.message refs need full message.read bodies.",
     input: c.MessageListInputSchema,
     data: c.MessageListDataSchema,
     openWorld: true,
@@ -1176,10 +1188,9 @@ const queryDefinitions = {
         "messages",
         result.data.items.map((item) => item.id),
       );
-      const data = result.data.items.map((item) => mapNavigableMessageSummary(scope.data.shortId, input.conversationId, item, ids));
+      const data = result.data.items.map((item) => mapMessageListItem(scope.data.shortId, item, ids));
       return ok({
         data,
-        refs: data.map((item) => messageRef(item.id, item.subject)),
         page: capabilityPage(result.data.nextCursor),
       });
     },
@@ -1406,7 +1417,7 @@ const queryDefinitions = {
   "draft.list": {
     title: "List drafts",
     description:
-      "List active drafts in one known mailbox. Get mailboxId from mailbox.list; use returned mail.draft refs with draft.read, then draft.send.review before draft.send.",
+      "List active drafts as compact recipient and body previews with current revision. Use draft.read for complete editable content, then draft.send.review before draft.send.",
     input: c.DraftListInputSchema,
     data: c.DraftListDataSchema,
     openWorld: false,
@@ -1423,7 +1434,6 @@ const queryDefinitions = {
         limit: input.limit,
         id: (item) => item.id,
         map: (item) => mapDraftSummary(item, ids),
-        refs: (item) => [draftRef(requirePublicId(ids.drafts, item.id), item.subject)],
       });
     },
   },
@@ -1503,7 +1513,12 @@ const queryDefinitions = {
         cursor: input.cursor,
         limit: input.limit,
         id: (item) => item.id,
-        map: (item) => ({ ...item, id: requirePublicId(ids, item.id), mailboxId: scope.data.shortId }),
+        map: (item) => ({
+          ref: { type: "mail.tag" as const, id: requirePublicId(ids, item.id) },
+          name: item.name,
+          color: item.color,
+          revision: item.revision,
+        }),
       });
     },
   },
@@ -1529,14 +1544,25 @@ const queryDefinitions = {
       });
       if (!serviceResult.ok) return serviceResult;
       const projected = await projectComments(serviceResult.data.items);
-      const result = await mapPage(
-        ok({ ...serviceResult.data, items: projected }),
-        (item) => {
-          const body = boundedText(item.body, 1000);
-          return { ...item, ref: { type: "mail.comment" as const, id: item.id }, body: body.text, bodyTruncated: body.truncated };
-        },
-        (item) => [commentRef(item.id, commentAuthorName(item.author))],
-      );
+      const result = await mapPage(ok({ ...serviceResult.data, items: projected }), (item) => {
+        const preview = boundedText(item.body, 320).text;
+        const authorName = truncateText(item.author.displayName, 240).text;
+        const author = { kind: item.author.kind, displayName: authorName };
+        return {
+          ref: { type: "mail.comment" as const, id: item.id },
+          title: commentAuthorName(item.author) ? truncateText(`Comment by ${authorName}`, 500).text : "Internal comment",
+          ...(preview ? { preview } : {}),
+          links: [openLink(conversationHref(input.mailboxId, input.conversationId))],
+          author,
+          referencedMessageId: item.referencedMessageId,
+          revision: item.revision,
+          canEdit: item.canEdit,
+          canDelete: item.canDelete,
+          editedAt: item.editedAt,
+          deleted: item.deletedAt !== null,
+          createdAt: item.createdAt,
+        };
+      });
       return result.ok
         ? ok({
             ...result.data,
@@ -1688,23 +1714,23 @@ const queryDefinitions = {
       });
       if (!result.ok) return result;
       const projected = await projectDeliveries(result.data.items);
-      const data = projected.map((item) => ({
-        ref: { type: "mail.delivery" as const, id: item.id },
-        id: item.id,
-        commandId: item.commandId,
-        draftId: item.draftId,
-        conversationId: item.conversationId,
-        subject: truncateText(item.subject, 998).text,
-        scheduledAt: item.scheduledAt,
-        nextAttemptAt: item.nextAttemptAt,
-        state: item.state,
-        attempt: item.attempt,
-        lastError: boundedText(item.lastError, 1000).text,
-        createdAt: item.createdAt,
-      }));
+      const data = projected.map((item) => {
+        const lastError = boundedText(item.lastError, 320).text;
+        return {
+          ref: { type: "mail.delivery" as const, id: item.id },
+          title: truncateText(item.subject || "(no subject)", 500).text,
+          ...(lastError ? { preview: lastError } : {}),
+          links: [statusLink(scheduledHref(scope.data.shortId))],
+          draftId: item.draftId,
+          conversationId: item.conversationId,
+          scheduledAt: item.scheduledAt,
+          nextAttemptAt: item.nextAttemptAt,
+          state: item.state,
+          attempt: item.attempt,
+        };
+      });
       return ok({
         data,
-        refs: data.map((item) => deliveryRef(item.id, item.subject, item.state)),
         page: capabilityPage(result.data.nextCursor),
         links: [statusLink(scheduledHref(scope.data.shortId))],
       });
@@ -1770,7 +1796,20 @@ const queryDefinitions = {
         }),
         (item) => {
           const href = subscriptionHref(input.mailboxId, item.listKey);
-          return { ...mapSubscription(item), ...(href ? { links: [openLink(href)] } : {}) };
+          return {
+            listKey: item.listKey,
+            name: truncateText(item.name, 500).text,
+            address: truncateText(item.address, 500).text,
+            status: item.status,
+            ...(item.unsubscribe ? { unsubscribeKind: item.unsubscribe.kind } : {}),
+            messageCount: item.messageCount,
+            conversationCount: item.conversationCount,
+            lastMessageAt: item.lastMessageAt,
+            lastSubject: truncateText(item.lastSubject, 500).text,
+            ...(item.lastSender ? { lastSender: truncateText(item.lastSender, 240).text } : {}),
+            ...(item.unsubscribeErrorCode ? { unsubscribeErrorCode: truncateText(item.unsubscribeErrorCode, 120).text } : {}),
+            ...(href ? { links: [openLink(href)] } : {}),
+          };
         },
       );
     },
@@ -1888,7 +1927,7 @@ const actionDefinitions = {
     title: "Create draft",
     description: "Create an idempotent editable mail draft with an optional small inline attachment.",
     input: c.DraftCreateInputSchema,
-    data: c.DraftDataSchema,
+    data: c.DraftMutationDataSchema,
     destructive: false,
     openWorld: false,
     idempotency: "required",
@@ -1978,11 +2017,11 @@ const actionDefinitions = {
       }
       const ids = await draftPublicIds([result.data]);
       const publicDraftId = requirePublicId(ids.drafts, result.data.id);
-      const data = mapDraft(result.data, ids);
+      const data = mapDraftMutation(result.data, ids);
       return ok({
         data,
-        summary: capabilitySummary(`Created draft ${quotedSubject(data.subject)}.`),
-        ...draftMetadata(scope.data.shortId, publicDraftId, data.subject),
+        summary: capabilitySummary(`Created draft ${quotedSubject(result.data.subject)}.`),
+        ...draftMetadata(scope.data.shortId, publicDraftId, result.data.subject),
       });
     },
   },
@@ -1990,7 +2029,7 @@ const actionDefinitions = {
     title: "Update draft",
     description: "Replace editable draft content using an optimistic revision.",
     input: c.DraftUpdateInputSchema,
-    data: c.DraftDataSchema,
+    data: c.DraftMutationDataSchema,
     destructive: true,
     openWorld: false,
     idempotency: "none",
@@ -2029,11 +2068,11 @@ const actionDefinitions = {
       });
       if (!result.ok) return result;
       const ids = await draftPublicIds([result.data]);
-      const data = mapDraft(result.data, ids);
+      const data = mapDraftMutation(result.data, ids);
       return ok({
         data,
-        summary: capabilitySummary(`Updated draft ${quotedSubject(data.subject)}.`),
-        ...draftMetadata(input.mailboxId, input.draftId, data.subject),
+        summary: capabilitySummary(`Updated draft ${quotedSubject(result.data.subject)}.`),
+        ...draftMetadata(input.mailboxId, input.draftId, result.data.subject),
       });
     },
   },
@@ -2080,7 +2119,7 @@ const actionDefinitions = {
     title: "Add draft attachment",
     description: "Add one bounded inline attachment to a draft.",
     input: c.DraftAttachmentAddInputSchema,
-    data: c.DraftDataSchema,
+    data: c.DraftMutationDataSchema,
     destructive: false,
     openWorld: false,
     idempotency: "none",
@@ -2119,11 +2158,11 @@ const actionDefinitions = {
       });
       if (!result.ok) return result;
       const ids = await draftPublicIds([result.data]);
-      const data = mapDraft(result.data, ids);
+      const data = mapDraftMutation(result.data, ids);
       return ok({
         data,
-        summary: capabilitySummary(`Added ${input.attachment.filename} to draft ${quotedSubject(data.subject)}.`),
-        ...draftMetadata(input.mailboxId, input.draftId, data.subject),
+        summary: capabilitySummary(`Added ${input.attachment.filename} to draft ${quotedSubject(result.data.subject)}.`),
+        ...draftMetadata(input.mailboxId, input.draftId, result.data.subject),
       });
     },
   },
@@ -2131,7 +2170,7 @@ const actionDefinitions = {
     title: "Remove draft attachment",
     description: "Remove one attachment using an optimistic draft revision.",
     input: c.DraftAttachmentRemoveInputSchema,
-    data: c.DraftDataSchema,
+    data: c.DraftMutationDataSchema,
     destructive: true,
     openWorld: false,
     idempotency: "none",
@@ -2175,7 +2214,7 @@ const actionDefinitions = {
       if (!result.ok) return result;
       const ids = await draftPublicIds([result.data]);
       return ok({
-        data: mapDraft(result.data, ids),
+        data: mapDraftMutation(result.data, ids),
         summary: capabilitySummary(`Removed ${attachment.filename} from draft ${quotedSubject(draft.data.subject)}.`),
         ...draftMetadata(input.mailboxId, input.draftId, draft.data.subject),
       });
@@ -2546,7 +2585,12 @@ const actionDefinitions = {
         data: {
           ...result.data,
           conversationId: input.conversationId,
-          tags: result.data.tags.map((tag) => ({ ...tag, id: requirePublicId(tagIds, tag.id), mailboxId: input.mailboxId })),
+          tags: result.data.tags.map((tag) => ({
+            ref: { type: "mail.tag" as const, id: requirePublicId(tagIds, tag.id) },
+            name: tag.name,
+            color: tag.color,
+            revision: tag.revision,
+          })),
         },
         summary: capabilitySummary(tagChangeSummary(conversation.data.subject, addedNames, removedNames)),
         ...conversationMetadata(input.mailboxId, input.conversationId, conversation.data.subject),
@@ -2809,7 +2853,7 @@ const actionDefinitions = {
     title: "Create internal comment",
     description: "Add an internal team comment to a conversation.",
     input: c.CommentCreateInputSchema,
-    data: c.CommentDataSchema,
+    data: c.CommentMutationDataSchema,
     destructive: false,
     openWorld: false,
     idempotency: "none",
@@ -2850,7 +2894,13 @@ const actionDefinitions = {
       const [item] = await projectComments([result.data]);
       if (!item) return fail(err.internal("Created comment could not be projected"));
       return ok({
-        data: item,
+        data: {
+          id: item.id,
+          conversationId: item.conversationId,
+          referencedMessageId: item.referencedMessageId,
+          revision: item.revision,
+          deleted: item.deletedAt !== null,
+        },
         summary: capabilitySummary(`Added an internal comment to ${quotedSubject(conversation.data.subject)}.`),
         refs: [commentRef(item.id, commentAuthorName(item.author)), conversationRef(input.conversationId, conversation.data.subject)],
         links: [openLink(conversationHref(input.mailboxId, input.conversationId))],
@@ -2861,7 +2911,7 @@ const actionDefinitions = {
     title: "Update internal comment",
     description: "Edit your own internal comment within 10 minutes using an optimistic revision.",
     input: c.CommentUpdateInputSchema,
-    data: c.CommentDataSchema,
+    data: c.CommentMutationDataSchema,
     destructive: true,
     openWorld: false,
     idempotency: "none",
@@ -2906,7 +2956,13 @@ const actionDefinitions = {
       const [item] = await projectComments([result.data]);
       if (!item) return fail(err.notFound("Comment"));
       return ok({
-        data: item,
+        data: {
+          id: item.id,
+          conversationId: item.conversationId,
+          referencedMessageId: item.referencedMessageId,
+          revision: item.revision,
+          deleted: item.deletedAt !== null,
+        },
         summary: capabilitySummary(`Updated your internal comment on ${quotedSubject(review.data.conversation.subject)}.`),
         refs: [
           commentRef(item.id, commentAuthorName(item.author)),
@@ -2920,7 +2976,7 @@ const actionDefinitions = {
     title: "Delete internal comment",
     description: "Soft-delete your own internal comment within 10 minutes using an optimistic revision.",
     input: c.CommentDeleteInputSchema,
-    data: c.CommentDataSchema,
+    data: c.CommentMutationDataSchema,
     destructive: true,
     openWorld: false,
     idempotency: "none",
@@ -2958,7 +3014,13 @@ const actionDefinitions = {
       const [item] = await projectComments([result.data]);
       if (!item) return fail(err.notFound("Comment"));
       return ok({
-        data: item,
+        data: {
+          id: item.id,
+          conversationId: item.conversationId,
+          referencedMessageId: item.referencedMessageId,
+          revision: item.revision,
+          deleted: item.deletedAt !== null,
+        },
         summary: capabilitySummary(`Deleted your internal comment from ${quotedSubject(review.data.conversation.subject)}.`),
         refs: [
           commentRef(item.id, commentAuthorName(item.author)),
@@ -2972,7 +3034,7 @@ const actionDefinitions = {
     title: "Create mailbox tag",
     description: "Create a reusable Cloud-local mailbox tag.",
     input: c.TagCreateInputSchema,
-    data: c.TagDataSchema,
+    data: c.TagMutationDataSchema,
     destructive: false,
     openWorld: false,
     idempotency: "none",
@@ -3001,7 +3063,12 @@ const actionDefinitions = {
       });
       if (!result.ok) return result;
       const ids = await publicResources.publicIds("tags", [result.data.id]);
-      const data = { ...result.data, id: requirePublicId(ids, result.data.id), mailboxId: input.mailboxId };
+      const data = {
+        id: requirePublicId(ids, result.data.id),
+        name: result.data.name,
+        color: result.data.color,
+        revision: result.data.revision,
+      };
       return ok({ data, summary: capabilitySummary(`Created mailbox tag ${tagLabel(data.name)}.`) });
     },
   },
@@ -3009,7 +3076,7 @@ const actionDefinitions = {
     title: "Update mailbox tag",
     description: "Rename or recolor a mailbox tag using an optimistic revision.",
     input: c.TagUpdateInputSchema,
-    data: c.TagDataSchema,
+    data: c.TagMutationDataSchema,
     destructive: true,
     openWorld: false,
     idempotency: "none",
@@ -3045,7 +3112,7 @@ const actionDefinitions = {
         input: { expectedRevision: input.expectedRevision, name: input.name, color: input.color },
       });
       if (!result.ok) return result;
-      const data = { ...result.data, id: input.tagId, mailboxId: input.mailboxId };
+      const data = { id: input.tagId, name: result.data.name, color: result.data.color, revision: result.data.revision };
       return ok({
         data,
         summary: capabilitySummary(

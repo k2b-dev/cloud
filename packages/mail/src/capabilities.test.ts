@@ -26,6 +26,7 @@ import {
   DraftUpdateInputSchema,
   FolderListDataSchema,
   MessageDataSchema,
+  MessageListDataSchema,
   SubscriptionListDataSchema,
   SubscriptionUnsubscribeInputSchema,
 } from "./capability-contracts";
@@ -1017,6 +1018,7 @@ describe("mail capabilities", () => {
     expect(results).toHaveLength(Object.keys(mailCapabilities.actions).length);
     expect(new Set(results.map((item) => item.localId)).size).toBe(results.length);
     const summaries = new Map<string, string>();
+    const actionOutputs: unknown[] = [];
     for (const { localId, action, run } of results) {
       const result = await run().catch((error) => {
         throw new Error(`Mail action ${localId} threw`, { cause: error });
@@ -1025,6 +1027,7 @@ describe("mail capabilities", () => {
       if (!result.ok) continue;
       expect(result.data.summary?.length).toBeGreaterThan(0);
       summaries.set(localId, result.data.summary ?? "");
+      actionOutputs.push(result.data);
       const parsed = capabilityResultSchema(action.data).safeParse(result.data);
       if (!parsed.success) throw new Error(`Invalid Mail result for ${localId}: ${parsed.error.message}`);
     }
@@ -1038,6 +1041,8 @@ describe("mail capabilities", () => {
       "mailbox.tag.create": "Created mailbox tag #customer.",
       "mailing-list.unsubscribe": "Requested unsubscribe from Example Newsletter.",
     });
+    expect(JSON.stringify(actionOutputs)).not.toContain(draftFixture.body);
+    expect(JSON.stringify(actionOutputs)).not.toContain(commentFixture.body);
   });
 
   test("resolves short mailbox IDs and paginates folders with public IDs", async () => {
@@ -1069,11 +1074,13 @@ describe("mail capabilities", () => {
       data: {
         data: [
           {
-            id: folderAId,
+            ref: { type: "mail.folder", id: folderAId },
+            title: "A",
             links: [{ rel: "open", href: `/app/mail/${mailboxId}?folder=${folderAId}` }],
           },
           {
-            id: folderBId,
+            ref: { type: "mail.folder", id: folderBId },
+            title: "B",
             links: [{ rel: "open", href: `/app/mail/${mailboxId}?folder=${folderBId}` }],
           },
         ],
@@ -1085,11 +1092,11 @@ describe("mail capabilities", () => {
     const second = await mailCapabilities.queries["folder.list"].run({ mailboxId, limit: 2, cursor: first.data.page.nextCursor }, context);
     expect(second).toMatchObject({
       ok: true,
-      data: { data: [{ id: folderCId }], page: { hasMore: false } },
+      data: { data: [{ ref: { type: "mail.folder", id: folderCId }, title: "C" }], page: { hasMore: false } },
     });
   });
 
-  test("keeps navigable conversation links with each rich list item", async () => {
+  test("keeps the decision fields and link with each compact conversation item", async () => {
     spyOn(messages, "listConversations").mockResolvedValue({
       ok: true,
       data: {
@@ -1125,8 +1132,11 @@ describe("mail capabilities", () => {
         data: [
           {
             ref: { type: "mail.conversation", id: conversationId },
-            id: conversationId,
-            subject: "Release update",
+            title: "Release update",
+            participants: "Ada",
+            preview: "Ready to ship",
+            unread: true,
+            messageCount: 1,
             links: [{ rel: "open", href: `/app/mail/${mailboxId}?conversation=${conversationId}` }],
           },
         ],
@@ -1134,7 +1144,7 @@ describe("mail capabilities", () => {
     });
     if (!result.ok) throw new Error("Expected conversation list success");
     expect(ConversationListDataSchema.safeParse(result.data.data).success).toBeTrue();
-    expect(ConversationListDataSchema.safeParse(result.data.data.map(({ links: _, ...item }) => item)).success).toBeTrue();
+    expect(ConversationListDataSchema.safeParse(result.data.data.map(({ links: _, ...item }) => item)).success).toBeFalse();
     expect(JSON.stringify(result)).not.toContain(internalConversationId);
     expect(JSON.stringify(result)).not.toContain(internalMailboxId);
   });
@@ -1172,7 +1182,7 @@ describe("mail capabilities", () => {
         data: [
           {
             ref: { type: "mail.conversation", id: conversationId },
-            id: conversationId,
+            title: "Release update",
             mailboxId,
             mailboxName: "Support",
             links: [{ rel: "open", href: `/app/mail/${mailboxId}?conversation=${conversationId}` }],
@@ -1195,7 +1205,7 @@ describe("mail capabilities", () => {
     expect(result).toMatchObject({
       ok: true,
       data: {
-        data: [{ ref: { type: "mail.draft", id: draftId }, id: draftId }],
+        data: [{ ref: { type: "mail.draft", id: draftId }, title: "Release follow-up", recipients: "Ada", revision: 2 }],
         page: { hasMore: false },
       },
     });
@@ -1262,13 +1272,18 @@ describe("mail capabilities", () => {
     if (!result.ok) throw new Error("Expected conversation search success");
     expect(ConversationSearchDataSchema.safeParse(result.data.data).success).toBeTrue();
     expect(result.data.data[0]?.attachmentMatch).toEqual({
-      attachmentId,
-      messageId,
-      filename: "roadmap.pdf",
-      snippet: "Matched roadmap milestone",
-      reason: "attachment_content",
-      openHref: `/app/mail/${mailboxId}?message=${messageId}`,
-      downloadHref: `/api/mail/mailboxes/${mailboxId}/messages/${messageId}/attachments/${attachmentId}`,
+      ref: { type: "mail.attachment", id: attachmentId },
+      messageRef: { type: "mail.message", id: messageId },
+      title: "roadmap.pdf",
+      preview: "Matched roadmap milestone",
+      links: [
+        { rel: "open", href: `/app/mail/${mailboxId}?message=${messageId}` },
+        {
+          rel: "download",
+          href: `/api/mail/mailboxes/${mailboxId}/messages/${messageId}/attachments/${attachmentId}`,
+          title: "roadmap.pdf",
+        },
+      ],
     });
     expect(JSON.stringify(result)).not.toContain(internalAttachmentId);
     expect(JSON.stringify(result)).not.toContain(internalMessageId);
@@ -1300,9 +1315,8 @@ describe("mail capabilities", () => {
         data: [
           {
             ref: { type: "mail.conversation", id: relatedConversationId },
-            id: relatedConversationId,
-            subject: "Re: Release update",
-            participantSummary: "Ada",
+            title: "Re: Release update",
+            participants: "Ada",
             latestMessageAt: "2026-08-04T10:00:00.000Z",
             preview: "A previous update",
             reasons: [
@@ -1310,15 +1324,6 @@ describe("mail capabilities", () => {
               { kind: "subject", value: "Release update" },
             ],
             links: [{ rel: "open", href: `/app/mail/${mailboxId}?conversation=${relatedConversationId}` }],
-          },
-        ],
-        refs: [
-          {
-            type: "mail.conversation",
-            id: relatedConversationId,
-            title: "Re: Release update",
-            preview: "A previous update",
-            icon: "ti ti-mail",
           },
         ],
       },
@@ -1366,6 +1371,8 @@ describe("mail capabilities", () => {
             sentAt: "2026-08-15T11:00:00.000Z",
             from: [{ name: "Ada", address: "ada@example.test" }],
             to: [{ name: null, address: "team@example.test" }],
+            preview: "Final checklist attached.",
+            hasAttachments: true,
             flags: [],
             keywords: [],
             hydrationStatus: "hydrated",
@@ -1383,7 +1390,7 @@ describe("mail capabilities", () => {
       context: { actor: context.actor, accessSubject: context.accessSubject },
       mailboxId: internalMailboxId,
       conversationId: internalConversationId,
-      limit: 50,
+      limit: 5,
       latest: true,
     });
     expect(getSummary).toHaveBeenCalledTimes(1);
@@ -1395,18 +1402,71 @@ describe("mail capabilities", () => {
       data: {
         summary: "Read conversation “Final checklist”.",
         data: {
+          mailboxId,
           conversationId,
           summary: "Launch approved; waiting for the checklist.",
           summaryRevision: 3,
           collaboration: { workStatus: "waiting", revision: 7 },
           tags: [{ id: tagId, name: "Launch" }],
-          messages: [{ id: messageId }],
+          messages: [{ ref: { type: "mail.message", id: messageId }, title: "Final checklist" }],
           messagesTruncated: true,
         },
       },
     });
     if (!result.ok) throw new Error("Expected conversation read success");
     expect(ConversationGetDataSchema.safeParse(result.data.data).success).toBeTrue();
+  });
+
+  test("lists message previews that support selective full-body reads", async () => {
+    spyOn(messages, "listConversationMessages").mockResolvedValue({
+      ok: true,
+      data: {
+        items: [
+          {
+            id: internalMessageId,
+            subject: "Invoice review",
+            preview: "Please approve invoice 4711 before Friday.",
+            hasAttachments: true,
+            messageId: "<invoice@example.test>",
+            internalDate: "2026-08-15T11:00:00.000Z",
+            sentAt: "2026-08-15T10:59:00.000Z",
+            from: [{ name: "Ada", address: "ada@example.test" }],
+            to: [{ name: null, address: "team@example.test" }],
+            flags: ["\\Flagged"],
+            keywords: ["provider-only-label"],
+            hydrationStatus: "complete",
+            remoteAvailable: true,
+            folderId: internalFolderId,
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+
+    const result = await mailCapabilities.queries["message.list"].run({ mailboxId, conversationId, limit: 25 }, context);
+
+    if (!result.ok) throw new Error("Expected message list success");
+    expect(MessageListDataSchema.safeParse(result.data.data).success).toBeTrue();
+    expect(result.data.data).toEqual([
+      {
+        ref: { type: "mail.message", id: messageId },
+        title: "Invoice review",
+        preview: "Please approve invoice 4711 before Friday.",
+        links: [{ rel: "open", href: `/app/mail/${mailboxId}?message=${messageId}` }],
+        internalDate: "2026-08-15T11:00:00.000Z",
+        sentAt: "2026-08-15T10:59:00.000Z",
+        from: [{ name: "Ada", address: "ada@example.test" }],
+        to: [{ name: null, address: "team@example.test" }],
+        addressesTruncated: false,
+        unread: true,
+        flagged: true,
+        hasAttachments: true,
+        contentStatus: "complete",
+        remoteAvailable: true,
+      },
+    ]);
+    expect(JSON.stringify(result)).not.toContain("provider-only-label");
+    expect(JSON.stringify(result)).not.toContain("<invoice@example.test>");
   });
 
   test("returns exact conversation links from reviews and mutation results", async () => {
@@ -1836,38 +1896,32 @@ describe("mail capabilities", () => {
     const timestamp = "2026-08-02T10:00:00.000Z";
     const drafts = Array.from({ length: 100 }, () => ({
       ref: { type: "mail.draft" as const, id },
-      id,
-      mailboxId: id,
+      title: "s".repeat(500),
+      preview: "b".repeat(240),
+      links: [{ rel: "edit" as const, href: `/app/mail/${id}/compose/${id}` }],
       conversationId: id,
       intent: "forward" as const,
       senderIdentityId: id,
-      subject: "s".repeat(500),
-      subjectTruncated: true,
-      bodyPreview: "b".repeat(1000),
-      bodyTruncated: true,
-      format: "markdown" as const,
-      priority: "normal" as const,
+      recipients: "r".repeat(320),
+      recipientsTruncated: true,
       attachmentCount: 1000,
       revision: 1,
       state: "draft" as const,
-      createdAt: timestamp,
       updatedAt: timestamp,
     }));
     const comments = Array.from({ length: 100 }, () => ({
       ref: { type: "mail.comment" as const, id },
-      id,
-      conversationId: id,
-      body: "c".repeat(1000),
-      bodyTruncated: true,
-      author: { kind: "user" as const, id: userId, displayName: "Agent", avatarHash: null },
+      title: "Comment by Agent",
+      preview: "c".repeat(240),
+      links: [{ rel: "open" as const, href: `/app/mail/${id}?conversation=${id}` }],
+      author: { kind: "user" as const, displayName: "Agent" },
       referencedMessageId: null,
       revision: 1,
       canEdit: true,
       canDelete: true,
       editedAt: null,
-      deletedAt: null,
+      deleted: false,
       createdAt: timestamp,
-      updatedAt: timestamp,
     }));
     const parsedDrafts = DraftListDataSchema.parse(drafts);
     const parsedComments = CommentListDataSchema.parse(comments);

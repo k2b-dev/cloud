@@ -132,6 +132,8 @@ const message: MessageDetail = {
   sentAt: now,
   from: [{ name: "Ada Lovelace", address: "ada@example.com" }],
   to: [{ name: "Support", address: "support@example.com" }],
+  preview: "Hello",
+  hasAttachments: true,
   flags: [],
   keywords: [],
   hydrationStatus: "complete",
