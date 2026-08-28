@@ -37,6 +37,7 @@ import {
 import { noteContentHash, summarizeNoteEditBlocks } from "./lib/note-edit";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "./service/access";
 import { resolveNotebookApiKeyPermission } from "./service/api-key-permissions";
+import { notebookCapabilityMessages } from "./capability-messages";
 import * as noteLinks from "./service/links";
 import type { Notebook, NotebookWithPermission } from "./service/notebooks";
 import * as notebookStore from "./service/notebooks";
@@ -47,29 +48,31 @@ import * as noteTags from "./service/tags";
 
 const encodePageCursor = (page: number): string => Buffer.from(JSON.stringify({ v: 1, page }), "utf8").toString("base64url");
 
-export const decodeNotebookCapabilityCursor = (cursor: string | undefined): Result<number> => {
+export const decodeNotebookCapabilityCursor = (cursor: string | undefined, locale?: string): Result<number> => {
+  const { t } = notebookCapabilityMessages.resolve(locale ? [locale] : []);
   if (!cursor) return ok(1);
   try {
     const value = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as { v?: unknown; page?: unknown };
     return value.v === 1 && Number.isSafeInteger(value.page) && Number(value.page) >= 1
       ? ok(Number(value.page))
-      : fail(err.badInput("Invalid cursor"));
+      : fail(err.badInput(t.invalidCursor));
   } catch {
-    return fail(err.badInput("Invalid cursor"));
+    return fail(err.badInput(t.invalidCursor));
   }
 };
 
 const encodeTreeCursor = (afterId: string): string => Buffer.from(JSON.stringify({ v: 1, afterId }), "utf8").toString("base64url");
 
-export const decodeNotebookTreeCursor = (cursor: string | undefined): Result<string | undefined> => {
+export const decodeNotebookTreeCursor = (cursor: string | undefined, locale?: string): Result<string | undefined> => {
+  const { t } = notebookCapabilityMessages.resolve(locale ? [locale] : []);
   if (!cursor) return ok(undefined);
   try {
     const value = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8")) as { v?: unknown; afterId?: unknown };
     return value.v === 1 && typeof value.afterId === "string" && zUuid(value.afterId)
       ? ok(value.afterId)
-      : fail(err.badInput("Invalid tree cursor"));
+      : fail(err.badInput(t.invalidTreeCursor));
   } catch {
-    return fail(err.badInput("Invalid tree cursor"));
+    return fail(err.badInput(t.invalidTreeCursor));
   }
 };
 
@@ -77,6 +80,9 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 const zUuid = (value: string | null | undefined): value is string => Boolean(value && UUID_PATTERN.test(value));
 
 const permissionFromScopes = (scopes: string[]): PermissionLevel => resolveNotebookApiKeyPermission("admin", scopes);
+const capabilityNotFound = (message: string): Result<never> => fail({ code: "NOT_FOUND", message, status: 404 });
+const capabilityMessages = (context: CapabilityExecutionContext) =>
+  notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []).t;
 
 const effectivePermission = (permission: Exclude<PermissionLevel, "none">, context: CapabilityExecutionContext) =>
   context.actor.kind === "service_account" && context.actor.serviceAccount.kind === "resource_bound"
@@ -84,12 +90,13 @@ const effectivePermission = (permission: Exclude<PermissionLevel, "none">, conte
     : permission;
 
 const scopedNotebookId = (context: CapabilityExecutionContext, required: PermissionLevel): Result<string | null> => {
+  const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
   if (context.actor.kind === "user") {
-    return context.accessSubject.type === "user" ? ok(null) : fail(err.forbidden("Access denied"));
+    return context.accessSubject.type === "user" ? ok(null) : fail(err.forbidden(t.accessDenied));
   }
   const account = context.actor.serviceAccount;
   if (account.kind === "user_delegated") {
-    return context.accessSubject.type === "user" && context.user ? ok(null) : fail(err.forbidden("Access denied"));
+    return context.accessSubject.type === "user" && context.user ? ok(null) : fail(err.forbidden(t.accessDenied));
   }
   if (
     account.appId !== NOTEBOOKS_APP_ID ||
@@ -98,7 +105,7 @@ const scopedNotebookId = (context: CapabilityExecutionContext, required: Permiss
     context.accessSubject.type !== "service_account" ||
     !hasPermission(permissionFromScopes(context.actor.scopes), required)
   ) {
-    return fail(err.forbidden("Access denied"));
+    return fail(err.forbidden(t.accessDenied));
   }
   return ok(account.resourceId);
 };
@@ -114,33 +121,37 @@ const activityActor = (context: CapabilityExecutionContext) =>
     : ({ kind: "service_account", id: context.actor.serviceAccount.id } as const);
 
 const authorizeNotebook = async (notebook: Notebook, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
+  const t = capabilityMessages(context);
   const scope = scopedNotebookId(context, required);
   if (!scope.ok) return scope;
-  if (scope.data && scope.data !== notebook.id) return fail(err.notFound("Notebook"));
+  if (scope.data && scope.data !== notebook.id) return capabilityNotFound(t.notebookNotFound);
   const ids = principalIds(context);
   const granted = await notebookStore.getPermission({ notebookId: notebook.id, ...ids });
   const permission = granted === "none" ? "none" : effectivePermission(granted, context);
-  return hasPermission(permission, required) ? ok({ notebook, permission }) : fail(err.notFound("Notebook"));
+  return hasPermission(permission, required) ? ok({ notebook, permission }) : capabilityNotFound(t.notebookNotFound);
 };
 
 const requireNotebook = async (notebookId: string, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
+  const t = capabilityMessages(context);
   const scope = scopedNotebookId(context, required);
   if (!scope.ok) return scope;
-  if (scope.data && scope.data !== notebookId) return fail(err.notFound("Notebook"));
+  if (scope.data && scope.data !== notebookId) return capabilityNotFound(t.notebookNotFound);
   const notebook = await notebookStore.get({ id: notebookId });
-  return notebook ? authorizeNotebook(notebook, context, required) : fail(err.notFound("Notebook"));
+  return notebook ? authorizeNotebook(notebook, context, required) : capabilityNotFound(t.notebookNotFound);
 };
 
 const requireNotebookByShortId = async (shortId: string, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
+  const t = capabilityMessages(context);
   const notebook = await notebookStore.getByShortId({ shortId });
-  return notebook ? authorizeNotebook(notebook, context, required) : fail(err.notFound("Notebook"));
+  return notebook ? authorizeNotebook(notebook, context, required) : capabilityNotFound(t.notebookNotFound);
 };
 
 const requireNoteByShortId = async (shortId: string, context: CapabilityExecutionContext, required: PermissionLevel = "read") => {
+  const t = capabilityMessages(context);
   const note = await noteStore.getByShortId({ shortId });
-  if (!note) return fail(err.notFound("Note"));
+  if (!note) return capabilityNotFound(t.noteNotFound);
   const access = await requireNotebook(note.notebookId, context, required);
-  return access.ok ? ok({ note, notebook: access.data.notebook, permission: access.data.permission }) : fail(err.notFound("Note"));
+  return access.ok ? ok({ note, notebook: access.data.notebook, permission: access.data.permission }) : capabilityNotFound(t.noteNotFound);
 };
 
 const mapNotebook = (notebook: Notebook, permission: Exclude<PermissionLevel, "none">) => ({
@@ -200,64 +211,64 @@ const compactSnippet = (content: string | null): string | undefined => {
 
 type NoteEditOperation = z.infer<typeof NoteEditInputSchema>["operations"][number];
 
-const noteEditOperationReview = (operation: NoteEditOperation): string => {
+const noteEditOperationReview = (operation: NoteEditOperation, locale?: string): string => {
+  const { t } = notebookCapabilityMessages.resolve(locale ? [locale] : []);
   let target = "";
   if ("name" in operation) {
-    target = ` block @${operation.name}${operation.type ? ` (${operation.type})` : ""}${
-      operation.index === undefined ? "" : ` at index ${operation.index}`
-    }`;
+    target = t.blockTarget({ name: operation.name, type: operation.type, index: operation.index });
   } else if ("line" in operation) {
-    target = ` line ${operation.line}`;
+    target = t.lineTarget({ line: operation.line });
   } else if ("startLine" in operation) {
-    target = ` lines ${operation.startLine}–${operation.endLine}`;
+    target = t.linesTarget({ start: operation.startLine, end: operation.endLine });
   }
 
   let effect: string;
   switch (operation.kind) {
     case "set-content":
-      effect = "Replace the complete note";
+      effect = t.replaceCompleteNote;
       break;
     case "append":
-      effect = "Append to the note";
+      effect = t.appendToNote;
       break;
     case "prepend":
-      effect = "Prepend to the note";
+      effect = t.prependToNote;
       break;
     case "insert-before-line":
-      effect = `Insert before${target}`;
+      effect = t.insertBefore({ target });
       break;
     case "insert-after-line":
-      effect = `Insert after${target}`;
+      effect = t.insertAfter({ target });
       break;
     case "replace-lines":
-      effect = `Replace${target}`;
+      effect = t.replaceTarget({ target });
       break;
     case "delete-lines":
-      effect = `Delete${target}`;
+      effect = t.deleteTarget({ target });
       break;
     case "replace-block":
-      effect = `Replace${target}${operation.includeHandle ? " including its handle" : ""}`;
+      effect = t.replaceTargetWithHandle({ target, includeHandle: operation.includeHandle ?? false });
       break;
     case "append-block":
-      effect = `Append to${target}`;
+      effect = t.appendToTarget({ target });
       break;
     case "prepend-block":
-      effect = `Prepend to${target}`;
+      effect = t.prependToTarget({ target });
       break;
   }
   return effect;
 };
 
-const noteEditOperationDetails = (operation: NoteEditOperation, index: number) => {
-  const effect = noteEditOperationReview(operation);
-  if (!("content" in operation)) return { label: `Operation ${index + 1}`, value: effect };
+const noteEditOperationDetails = (operation: NoteEditOperation, index: number, locale?: string) => {
+  const { t } = notebookCapabilityMessages.resolve(locale ? [locale] : []);
+  const effect = noteEditOperationReview(operation, locale);
+  if (!("content" in operation)) return { label: t.operation({ index: index + 1 }), value: effect };
   const limit = 9_000;
   const truncated = operation.content.length > limit;
   const preview = truncated ? `${operation.content.slice(0, limit - 1)}…` : operation.content;
   return {
-    label: `Operation ${index + 1}`,
-    value: `${effect} with ${operation.content.length} character${operation.content.length === 1 ? "" : "s"}.${
-      truncated ? ` Showing the first ${limit.toLocaleString("en")} characters.` : ""
+    label: t.operation({ index: index + 1 }),
+    value: `${t.effectWithCharacters({ effect, count: operation.content.length })}${
+      truncated ? t.previewTruncated({ limit: limit.toLocaleString(locale ?? "en") }) : ""
     }\n\n${preview}`,
     display: "block" as const,
   };
@@ -267,32 +278,33 @@ const noteTitle = (title: string): string => `“${title}”`;
 const lineCount = (content: string): number => (content.length === 0 ? 0 : content.split(/\r?\n/).length);
 const lines = (count: number): string => `${count} ${count === 1 ? "line" : "lines"}`;
 
-export const noteEditCapabilitySummary = (operations: NoteEditOperation[], title: string, changed: boolean): string => {
-  const target = noteTitle(title);
-  if (!changed) return `${target} was already up to date.`;
-  if (operations.length !== 1) return `Made ${operations.length} changes to ${target}.`;
+export const noteEditCapabilitySummary = (operations: NoteEditOperation[], title: string, changed: boolean, locale?: string): string => {
+  const { t } = notebookCapabilityMessages.resolve(locale ? [locale] : []);
+  if (!changed) return t.alreadyCurrent({ title });
+  if (operations.length !== 1) return t.changesMade({ count: operations.length, title });
   const operation = operations[0]!;
   switch (operation.kind) {
     case "append":
     case "prepend":
-      return `Added ${lines(lineCount(operation.content))} to ${target}.`;
+      return t.added({ lines: t.lines({ count: lineCount(operation.content) }), title });
     case "insert-before-line":
     case "insert-after-line":
-      return `Inserted ${lines(lineCount(operation.content))} in ${target}.`;
+      return t.inserted({ lines: t.lines({ count: lineCount(operation.content) }), title });
     case "replace-lines":
-      return `Replaced ${lines(operation.endLine - operation.startLine + 1)} in ${target}.`;
+      return t.replaced({ lines: t.lines({ count: operation.endLine - operation.startLine + 1 }), title });
     case "delete-lines":
-      return `Deleted ${lines(operation.endLine - operation.startLine + 1)} from ${target}.`;
+      return t.deleted({ lines: t.lines({ count: operation.endLine - operation.startLine + 1 }), title });
     case "replace-block":
     case "append-block":
     case "prepend-block":
-      return `Updated @${operation.name} in ${target}.`;
+      return t.updatedBlock({ name: operation.name, title });
     case "set-content":
-      return `Replaced the content of ${target}.`;
+      return t.replacedContent({ title });
   }
 };
 
 const runNotebookSearch = async (input: UniversalSearchInput, context: CapabilityExecutionContext) => {
+  const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
   const scope = scopedNotebookId(context, "read");
   if (!scope.ok) return ok({ data: [] });
   const page = await notebookStore.listWithPermission({
@@ -308,13 +320,14 @@ const runNotebookSearch = async (input: UniversalSearchInput, context: Capabilit
     preview: notebook.description ?? undefined,
     icon: notebook.icon ?? "ti ti-notebook",
     priority: 7,
-    metadata: [{ label: "Type", value: "Notebook" }],
+    metadata: [{ label: t.type, value: t.notebook }],
     links: [{ rel: "open", href: notebookHref(notebook) }],
   }));
   return ok({ data });
 };
 
 const runNoteSearch = async (input: UniversalSearchInput, context: CapabilityExecutionContext) => {
+  const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
   const scope = scopedNotebookId(context, "read");
   if (!scope.ok) return ok({ data: [] });
   const hits = await noteSearch.searchAcross({
@@ -330,8 +343,8 @@ const runNoteSearch = async (input: UniversalSearchInput, context: CapabilityExe
     icon: "ti ti-file-text",
     priority: 8,
     metadata: [
-      { label: "Type", value: "Note" },
-      { label: "Notebook", value: notebook.name },
+      { label: t.type, value: t.note },
+      { label: t.notebook, value: notebook.name },
     ],
     links: [{ rel: "open", href: `/app/notebooks/${notebook.shortId}/notes/${note.shortId}` }],
   }));
@@ -339,7 +352,7 @@ const runNoteSearch = async (input: UniversalSearchInput, context: CapabilityExe
 };
 
 const runNotebookList = async (input: z.infer<typeof NotebookListInputSchema>, context: CapabilityExecutionContext) => {
-  const cursor = decodeNotebookCapabilityCursor(input.cursor);
+  const cursor = decodeNotebookCapabilityCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   const scope = scopedNotebookId(context, input.minimumPermission);
   if (!scope.ok) return scope;
@@ -363,18 +376,19 @@ const runNotebookList = async (input: z.infer<typeof NotebookListInputSchema>, c
 };
 
 const runNotebookRead = async (input: z.infer<typeof NotebookReadInputSchema>, context: CapabilityExecutionContext) => {
+  const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
   const access = await requireNotebookByShortId(input.id, context);
   if (!access.ok) return access;
   return ok({
     data: mapNotebook(access.data.notebook, access.data.permission as Exclude<PermissionLevel, "none">),
-    summary: `Read notebook “${access.data.notebook.name}”.`,
+    summary: t.readNotebook({ name: access.data.notebook.name }),
     refs: [notebookRef(access.data.notebook)],
     links: [{ rel: "open" as const, href: notebookHref(access.data.notebook) }],
   });
 };
 
 const runNoteTree = async (input: z.infer<typeof NoteTreeInputSchema>, context: CapabilityExecutionContext) => {
-  const cursor = decodeNotebookTreeCursor(input.cursor);
+  const cursor = decodeNotebookTreeCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   const access = await requireNotebookByShortId(input.notebookId, context);
   if (!access.ok) return access;
@@ -406,12 +420,13 @@ const runNoteTree = async (input: z.infer<typeof NoteTreeInputSchema>, context: 
 };
 
 const runNoteRead = async (input: z.infer<typeof NoteReadInputSchema>, context: CapabilityExecutionContext) => {
+  const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
   const resolved = await requireNoteByShortId(input.id, context);
   if (!resolved.ok) return resolved;
   const note = await noteStore.getWithContent({ id: resolved.data.note.id });
-  if (!note) return fail(err.notFound("Note"));
+  if (!note) return capabilityNotFound(t.noteNotFound);
   const content = note.contentMd ?? "";
-  if (input.contentOffset > content.length) return fail(err.badInput("contentOffset is outside the note"));
+  if (input.contentOffset > content.length) return fail(err.badInput(t.contentOffsetOutside));
   const end = Math.min(content.length, input.contentOffset + input.contentLimit);
   const blocks = summarizeNoteEditBlocks(content);
   const tags = noteTags.extractTags(content);
@@ -430,14 +445,14 @@ const runNoteRead = async (input: z.infer<typeof NoteReadInputSchema>, context: 
       blocks: blocks.slice(0, 500),
       blocksTruncated: blocks.length > 500,
     },
-    summary: `Read note “${note.title}”.`,
+    summary: t.readNote({ title: note.title }),
     refs: [noteRef(note, resolved.data.notebook.name), notebookRef(resolved.data.notebook)],
     links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, note) }],
   });
 };
 
 const runNoteLinks = async (input: z.infer<typeof NoteLinksInputSchema>, context: CapabilityExecutionContext) => {
-  const cursor = decodeNotebookCapabilityCursor(input.cursor);
+  const cursor = decodeNotebookCapabilityCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   const resolved = await requireNoteByShortId(input.noteId, context);
   if (!resolved.ok) return resolved;
@@ -480,7 +495,7 @@ const runNoteLinks = async (input: z.infer<typeof NoteLinksInputSchema>, context
 };
 
 const runTagList = async (input: z.infer<typeof TagListInputSchema>, context: CapabilityExecutionContext) => {
-  const cursor = decodeNotebookCapabilityCursor(input.cursor);
+  const cursor = decodeNotebookCapabilityCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   const access = await requireNotebookByShortId(input.notebookId, context);
   if (!access.ok) return access;
@@ -499,7 +514,7 @@ const runTagList = async (input: z.infer<typeof TagListInputSchema>, context: Ca
 };
 
 const runTagNotes = async (input: z.infer<typeof TagNotesInputSchema>, context: CapabilityExecutionContext) => {
-  const cursor = decodeNotebookCapabilityCursor(input.cursor);
+  const cursor = decodeNotebookCapabilityCursor(input.cursor, context.locale);
   if (!cursor.ok) return cursor;
   const access = await requireNotebookByShortId(input.notebookId, context);
   if (!access.ok) return access;
@@ -563,16 +578,17 @@ const audited = async <T>(
   return result.ok ? audit.recordResultAfterSideEffect({ ...params, result }) : audit.recordResult({ ...params, result });
 };
 
-const mutationError = <T>(result: Exclude<MutationResult<T>, { ok: true }>) => {
-  if (result.status === 403) return fail(err.forbidden(result.error));
-  if (result.status === 404) return fail(err.notFound(result.error.replace(/ not found.*$/i, "")));
-  if (result.status === 409) return fail(err.conflict(result.error));
-  if (result.status === 500) return fail(err.internal(result.error));
+const mutationError = <T>(result: Exclude<MutationResult<T>, { ok: true }>, locale?: string) => {
+  const { t } = notebookCapabilityMessages.resolve(locale ? [locale] : []);
+  if (result.status === 403) return fail(err.forbidden(t.changeForbidden));
+  if (result.status === 404) return capabilityNotFound(t.noteNotFound);
+  if (result.status === 409) return fail(err.conflict(t.changeConflict));
+  if (result.status === 500) return fail(err.internal(t.changeFailed));
   return fail(err.badInput(result.error));
 };
 
-const noteMutationResult = async (result: MutationResult<Note>, notebook: Notebook, summary: (note: Note) => string) => {
-  if (!result.ok) return mutationError(result);
+const noteMutationResult = async (result: MutationResult<Note>, notebook: Notebook, summary: (note: Note) => string, locale?: string) => {
+  if (!result.ok) return mutationError(result, locale);
   return ok({
     data: mapNote(result.data, notebook.shortId, await resolveParentShortId(result.data)),
     summary: summary(result.data),
@@ -582,12 +598,13 @@ const noteMutationResult = async (result: MutationResult<Note>, notebook: Notebo
 };
 
 const runNoteCreate = async (input: z.infer<typeof NoteCreateInputSchema>, context: CapabilityExecutionContext) => {
+  const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
   const access = await requireNotebookByShortId(input.notebookId, context, "write");
   if (!access.ok) return access;
   let parentId: string | undefined;
   if (input.parentId) {
     const parent = await requireNoteByShortId(input.parentId, context, "write");
-    if (!parent.ok || parent.data.note.notebookId !== access.data.notebook.id) return fail(err.notFound("Parent note"));
+    if (!parent.ok || parent.data.note.notebookId !== access.data.notebook.id) return capabilityNotFound(t.parentNotFound);
     parentId = parent.data.note.id;
   }
   return audited(actionAudit(context, "note.create", "notebook", access.data.notebook.id), async () =>
@@ -605,8 +622,9 @@ const runNoteCreate = async (input: z.infer<typeof NoteCreateInputSchema>, conte
       access.data.notebook,
       (note) =>
         note.title === "Untitled"
-          ? `Created a new note in ${access.data.notebook.name}.`
-          : `Created ${noteTitle(note.title)} in ${access.data.notebook.name}.`,
+          ? t.createdUntitled({ notebook: access.data.notebook.name })
+          : t.created({ title: note.title, notebook: access.data.notebook.name }),
+      context.locale,
     ),
   );
 };
@@ -622,7 +640,7 @@ const runNoteEdit = async (input: z.infer<typeof NoteEditInputSchema>, context: 
       createdBy: context.user?.id ?? null,
       actor: activityActor(context),
     });
-    if (!result.ok) return mutationError(result);
+    if (!result.ok) return mutationError(result, context.locale);
     return ok({
       data: {
         note: mapNote(result.data.note, resolved.data.notebook.shortId, await resolveParentShortId(result.data.note)),
@@ -632,7 +650,7 @@ const runNoteEdit = async (input: z.infer<typeof NoteEditInputSchema>, context: 
         blocks: result.data.blocks.slice(0, 500),
         blocksTruncated: result.data.blocks.length > 500,
       },
-      summary: noteEditCapabilitySummary(input.operations, result.data.note.title, result.data.changed),
+      summary: noteEditCapabilitySummary(input.operations, result.data.note.title, result.data.changed, context.locale),
       refs: [noteRef(result.data.note, resolved.data.notebook.name), notebookRef(resolved.data.notebook)],
       links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, result.data.note) }],
     });
@@ -640,13 +658,14 @@ const runNoteEdit = async (input: z.infer<typeof NoteEditInputSchema>, context: 
 };
 
 const runNoteMove = async (input: z.infer<typeof NoteMoveInputSchema>, context: CapabilityExecutionContext) => {
+  const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
   const resolved = await requireNoteByShortId(input.noteId, context, "write");
   if (!resolved.ok) return resolved;
   let parentId: string | null = null;
   let parentTitle: string | null = null;
   if (input.parentId) {
     const parent = await requireNoteByShortId(input.parentId, context, "write");
-    if (!parent.ok || parent.data.note.notebookId !== resolved.data.note.notebookId) return fail(err.notFound("Parent note"));
+    if (!parent.ok || parent.data.note.notebookId !== resolved.data.note.notebookId) return capabilityNotFound(t.parentNotFound);
     parentId = parent.data.note.id;
     parentTitle = parent.data.note.title;
   }
@@ -656,8 +675,9 @@ const runNoteMove = async (input: z.infer<typeof NoteMoveInputSchema>, context: 
       resolved.data.notebook,
       (note) =>
         parentTitle
-          ? `Moved ${noteTitle(note.title)} under ${noteTitle(parentTitle)}.`
-          : `Moved ${noteTitle(note.title)} to the notebook root.`,
+          ? t.movedUnder({ title: note.title, parent: parentTitle })
+          : t.movedRoot({ title: note.title }),
+      context.locale,
     ),
   );
 };
@@ -772,30 +792,31 @@ export const notebooksCapabilities = defineCapabilities({
       idempotency: "none",
       approval: "rememberable",
       review: async (input, context) => {
+        const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
         const access = await requireNotebookByShortId(input.notebookId, context, "write");
         if (!access.ok) return access;
-        let parentTitle = "Notebook root";
+        let parentTitle = t.notebookRoot;
         if (input.parentId) {
           const parent = await requireNoteByShortId(input.parentId, context, "write");
-          if (!parent.ok || parent.data.note.notebookId !== access.data.notebook.id) return fail(err.notFound("Parent note"));
+          if (!parent.ok || parent.data.note.notebookId !== access.data.notebook.id) return capabilityNotFound(t.parentNotFound);
           parentTitle = parent.data.note.title;
         }
         const content = input.content ?? "";
         const previewLimit = 9_000;
         const truncated = content.length > previewLimit;
         return ok({
-          message: `Create a note in ${access.data.notebook.name}.`,
+          message: t.createReview({ notebook: access.data.notebook.name }),
           details: [
-            { label: "Notebook", value: access.data.notebook.name },
-            { label: "Parent", value: parentTitle },
-            ...(input.position === undefined ? [] : [{ label: "Position", value: String(input.position) }]),
+            { label: t.notebook, value: access.data.notebook.name },
+            { label: t.parent, value: parentTitle },
+            ...(input.position === undefined ? [] : [{ label: t.position, value: String(input.position) }]),
             ...(input.content === undefined
               ? []
               : [
                   {
-                    label: "Initial Markdown",
-                    value: `${content.length} character${content.length === 1 ? "" : "s"}.${
-                      truncated ? ` Showing the first ${previewLimit.toLocaleString("en")} characters.` : ""
+                    label: t.initialMarkdown,
+                    value: `${t.characters({ count: content.length })}.${
+                      truncated ? t.previewTruncated({ limit: previewLimit.toLocaleString(context.locale ?? "en") }) : ""
                     }\n\n${truncated ? `${content.slice(0, previewLimit - 1)}…` : content}`,
                     display: "block" as const,
                   },
@@ -817,11 +838,14 @@ export const notebooksCapabilities = defineCapabilities({
       idempotency: "none",
       approval: "rememberable",
       review: async (input, context) => {
+        const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
         const resolved = await requireNoteByShortId(input.noteId, context, "write");
         if (!resolved.ok) return resolved;
         return ok({
-          message: `Edit ${resolved.data.note.title}.`,
-          details: input.operations.map(noteEditOperationDetails),
+          message: t.editReview({ title: resolved.data.note.title }),
+          details: input.operations.map((operation: NoteEditOperation, index: number) =>
+            noteEditOperationDetails(operation, index, context.locale),
+          ),
           links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, resolved.data.note) }],
           approvalScope: notebookApprovalScope(resolved.data.notebook),
         });
@@ -838,20 +862,21 @@ export const notebooksCapabilities = defineCapabilities({
       idempotency: "none",
       approval: "rememberable",
       review: async (input, context) => {
+        const { t } = notebookCapabilityMessages.resolve(context.locale ? [context.locale] : []);
         const resolved = await requireNoteByShortId(input.noteId, context, "write");
         if (!resolved.ok) return resolved;
-        let parentTitle = "Notebook root";
+        let parentTitle = t.notebookRoot;
         if (input.parentId) {
           const parent = await requireNoteByShortId(input.parentId, context, "write");
-          if (!parent.ok || parent.data.note.notebookId !== resolved.data.note.notebookId) return fail(err.notFound("Parent note"));
+          if (!parent.ok || parent.data.note.notebookId !== resolved.data.note.notebookId) return capabilityNotFound(t.parentNotFound);
           parentTitle = parent.data.note.title;
         }
         return ok({
-          message: `Move ${resolved.data.note.title} to ${parentTitle}.`,
+          message: t.moveReview({ title: resolved.data.note.title, parent: parentTitle }),
           details: [
-            { label: "Note", value: resolved.data.note.title },
-            { label: "New parent", value: parentTitle },
-            { label: "New position", value: String(input.position) },
+            { label: t.note, value: resolved.data.note.title },
+            { label: t.newParent, value: parentTitle },
+            { label: t.newPosition, value: String(input.position) },
           ],
           links: [{ rel: "open" as const, href: noteHref(resolved.data.notebook, resolved.data.note) }],
           approvalScope: notebookApprovalScope(resolved.data.notebook),

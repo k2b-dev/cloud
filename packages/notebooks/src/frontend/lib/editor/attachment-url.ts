@@ -6,6 +6,7 @@
  * Server-safe regex copies live in `service/attachments.ts`.
  */
 import { prompts } from "@k2b/ui";
+import { notebookWorkspaceMessages } from "../../[id]/messages";
 
 const ATTACHMENT_URL_RE = /^attach:\/\/([0-9a-zA-Z]{6})$/;
 const ATTACHMENT_REF_RE_GLOBAL = /attach:\/\/([0-9a-zA-Z]{6})/g;
@@ -43,10 +44,11 @@ export const isSafeMarkdownUrl = (url: string): boolean => {
  */
 export const confirmAndDownload = async (filename: string, url: string): Promise<void> => {
   if (!isSafeMarkdownUrl(url)) return;
-  const confirmed = await prompts.confirm(`Download "${filename}"?`, {
-    title: "Download attachment",
+  const t = notebookWorkspaceMessages.resolve([document.documentElement.lang]).t;
+  const confirmed = await prompts.confirm(t.downloadAttachmentQuestion({ filename }), {
+    title: t.downloadAttachment,
     icon: "ti ti-download",
-    confirmText: "Download",
+    confirmText: t.download,
   });
   if (!confirmed) return;
   window.open(url, "_blank", "noopener,noreferrer");

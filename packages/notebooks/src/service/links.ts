@@ -1,6 +1,7 @@
 import { logger, toPgTextArray } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import { buildNotebookVisibleAccessCondition } from "./access";
+import { notebookServiceMessages } from "./messages";
 
 const log = logger("notebooks:links");
 
@@ -36,8 +37,8 @@ const NOTE_PILL_CLASS =
 const renderNotePill = (href: string, label: string): string =>
   `<a class="${NOTE_PILL_CLASS}" href="${href}">` + `<i class="ti ti-connection text-xs"></i>` + `<span>${label}</span>` + `</a>`;
 
-const renderBrokenNotePill = (shortId: string, label: string): string =>
-  `<a class="cm-note-link note-link note-link-broken inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 no-underline align-baseline font-medium" title="Note ${shortId} not found">` +
+const renderBrokenNotePill = (shortId: string, label: string, locale?: string): string =>
+  `<a class="cm-note-link note-link note-link-broken inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 no-underline align-baseline font-medium" title="${notebookServiceMessages.resolve(locale ? [locale] : []).t.noteNotFound({ id: shortId })}">` +
   `<i class="ti ti-link-off text-xs"></i>` +
   `<span>${label}</span>` +
   `</a>`;
@@ -53,15 +54,15 @@ const renderBrokenNotePill = (shortId: string, label: string): string =>
  * page render (see `[id]/page.tsx`) and lives only as long as the
  * SSR call.
  */
-export const transformNoteLinks = (html: string, params: { noteShortIdToHref: Map<string, string> }): string =>
+export const transformNoteLinks = (html: string, params: { noteShortIdToHref: Map<string, string>; locale?: string }): string =>
   html
     .replace(MARKED_NOTE_LINK_HTML_REGEX, (_match, shortId: string, label: string) => {
       const href = params.noteShortIdToHref.get(shortId);
-      return href ? renderNotePill(href, label) : renderBrokenNotePill(shortId, label);
+      return href ? renderNotePill(href, label) : renderBrokenNotePill(shortId, label, params.locale);
     })
     .replace(NOTE_LINK_HTML_REGEX, (_match, shortId: string, label: string) => {
       const href = params.noteShortIdToHref.get(shortId);
-      return href ? renderNotePill(href, label) : renderBrokenNotePill(shortId, label);
+      return href ? renderNotePill(href, label) : renderBrokenNotePill(shortId, label, params.locale);
     });
 
 // ==========================

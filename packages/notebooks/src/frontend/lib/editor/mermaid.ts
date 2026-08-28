@@ -9,6 +9,7 @@ import {
   cursorZoneStateField,
   selectionIntersectsRange,
 } from "./_lib/cursor-zone-field";
+import { notebookWorkspaceMessages } from "../../[id]/messages";
 
 let isMermaidInitialized = false;
 
@@ -129,10 +130,11 @@ class MermaidWidget extends WidgetType {
       applySvgConstraints(renderDiv);
       cached.timestamp = Date.now();
     } else {
+      const loading = notebookWorkspaceMessages.resolve([document.documentElement.lang]).t.loadingDiagram;
       renderDiv.innerHTML = `
         <div class="flex items-center gap-2 text-gray-500">
           <i class="ti ti-loader animate-spin"></i>
-          <span class="text-sm">Loading diagram...</span>
+          <span class="text-sm">${loading}</span>
         </div>`;
       // Only schedule the expensive mermaid.render (~50–200ms
       // Dagre layout) when there is nothing cached to display.
@@ -185,6 +187,7 @@ class MermaidWidget extends WidgetType {
         applySvgConstraints(element);
       }
     } catch (error) {
+      const t = notebookWorkspaceMessages.resolve([document.documentElement.lang]).t;
       element.replaceChildren();
       const box = document.createElement("div");
       box.className = "flex flex-col items-center gap-2 text-red-500 p-4";
@@ -194,14 +197,14 @@ class MermaidWidget extends WidgetType {
 
       const label = document.createElement("span");
       label.className = "text-sm font-mono";
-      label.textContent = "Invalid mermaid syntax";
+      label.textContent = t.invalidMermaid;
 
       const details = document.createElement("details");
       details.className = "text-xs text-gray-500 max-w-full";
 
       const summary = document.createElement("summary");
       summary.className = "cursor-pointer hover:text-gray-700 dark:hover:text-gray-300";
-      summary.textContent = "Show error details";
+      summary.textContent = t.showErrorDetails;
 
       const pre = document.createElement("pre");
       pre.className = "mt-2 p-2 bg-gray-100 dark:bg-gray-800 rounded text-left overflow-x-auto";

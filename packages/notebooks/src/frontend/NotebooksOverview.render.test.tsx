@@ -12,42 +12,48 @@ Bun.plugin(plugin());
 process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: NotebooksOverview } = await import("./NotebooksOverview.island.tsx");
+const { LocaleProvider } = await import("@k2b/ui");
 
-const renderOverview = (initialActivityError: string | null = null) =>
+const renderOverview = (initialActivityError: string | null = null, locale = "en") =>
   renderToString(() =>
-    createComponent(NotebooksOverview, {
-      notebooks: [{ id: "Book01", name: "Product", description: "Product knowledge", icon: "ti ti-bulb" }],
-      templates: [{ id: "blank", name: "Project", description: "Project notes", icon: "ti ti-template" }],
-      recentNotes: [
-        {
-          id: "Note01",
-          notebookId: "Book01",
-          notebookName: "Product",
-          notebookIcon: "ti ti-bulb",
-          title: "Launch plan",
-          updatedAt: "2026-08-20T10:00:00.000Z",
-        },
-      ],
-      initialActivity: {
-        items: [
-          {
-            id: "1",
-            notebook: { id: "Book01", name: "Product", icon: "ti ti-bulb" },
-            note: { id: "Note01", title: "Launch plan" },
-            noteVersionId: null,
-            actor: { kind: "user", id: "00000000-0000-4000-8000-000000000001", displayName: "Sofie", avatarHash: null },
-            action: "note.edited",
-            metadata: {},
-            occurrenceCount: 1,
-            createdAt: "2026-08-20T10:00:00.000Z",
-            lastOccurredAt: "2026-08-20T10:00:00.000Z",
+    createComponent(LocaleProvider, {
+      locale,
+      get children() {
+        return createComponent(NotebooksOverview, {
+          notebooks: [{ id: "Book01", name: "Product", description: "Product knowledge", icon: "ti ti-bulb" }],
+          templates: [{ id: "blank", name: "Project", description: "Project notes", icon: "ti ti-template" }],
+          recentNotes: [
+            {
+              id: "Note01",
+              notebookId: "Book01",
+              notebookName: "Product",
+              notebookIcon: "ti ti-bulb",
+              title: "Launch plan",
+              updatedAt: "2026-08-20T10:00:00.000Z",
+            },
+          ],
+          initialActivity: {
+            items: [
+              {
+                id: "1",
+                notebook: { id: "Book01", name: "Product", icon: "ti ti-bulb" },
+                note: { id: "Note01", title: "Launch plan" },
+                noteVersionId: null,
+                actor: { kind: "user", id: "00000000-0000-4000-8000-000000000001", displayName: "Sofie", avatarHash: null },
+                action: "note.edited",
+                metadata: {},
+                occurrenceCount: 1,
+                createdAt: "2026-08-20T10:00:00.000Z",
+                lastOccurredAt: "2026-08-20T10:00:00.000Z",
+              },
+            ],
+            nextCursor: null,
           },
-        ],
-        nextCursor: null,
+          initialActivityError,
+          initialPinnedNotebookIds: ["Book01"],
+          dateConfig: { locale, timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
+        });
       },
-      initialActivityError,
-      initialPinnedNotebookIds: ["Book01"],
-      dateConfig: { locale: "en", timeZone: "Europe/Berlin", firstDayOfWeek: 1 },
     }),
   );
 
@@ -77,5 +83,13 @@ describe("Notebooks overview", () => {
     expect(html).toContain("Activity service unavailable");
     expect(html).toContain("Retry");
     expect(html).not.toContain("No activity yet");
+  });
+
+  test("renders German copy for a regional request locale during SSR", () => {
+    const html = renderOverview(null, "de-CH");
+    expect(html).toContain("Neues Notizbuch");
+    expect(html).toContain("Letzte Notizen");
+    expect(html).toContain("Product lösen");
+    expect(html).not.toContain("New notebook");
   });
 });

@@ -24,6 +24,7 @@ import { type Completion, type CompletionContext, type CompletionResult, snippet
 import { syntaxTree } from "@codemirror/language";
 import type { EditorState } from "@codemirror/state";
 import type { SyntaxNode } from "@lezer/common";
+import { GERMAN_COMPLETION_HELP } from "./kit-autocomplete.de";
 
 /**
  * Custom field we attach to each script API `Completion` so the shared
@@ -53,6 +54,16 @@ export type KitCompletion = Completion & { kitIcon?: string };
 export const withIcon = <C extends Completion>(c: C, icon: string): C => {
   (c as KitCompletion).kitIcon = icon;
   return c;
+};
+
+const localizeOptions = (options: readonly Completion[], namespace: string, locale?: string): Completion[] => {
+  if (!/^de(?:-|$)/i.test(locale ?? "")) return [...options];
+  return options.map((completion) => {
+    const path = namespace ? `${namespace}.${completion.label}` : completion.label;
+    const help = GERMAN_COMPLETION_HELP[path];
+    if (!help) throw new Error(`Missing German completion help for ${path}`);
+    return { ...completion, ...help };
+  });
 };
 
 // =============================================================================
@@ -850,13 +861,17 @@ const NESTED_OPTIONS: Record<string, Completion[]> = {
  * CM should replace from. Returns null when the path doesn't match
  * a known namespace.
  */
-const completionsForPath = (word: { from: number; to: number; text: string }): CompletionResult | null => {
+const completionsForPath = (word: { from: number; to: number; text: string }, locale?: string): CompletionResult | null => {
   const text = word.text;
 
   if (/^(?:c(?:u(?:r(?:r(?:e(?:n(?:t)?)?)?)?)?)?|n(?:b)?|u(?:i)?|s(?:t(?:d)?)?)$/.test(text)) {
     return {
       from: word.from,
-      options: topLevelCompletions.filter((option) => option.label.startsWith(text)),
+      options: localizeOptions(
+        topLevelCompletions.filter((option) => option.label.startsWith(text)),
+        "",
+        locale,
+      ),
       validFor: /^\w*$/,
     };
   }
@@ -867,7 +882,7 @@ const completionsForPath = (word: { from: number; to: number; text: string }): C
     const dotIdx = text.lastIndexOf(".");
     return {
       from: word.from + dotIdx + 1,
-      options: STANDALONE_NAMESPACE_OPTIONS[namespace!] ?? [],
+      options: localizeOptions(STANDALONE_NAMESPACE_OPTIONS[namespace!] ?? [], namespace!, locale),
       validFor: /^\w*$/,
     };
   }
@@ -880,7 +895,7 @@ const completionsForPath = (word: { from: number; to: number; text: string }): C
     const dotIdx = text.lastIndexOf(".");
     return {
       from: word.from + dotIdx + 1,
-      options: opts,
+      options: localizeOptions(opts, `${namespace}.${sub}`, locale),
       validFor: /^\w*$/,
     };
   }
@@ -893,7 +908,7 @@ const completionsForPath = (word: { from: number; to: number; text: string }): C
     const dotIdx = text.lastIndexOf(".");
     return {
       from: word.from + dotIdx + 1,
-      options: opts,
+      options: localizeOptions(opts, `std.${namespace}`, locale),
       validFor: /^\w*$/,
     };
   }
@@ -963,5 +978,6 @@ export const kitCompletionSource = (context: CompletionContext): CompletionResul
   const word = context.matchBefore(/\b[A-Za-z_][\w.]*/);
   if (!word) return null;
   if (!isInsideScriptLikeFence(context)) return null;
-  return completionsForPath(word);
+  const locale = typeof document === "undefined" ? "en" : document.documentElement.lang || "en";
+  return completionsForPath(word, locale);
 };

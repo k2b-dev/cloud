@@ -8,7 +8,7 @@
  */
 
 import { AppWorkspace, Pagination, Placeholder } from "@k2b/ui";
-import { type AuthContext, expectUserBackedActor, getDateConfig } from "@valentinkolb/cloud/server";
+import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { get } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
@@ -22,6 +22,7 @@ import NotebookSidebar from "../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../_components/sidebar/types";
 import WorkspaceEventBridge from "../_components/sidebar/WorkspaceEventBridge.island";
 import { projectNotebook, projectTree } from "../page-data";
+import { notebookWorkspaceMessages } from "../messages";
 
 const PER_PAGE = 200;
 
@@ -31,6 +32,7 @@ const parsePage = (raw: string | undefined): number => {
 };
 
 export default ssr<AuthContext>(async (c) => {
+  const t = notebookWorkspaceMessages.resolve([getLocale(c)]).t;
   const user = expectUserBackedActor(c);
   const notebookShortId = c.req.param("id")!;
   const search = (c.req.query("search") ?? "").trim();
@@ -39,9 +41,9 @@ export default ssr<AuthContext>(async (c) => {
   let notebook = await notebooksService.notebook.getByShortId({ shortId: notebookShortId });
   if (!notebook) {
     return () => (
-      <Layout c={c} title="Not Found">
+      <Layout c={c} title={t.notFound}>
         <div class="max-w-md mx-auto mt-16">
-          <Placeholder surface="paper" state="error" icon="ti ti-alert-circle" title="Notebook not found" />
+          <Placeholder surface="paper" state="error" icon="ti ti-alert-circle" title={t.notebookNotFound} />
         </div>
       </Layout>
     );
@@ -54,14 +56,14 @@ export default ssr<AuthContext>(async (c) => {
   });
   if (permission === "none") {
     return () => (
-      <Layout c={c} title="Access Denied">
+      <Layout c={c} title={t.accessDenied}>
         <div class="max-w-md mx-auto mt-16">
           <Placeholder
             surface="paper"
             state="error"
             icon="ti ti-lock"
-            title="Access denied"
-            description="You don't have access to this notebook."
+            title={t.accessDenied}
+            description={t.accessDeniedDescription}
           />
         </div>
       </Layout>
@@ -93,8 +95,8 @@ export default ssr<AuthContext>(async (c) => {
   ]);
   if (!snapshotNotebook) {
     return () => (
-      <Layout c={c} title="Not Found">
-        <Placeholder surface="paper" state="error" icon="ti ti-alert-circle" title="Notebook not found" />
+      <Layout c={c} title={t.notFound}>
+        <Placeholder surface="paper" state="error" icon="ti ti-alert-circle" title={t.notebookNotFound} />
       </Layout>
     );
   }
@@ -125,10 +127,10 @@ export default ssr<AuthContext>(async (c) => {
       c={c}
       fullPage
       title={[
-        { title: "Start", href: "/" },
-        { title: "Notebooks", href: "/app/notebooks" },
+        { title: t.start, href: "/" },
+        { title: t.notebooks, href: "/app/notebooks" },
         { title: notebook.name, href: `/app/notebooks/${notebook.shortId}` },
-        { title: "Attachments" },
+        { title: t.attachments },
       ]}
     >
       <AppWorkspace class="flex-1 min-h-0">
@@ -138,7 +140,7 @@ export default ssr<AuthContext>(async (c) => {
           <AppWorkspace.Main class="flex-col p-[var(--ui-space-shell)]" scroll={false}>
             {/* Search bar across the full content width. The breadcrumb already
                 labels the page — no additional title above. */}
-            <SearchBar value={search} action={baseHref} placeholder="Search attachments…" ariaLabel="Search attachments" />
+            <SearchBar value={search} action={baseHref} placeholder={t.searchAttachments} ariaLabel={t.searchAttachmentsLabel} />
 
             <div class="mt-2 flex-1 min-h-0 overflow-y-auto flex flex-col gap-2">
               <AttachmentsOverview

@@ -1,3 +1,4 @@
+import { recipeNotesDe } from "./recipe.de";
 import type { NotebookTemplate } from "./types";
 
 const recipeDashboardScript = `// Kitchen dashboard
@@ -185,12 +186,23 @@ export const recipeCollectorTemplate: NotebookTemplate = {
   icon: "ti ti-tools-kitchen-2",
   notebookName: "Recipes & Pantry",
   notebookDescription: "Recipe dashboard, pantry inventory, and recipe pages that calculate what ingredients you already have.",
+  translations: {
+    de: {
+      name: "Rezepte und Vorräte",
+      description: "Rezepte, Vorratsabgleich, Einkaufsliste und Anregungen für den Einstieg.",
+      notebookName: "Rezepte und Vorräte",
+      notebookDescription: "Rezeptübersicht, Vorratsbestand und Rezeptseiten, die vorhandene Zutaten berücksichtigen.",
+    },
+  },
   scriptsEnabled: true,
   homepageNoteKey: "dashboard",
-  notes: () => [
-    {
-      key: "dashboard",
-      content: (c) => `# Kitchen Dashboard
+  notes: (ctx) =>
+    ctx.locale?.toLowerCase().split("-")[0] === "de"
+      ? recipeNotesDe()
+      : [
+          {
+            key: "dashboard",
+            content: (c) => `# Kitchen Dashboard
 
 #kitchen
 
@@ -217,10 +229,10 @@ ${recipeDashboardScript}
 - [ ] Buy fresh Brezn for Obazda
 - [ ] Check cheese before cooking Kaesespaetzle
 `,
-    },
-    {
-      key: "pantry",
-      content: `# Pantry
+          },
+          {
+            key: "pantry",
+            content: `# Pantry
 
 #pantry
 
@@ -245,10 +257,10 @@ ${recipeDashboardScript}
 The first column is the lookup key used by scripts. Exact names keep the app predictable.
 :::
 `,
-    },
-    {
-      key: "recipes",
-      content: `# Recipes
+          },
+          {
+            key: "recipes",
+            content: `# Recipes
 
 #recipes
 
@@ -262,63 +274,63 @@ ${recipesIndexScript}
 - \`@ingredients\` table drives pantry matching.
 - \`@shopping\` todo receives missing ingredients.
 `,
-    },
-    {
-      key: "obazda",
-      content: recipeContent(
-        "Obazda with Radish and Brezn",
-        "brotzeit",
-        "15 min",
-        4,
-        `| Camembert | 250 | g | ripe, room temperature |
+          },
+          {
+            key: "obazda",
+            content: recipeContent(
+              "Obazda with Radish and Brezn",
+              "brotzeit",
+              "15 min",
+              4,
+              `| Camembert | 250 | g | ripe, room temperature |
 | Cream cheese | 80 | g | or soft butter |
 | Onion | 0.2 | kg | finely diced, add late |
 | Sweet paprika | 1 | tsp | plus pepper and salt |
 | Brezn | 8 | pieces | buy fresh |
 | Radish | 1 | piece | optional but classic |`,
-        `1. Mash Camembert with cream cheese until creamy.
+              `1. Mash Camembert with cream cheese until creamy.
 2. Season with paprika, pepper, salt, and a small splash of beer if wanted.
 3. Fold in onions shortly before serving so they do not turn bitter.
 4. Serve with Brezn, radish, chives, and a cold beer.`,
-      ),
-    },
-    {
-      key: "kaesespaetzle",
-      content: recipeContent(
-        "Kaesespaetzle with Fried Onions",
-        "main",
-        "50 min",
-        4,
-        `| Flour | 400 | g | wheat flour 405 or spaetzle flour |
+            ),
+          },
+          {
+            key: "kaesespaetzle",
+            content: recipeContent(
+              "Kaesespaetzle with Fried Onions",
+              "main",
+              "50 min",
+              4,
+              `| Flour | 400 | g | wheat flour 405 or spaetzle flour |
 | Eggs | 5 | pieces | medium |
 | Mountain cheese | 250 | g | nutty cheese |
 | Emmental | 150 | g | melting cheese |
 | Onion | 0.5 | kg | slice thin |
 | Butter | 60 | g | for onions and pan |`,
-        `1. Beat flour, eggs, salt, and a little water until the dough bubbles.
+              `1. Beat flour, eggs, salt, and a little water until the dough bubbles.
 2. Press into simmering salted water and lift when the spaetzle float.
 3. Brown onions slowly in butter.
 4. Layer hot spaetzle with grated cheese, cover briefly, then serve with onions.`,
-      ),
-    },
-    {
-      key: "blaue-zipfel",
-      content: recipeContent(
-        "Franconian Blaue Zipfel",
-        "main",
-        "45 min",
-        4,
-        `| Franconian sausages | 4 | pairs | raw, fresh |
+            ),
+          },
+          {
+            key: "blaue-zipfel",
+            content: recipeContent(
+              "Franconian Blaue Zipfel",
+              "main",
+              "45 min",
+              4,
+              `| Franconian sausages | 4 | pairs | raw, fresh |
 | Onion | 0.7 | kg | sliced |
 | Franconian white wine | 500 | ml | Silvaner works well |
 | White wine vinegar | 500 | ml | mild vinegar |
 | Bay leaves | 2 | leaves | with peppercorns and cloves |
 | Carrot | 2 | pieces | quartered |`,
-        `1. Simmer wine, vinegar, water, onions, carrots, bay, pepper, and cloves for 15 minutes.
+              `1. Simmer wine, vinegar, water, onions, carrots, bay, pepper, and cloves for 15 minutes.
 2. Lower heat so the liquid no longer boils.
 3. Add sausages and let them steep gently for 15-20 minutes.
 4. Serve in deep plates with onions, broth, rye bread, and horseradish.`,
-      ),
-    },
-  ],
+            ),
+          },
+        ],
 };

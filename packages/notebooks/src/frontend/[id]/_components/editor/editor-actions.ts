@@ -2,6 +2,7 @@ import type { EditorView } from "@codemirror/view";
 import { prompts } from "@k2b/ui";
 import { buildDataBlockTemplate, dataBlockRefSelection } from "../../../lib/editor/data-block-template";
 import { openNoteLinkPrompt } from "../search/openNoteSearchPrompt";
+import { notebookWorkspaceMessages } from "../../messages";
 
 /**
  * Editor-level actions used by the toolbar AND the slash-command palette.
@@ -221,8 +222,9 @@ export const insertDataBlock = (view: EditorView): void => {
 // ==========================
 
 /** Build a markdown table skeleton with placeholder headers. */
-const buildTable = (rows: number, cols: number): string => {
-  const header = `| ${Array.from({ length: cols }, (_, i) => `Header ${i + 1}`).join(" | ")} |`;
+const buildTable = (rows: number, cols: number, locale?: string): string => {
+  const t = notebookWorkspaceMessages.resolve(locale ? [locale] : []).t;
+  const header = `| ${Array.from({ length: cols }, (_, i) => t.tableHeader({ index: i + 1 })).join(" | ")} |`;
   const sep = `| ${Array.from({ length: cols }, () => "---").join(" | ")} |`;
   const body = Array.from({ length: rows }, () => `| ${Array.from({ length: cols }, () => "   ").join(" | ")} |`).join("\n");
   return `${header}\n${sep}\n${body}`;
@@ -245,7 +247,9 @@ const buildTable = (rows: number, cols: number): string => {
  * header cell's placeholder text (`Header 1`) so the user can start
  * typing immediately to replace it.
  */
-export const insertTable = async (view: EditorView, dimensions?: { rows: number; cols: number }): Promise<void> => {
+export const insertTable = async (view: EditorView, dimensions?: { rows: number; cols: number }, locale?: string): Promise<void> => {
+  const resolvedLocale = locale ?? (typeof document === "undefined" ? "en" : document.documentElement.lang);
+  const t = notebookWorkspaceMessages.resolve([resolvedLocale]).t;
   let rows: number;
   let cols: number;
   if (dimensions) {
@@ -255,11 +259,11 @@ export const insertTable = async (view: EditorView, dimensions?: { rows: number;
     cols = Math.max(1, Math.min(20, Math.floor(dimensions.cols)));
   } else {
     const result = await prompts.form({
-      title: "Insert Table",
+      title: t.insertTable,
       icon: "ti ti-table",
       fields: {
-        rows: { type: "number", label: "Rows", default: 3, min: 1, max: 50, required: true },
-        cols: { type: "number", label: "Columns", default: 3, min: 1, max: 20, required: true },
+        rows: { type: "number", label: t.rows, default: 3, min: 1, max: 50, required: true },
+        cols: { type: "number", label: t.columns, default: 3, min: 1, max: 20, required: true },
       },
     });
     if (!result) return;
@@ -267,13 +271,13 @@ export const insertTable = async (view: EditorView, dimensions?: { rows: number;
     cols = result.cols;
   }
 
-  const block = buildTable(rows, cols);
+  const block = buildTable(rows, cols, resolvedLocale);
   const { from } = view.state.selection.main;
   const line = view.state.doc.lineAt(from);
   const separator = line.text.trim() ? "\n\n" : "";
   const insert = `${separator}${block}\n`;
   const insertStart = line.to;
-  const header1 = "Header 1";
+  const header1 = t.tableHeader({ index: 1 });
   const header1Offset = insert.indexOf(header1);
 
   view.dispatch({
@@ -298,10 +302,11 @@ export const insertTable = async (view: EditorView, dimensions?: { rows: number;
  * selection as link text). Selects the URL placeholder so the user can type
  * over it directly.
  */
-export const insertLink = (view: EditorView): void => {
+export const insertLink = (view: EditorView, locale?: string): void => {
   const { from, to } = view.state.selection.main;
   const selected = view.state.sliceDoc(from, to);
-  const linkText = selected || "Text";
+  const resolvedLocale = locale ?? (typeof document === "undefined" ? "en" : document.documentElement.lang);
+  const linkText = selected || notebookWorkspaceMessages.resolve([resolvedLocale]).t.linkText;
   const insert = `[${linkText}](url)`;
   view.dispatch({
     changes: { from, to, insert },
@@ -322,11 +327,11 @@ export const insertLink = (view: EditorView): void => {
  * concurrent edit by another peer could shift the captured selection by
  * the time we dispatch. Accepted tradeoff for KISS (user can ctrl+z).
  */
-export const insertNoteLink = async (view: EditorView, notebookId: string): Promise<void> => {
+export const insertNoteLink = async (view: EditorView, notebookId: string, locale?: string): Promise<void> => {
   const sel = view.state.selection.main;
   const selectedText = view.state.sliceDoc(sel.from, sel.to);
 
-  const picked = await openNoteLinkPrompt(notebookId);
+  const picked = await openNoteLinkPrompt(notebookId, locale);
   if (!picked) return;
 
   const linkText = selectedText.length > 0 ? selectedText : picked.title;

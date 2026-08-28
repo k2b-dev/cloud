@@ -1,14 +1,17 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { CheckboxCard, NoticeCard, prompts, SettingsGroup } from "@k2b/ui";
+import { CheckboxCard, NoticeCard, prompts, SettingsGroup, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Notebook } from "../sidebar/types";
 import { readSettings, writeSettings } from "./NotebookSettingsStore";
 import { SaveStatus, settingsChoiceClass } from "./shared";
 import { readErrorMessage } from "./utils";
+import { notebookSettingsMessages } from "./messages";
 
 function ViewSection(props: { notebook: Notebook }) {
+  const locale = useLocale();
+  const t = () => notebookSettingsMessages.resolve([locale()]).t;
   const [mode, setMode] = createSignal(readSettings(props.notebook.id).sidebarMode);
 
   const selectMode = (next: "simple" | "navigator") => {
@@ -25,7 +28,7 @@ function ViewSection(props: { notebook: Notebook }) {
   };
 
   return (
-    <div class="grid grid-cols-1 gap-2 md:grid-cols-2" role="radiogroup" aria-label="Sidebar mode">
+    <div class="grid grid-cols-1 gap-2 md:grid-cols-2" role="radiogroup" aria-label={t().sidebarMode}>
       <button
         type="button"
         role="radio"
@@ -37,9 +40,9 @@ function ViewSection(props: { notebook: Notebook }) {
       >
         <span class="flex items-center gap-2 text-sm font-semibold">
           <i class="ti ti-layout-sidebar" />
-          Simple sidebar
+          {t().simpleSidebar}
         </span>
-        <span class="mt-1 block text-xs text-dimmed">A compact note tree with quick actions.</span>
+        <span class="mt-1 block text-xs text-dimmed">{t().simpleSidebarDescription}</span>
       </button>
       <button
         type="button"
@@ -52,15 +55,17 @@ function ViewSection(props: { notebook: Notebook }) {
       >
         <span class="flex items-center gap-2 text-sm font-semibold">
           <i class="ti ti-layout-list" />
-          Navigator
+          {t().navigator}
         </span>
-        <span class="mt-1 block text-xs text-dimmed">Roots, tags, favorites, and a metadata-rich note list.</span>
+        <span class="mt-1 block text-xs text-dimmed">{t().navigatorDescription}</span>
       </button>
     </div>
   );
 }
 
 export function FeaturesSection(props: { notebook: Notebook; isAdmin: boolean; onNotebookChange: (notebook: Notebook) => void }) {
+  const locale = useLocale();
+  const t = () => notebookSettingsMessages.resolve([locale()]).t;
   const [enabled, setEnabled] = createSignal(props.notebook.scriptsEnabled);
   const [saved, setSaved] = createSignal(true);
   const [error, setError] = createSignal<string | null>(null);
@@ -71,7 +76,7 @@ export function FeaturesSection(props: { notebook: Notebook; isAdmin: boolean; o
         param: { id: props.notebook.id },
         json: { scriptsEnabled: next },
       });
-      if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to update scripting setting."));
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().scriptingUpdateFailed));
       return (await res.json()) as Notebook;
     },
     onSuccess: (next) => {
@@ -91,12 +96,12 @@ export function FeaturesSection(props: { notebook: Notebook; isAdmin: boolean; o
   const setScriptsEnabled = async (next: boolean) => {
     if (next && !enabled()) {
       const confirmed = await prompts.confirm(
-        `Script blocks run trusted JavaScript in the browser of every user who opens notes in this notebook. They can read notebook content visible to that user, use script APIs, call browser APIs, and perform notebook actions with that user's permissions.\n\nOnly enable scripts for notebooks where you trust the content and the people who can edit it.\n\nEnable scripting in "${props.notebook.name}"?`,
+        t().scriptingConfirm({ name: props.notebook.name }),
         {
-          title: "Enable scripting",
+          title: t().enableScripting,
           icon: "ti ti-alert-triangle",
           variant: "danger",
-          confirmText: "Enable",
+          confirmText: t().enable,
         },
       );
       if (!confirmed) return;
@@ -109,15 +114,15 @@ export function FeaturesSection(props: { notebook: Notebook; isAdmin: boolean; o
 
   return (
     <>
-      <SettingsGroup title="Your view" description="Stored in this browser and applied immediately.">
+      <SettingsGroup title={t().yourView} description={t().yourViewDescription}>
         <ViewSection notebook={props.notebook} />
-        <SaveStatus loading={false} saved error={null} label="Saved in this browser" />
+        <SaveStatus loading={false} saved error={null} label={t().savedBrowser} />
       </SettingsGroup>
 
-      <SettingsGroup title="Notebook behavior" description="Shared with everyone who opens this notebook. Admin changes save immediately.">
+      <SettingsGroup title={t().notebookBehavior} description={t().notebookBehaviorDescription}>
         <CheckboxCard
-          label="Enable script blocks"
-          description="Allows ```script fences to run trusted JavaScript for everyone who opens this notebook."
+          label={t().enableScripts}
+          description={t().enableScriptsDescription}
           icon="ti ti-code"
           value={enabled}
           onValueChange={setScriptsEnabled}
@@ -126,8 +131,7 @@ export function FeaturesSection(props: { notebook: Notebook; isAdmin: boolean; o
         <NoticeCard tone="warning" icon={false} bodyClass="flex items-start gap-2">
           <i class="ti ti-alert-triangle mt-0.5 shrink-0" />
           <span>
-            Scripts run in each viewer's browser. They are not sandboxed and can use browser APIs, read notebook content visible to that
-            viewer, and perform notebook actions with that viewer's permissions.
+            {t().scriptWarning}
           </span>
         </NoticeCard>
         <SaveStatus loading={mutation.loading()} saved={saved()} error={error()} />

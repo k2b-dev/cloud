@@ -1,9 +1,12 @@
-import { prompts } from "@k2b/ui";
+import { prompts, useLocale } from "@k2b/ui";
 import { createEffect, createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { NoteTreeNode } from "./types";
+import { notebookWorkspaceMessages } from "../../messages";
 
 export function useFavoriteNotes(params: { notebookId: string; initialFavoriteNoteIds: () => string[] }) {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const [favoriteNoteIds, setFavoriteNoteIds] = createSignal(new Set(params.initialFavoriteNoteIds()));
   const pendingNoteIds = new Set<string>();
 
@@ -36,7 +39,7 @@ export function useFavoriteNotes(params: { notebookId: string; initialFavoriteNo
         else copy.add(note.id);
         return copy;
       });
-      void prompts.error("Failed to update favorite.");
+      void prompts.error(t().favoriteUpdateFailed);
     } finally {
       pendingNoteIds.delete(note.id);
     }

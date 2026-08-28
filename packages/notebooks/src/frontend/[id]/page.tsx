@@ -1,5 +1,6 @@
 import { AppWorkspace, Placeholder } from "@k2b/ui";
 import type { AuthContext } from "@valentinkolb/cloud/server";
+import { getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import NotebookDetailPanel from "./_components/detail/NotebookDetailPanel.island";
@@ -11,15 +12,17 @@ import NotebookSidebar from "./_components/sidebar/NotebookSidebar.island";
 import WorkspaceEventBridge from "./_components/sidebar/WorkspaceEventBridge.island";
 import VersionHistory from "./_components/versions/VersionHistory.island";
 import { loadNotebookPageData } from "./page-data";
+import { notebooksPageMessages } from "../messages";
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = notebooksPageMessages.resolve([getLocale(c)]);
   const data = await loadNotebookPageData(c);
 
   if (data.kind === "not_found") {
     return () => (
-      <Layout c={c} title="Not Found">
+      <Layout c={c} title={t.notFound}>
         <div class="max-w-md mx-auto mt-16">
-          <Placeholder surface="paper" state="error" icon="ti ti-alert-circle" title="Notebook not found" />
+          <Placeholder surface="paper" state="error" icon="ti ti-alert-circle" title={t.notebookNotFound} />
         </div>
       </Layout>
     );
@@ -27,14 +30,14 @@ export default ssr<AuthContext>(async (c) => {
 
   if (data.kind === "access_denied") {
     return () => (
-      <Layout c={c} title="Access Denied">
+      <Layout c={c} title={t.accessDenied}>
         <div class="max-w-md mx-auto mt-16">
           <Placeholder
             surface="paper"
             state="error"
             icon="ti ti-lock"
-            title="Access denied"
-            description="You don't have access to this notebook."
+            title={t.accessDenied}
+            description={t.accessDeniedDescription}
           />
         </div>
       </Layout>
@@ -74,8 +77,8 @@ export default ssr<AuthContext>(async (c) => {
       c={c}
       fullPage
       title={[
-        { title: "Start", href: "/" },
-        { title: "Notebooks", href: "/app/notebooks" },
+        { title: t.start, href: "/" },
+        { title: t.notebooks, href: "/app/notebooks" },
         { title: notebook.name, href: `/app/notebooks/${notebook.id}` },
         ...(selectedNote ? [{ title: selectedNote.title }] : []),
       ]}
@@ -93,7 +96,7 @@ export default ssr<AuthContext>(async (c) => {
             {ctx.settings.sidebarMode === "navigator" && (
               <AppWorkspace.MainPane
                 id="notebook-notes"
-                label="Note list"
+                label={t.noteList}
                 surface="navigation"
                 defaultSize={336}
                 minSize={280}
@@ -156,7 +159,7 @@ export default ssr<AuthContext>(async (c) => {
               <Placeholder
                 class="flex-1"
                 icon="ti ti-file-text"
-                description={tree.length === 0 ? "No notes yet" : "Select a note to collaborate"}
+                description={tree.length === 0 ? t.noNotes : t.selectNote}
               />
             )}
           </AppWorkspace.Main>
@@ -179,6 +182,7 @@ export default ssr<AuthContext>(async (c) => {
               updatedAt={selectedNote.updatedAt}
               lockedAt={selectedNote.lockedAt}
               isLocked={!!selectedNote.lockedAt}
+              dateConfig={dateConfig}
             />
           )}
         </AppWorkspace.Content>

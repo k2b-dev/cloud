@@ -1,4 +1,4 @@
-import { prompts, SettingsModal } from "@k2b/ui";
+import { prompts, SettingsModal, useLocale } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import { ApiKeysSection, PermissionsSection } from "./AccessSection";
 import { DangerZone } from "./DangerZone";
@@ -6,6 +6,7 @@ import { ExportSection } from "./ExportSection";
 import { FeaturesSection } from "./FeaturesSection";
 import { GeneralSection } from "./GeneralSection";
 import type { NotebookSettingsProps } from "./types";
+import { notebookSettingsMessages } from "./messages";
 
 export const openNotebookSettingsDialog = (props: NotebookSettingsProps): Promise<void> =>
   prompts.dialog<void>((close) => <NotebookSettingsBody {...props} close={() => close()} />, {
@@ -16,6 +17,8 @@ export const openNotebookSettingsDialog = (props: NotebookSettingsProps): Promis
   });
 
 export function NotebookSettingsBody(props: NotebookSettingsProps & { close: () => void }) {
+  const locale = useLocale();
+  const t = () => notebookSettingsMessages.resolve([locale()]).t;
   const [notebook, setNotebook] = createSignal(props.notebook);
   const [activeTab, setActiveTab] = createSignal("general");
   const [generalDirty, setGeneralDirty] = createSignal(false);
@@ -24,10 +27,10 @@ export function NotebookSettingsBody(props: NotebookSettingsProps & { close: () 
 
   const confirmDiscard = async () =>
     !activeTabDirty() ||
-    prompts.confirm("Discard the unsaved changes in this section?", {
-      title: "Discard changes?",
+    prompts.confirm(t().discardConfirm, {
+      title: t().discardTitle,
       icon: "ti ti-alert-triangle",
-      confirmText: "Discard",
+      confirmText: t().discard,
       variant: "danger",
     });
 
@@ -43,14 +46,14 @@ export function NotebookSettingsBody(props: NotebookSettingsProps & { close: () 
   return (
     <div class="dialog-fixed-frame flex min-h-0 flex-col overflow-hidden">
       <SettingsModal
-        title="Notebook settings"
+        title={t().settings}
         activeTab={activeTab()}
         onTabChange={(tab) => void requestTabChange(tab)}
         onClose={() => void requestClose()}
-        closeLabel="Close settings"
+        closeLabel={t().closeSettings}
       >
-        <SettingsModal.Group title="Notebook">
-          <SettingsModal.Tab id="general" title="General" icon="ti ti-id" description="Name, icon, description, and default start page.">
+        <SettingsModal.Group title={t().notebook}>
+          <SettingsModal.Tab id="general" title={t().general} icon="ti ti-id" description={t().generalDescription}>
             <GeneralSection
               notebook={notebook()}
               tree={props.tree}
@@ -62,9 +65,9 @@ export function NotebookSettingsBody(props: NotebookSettingsProps & { close: () 
           </SettingsModal.Tab>
           <SettingsModal.Tab
             id="features"
-            title="View & behavior"
+            title={t().viewBehavior}
             icon="ti ti-toggle-right"
-            description="Navigation layout and notebook-level behavior."
+            description={t().viewBehaviorDescription}
           >
             <FeaturesSection notebook={notebook()} isAdmin={props.isAdmin} onNotebookChange={setNotebook} />
           </SettingsModal.Tab>
@@ -72,37 +75,37 @@ export function NotebookSettingsBody(props: NotebookSettingsProps & { close: () 
 
         {props.isAdmin && (
           <>
-            <SettingsModal.Group title="Sharing">
-              <SettingsModal.Tab id="access" title="Access" icon="ti ti-shield" description="Permission changes save immediately.">
+            <SettingsModal.Group title={t().sharing}>
+              <SettingsModal.Tab id="access" title={t().access} icon="ti ti-shield" description={t().accessDescription}>
                 <PermissionsSection notebook={notebook()} />
               </SettingsModal.Tab>
               <SettingsModal.Tab
                 id="api-keys"
-                title="API keys"
+                title={t().apiKeys}
                 icon="ti ti-key"
-                description="Resource-bound integration credentials. Changes save immediately."
+                description={t().apiKeysDescription}
               >
                 <ApiKeysSection notebook={notebook()} />
               </SettingsModal.Tab>
             </SettingsModal.Group>
 
-            <SettingsModal.Group title="Data">
+            <SettingsModal.Group title={t().data}>
               <SettingsModal.Tab
                 id="export"
-                title="Export & snapshots"
+                title={t().exportSnapshots}
                 icon="ti ti-download"
-                description="Download a portable archive or configure automatic snapshots."
+                description={t().exportSnapshotsDescription}
               >
                 <ExportSection notebook={notebook()} onDirtyChange={setExportDirty} />
               </SettingsModal.Tab>
             </SettingsModal.Group>
 
-            <SettingsModal.Group title="Lifecycle">
+            <SettingsModal.Group title={t().lifecycle}>
               <SettingsModal.Tab
                 id="danger"
-                title="Danger zone"
+                title={t().dangerZone}
                 icon="ti ti-alert-triangle"
-                description="Permanently delete this notebook and all of its notes."
+                description={t().dangerDescription}
                 tone="danger"
               >
                 <DangerZone notebook={notebook()} />

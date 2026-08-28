@@ -39,7 +39,7 @@ describe("Notebooks navigator hydration contract", () => {
     const source = await Bun.file(resolve(import.meta.dir, "[id]/_components/sidebar/NotebookNavigator.tsx")).text();
 
     expect(source).toContain("<AppWorkspace.SidebarIconGrid columns={2}>");
-    expect(source).toContain('label="Homepage"');
+    expect(source).toContain("label={t().homepage}");
     expect(source).toContain('variant="workspace-icon"');
     expect(source).not.toContain('meta={root.id === "favorites"');
   });

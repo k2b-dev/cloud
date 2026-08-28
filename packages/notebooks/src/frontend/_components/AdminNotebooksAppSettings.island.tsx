@@ -12,9 +12,10 @@
 
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { Button, ButtonLink, dialogCore, NumberInput, PanelDialog, Placeholder, panelDialogOptions, TextInput, toast } from "@k2b/ui";
+import { Button, ButtonLink, dialogCore, NumberInput, PanelDialog, Placeholder, panelDialogOptions, TextInput, toast, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "../../api/client";
+import { notebooksAdminMessages } from "../admin-messages";
 
 type SettingEntry = {
   key: string;
@@ -26,13 +27,15 @@ type SettingEntry = {
   isCustom: boolean;
 };
 
-const fetchSettings = async (signal: AbortSignal): Promise<SettingEntry[]> => {
+const fetchSettings = async (signal: AbortSignal, locale: string): Promise<SettingEntry[]> => {
+  const t = notebooksAdminMessages.resolve([locale]).t;
   const res = await apiClient.admin.settings.$get(undefined, { init: { signal } });
-  if (!res.ok) throw new Error(`Failed to load settings (${res.status})`);
+  if (!res.ok) throw new Error(t.loadSettingsFailed({ status: res.status }));
   return await res.json();
 };
 
-const updateSetting = async (key: string, value: unknown, signal: AbortSignal): Promise<void> => {
+const updateSetting = async (key: string, value: unknown, signal: AbortSignal, locale: string): Promise<void> => {
+  const t = notebooksAdminMessages.resolve([locale]).t;
   const res = await apiClient.admin.settings[":key"].$put(
     {
       param: { key },
@@ -42,7 +45,7 @@ const updateSetting = async (key: string, value: unknown, signal: AbortSignal): 
   );
   if (!res.ok) {
     const data = (await res.json().catch(() => null)) as { message?: string } | null;
-    throw new Error(data?.message ?? `Failed to update ${key}`);
+    throw new Error(data?.message ?? t.updateSettingFailed({ key }));
   }
 };
 
@@ -69,6 +72,8 @@ const unitSuffixForKey = (key: string): string | null => {
  * through the backend validator.
  */
 const SettingRow = (props: { entry: SettingEntry; onChange: (value: unknown) => void }) => {
+  const locale = useLocale();
+  const t = () => notebooksAdminMessages.resolve([locale()]).t;
   const entryValue = () => props.entry.value ?? props.entry.default ?? "";
   const [value, setValue] = createSignal("");
   createEffect(() => {
@@ -98,8 +103,8 @@ const SettingRow = (props: { entry: SettingEntry; onChange: (value: unknown) => 
       fallback={
         <TextInput
           id={`setting-${props.entry.key}`}
-          label={props.entry.label}
-          description={props.entry.description}
+          label={t().settingLabel({ key: props.entry.key, label: props.entry.label })}
+          description={t().settingDescription({ key: props.entry.key, description: props.entry.description })}
           value={value}
           onValueChange={handleValue}
           placeholder={typeof props.entry.default === "string" ? props.entry.default : String(props.entry.default ?? "")}
@@ -108,8 +113,8 @@ const SettingRow = (props: { entry: SettingEntry; onChange: (value: unknown) => 
     >
       <NumberInput
         id={`setting-${props.entry.key}`}
-        label={props.entry.label}
-        description={props.entry.description}
+        label={t().settingLabel({ key: props.entry.key, label: props.entry.label })}
+        description={t().settingDescription({ key: props.entry.key, description: props.entry.description })}
         value={() => (value().trim() === "" ? null : Number(value()))}
         onValueChange={(next) => handleValue(next === null ? "" : String(next))}
         suffix={suffix ? <span class="font-mono text-[11px]">{suffix}</span> : undefined}
@@ -119,9 +124,11 @@ const SettingRow = (props: { entry: SettingEntry; onChange: (value: unknown) => 
 };
 
 const SettingsBody = (props: { close: () => void }) => {
+  const locale = useLocale();
+  const t = () => notebooksAdminMessages.resolve([locale()]).t;
   const entries = query.create({
     source: () => "notebooks-settings",
-    load: (_source, { abortSignal }) => fetchSettings(abortSignal),
+    load: (_source, { abortSignal }) => fetchSettings(abortSignal, locale()),
   });
   const [pending, setPending] = createSignal<ReadonlyMap<string, unknown>>(new Map());
   const [saveOutcome, setSaveOutcome] = createSignal<{ applied: number; failed?: string; warning?: string } | null>(null);
@@ -141,11 +148,11 @@ const SettingsBody = (props: { close: () => void }) => {
       const appliedKeys: string[] = [];
       for (const [key, value] of changes) {
         try {
-          await updateSetting(key, value, abortSignal);
+          await updateSetting(key, value, abortSignal, locale());
           appliedKeys.push(key);
         } catch (error) {
           if (abortSignal.aborted) throw error;
-          return { attempted: changes, appliedKeys, failed: error instanceof Error ? error.message : `Failed to update ${key}` };
+          return { attempted: changes, appliedKeys, failed: error instanceof Error ? error.message : t().updateSettingFailed({ key }) };
         }
       }
       return { attempted: changes, appliedKeys };
@@ -169,14 +176,14 @@ const SettingsBody = (props: { close: () => void }) => {
             setSaveOutcome({
               applied: outcome.appliedKeys.length,
               failed: outcome.failed,
-              warning: "The latest settings could not be reloaded, so the failed key remains queued for review.",
+              warning: t().settingsReloadWarning,
             });
           })
           .finally(() => setReconciling(false));
         return;
       }
       removePending(outcome.appliedKeys);
-      toast.success("Notebook settings saved");
+      toast.success(t().settingsSaved);
       props.close();
       refreshCurrentPath();
     },
@@ -203,25 +210,25 @@ const SettingsBody = (props: { close: () => void }) => {
   return (
     <PanelDialog>
       <PanelDialog.Header
-        title="Notebook Settings"
-        subtitle="App-level defaults and maintenance actions for Notebooks."
+        title={t().notebookSettings}
+        subtitle={t().settingsSubtitle}
         icon="ti ti-settings"
         close={close}
       />
       <PanelDialog.Body>
-        <PanelDialog.Section title="Settings" subtitle="Registered Notebooks settings and their current values." icon="ti ti-adjustments">
-          <Show when={!entries.loading()} fallback={<Placeholder state="loading" align="left" title="Loading settings..." />}>
+        <PanelDialog.Section title={t().settings} subtitle={t().settingsSectionSubtitle} icon="ti ti-adjustments">
+          <Show when={!entries.loading()} fallback={<Placeholder state="loading" align="left" title={t().loadingSettings} />}>
             <Show
               when={!entries.error()}
               fallback={
                 <Placeholder
                   state="error"
                   align="left"
-                  title="Could not load notebook settings"
+                  title={t().settingsLoadFailed}
                   description={entries.error()?.message}
                   action={
                     <Button size="sm" variant="secondary" onClick={() => void entries.refresh()}>
-                      Retry
+                      {t().retry}
                     </Button>
                   }
                 />
@@ -229,7 +236,7 @@ const SettingsBody = (props: { close: () => void }) => {
             >
               <Show
                 when={(entries.data() ?? []).length > 0}
-                fallback={<Placeholder align="left" class="px-0 py-2" description={<>No notebooks-app settings registered.</>} />}
+                fallback={<Placeholder align="left" class="px-0 py-2" description={t().noSettings} />}
               >
                 <div class="flex flex-col gap-3">
                   <For each={entries.data() ?? []}>
@@ -248,7 +255,7 @@ const SettingsBody = (props: { close: () => void }) => {
           <Show when={saveOutcome()}>
             {(outcome) => (
               <p class={outcome().failed ? "text-xs text-red-600 dark:text-red-400" : "text-xs text-amber-700 dark:text-amber-300"}>
-                {outcome().applied > 0 ? `${outcome().applied} setting${outcome().applied === 1 ? " was" : "s were"} saved. ` : ""}
+                {outcome().applied > 0 ? `${t().savedCount({ count: outcome().applied })} ` : ""}
                 {outcome().failed} {outcome().warning}
               </p>
             )}
@@ -258,15 +265,15 @@ const SettingsBody = (props: { close: () => void }) => {
       <PanelDialog.Footer>
         <ButtonLink href="/admin/observability/jobs?search=notebooks%3Areindex" variant="secondary" size="sm">
           <i class="ti ti-calendar-time text-sm" />
-          Reindex job
+          {t().reindexJob}
         </ButtonLink>
         <div class="flex items-center gap-2">
           <Button type="button" variant="secondary" size="sm" onClick={close} disabled={save.loading() || reconciling()}>
-            Cancel
+            {t().cancel}
           </Button>
-          <Button type="button" size="sm" onClick={onSave} loading={save.loading() || reconciling()} loadingLabel="Saving">
+          <Button type="button" size="sm" onClick={onSave} loading={save.loading() || reconciling()} loadingLabel={t().saving}>
             <i class={`ti ${save.loading() ? "ti-loader-2 animate-spin" : "ti-check"} text-sm`} />
-            Save
+            {t().save}
           </Button>
         </div>
       </PanelDialog.Footer>
@@ -277,10 +284,12 @@ const SettingsBody = (props: { close: () => void }) => {
 const openSettingsDialog = () => dialogCore.open<void>((close) => <SettingsBody close={() => close()} />, panelDialogOptions);
 
 export default function AdminNotebooksAppSettings() {
+  const locale = useLocale();
+  const t = () => notebooksAdminMessages.resolve([locale()]).t;
   return (
     <Button type="button" variant="secondary" size="sm" class="shrink-0" onClick={() => void openSettingsDialog()}>
       <i class="ti ti-settings text-sm" />
-      Settings
+      {t().settings}
     </Button>
   );
 }

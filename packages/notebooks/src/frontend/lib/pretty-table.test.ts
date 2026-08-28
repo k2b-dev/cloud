@@ -39,4 +39,24 @@ describe("pretty table rendering", () => {
     expect(html).toContain("14 May 2026, 18:01");
     expect(html).toContain(">2026-05-13<");
   });
+
+  test("localizes formula numbers, errors, and suggestions without changing formula syntax", () => {
+    const html = renderPrettyTableHtml(
+      {
+        headers: ["Preis"],
+        rows: [["=1.5"], ["=pries"]],
+      },
+      { locale: "de-DE" },
+    );
+
+    expect(html).toContain(">1,5</span>");
+    expect(html).toContain("Unbekannte Spalte");
+    expect(html).toContain("Vorschlag: Preis");
+    expect(html).toContain("=pries");
+    expect(html).not.toContain("Unknown column");
+    expect(html).not.toContain("Suggestion:");
+
+    const swissHtml = renderPrettyTableHtml({ headers: ["Preis"], rows: [["=pries"]] }, { locale: "de-CH" });
+    expect(swissHtml).toContain("Unbekannte Spalte");
+  });
 });

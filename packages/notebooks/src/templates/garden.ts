@@ -1,3 +1,4 @@
+import { gardenNotesDe } from "./garden.de";
 import type { NotebookTemplate, TemplateContext } from "./types";
 
 const gardenDashboardScript = `// Garden dashboard
@@ -87,12 +88,23 @@ export const gardenPlannerTemplate: NotebookTemplate = {
   icon: "ti ti-plant-2",
   notebookName: "Garden Log",
   notebookDescription: "Plants, beds, harvests, and a script dashboard that derives what is next from simple tables.",
+  translations: {
+    de: {
+      name: "Gartentagebuch",
+      description: "Aussaatzeiten, Beete, Ernten und saisonale Gartenarbeiten.",
+      notebookName: "Gartentagebuch",
+      notebookDescription: "Pflanzen, Beete und Ernten mit einem Dashboard, das die nächsten Arbeiten aus einfachen Tabellen ableitet.",
+    },
+  },
   scriptsEnabled: true,
   homepageNoteKey: "dashboard",
-  notes: (ctx: TemplateContext) => [
-    {
-      key: "dashboard",
-      content: (c) => `# Garden Dashboard
+  notes: (ctx: TemplateContext) =>
+    ctx.locale?.toLowerCase().split("-")[0] === "de"
+      ? gardenNotesDe(ctx)
+      : [
+          {
+            key: "dashboard",
+            content: (c) => `# Garden Dashboard
 
 #garden
 
@@ -120,10 +132,10 @@ ${gardenDashboardScript}
 - [ ] Mulch tomatoes after the soil warms
 - [ ] Order two native hedge shrubs for autumn
 `,
-    },
-    {
-      key: "plants",
-      content: `# Plants
+          },
+          {
+            key: "plants",
+            content: `# Plants
 
 #garden #plants
 
@@ -146,10 +158,10 @@ ${gardenDashboardScript}
 The starter favors Central Europe and Franconia: robust vegetables, kitchen herbs, and native shrubs with wildlife value.
 :::
 `,
-    },
-    {
-      key: "beds",
-      content: `# Beds & Native Hedge
+          },
+          {
+            key: "beds",
+            content: `# Beds & Native Hedge
 
 #garden #beds
 
@@ -174,10 +186,10 @@ firstStep: plant 5 shrubs in autumn
 A useful native hedge has staggered bloom, fruit, thorns, and structure. Do not over-prune the flowering wood.
 :::
 `,
-    },
-    {
-      key: "harvest",
-      content: `# Harvest
+          },
+          {
+            key: "harvest",
+            content: `# Harvest
 
 #garden #harvest
 
@@ -199,6 +211,6 @@ A useful native hedge has staggered bloom, fruit, thorns, and structure. Do not 
 | Cornelian cherry | jam, chutney | cook down |
 | Rose hip | tea, syrup | dry or cook |
 `,
-    },
-  ],
+          },
+        ],
 };

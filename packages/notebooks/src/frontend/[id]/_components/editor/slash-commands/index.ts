@@ -20,6 +20,7 @@ import { tableFormulaCompletionSource } from "../../../../lib/editor/table-formu
 import { buildTagCompletionSource } from "../../../../lib/editor/tag-autocomplete";
 import { slashCommands } from "./commands";
 import type { SlashCommand, SlashCommandContext } from "./types";
+import { slashCommandMessages } from "./messages";
 
 /**
  * CodeMirror autocomplete adapter that turns `/<name>` typed at line start
@@ -160,6 +161,12 @@ const buildCompletion = (cmd: SlashCommand, ctx: SlashCommandContext, parsedPara
 });
 
 const buildSlashSource = (ctx: SlashCommandContext) => {
+  const { t } = slashCommandMessages.resolve(ctx.locale ? [ctx.locale] : []);
+  const commands = slashCommands.map((command) => ({
+    ...command,
+    label: t.label({ name: command.name, fallback: command.label }),
+    description: command.description ? t.description({ name: command.name, fallback: command.description }) : undefined,
+  }));
   return (context: CompletionContext): CompletionResult | null => {
     // matchBefore is not used here because we want to match the
     // FIRST slash that has only word-chars after it up to the
@@ -190,12 +197,12 @@ const buildSlashSource = (ctx: SlashCommandContext) => {
     // subsequence-match "h1".
     const options: SlashCompletion[] = [];
     if (typed.length === 0) {
-      for (const cmd of slashCommands) options.push(buildCompletion(cmd, ctx));
+      for (const cmd of commands) options.push(buildCompletion(cmd, ctx));
     } else {
       // Pass 1 — exact / params. Skip cmds that match here when
       // pass 2 runs so they don't double-appear.
       const matchedSet = new WeakSet<SlashCommand>();
-      for (const cmd of slashCommands) {
+      for (const cmd of commands) {
         const m = matchExact(cmd, typed);
         if (!m) continue;
         options.push(buildCompletion(cmd, ctx, m.params));
@@ -205,7 +212,7 @@ const buildSlashSource = (ctx: SlashCommandContext) => {
       // sort descending, then append.
       const fuzzyHits = fuzzy.filter(
         typed,
-        slashCommands.filter((c) => !matchedSet.has(c)),
+        commands.filter((c) => !matchedSet.has(c)),
         {
           key: getHaystack,
         },

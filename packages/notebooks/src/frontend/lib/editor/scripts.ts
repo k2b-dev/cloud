@@ -52,6 +52,7 @@ import type { KitNoteSnapshot } from "../script/kit";
 import { createKit } from "../script/kit";
 import { runScript } from "../script/runner";
 import { selectionIntersectsRange } from "./_lib/cursor-zone-field";
+import { notebookWorkspaceMessages } from "../../[id]/messages";
 
 /** Per-notebook config the extension needs to run scripts. The
  *  fields are functions (rather than values) so the extension picks
@@ -282,9 +283,10 @@ class OutputWidget extends WidgetType {
   }
 
   private applyVisualState(root: HTMLElement, state: WidgetRunState): void {
+    const t = notebookWorkspaceMessages.resolve([document.documentElement.lang]).t;
     root.classList.toggle("cm-script-output-frame-editing", state.sourceVisible);
     state.iconEl.className = `ti ${state.sourceVisible ? "ti-terminal-2" : "ti-code"} text-sm`;
-    state.labelEl.textContent = state.sourceVisible ? "Output" : "Script";
+    state.labelEl.textContent = state.sourceVisible ? t.output : t.script;
   }
 
   override destroy(dom: HTMLElement): void {

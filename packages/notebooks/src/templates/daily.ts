@@ -1,3 +1,4 @@
+import { dailyNotesDe } from "./daily.de";
 import type { NotebookTemplate, TemplateContext } from "./types";
 
 const monthNames = [
@@ -283,9 +284,18 @@ export const dailyNotesTemplate: NotebookTemplate = {
   icon: "ti ti-calendar-stats",
   notebookName: "Daily Journal",
   notebookDescription: "Daily notes, inbox, and a script dashboard that reads real mood, habits, and tasks.",
+  translations: {
+    de: {
+      name: "Tagebuch",
+      description: "Tägliche Notizen, Posteingang, Gewohnheiten, Aufgaben und Wochenrückblicke.",
+      notebookName: "Tagebuch",
+      notebookDescription: "Tägliche Notizen, Posteingang und ein Dashboard für Stimmung, Gewohnheiten und Aufgaben.",
+    },
+  },
   scriptsEnabled: true,
   homepageNoteKey: "home",
   notes: (ctx: TemplateContext) => {
+    if (ctx.locale?.toLowerCase().split("-")[0] === "de") return dailyNotesDe(ctx);
     const today = ctx.now;
     const yesterday = shiftDays(ctx.now, -1);
     const year = today.getFullYear();

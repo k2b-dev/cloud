@@ -161,7 +161,7 @@ export const slashCommands: SlashCommand[] = [
     description: "Bullet list — /listN for N empty items",
     aliases: ["bullet", "ul", "unordered"],
     params: /^(\d+)$/,
-    run: (view, _ctx, params) => {
+    run: (view, ctx, params) => {
       if (params) {
         const n = Math.max(1, Math.min(50, Number.parseInt(params[1]!, 10)));
         insertAtCursor(view, Array.from({ length: n }, () => "- ").join("\n"));
@@ -309,13 +309,13 @@ export const slashCommands: SlashCommand[] = [
     // Power-cmd: `/table<R>x<C>` inserts an R×C table immediately,
     // bypassing the modal. Bare `/table` keeps the modal flow.
     params: /^(\d+)x(\d+)$/,
-    run: (view, _ctx, params) => {
+    run: (view, ctx, params) => {
       if (params) {
         const rows = Number.parseInt(params[1]!, 10);
         const cols = Number.parseInt(params[2]!, 10);
-        return insertTable(view, { rows, cols });
+        return insertTable(view, { rows, cols }, ctx.locale);
       }
-      return insertTable(view);
+      return insertTable(view, undefined, ctx.locale);
     },
   },
   {

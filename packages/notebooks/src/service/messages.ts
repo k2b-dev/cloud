@@ -1,0 +1,195 @@
+import { i18n } from "@k2b/stdlib";
+
+export const notebookServiceMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      templateNotFound: "Template not found",
+      templateFailed: "The notebook could not be created from the template",
+      showNotesWithTag: ({ tag }: { tag: string }) => `Show notes with #${tag}`,
+      noteNotFound: ({ id }: { id: string }) => `Note ${id} not found`,
+      noteNotFoundPlain: "Note not found",
+      notebookNotFound: "Notebook not found",
+      parentNoteNotFound: "Parent note not found in notebook",
+      notebookOrParentNotFound: "Notebook or parent note not found",
+      sourceNoteNotFound: "Source note not found",
+      homepageNoteNotFound: "Homepage note not found",
+      noteAlreadyLocked: "Note is already locked",
+      noteLocked: "Locked notes cannot be changed",
+      noteRestoreLocked: "Locked notes cannot be restored",
+      failedCreateNotebook: "The notebook could not be created.",
+      failedUpdateNotebook: "The notebook could not be updated.",
+      failedCreateNote: "The note could not be created.",
+      failedUpdateNote: "The note could not be updated.",
+      failedLockNote: "The note could not be locked.",
+      failedRestoreNote: "The note could not be restored.",
+      failedCopyNote: "The note content could not be copied.",
+      restoreOnlyEmpty: "A version can only be restored to a new, empty note. Create a new note and restore it there.",
+      invalidSnapshot: "Invalid Yjs snapshot",
+      selfParent: "A note cannot be moved below itself.",
+      concurrentEdit: "The note changed in the meantime. Reload it and try again.",
+      syncEditFailed: "The note could not be synchronized before editing. Reload it and try again.",
+      persistEditFailed: "The edit could not be saved.",
+      invalidTitleTemplate: "Invalid default note title template",
+      titleTemplateTooLarge: "The default note title template is too large.",
+      titleTemplateTagNotAllowed: ({ tag }: { tag: string }) => `The Liquid tag "${tag}" is not allowed.`,
+      accessConflict: "This access entry already exists.",
+      accessNotFound: "Access entry not found",
+      notebookOrAccessNotFound: "Notebook or access entry not found",
+      accessPrincipalConflict: "This person or group already has access to this notebook.",
+      accessCreateFailed: "The access entry could not be created.",
+      apiKeyNotFound: "API key not found",
+      apiKeyCreateFailed: "The API key could not be created.",
+      apiKeyRevoked: "API key revoked.",
+      snapshotEndpointUrl: "Enter a valid S3 endpoint, for example https://nbg1.your-objectstorage.com.",
+      snapshotEndpointProtocol: "The S3 endpoint must use HTTP or HTTPS.",
+      snapshotEndpointLocation: ({ endpoint, region }: { endpoint: string; region: string }) =>
+        `Hetzner Object Storage endpoints must include the location. Use ${endpoint} for region ${region}.`,
+      snapshotMissing: ({ fields }: { fields: string }) => `Complete the following S3 snapshot settings: ${fields}.`,
+      snapshotFieldBucket: "bucket",
+      snapshotFieldAccessKeyId: "access key ID",
+      snapshotFieldSecretAccessKey: "secret access key",
+      snapshotCronEmpty: "The snapshot schedule must not be empty.",
+      snapshotsDisabled: "S3 notebook snapshots are disabled.",
+      snapshotUploaded: "Notebook snapshot uploaded to S3",
+      snapshotUploadFailed: "The notebook snapshot could not be uploaded to S3.",
+      editInvalid: "The requested edit is invalid.",
+      editBlockNotFound: "The requested named block was not found.",
+      editBlockAmbiguous: "The named block is ambiguous. Specify its index.",
+      editConflict: "The note changed in the meantime. Reload it and try again.",
+    },
+    de: {
+      templateNotFound: "Vorlage nicht gefunden",
+      templateFailed: "Das Notizbuch konnte nicht aus der Vorlage erstellt werden",
+      showNotesWithTag: ({ tag }) => `Notizen mit #${tag} anzeigen`,
+      noteNotFound: ({ id }) => `Notiz ${id} nicht gefunden`,
+      noteNotFoundPlain: "Notiz nicht gefunden",
+      notebookNotFound: "Notizbuch nicht gefunden",
+      parentNoteNotFound: "Übergeordnete Notiz im Notizbuch nicht gefunden",
+      notebookOrParentNotFound: "Notizbuch oder übergeordnete Notiz nicht gefunden",
+      sourceNoteNotFound: "Ausgangsnotiz nicht gefunden",
+      homepageNoteNotFound: "Startnotiz nicht gefunden",
+      noteAlreadyLocked: "Die Notiz ist bereits gesperrt",
+      noteLocked: "Gesperrte Notizen können nicht geändert werden",
+      noteRestoreLocked: "Gesperrte Notizen können nicht wiederhergestellt werden",
+      failedCreateNotebook: "Das Notizbuch konnte nicht erstellt werden.",
+      failedUpdateNotebook: "Das Notizbuch konnte nicht aktualisiert werden.",
+      failedCreateNote: "Die Notiz konnte nicht erstellt werden.",
+      failedUpdateNote: "Die Notiz konnte nicht aktualisiert werden.",
+      failedLockNote: "Die Notiz konnte nicht gesperrt werden.",
+      failedRestoreNote: "Die Notiz konnte nicht wiederhergestellt werden.",
+      failedCopyNote: "Der Inhalt der Notiz konnte nicht kopiert werden.",
+      restoreOnlyEmpty:
+        "Eine Version kann nur in einer neuen, leeren Notiz wiederhergestellt werden. Erstelle eine neue Notiz und stelle die Version dort wieder her.",
+      invalidSnapshot: "Ungültiger Yjs-Snapshot",
+      selfParent: "Eine Notiz kann nicht unter sich selbst verschoben werden.",
+      concurrentEdit: "Die Notiz wurde zwischenzeitlich geändert. Lade sie neu und versuche es erneut.",
+      syncEditFailed: "Die Notiz konnte vor der Bearbeitung nicht synchronisiert werden. Lade sie neu und versuche es erneut.",
+      persistEditFailed: "Die Änderung konnte nicht gespeichert werden.",
+      invalidTitleTemplate: "Ungültige Vorlage für den Standardtitel neuer Notizen",
+      titleTemplateTooLarge: "Die Vorlage für den Standardtitel neuer Notizen ist zu groß.",
+      titleTemplateTagNotAllowed: ({ tag }) => `Der Liquid-Tag „${tag}“ ist nicht zulässig.`,
+      accessConflict: "Dieser Zugriffseintrag ist bereits vorhanden.",
+      accessNotFound: "Zugriffseintrag nicht gefunden",
+      notebookOrAccessNotFound: "Notizbuch oder Zugriffseintrag nicht gefunden",
+      accessPrincipalConflict: "Diese Person oder Gruppe hat bereits Zugriff auf das Notizbuch.",
+      accessCreateFailed: "Der Zugriffseintrag konnte nicht erstellt werden.",
+      apiKeyNotFound: "API-Schlüssel nicht gefunden",
+      apiKeyCreateFailed: "Der API-Schlüssel konnte nicht erstellt werden.",
+      apiKeyRevoked: "API-Schlüssel widerrufen.",
+      snapshotEndpointUrl: "Gib einen gültigen S3-Endpunkt ein, zum Beispiel https://nbg1.your-objectstorage.com.",
+      snapshotEndpointProtocol: "Der S3-Endpunkt muss HTTP oder HTTPS verwenden.",
+      snapshotEndpointLocation: ({ endpoint, region }) =>
+        `Endpunkte von Hetzner Object Storage müssen den Standort enthalten. Verwende ${endpoint} für die Region ${region}.`,
+      snapshotMissing: ({ fields }) => `Vervollständige folgende Einstellungen für S3-Snapshots: ${fields}.`,
+      snapshotFieldBucket: "Bucket",
+      snapshotFieldAccessKeyId: "Zugriffsschlüssel-ID",
+      snapshotFieldSecretAccessKey: "geheimer Zugriffsschlüssel",
+      snapshotCronEmpty: "Der Zeitplan für Snapshots darf nicht leer sein.",
+      snapshotsDisabled: "S3-Snapshots für Notizbücher sind deaktiviert.",
+      snapshotUploaded: "Notizbuch-Snapshot zu S3 hochgeladen",
+      snapshotUploadFailed: "Der Notizbuch-Snapshot konnte nicht zu S3 hochgeladen werden.",
+      editInvalid: "Die angeforderte Änderung ist ungültig.",
+      editBlockNotFound: "Der angeforderte benannte Block wurde nicht gefunden.",
+      editBlockAmbiguous: "Der benannte Block ist nicht eindeutig. Gib seinen Index an.",
+      editConflict: "Die Notiz wurde zwischenzeitlich geändert. Lade sie neu und versuche es erneut.",
+    },
+  },
+});
+
+export const localizeNotebookServiceMessage = (message: string, locale?: string): string => {
+  if (!locale?.toLowerCase().startsWith("de")) return message;
+  const { t } = notebookServiceMessages.resolve([locale]);
+  const exact: Record<string, string> = {
+    "Note not found": t.noteNotFoundPlain,
+    "Notebook not found": t.notebookNotFound,
+    "Parent note not found in notebook": t.parentNoteNotFound,
+    "Notebook or parent note not found": t.notebookOrParentNotFound,
+    "Source note not found": t.sourceNoteNotFound,
+    "Homepage note not found": t.homepageNoteNotFound,
+    "Note is already locked": t.noteAlreadyLocked,
+    "Cannot modify locked note": t.noteLocked,
+    "Cannot restore locked note": t.noteRestoreLocked,
+    "Failed to create notebook": t.failedCreateNotebook,
+    "Failed to update notebook": t.failedUpdateNotebook,
+    "Failed to create note": t.failedCreateNote,
+    "Failed to update note": t.failedUpdateNote,
+    "Failed to lock note": t.failedLockNote,
+    "Failed to restore snapshot": t.failedRestoreNote,
+    "Failed to copy note content": t.failedCopyNote,
+    "Restore only supports new empty notes. Create a new note and restore there.": t.restoreOnlyEmpty,
+    "Invalid Yjs snapshot": t.invalidSnapshot,
+    "Cannot move note to be a child of itself": t.selfParent,
+    "Invalid default note title template": t.invalidTitleTemplate,
+    "Invalid Liquid template": t.invalidTitleTemplate,
+    "Default note title template rendered an empty title": t.invalidTitleTemplate,
+    "Template is too large": t.titleTemplateTooLarge,
+    "Access entry already exists": t.accessConflict,
+    "Access entry not found": t.accessNotFound,
+    "Notebook or access entry not found": t.notebookOrAccessNotFound,
+    "Access entry for this notebook not found": t.accessNotFound,
+    "This principal already has access to this notebook": t.accessPrincipalConflict,
+    "Failed to retrieve created access entry": t.accessCreateFailed,
+    "Failed to load resource service account": t.apiKeyCreateFailed,
+    "API key not found": t.apiKeyNotFound,
+    "API key revoked.": t.apiKeyRevoked,
+    "S3 endpoint must be a valid URL, for example https://nbg1.your-objectstorage.com.": t.snapshotEndpointUrl,
+    "S3 endpoint must use http or https.": t.snapshotEndpointProtocol,
+    "Snapshot cron must not be empty.": t.snapshotCronEmpty,
+    "S3 notebook snapshots are disabled.": t.snapshotsDisabled,
+    "Notebook S3 snapshot uploaded": t.snapshotUploaded,
+  };
+  if (exact[message]) return exact[message];
+  const disallowedTag = /^Liquid tag "(.+)" is not allowed$/u.exec(message);
+  if (disallowedTag) return t.titleTemplateTagNotAllowed({ tag: disallowedTag[1]! });
+  const location = /^Hetzner Object Storage endpoints must include the location\. Use (.+) for region (.+)\.$/u.exec(message);
+  if (location) return t.snapshotEndpointLocation({ endpoint: location[1]!, region: location[2]! });
+  const missing = /^Missing S3 snapshot settings: (.+)$/u.exec(message);
+  if (missing) {
+    const fields = missing[1]!
+      .split(",")
+      .map((field) => localizeNotebookSnapshotField(field.trim(), locale))
+      .join(", ");
+    return t.snapshotMissing({ fields });
+  }
+  if (/^S3 snapshot upload failed\./u.test(message)) return t.snapshotUploadFailed;
+  if (/^Note updatedAt mismatch\./u.test(message)) return t.concurrentEdit;
+  if (/^Failed to synchronize note stream before editing:/u.test(message)) return t.syncEditFailed;
+  if (/^Failed to persist note edit:/u.test(message)) return t.persistEditFailed;
+  if (/hash mismatch/iu.test(message)) return t.editConflict;
+  if (/Named block .* was not found\./u.test(message)) return t.editBlockNotFound;
+  if (/Named block .* is ambiguous/u.test(message)) return t.editBlockAmbiguous;
+  if (/must be|outside the document|requires a block edit operation|At least one edit operation/iu.test(message)) return t.editInvalid;
+  return message;
+};
+
+export const localizeNotebookSnapshotField = (field: string, locale?: string): string => {
+  if (!locale?.toLowerCase().startsWith("de")) return field;
+  const { t } = notebookServiceMessages.resolve([locale]);
+  const fields: Record<string, string> = {
+    bucket: t.snapshotFieldBucket,
+    "access key id": t.snapshotFieldAccessKeyId,
+    "secret access key": t.snapshotFieldSecretAccessKey,
+  };
+  return fields[field.toLowerCase()] ?? field;
+};

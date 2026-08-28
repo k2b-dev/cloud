@@ -24,6 +24,7 @@ import {
   snippetCompletion,
 } from "@codemirror/autocomplete";
 import type { EditorView } from "@codemirror/view";
+import { i18n } from "@k2b/stdlib";
 import { buildDataBlockTemplate, dataBlockRefSelection } from "./data-block-template";
 import { isInsideFencedCode } from "./editor-scope";
 import { withIcon } from "./kit-autocomplete";
@@ -54,6 +55,28 @@ const BLOCKS: BlockEntry[] = [
   { name: "danger", detail: "Danger callout", icon: "ti-alert-hexagon" },
   { name: "data", detail: "Referenceable data block", icon: "ti-database", kind: "data" },
 ];
+
+const blockHelp = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      note: "Note callout",
+      info: "Info callout",
+      success: "Success callout",
+      warning: "Warning callout",
+      danger: "Danger callout",
+      data: "Referenceable data block",
+    },
+    de: {
+      note: "Hinweisblock",
+      info: "Informationsblock",
+      success: "Erfolgsblock",
+      warning: "Warnungsblock",
+      danger: "Gefahrenhinweis",
+      data: "Referenzierbarer Datenblock",
+    },
+  },
+});
 
 /** Snippet template. Does NOT include the leading `:::` because
  *  the `from` position in the CompletionResult below is anchored
@@ -111,10 +134,14 @@ export const infoBlockCompletionSource = (context: CompletionContext): Completio
   // typed text would include `:::` which doesn't prefix-match any
   // option label, and CM would silently drop the entire option list
   // → empty popup → looks broken.
+  const t = blockHelp.resolve(typeof document === "undefined" ? ["en"] : [document.documentElement.lang || "en"]).t;
   return {
     from: word.from + 3,
     to: word.to,
-    options: COMPLETIONS,
+    options: COMPLETIONS.map((completion) => ({
+      ...completion,
+      detail: t[completion.label as keyof typeof t],
+    })),
     validFor: /^\w*$/,
   };
 };

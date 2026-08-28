@@ -10,6 +10,7 @@
  * is a heading; `#tag` (no space, must start with a letter) is a tag.
  */
 import { sql } from "bun";
+import { notebookServiceMessages } from "./messages";
 
 /** `(?:^|\s)` ensures we only match `#tag` at line-start or after whitespace,
  *  never inside a word. The `[a-zA-Z]` first-char rule excludes numerals
@@ -191,17 +192,19 @@ const escapeHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;")
 
 const TAG_HTML_REGEX = /(^|\s|>)#([a-zA-Z][\w-]*(?:\/[\w-]+)*)/g;
 
-const renderPill = (notebookId: string, tag: string): string => {
+const renderPill = (notebookId: string, tag: string, locale?: string): string => {
+  const title = notebookServiceMessages.resolve(locale ? [locale] : []).t.showNotesWithTag({ tag });
   const href = `/app/notebooks/${notebookId}/tags/${encodeURIComponent(tag)}`;
-  return `<a href="${href}" class="cm-tag-pill inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 no-underline align-baseline font-medium" title="Show notes with #${escapeHtml(tag)}">#${escapeHtml(tag)}</a>`;
+  return `<a href="${href}" class="cm-tag-pill inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 no-underline align-baseline font-medium" title="${escapeHtml(title)}">#${escapeHtml(tag)}</a>`;
 };
 
 /** Wrap `#tag` references in HTML as pill anchors — but skip content
  *  inside `<code>` and `<pre>` blocks so doc snippets don't get mangled.
  *  Walks the HTML segment-by-segment, leaving code blocks untouched. */
-export const transformTags = (html: string, params: { notebookId: string }): string => {
+export const transformTags = (html: string, params: { notebookId: string; locale?: string }): string => {
   const transformText = (text: string): string =>
-    text.replace(TAG_HTML_REGEX, (_match, prefix: string, tag: string) => `${prefix}${renderPill(params.notebookId, tag.toLowerCase())}`);
+    text.replace(TAG_HTML_REGEX, (_match, prefix: string, tag: string) =>
+      `${prefix}${renderPill(params.notebookId, tag.toLowerCase(), params.locale)}`);
 
   // Split on opening `<pre>` / `<code>` tags so we can walk the HTML
   // without parsing — content inside these blocks is copied verbatim.

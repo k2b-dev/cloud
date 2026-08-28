@@ -1,5 +1,6 @@
 import { apiClient } from "@/api/client";
 import type { Notebook } from "./types";
+import { notebookWorkspaceMessages } from "../../messages";
 
 type NotebookListResponse = {
   data: Notebook[];
@@ -18,7 +19,8 @@ const MAX_PAGES = 20;
 /**
  * Fetches all notebooks the current user can access for the sidebar switcher.
  */
-export const listAccessibleNotebooks = async (): Promise<Notebook[]> => {
+export const listAccessibleNotebooks = async (locale = document.documentElement.lang): Promise<Notebook[]> => {
+  const t = notebookWorkspaceMessages.resolve([locale]).t;
   const notebooks: Notebook[] = [];
   let page = 1;
 
@@ -28,7 +30,7 @@ export const listAccessibleNotebooks = async (): Promise<Notebook[]> => {
     });
     if (!res.ok) {
       const error = (await res.json()) as { message?: string };
-      throw new Error(error.message ?? "Failed to list notebooks.");
+      throw new Error(error.message ?? t.listNotebooksFailed);
     }
 
     const payload = (await res.json()) as NotebookListResponse;

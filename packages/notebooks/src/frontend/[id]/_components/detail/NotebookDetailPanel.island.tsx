@@ -1,13 +1,25 @@
-import { dates, fileIcons } from "@k2b/stdlib";
+import { type DateContext, dates, fileIcons } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { query } from "@k2b/stdlib/solid";
-import { AppWorkspace, Avatar, DescriptionList, DetailPanel, IconButton, IconButtonLink, ProgressBar, Tooltip, toast } from "@k2b/ui";
+import {
+  AppWorkspace,
+  Avatar,
+  DescriptionList,
+  DetailPanel,
+  IconButton,
+  IconButtonLink,
+  ProgressBar,
+  Tooltip,
+  toast,
+  useLocale,
+} from "@k2b/ui";
 import type { NotebookPresenceParticipant } from "@valentinkolb/cloud/contracts";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { NamedBlockSummary } from "../../../../lib/named-blocks";
 import type { Backlink } from "../../../../service/links";
 import { buildVersionsUrl } from "../../../params";
+import { notebookWorkspaceMessages } from "../../messages";
 import type { Attachment } from "../editor/attachments-client";
 import { buildAttachmentContentUrl, confirmAndDownload, formatBytes } from "../editor/attachments-client";
 import { setDetailPanelOpen } from "../settings/NotebookSettingsStore";
@@ -51,6 +63,7 @@ type Props = {
   updatedAt: string;
   lockedAt: string | null;
   isLocked: boolean;
+  dateConfig: DateContext;
   namedBlocks: NamedBlockSummary[];
 };
 
@@ -113,6 +126,8 @@ const namedBlockSnippet = (block: NamedBlockSummary): string => {
  *  - readonly rendering falls back to `contentMd` prop directly (no editor present)
  */
 export default function NotebookDetailPanel(props: Props) {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const [open, setOpen] = createSignal(props.initiallyOpen);
   const [tocItems, setTocItems] = createSignal<TocItem[]>(props.tocItems);
   const [tasks, setTasks] = createSignal<TaskProgress>(props.taskProgress);
@@ -132,7 +147,7 @@ export default function NotebookDetailPanel(props: Props) {
         { query: { notebook: props.notebookId, note: currentNoteId, limit: "10" } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error("Failed to load note activity");
+      if (!response.ok) throw new Error(t().loadActivityFailed);
       return (await response.json()).data;
     },
   });
@@ -161,7 +176,7 @@ export default function NotebookDetailPanel(props: Props) {
       const ids = source.split(":").at(-1)?.split(",").filter(Boolean) ?? [];
       if (ids.length === 0) return { source, attachments: [] };
       const response = await apiClient[":id"].attachments.$get({ param: { id: props.notebookId } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(`Failed to load attachments (${response.status})`);
+      if (!response.ok) throw new Error(t().loadAttachmentsFailed({ status: response.status }));
       const byId = new Map((await response.json()).map((attachment) => [attachment.id, attachment]));
       return { source, attachments: ids.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : [])) };
     },
@@ -205,8 +220,8 @@ export default function NotebookDetailPanel(props: Props) {
       window.dispatchEvent(new CustomEvent(EDITOR_COPY_EVENT));
     } else {
       void clipboard.copy(contentMd() ?? "").then(
-        () => toast.success("Note content copied"),
-        () => toast.error("Could not copy note content"),
+        () => toast.success(t().contentCopied),
+        () => toast.error(t().contentCopyFailed),
       );
     }
   };
@@ -250,9 +265,9 @@ export default function NotebookDetailPanel(props: Props) {
     event.stopPropagation();
     try {
       await clipboard.copy(namedBlockSnippet(block));
-      toast.success("Reference snippet copied", { title: "Copied", iconClass: "ti ti-clipboard-check" });
+      toast.success(t().referenceCopied, { title: t().copied, iconClass: "ti ti-clipboard-check" });
     } catch {
-      toast.error("Could not copy reference snippet");
+      toast.error(t().referenceCopyFailed);
     }
   };
 
@@ -340,47 +355,47 @@ export default function NotebookDetailPanel(props: Props) {
         <DetailPanel.Header
           class="notebook-detail-panel-header"
           icon={`ti ${lockedAt() ? "ti-lock" : "ti-file-text"}`}
-          title={noteTitle() || "Untitled"}
-          subtitle={lockedAt() ? "Locked note" : props.mode === "edit" ? "Collaborative note" : "Read-only note"}
+          title={noteTitle() || t().untitled}
+          subtitle={lockedAt() ? t().lockedNote : props.mode === "edit" ? t().collaborativeNote : t().readOnlyNote}
           primaryActions={
-            <nav aria-label="Note actions" class="flex flex-wrap items-center gap-1">
+            <nav aria-label={t().noteActionsLabel} class="flex flex-wrap items-center gap-1">
               <Show when={props.mode === "edit"}>
-                <Tooltip.Anchor content={isRich() ? "Show Markdown source" : "Show rich text"}>
-                  <IconButton label={isRich() ? "Show Markdown source" : "Show rich text"} size="sm" onClick={toggleRichMode}>
+                <Tooltip.Anchor content={isRich() ? t().showMarkdown : t().showRichText}>
+                  <IconButton label={isRich() ? t().showMarkdown : t().showRichText} size="sm" onClick={toggleRichMode}>
                     <i class={`ti ${isRich() ? "ti-markdown" : "ti-typography"}`} aria-hidden="true" />
                   </IconButton>
                 </Tooltip.Anchor>
               </Show>
-              <Tooltip.Anchor content="Copy content">
-                <IconButton label="Copy note content" size="sm" onClick={copyContent}>
+              <Tooltip.Anchor content={t().copyContent}>
+                <IconButton label={t().copyNoteContent} size="sm" onClick={copyContent}>
                   <i class="ti ti-copy" aria-hidden="true" />
                 </IconButton>
               </Tooltip.Anchor>
-              <Tooltip.Anchor content="Download Markdown">
-                <IconButton label="Download note as Markdown" size="sm" onClick={downloadContent}>
+              <Tooltip.Anchor content={t().downloadMarkdown}>
+                <IconButton label={t().downloadNoteMarkdown} size="sm" onClick={downloadContent}>
                   <i class="ti ti-download" aria-hidden="true" />
                 </IconButton>
               </Tooltip.Anchor>
-              <Tooltip.Anchor content="Download PDF">
-                <IconButton label="Download note as PDF" size="sm" onClick={downloadPdf}>
+              <Tooltip.Anchor content={t().downloadPdf}>
+                <IconButton label={t().downloadNotePdf} size="sm" onClick={downloadPdf}>
                   <i class="ti ti-file-type-pdf" aria-hidden="true" />
                 </IconButton>
               </Tooltip.Anchor>
-              <Tooltip.Anchor content="Version history">
-                <IconButtonLink href={buildVersionsUrl(props.notebookId, noteId())} size="sm" label="Open version history">
+              <Tooltip.Anchor content={t().versionHistory}>
+                <IconButtonLink href={buildVersionsUrl(props.notebookId, noteId())} size="sm" label={t().openVersionHistory}>
                   <i class="ti ti-history" aria-hidden="true" />
                 </IconButtonLink>
               </Tooltip.Anchor>
-              <Tooltip.Anchor content="Graph view">
-                <IconButtonLink href={`/app/notebooks/${props.notebookId}?mode=graph&note=${noteId()}`} size="sm" label="Open graph view">
+              <Tooltip.Anchor content={t().graphView}>
+                <IconButtonLink href={`/app/notebooks/${props.notebookId}?mode=graph&note=${noteId()}`} size="sm" label={t().openGraphView}>
                   <i class="ti ti-affiliate" aria-hidden="true" />
                 </IconButtonLink>
               </Tooltip.Anchor>
             </nav>
           }
           actions={
-            <Tooltip.Anchor content="Close details">
-              <IconButton label="Close note details" size="sm" onClick={closePanel}>
+            <Tooltip.Anchor content={t().closeDetails}>
+              <IconButton label={t().closeNoteDetails} size="sm" onClick={closePanel}>
                 <i class="ti ti-x" aria-hidden="true" />
               </IconButton>
             </Tooltip.Anchor>
@@ -389,19 +404,14 @@ export default function NotebookDetailPanel(props: Props) {
 
         <DetailPanel.Body scrollPreserveKey="notebook-detail">
           <Show when={tasks().total > 0}>
-            <DetailPanel.Summary title="Task progress">
+            <DetailPanel.Summary title={t().taskProgress}>
               <div class="flex items-center justify-between text-xs">
-                <span>
-                  <span class="text-primary tabular-nums">{tasks().done}</span>
-                  <span class="text-dimmed"> of </span>
-                  <span class="text-primary tabular-nums">{tasks().total}</span>
-                  <span class="text-dimmed"> done</span>
-                </span>
+                <span>{t().tasksDone({ done: tasks().done, total: tasks().total })}</span>
                 <span class="text-dimmed tabular-nums">{Math.round((tasks().done / Math.max(1, tasks().total)) * 100)}%</span>
               </div>
               <ProgressBar
                 class="mt-2"
-                label="Completed note tasks"
+                label={t().completedTasks}
                 size="xs"
                 tone="success"
                 value={(tasks().done / Math.max(1, tasks().total)) * 100}
@@ -410,9 +420,9 @@ export default function NotebookDetailPanel(props: Props) {
           </Show>
 
           <Show when={tocItems().length > 0 || namedBlocks().length > 0}>
-            <DetailPanel.Group label="Note structure">
+            <DetailPanel.Group label={t().noteStructure}>
               <Show when={tocItems().length > 0}>
-                <DetailPanel.Section title="Contents" icon="ti ti-list" tone="accent">
+                <DetailPanel.Section title={t().contents} icon="ti ti-list" tone="accent">
                   <div class="flex flex-col gap-1">
                     <For each={tocItems()}>
                       {(item) => (
@@ -421,7 +431,7 @@ export default function NotebookDetailPanel(props: Props) {
                             href={`#${item.id}`}
                             onClick={(event) => onTocItemClick(event, item.id)}
                             leading={<span class="font-mono text-[10px] text-dimmed">H{item.level}</span>}
-                            title={item.text || "Untitled"}
+                            title={item.text || t().untitled}
                           />
                         </div>
                       )}
@@ -431,7 +441,7 @@ export default function NotebookDetailPanel(props: Props) {
               </Show>
 
               <Show when={namedBlocks().length > 0}>
-                <DetailPanel.Section title="References" icon="ti ti-at" tone="neutral" collapsible defaultOpen>
+                <DetailPanel.Section title={t().references} icon="ti ti-at" tone="neutral" collapsible defaultOpen>
                   <ul class="flex flex-col gap-1">
                     <For each={namedBlocks()}>
                       {(block) => (
@@ -444,9 +454,9 @@ export default function NotebookDetailPanel(props: Props) {
                             title={<code class="truncate">{block.name}</code>}
                             description={block.type}
                           />
-                          <Tooltip.Anchor content={`Copy script snippet for @${block.name}`} class="shrink-0">
+                          <Tooltip.Anchor content={t().copyScriptSnippet({ name: block.name })} class="shrink-0">
                             <IconButton
-                              label={`Copy script snippet for ${block.name}`}
+                              label={t().copyScriptSnippet({ name: block.name })}
                               size="xs"
                               class="shrink-0 text-dimmed opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100"
                               onClick={(event) => void copyNamedBlockSnippet(event, block)}
@@ -464,10 +474,10 @@ export default function NotebookDetailPanel(props: Props) {
           </Show>
 
           <Show when={visibleAttachments().length > 0 || attachmentMetadata.error() || backlinks().length > 0}>
-            <DetailPanel.Group label="Related content">
+            <DetailPanel.Group label={t().relatedContent}>
               <Show when={visibleAttachments().length > 0 || attachmentMetadata.error()}>
                 <DetailPanel.Section
-                  title="Attachments"
+                  title={t().attachments}
                   icon="ti ti-paperclip"
                   tone="neutral"
                   meta={visibleAttachments().length}
@@ -480,8 +490,8 @@ export default function NotebookDetailPanel(props: Props) {
                         type="button"
                         onClick={() => void attachmentMetadata.refresh()}
                         leading={<i class="ti ti-refresh" aria-hidden="true" />}
-                        title="Retry attachment loading"
-                        description="Attachment details could not be loaded."
+                        title={t().retryAttachments}
+                        description={t().attachmentsLoadDescription}
                       />
                     </Show>
                     <For each={visibleAttachments()}>
@@ -505,7 +515,7 @@ export default function NotebookDetailPanel(props: Props) {
               </Show>
 
               <Show when={backlinks().length > 0}>
-                <DetailPanel.Section title="Linked by" icon="ti ti-link" tone="accent" meta={backlinks().length} collapsible defaultOpen>
+                <DetailPanel.Section title={t().linkedBy} icon="ti ti-link" tone="accent" meta={backlinks().length} collapsible defaultOpen>
                   <div class="flex flex-col gap-1">
                     <For each={backlinks()}>
                       {(bl) => {
@@ -514,7 +524,7 @@ export default function NotebookDetailPanel(props: Props) {
                           <DetailPanel.Action
                             href={`/app/notebooks/${bl.notebookId}/notes/${bl.noteId}`}
                             leading={<i class="ti ti-file-text" aria-hidden="true" />}
-                            title={bl.title || "Untitled"}
+                            title={bl.title || t().untitled}
                             description={showNotebook ? bl.notebookName : undefined}
                             trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
                           />
@@ -527,9 +537,9 @@ export default function NotebookDetailPanel(props: Props) {
             </DetailPanel.Group>
           </Show>
 
-          <DetailPanel.Group label="Note context">
+          <DetailPanel.Group label={t().noteContext}>
             <Show when={props.mode === "edit" && participants().length > 0}>
-              <DetailPanel.Section title="Online" icon="ti ti-users" tone="success" meta={participants().length}>
+              <DetailPanel.Section title={t().online} icon="ti ti-users" tone="success" meta={participants().length}>
                 <ul class="flex flex-col gap-1">
                   <For each={participants()}>
                     {(p) => (
@@ -546,7 +556,7 @@ export default function NotebookDetailPanel(props: Props) {
                           style={`outline: 2px solid ${p.color}; outline-offset: 1px`}
                         />
                         <span class="truncate">{p.displayName}</span>
-                        {p.peerCount > 1 && <span class="ml-auto text-[11px] text-dimmed">{p.peerCount} tabs</span>}
+                        {p.peerCount > 1 && <span class="ml-auto text-[11px] text-dimmed">{t().tabs({ count: p.peerCount })}</span>}
                       </li>
                     )}
                   </For>
@@ -555,7 +565,7 @@ export default function NotebookDetailPanel(props: Props) {
             </Show>
 
             <DetailPanel.Section
-              title="Recent activity"
+              title={t().recentActivity}
               icon="ti ti-history"
               tone="neutral"
               meta={noteActivity.data()?.length ?? 0}
@@ -568,14 +578,14 @@ export default function NotebookDetailPanel(props: Props) {
                     type="button"
                     onClick={() => void noteActivity.refresh()}
                     leading={<i class="ti ti-refresh" aria-hidden="true" />}
-                    title="Retry activity loading"
-                    description="Note activity could not be loaded."
+                    title={t().retryActivity}
+                    description={t().activityLoadDescription}
                   />
                 }
               >
                 <Show
                   when={(noteActivity.data()?.length ?? 0) > 0}
-                  fallback={<p class="px-2 py-1 text-xs text-dimmed">{noteActivity.loading() ? "Loading activity…" : "No activity yet."}</p>}
+                  fallback={<p class="px-2 py-1 text-xs text-dimmed">{noteActivity.loading() ? t().loadingActivity : t().noActivity}</p>}
                 >
                   <div class="flex flex-col gap-1">
                     <For each={noteActivity.data()}>
@@ -584,8 +594,12 @@ export default function NotebookDetailPanel(props: Props) {
                           href={buildVersionsUrl(props.notebookId, noteId())}
                           leading={<Avatar name={item.actor.displayName} size="xs" />}
                           title={item.actor.displayName}
-                          description={item.action === "note.edited" ? "Edited this note" : item.action.replaceAll(".", " ")}
-                          trailing={<time datetime={item.lastOccurredAt}>{dates.formatDateTimeRelative(item.lastOccurredAt)}</time>}
+                          description={item.action === "note.edited" ? t().editedThisNote : item.action.replaceAll(".", " ")}
+                          trailing={
+                            <time datetime={item.lastOccurredAt}>
+                              {dates.formatDateTimeRelative(item.lastOccurredAt, props.dateConfig)}
+                            </time>
+                          }
                         />
                       )}
                     </For>
@@ -594,18 +608,22 @@ export default function NotebookDetailPanel(props: Props) {
               </Show>
             </DetailPanel.Section>
 
-            <DetailPanel.Section title="Info" icon="ti ti-info-circle" tone="neutral" collapsible defaultOpen>
+            <DetailPanel.Section title={t().infoSection} icon="ti ti-info-circle" tone="neutral" collapsible defaultOpen>
               <DescriptionList
                 layout="rows"
                 size="sm"
                 items={[
-                  { term: "Created", description: dates.formatDateTimeRelative(createdAt()) },
-                  { term: "Updated", description: dates.formatDateTimeRelative(updatedAt()) },
+                  { term: t().created, description: dates.formatDateTimeRelative(createdAt(), props.dateConfig) },
+                  { term: t().updated, description: dates.formatDateTimeRelative(updatedAt(), props.dateConfig) },
                   ...(lockedAt()
                     ? [
                         {
-                          term: "Locked",
-                          description: <span class="text-amber-600 dark:text-amber-400">{dates.formatDateTimeRelative(lockedAt()!)}</span>,
+                          term: t().locked,
+                          description: (
+                            <span class="text-amber-600 dark:text-amber-400">
+                              {dates.formatDateTimeRelative(lockedAt()!, props.dateConfig)}
+                            </span>
+                          ),
                         },
                       ]
                     : []),

@@ -1,10 +1,11 @@
 import { ErrorResponseSchema } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getLocale, jsonResponse, respond, v } from "@valentinkolb/cloud/server";
 import { type Context, Hono } from "hono";
 import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { notebooksService } from "../service";
 import { ResourceShortIdSchema, toPublicNotebook } from "./public-resources";
+import { notebookApiMessages } from "./messages";
 
 const TemplateSummarySchema = z.object({
   id: z.string(),
@@ -47,7 +48,7 @@ const app = new Hono<AuthContext>()
       summary: "List built-in notebook templates",
       responses: { 200: jsonResponse(TemplateListSchema, "Templates") },
     }),
-    (c) => c.json(notebooksService.template.list()),
+    (c) => c.json(notebooksService.template.list(getLocale(c))),
   )
 
   .post(
@@ -64,12 +65,12 @@ const app = new Hono<AuthContext>()
     v("json", InstantiateTemplateSchema),
     async (c) => {
       const user = getUserBackedActor(c);
-      if (!user) return c.json({ message: "This endpoint requires a user-backed actor", code: "FORBIDDEN" }, 403);
+      if (!user) return c.json({ message: notebookApiMessages.resolve([getLocale(c)]).t.userRequired, code: "FORBIDDEN" }, 403);
       const body = c.req.valid("json");
       return respond(
         c,
         async () => {
-          const result = await notebooksService.template.instantiate(c.req.param("templateId")!, { name: body.name }, user.id);
+          const result = await notebooksService.template.instantiate(c.req.param("templateId")!, { name: body.name }, user.id, getLocale(c));
           return result.ok ? { ...result, data: toPublicNotebook(result.data) } : result;
         },
         201,

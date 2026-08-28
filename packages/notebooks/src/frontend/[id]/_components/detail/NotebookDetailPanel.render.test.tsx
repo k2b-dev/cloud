@@ -57,6 +57,7 @@ const renderPanel = (overrides: Partial<Parameters<typeof NotebookDetailPanel>[0
       updatedAt={now}
       lockedAt={null}
       isLocked={false}
+      dateConfig={{ locale: "en", timeZone: "UTC" }}
       {...overrides}
     />
   ));
@@ -70,6 +71,12 @@ const legacyDetailClasses = [
 ];
 
 describe("Notebook note detail panel", () => {
+  test("formats relative dates with the request locale", () => {
+    const html = renderPanel({ dateConfig: { locale: "de-CH", timeZone: "UTC" } });
+
+    expect(html).toContain("09 Aug. 2026");
+  });
+
   test("composes note context through the grouped shared detail panel contract", () => {
     const html = renderPanel();
 

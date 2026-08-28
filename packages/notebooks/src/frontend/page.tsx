@@ -1,17 +1,19 @@
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getDateConfig } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { notebooksService } from "@/service";
 import { ssr } from "../config";
 import { parseLastNotebookId, parsePinnedNotebookIds } from "./[id]/_components/settings/NotebookSettingsStore";
 import { projectNotebook } from "./[id]/page-data";
 import NotebooksOverview from "./NotebooksOverview.island";
+import { notebooksPageMessages } from "./messages";
 
 /**
  * Notebooks list page - shows all notebooks the user has access to
  */
 export default ssr<AuthContext>(async (c) => {
   const user = expectUserBackedActor(c);
+  const { t } = notebooksPageMessages.resolve([getLocale(c)]);
   const url = new URL(c.req.raw.url);
   const cookieHeader = c.req.raw.headers.get("Cookie") ?? undefined;
 
@@ -23,7 +25,7 @@ export default ssr<AuthContext>(async (c) => {
       .then((page) => ({ page, error: null }))
       .catch((error: unknown) => ({
         page: { items: [], nextCursor: null },
-        error: error instanceof Error ? error.message : "Failed to load notebook activity",
+        error: error instanceof Error ? error.message : t.activityLoadFailed,
       })),
   ]);
   const notebooks = notebookPage.items;
@@ -35,10 +37,10 @@ export default ssr<AuthContext>(async (c) => {
       return c.redirect(`/app/notebooks/${lastId}`);
     }
   }
-  const templates = notebooksService.template.list();
+  const templates = notebooksService.template.list(getLocale(c));
 
   return () => (
-    <Layout c={c} title={[{ title: "Start", href: "/" }, { title: "Notebooks" }]}>
+    <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.notebooks }]}>
       <NotebooksOverview
         notebooks={notebooks.map(projectNotebook)}
         templates={templates}

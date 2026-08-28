@@ -8,6 +8,7 @@ import {
   type TemplateNoteContentContext,
   templates,
 } from "../templates";
+import { notebookServiceMessages } from "./messages";
 import type { Notebook } from "./notebooks";
 import * as notebooks from "./notebooks";
 import * as notes from "./notes";
@@ -57,17 +58,17 @@ const markdownToYjsUpdate = (content: string): Uint8Array => {
   return update;
 };
 
-export const list = (): TemplateSummary[] =>
-  templates.map((template) => ({
-    id: template.id,
-    name: template.name,
-    description: template.description,
-    icon: template.icon,
-  }));
+export const list = (locale = "en"): TemplateSummary[] =>
+  templates.map((template) => {
+    const materialized = materializeTemplate(template, new Date(), locale);
+    return { id: template.id, name: materialized.name, description: materialized.description, icon: materialized.icon };
+  });
 
-export const get = (id: string): TemplateSummary | null => {
+export const get = (id: string, locale = "en"): TemplateSummary | null => {
   const template = getTemplate(id);
-  return template ? { id: template.id, name: template.name, description: template.description, icon: template.icon } : null;
+  if (!template) return null;
+  const materialized = materializeTemplate(template, new Date(), locale);
+  return { id: materialized.id, name: materialized.name, description: materialized.description, icon: materialized.icon };
 };
 
 const createNotes = async (
@@ -75,8 +76,9 @@ const createNotes = async (
   notebook: Notebook,
   actorId: string,
   now: Date,
+  locale: string,
 ): Promise<Map<string, notes.Note>> => {
-  const materialized = materializeTemplate(template, now);
+  const materialized = materializeTemplate(template, now, locale);
   const created = new Map<string, notes.Note>();
 
   for (const item of materialized.notes) {
@@ -99,6 +101,7 @@ const createNotes = async (
 
   const contentCtx: TemplateNoteContentContext = {
     now,
+    locale,
     notebook,
     notes: created,
     link: (key: string, label: string) => noteLink(contentCtx, key, label),
@@ -130,12 +133,18 @@ const createNotes = async (
   return created;
 };
 
-export const instantiate = async (templateId: string, input: InstantiateTemplateInput, actorId: string): Promise<Result<Notebook>> => {
+export const instantiate = async (
+  templateId: string,
+  input: InstantiateTemplateInput,
+  actorId: string,
+  locale = "en",
+): Promise<Result<Notebook>> => {
+  const { t } = notebookServiceMessages.resolve([locale]);
   const template = getTemplate(templateId);
-  if (!template) return fail(err.notFound("Template"));
+  if (!template) return fail({ code: "NOT_FOUND", message: t.templateNotFound, status: 404 });
 
   const now = new Date();
-  const materialized = materializeTemplate(template, now);
+  const materialized = materializeTemplate(template, now, locale);
   const notebook = requireResult(
     await notebooks.create({
       data: {
@@ -153,7 +162,7 @@ export const instantiate = async (templateId: string, input: InstantiateTemplate
       ? requireResult(await notebooks.update({ id: notebook.id, data: { scriptsEnabled: true } }))
       : notebook;
 
-    const createdNotes = await createNotes(template, finalNotebook, actorId, now);
+    const createdNotes = await createNotes(template, finalNotebook, actorId, now, locale);
     if (materialized.homepageNoteKey) {
       const homepage = createdNotes.get(materialized.homepageNoteKey);
       if (!homepage) throw new TemplateError(err.badInput(`template homepage note not found: ${materialized.homepageNoteKey}`));
@@ -166,6 +175,7 @@ export const instantiate = async (templateId: string, input: InstantiateTemplate
     await notebooks.remove({ id: notebook.id });
     if (error instanceof TemplateError) return fail(error.resultError);
     const message = error instanceof Error ? error.message : "unknown error";
-    return fail(err.internal(`template instantiation failed: ${message}`));
+    console.error("template instantiation failed", { error: message });
+    return fail(err.internal(t.templateFailed));
   }
 };

@@ -1,9 +1,10 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { IconButton, IconButtonLink, Tooltip } from "@k2b/ui";
+import { IconButton, IconButtonLink, Tooltip, useLocale } from "@k2b/ui";
 import { forceCenter, forceLink, forceManyBody, forceSimulation, type Simulation } from "d3-force";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { NoteGraph } from "../../../../service/links";
 import { buildNoteUrl } from "../../../params";
+import { notebookWorkspaceMessages } from "../../messages";
 
 type Props = {
   notebookId: string;
@@ -57,6 +58,8 @@ const ZOOM_STEP = 1.2;
 const radiusFor = (inDegree: number): number => Math.min(NODE_MAX_RADIUS, NODE_BASE_RADIUS + inDegree * NODE_RADIUS_PER_LINK);
 
 export default function NotebookGraph(props: Props) {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const [hoveredId, setHoveredId] = createSignal<string | null>(null);
   const [focusedId, setFocusedId] = createSignal<string | null>(null);
   const [zoom, setZoom] = createSignal(1);
@@ -294,8 +297,8 @@ export default function NotebookGraph(props: Props) {
   return (
     <div class="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-[var(--ui-radius-surface)] border border-[var(--ui-border)] bg-[var(--ui-surface)]">
       <Show when={simNodes.length > 0} fallback={<EmptyState />}>
-        <Tooltip.Anchor content="Close graph">
-          <IconButtonLink href={closeHref()} size="sm" class="absolute left-2 top-2 z-10" label="Close graph">
+        <Tooltip.Anchor content={t().closeGraph}>
+          <IconButtonLink href={closeHref()} size="sm" class="absolute left-2 top-2 z-10" label={t().closeGraph}>
             <i class="ti ti-x" />
           </IconButtonLink>
         </Tooltip.Anchor>
@@ -334,7 +337,7 @@ export default function NotebookGraph(props: Props) {
                     class={`cursor-pointer transition-opacity ${isDimmed(node.id) ? "opacity-25" : "opacity-100"}`}
                     role="link"
                     tabIndex={0}
-                    aria-label={`Open ${node.title || "Untitled"}`}
+                    aria-label={t().openNote({ title: node.title || t().untitled })}
                     onPointerDown={(e) => onNodePointerDown(node, e)}
                     onPointerEnter={() => setHoveredId(node.id)}
                     onPointerLeave={() => setHoveredId(null)}
@@ -359,7 +362,7 @@ export default function NotebookGraph(props: Props) {
                         isSelected(node.id) ? "fill-blue-700 dark:fill-blue-300 font-medium" : "fill-zinc-600 dark:fill-zinc-400"
                       } ${hoveredId() === node.id ? "underline underline-offset-2" : ""}`}
                     >
-                      {node.title || "Untitled"}
+                      {node.title || t().untitled}
                     </text>
                   </g>
                 );
@@ -369,18 +372,18 @@ export default function NotebookGraph(props: Props) {
         </svg>
 
         <div class="absolute bottom-2 right-2 z-10 flex flex-col gap-1 rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)] p-1 shadow-[var(--ui-shadow-float)]">
-          <Tooltip.Anchor content="Zoom in">
-            <IconButton label="Zoom in" size="sm" onClick={() => setClampedZoom(zoom() * ZOOM_STEP)}>
+          <Tooltip.Anchor content={t().zoomIn}>
+            <IconButton label={t().zoomIn} size="sm" onClick={() => setClampedZoom(zoom() * ZOOM_STEP)}>
               <i class="ti ti-plus" />
             </IconButton>
           </Tooltip.Anchor>
-          <Tooltip.Anchor content="Zoom out">
-            <IconButton label="Zoom out" size="sm" onClick={() => setClampedZoom(zoom() / ZOOM_STEP)}>
+          <Tooltip.Anchor content={t().zoomOut}>
+            <IconButton label={t().zoomOut} size="sm" onClick={() => setClampedZoom(zoom() / ZOOM_STEP)}>
               <i class="ti ti-minus" />
             </IconButton>
           </Tooltip.Anchor>
-          <Tooltip.Anchor content="Fit graph">
-            <IconButton label="Fit graph" size="sm" onClick={fitGraph}>
+          <Tooltip.Anchor content={t().fitGraph}>
+            <IconButton label={t().fitGraph} size="sm" onClick={fitGraph}>
               <i class="ti ti-focus-centered" />
             </IconButton>
           </Tooltip.Anchor>
@@ -390,14 +393,16 @@ export default function NotebookGraph(props: Props) {
   );
 }
 
-const EmptyState = () => (
-  <div class="absolute inset-0 flex items-center justify-center">
-    <div class="text-center text-xs text-dimmed flex flex-col items-center gap-2 max-w-sm">
-      <i class="ti ti-affiliate text-2xl" />
-      <p class="font-medium">No graph yet</p>
-      <p>
-        Use <span class="font-mono">/note</span> in the editor or paste note URLs to start building this notebook's knowledge graph.
-      </p>
+const EmptyState = () => {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
+  return (
+    <div class="absolute inset-0 flex items-center justify-center">
+      <div class="text-center text-xs text-dimmed flex flex-col items-center gap-2 max-w-sm">
+        <i class="ti ti-affiliate text-2xl" />
+        <p class="font-medium">{t().noGraph}</p>
+        <p>{t().noGraphDescription}</p>
+      </div>
     </div>
-  </div>
-);
+  );
+};

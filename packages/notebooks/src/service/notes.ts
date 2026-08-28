@@ -214,11 +214,14 @@ const mapToNoteVersion = (row: DbNoteVersion): NoteVersion => ({
   contributors: typeof row.contributors === "string" ? JSON.parse(row.contributors) : row.contributors,
 });
 
-const defaultDateConfig = async (): Promise<DateContext> => ({
-  timeZone: dates.normalizeTimeZone(String((await settingsGet<string>("app.timezone")) || "").trim(), "UTC"),
-  locale: "en",
-  firstDayOfWeek: 1,
-});
+const defaultDateConfig = async (): Promise<DateContext> => {
+  const [timeZone, locale] = await Promise.all([settingsGet<string>("app.timezone"), settingsGet<string>("app.locale")]);
+  return {
+    timeZone: dates.normalizeTimeZone(String(timeZone || "").trim(), "UTC"),
+    locale: String(locale || "").trim() || "en",
+    firstDayOfWeek: 1,
+  };
+};
 
 const initialContentForNote = async (params: {
   notebookId: string;

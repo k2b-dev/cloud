@@ -11,30 +11,33 @@
 
 import { fileIcons } from "@k2b/stdlib";
 import { mutation, query } from "@k2b/stdlib/solid";
-import { Button, FileDropzone, prompts } from "@k2b/ui";
+import { Button, FileDropzone, prompts, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { EDITOR_INSERT_ATTACHMENT_EVENT } from "../detail/events";
 import type { Attachment, AttachmentRef } from "./attachments-client";
 import { formatBytes, uploadFile } from "./attachments-client";
+import { notebookWorkspaceMessages } from "../../messages";
 
 type Props = {
   notebookId: string;
   close: () => void;
 };
 
-const fetchList = async (notebookId: string, signal: AbortSignal): Promise<Attachment[]> => {
+const fetchList = async (notebookId: string, signal: AbortSignal, loadError: (input: { status: number }) => string): Promise<Attachment[]> => {
   const res = await apiClient[":id"].attachments.$get({ param: { id: notebookId } }, { init: { signal } });
-  if (!res.ok) throw new Error(`Failed to load attachments (${res.status})`);
+  if (!res.ok) throw new Error(loadError({ status: res.status }));
   return await res.json();
 };
 
 const dispatchInsert = (att: AttachmentRef) => window.dispatchEvent(new CustomEvent(EDITOR_INSERT_ATTACHMENT_EVENT, { detail: att }));
 
 const AttachmentPicker = (props: Props) => {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const list = query.create({
     source: () => props.notebookId,
-    load: (notebookId, { abortSignal }) => fetchList(notebookId, abortSignal),
+    load: (notebookId, { abortSignal }) => fetchList(notebookId, abortSignal, t().loadAttachmentsFailed),
   });
   const [reconcileError, setReconcileError] = createSignal<string | null>(null);
   const upload = mutation.create<{ uploaded: Attachment[]; error: string | null }, File[]>({
@@ -47,7 +50,7 @@ const AttachmentPicker = (props: Props) => {
           uploaded.push(att);
         } catch (error) {
           if (abortSignal.aborted) throw error;
-          return { uploaded, error: error instanceof Error ? error.message : "Upload failed" };
+          return { uploaded, error: error instanceof Error ? error.message : t().uploadFailed };
         }
       }
       return { uploaded, error: null };
@@ -63,7 +66,7 @@ const AttachmentPicker = (props: Props) => {
       if (outcome.uploaded.length > 0) {
         setReconcileError(null);
         void list.invalidate().catch(() => {
-          setReconcileError("Uploaded files were inserted, but the attachment list could not be refreshed.");
+          setReconcileError(t().uploadedReconcileFailed);
         });
       }
     },
@@ -82,9 +85,9 @@ const AttachmentPicker = (props: Props) => {
   return (
     <div class="flex w-full max-w-full flex-col gap-2">
       <FileDropzone
-        title="Drop file or click to choose"
-        subtitle="Upload a new attachment and insert it at the cursor."
-        hint="Max 10 MB"
+        title={t().attachmentDropTitle}
+        subtitle={t().attachmentDropSubtitle}
+        hint={t().attachmentLimit}
         busy={upload.loading()}
         onDrop={handleFiles}
       />
@@ -101,7 +104,7 @@ const AttachmentPicker = (props: Props) => {
         <div class="flex items-center justify-between gap-2 text-xs text-red-600 dark:text-red-400">
           <span>{list.error()!.message}</span>
           <Button type="button" variant="ghost" size="xs" onClick={() => void list.refresh()} loading={list.refreshing()}>
-            Retry
+            {t().retry}
           </Button>
         </div>
       </Show>
@@ -109,7 +112,7 @@ const AttachmentPicker = (props: Props) => {
       {/* Existing attachments — pick to reuse without re-upload */}
       <Show when={(list.data() ?? []).length > 0}>
         <div class="flex flex-col gap-1.5">
-          <p class="text-[11px] font-medium uppercase tracking-wide text-dimmed">Reuse existing</p>
+          <p class="text-[11px] font-medium uppercase tracking-wide text-dimmed">{t().reuseExisting}</p>
           <ul class="flex flex-col gap-0.5 max-h-64 overflow-y-auto">
             <For each={list.data() ?? []}>
               {(att) => (
@@ -132,7 +135,9 @@ const AttachmentPicker = (props: Props) => {
 };
 
 /** Open the picker dialog. Used by `/file` slash command + footer button. */
-export const openAttachmentPicker = (notebookId: string): Promise<void> =>
-  prompts
-    .dialog<void>((close) => <AttachmentPicker notebookId={notebookId} close={close} />, { title: "Attach", icon: "ti ti-paperclip" })
+export const openAttachmentPicker = (notebookId: string, locale = document.documentElement.lang): Promise<void> => {
+  const { t } = notebookWorkspaceMessages.resolve([locale]);
+  return prompts
+    .dialog<void>((close) => <AttachmentPicker notebookId={notebookId} close={close} />, { title: t.attach, icon: "ti ti-paperclip" })
     .then(() => undefined);
+};

@@ -3,6 +3,7 @@ import type { Note } from "../service/notes";
 
 export type TemplateContext = {
   now: Date;
+  locale?: string;
 };
 
 export type TemplateNoteContentContext = TemplateContext & {
@@ -30,6 +31,7 @@ export type NotebookTemplate = {
   scriptsEnabled?: boolean;
   homepageNoteKey?: string;
   notes: (ctx: TemplateContext) => TemplateNote[];
+  translations?: Record<string, Partial<Pick<NotebookTemplate, "name" | "description" | "notebookName" | "notebookDescription">>>;
 };
 
 export type MaterializedTemplateNote = {
@@ -54,18 +56,21 @@ const walkNotes = (notes: TemplateNote[], ctx: TemplateContext, parentKey: strin
   });
 };
 
-export const materializeTemplate = (template: NotebookTemplate, now = new Date()) => {
-  const ctx: TemplateContext = { now };
+export const materializeTemplate = (template: NotebookTemplate, now = new Date(), locale = "en") => {
+  const ctx: TemplateContext = { now, locale };
+  const language = locale.split("-")[0]?.toLowerCase() ?? "en";
+  const localized = template.translations?.[locale] ?? template.translations?.[language];
   const notes: MaterializedTemplateNote[] = [];
   walkNotes(template.notes(ctx), ctx, null, notes);
 
   return {
     id: template.id,
-    name: template.name,
-    description: template.description,
+    name: localized?.name ?? template.name,
+    description: localized?.description ?? template.description,
     icon: template.icon,
-    notebookName: resolveText(template.notebookName, ctx) ?? template.name,
-    notebookDescription: resolveText(template.notebookDescription, ctx) ?? template.description,
+    notebookName: resolveText(localized?.notebookName ?? template.notebookName, ctx) ?? localized?.name ?? template.name,
+    notebookDescription:
+      resolveText(localized?.notebookDescription ?? template.notebookDescription, ctx) ?? localized?.description ?? template.description,
     scriptsEnabled: template.scriptsEnabled ?? false,
     homepageNoteKey: template.homepageNoteKey,
     notes,

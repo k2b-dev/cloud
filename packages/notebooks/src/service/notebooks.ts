@@ -1,7 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import type { MutationResult } from "@valentinkolb/cloud/contracts";
 import { deleteAccess, hasPermission, type PermissionLevel } from "@valentinkolb/cloud/server";
-import { logger, serviceAccounts } from "@valentinkolb/cloud/services";
+import { get as settingsGet, logger, serviceAccounts } from "@valentinkolb/cloud/services";
 import { sql } from "bun";
 import { buildNoteTitleTemplateContext, renderNoteTitleTemplate, validateNoteTitleTemplate } from "../lib/note-title-template";
 import { generateUniqueShortId } from "../lib/short-id";
@@ -536,12 +536,19 @@ export const update = async (params: { id: string; data: UpdateNotebook; dateCon
   const syntax = validateNoteTitleTemplate(defaultNoteTitleTemplate);
   if (!syntax.ok) return { ok: false, error: syntax.error, status: 400 };
   try {
+    const dateConfig =
+      params.dateConfig ??
+      ({
+        timeZone: "UTC",
+        locale: String((await settingsGet<string>("app.locale")) || "").trim() || "en",
+        firstDayOfWeek: 1,
+      } satisfies DateContext);
     renderNoteTitleTemplate(
       defaultNoteTitleTemplate,
       buildNoteTitleTemplateContext({
         notebook: { id: existing.shortId, name },
         note: { id: "preview", depth: 0 },
-        dateConfig: params.dateConfig ?? { timeZone: "UTC", locale: "en", firstDayOfWeek: 1 },
+        dateConfig,
       }),
     );
   } catch (error) {

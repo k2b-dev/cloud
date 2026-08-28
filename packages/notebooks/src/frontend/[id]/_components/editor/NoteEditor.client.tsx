@@ -4,7 +4,7 @@ import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { encoding } from "@k2b/stdlib";
 import { clipboard, files } from "@k2b/stdlib/browser";
 import { dropzone, query } from "@k2b/stdlib/solid";
-import { prompts, toast } from "@k2b/ui";
+import { prompts, toast, useLocale } from "@k2b/ui";
 import { layout } from "@valentinkolb/cloud/ssr/layout-runtime";
 import { createCodeMirror } from "solid-codemirror";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
@@ -47,6 +47,7 @@ import { formatBytes, insertAttachment, MAX_ATTACHMENT_SIZE_BYTES, maybeShrinkOv
 import EditorToolbar, { formattingKeymap } from "./EditorToolbar";
 import { createNoteNavigationCoordinator } from "./note-navigation";
 import { slashCommandsExtension } from "./slash-commands";
+import { notebookWorkspaceMessages } from "../../messages";
 
 const TOC_DEBOUNCE_MS = 300;
 type EditorInstanceProps = {
@@ -142,6 +143,8 @@ const parseSameNotebookEditNoteUrl = (href: string, notebookId: string): SameNot
 };
 
 export default function NoteEditor(props: Props) {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const { initialHref, initialDetail, ...initialEditorProps } = props;
   const [lastWorkspaceCursor, setLastWorkspaceCursor] = createSignal(initialEditorProps.workspaceCursor);
   const [current, setCurrent] = createSignal<EditorInstanceProps>({
@@ -232,8 +235,8 @@ export default function NoteEditor(props: Props) {
         });
         layout.update({
           breadcrumbs: [
-            { title: "Start", href: "/" },
-            { title: "Notebooks", href: "/app/notebooks" },
+            { title: t().start, href: "/" },
+            { title: t().notebooks, href: "/app/notebooks" },
             { title: loaded.props.notebookName, href: `/app/notebooks/${props.notebookId}` },
             { title: loaded.props.noteTitle },
           ],
@@ -296,7 +299,7 @@ export default function NoteEditor(props: Props) {
         <div class="pointer-events-none absolute inset-0 z-30 flex items-start justify-center pt-4" aria-live="polite" aria-busy="true">
           <div class="inline-flex items-center gap-2 rounded-md bg-white/95 px-3 py-1.5 text-xs font-medium text-zinc-700 shadow-sm ring-1 ring-zinc-950/10 dark:bg-zinc-900/95 dark:text-zinc-200 dark:ring-white/10">
             <i class="ti ti-loader-2 animate-spin text-blue-600 dark:text-blue-400" aria-hidden="true" />
-            <span>Loading note...</span>
+            <span>{t().loadingNote}</span>
           </div>
         </div>
       </Show>
@@ -305,6 +308,8 @@ export default function NoteEditor(props: Props) {
 }
 
 function EditorInstance(props: EditorInstanceProps) {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const [connected, setConnected] = createSignal(false);
   const [isDark, setIsDark] = createSignal(document.documentElement.classList.contains("dark"));
   const [richMode, setRichMode] = createSignal(props.initialRichMode !== "source");
@@ -383,7 +388,7 @@ function EditorInstance(props: EditorInstanceProps) {
 
   addExtension(editor.basicExtensions());
   addExtension(formattingKeymap({ notebookId: props.notebookId }));
-  addExtension(slashCommandsExtension({ notebookId: props.notebookId }));
+  addExtension(slashCommandsExtension({ notebookId: props.notebookId, locale: locale() }));
   addExtension(editor.markdownExtension());
   addExtension(editor.searchTheme());
   addExtension(() => (props.readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : []));
@@ -488,14 +493,14 @@ function EditorInstance(props: EditorInstanceProps) {
           const isSession = error.code === "SESSION_EXPIRED" || error.code === "LOGIN_REQUIRED";
 
           const title = isLocked
-            ? "Note Locked"
+            ? t().noteLocked
             : isMissing
-              ? "Note Not Found"
+              ? t().noteNotFound
               : isRevoked
-                ? "Access Changed"
+                ? t().accessChanged
                 : isSession
-                  ? "Session Expired"
-                  : "Connection Closed";
+                  ? t().sessionExpired
+                  : t().connectionClosed;
 
           const icon = isLocked
             ? "ti ti-lock"
@@ -507,12 +512,18 @@ function EditorInstance(props: EditorInstanceProps) {
                   ? "ti ti-login-2"
                   : "ti ti-alert-triangle";
 
-          const message = isMissing
-            ? "Note not found. It may have been deleted."
-            : error.message || "The collaboration connection was closed.";
+          const message = isLocked
+            ? t().noteLockedDescription
+            : isMissing
+              ? t().noteMissingDescription
+              : isRevoked
+                ? t().accessChangedDescription
+                : isSession
+                  ? t().sessionExpiredDescription
+                  : t().connectionClosedDescription;
 
           void prompts
-            .alert(`${message} The note view will now reload.`, {
+            .alert(t().reloadNotice({ message }), {
               title,
               icon,
             })
@@ -539,8 +550,8 @@ function EditorInstance(props: EditorInstanceProps) {
       lastDerivedTitle = title;
       layout.update({
         breadcrumbs: [
-          { title: "Start", href: "/" },
-          { title: "Notebooks", href: "/app/notebooks" },
+          { title: t().start, href: "/" },
+          { title: t().notebooks, href: "/app/notebooks" },
           { title: props.notebookName, href: `/app/notebooks/${props.notebookId}` },
           { title },
         ],
@@ -578,8 +589,8 @@ function EditorInstance(props: EditorInstanceProps) {
 
   const onCopy = () => {
     void clipboard.copy(ytext.toString()).then(
-      () => toast.success("Note content copied"),
-      () => toast.error("Could not copy note content"),
+      () => toast.success(t().contentCopied),
+      () => toast.error(t().contentCopyFailed),
     );
   };
 
@@ -700,13 +711,18 @@ function EditorInstance(props: EditorInstanceProps) {
         const finalFile = shrunk ?? file;
         if (shrunk) {
           toast.success(
-            `${file.name}: ${formatBytes(file.size)} → ${formatBytes(shrunk.size)} (auto-resized to fit the ${formatBytes(MAX_ATTACHMENT_SIZE_BYTES)} limit)`,
-            { title: "Image resized", iconClass: "ti ti-photo-edit" },
+            t().imageResizedDescription({
+              name: file.name,
+              before: formatBytes(file.size),
+              after: formatBytes(shrunk.size),
+              limit: formatBytes(MAX_ATTACHMENT_SIZE_BYTES),
+            }),
+            { title: t().imageResized, iconClass: "ti ti-photo-edit" },
           );
         }
         await uploadAndInsert(view, props.notebookId, finalFile);
       } catch (error) {
-        await prompts.error(error instanceof Error ? error.message : "Upload failed");
+        await prompts.error(error instanceof Error ? error.message : t().uploadFailed);
         return;
       }
     }
@@ -816,7 +832,7 @@ function EditorInstance(props: EditorInstanceProps) {
         {...(props.readOnly ? {} : dz.handlers)}
         role="textbox"
         tabIndex={-1}
-        aria-label={props.readOnly ? "Readonly note surface" : "Note editor surface"}
+        aria-label={props.readOnly ? t().readonlySurface : t().editorSurface}
       >
         <div ref={editorRef} />
       </div>

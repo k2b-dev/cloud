@@ -17,12 +17,12 @@ import {
   type AuthContext,
   auth,
   getDateConfig,
+  getLocale,
   hasPermission,
   jsonResponse,
   rateLimit,
   requiresAuth,
   respond,
-  v,
 } from "@valentinkolb/cloud/server";
 import { settings, settingsService } from "@valentinkolb/cloud/services";
 import {
@@ -39,8 +39,11 @@ import { describeRoute } from "hono-openapi";
 import { z } from "zod";
 import { notebooksService, reindexRuntime } from "../service";
 import { NOTEBOOK_RESOURCE_TYPE, NOTEBOOKS_APP_ID } from "../service/access";
+import { localizeNotebookServiceMessage, localizeNotebookSnapshotField } from "../service/messages";
 import { loadEditableNoteRouteData } from "../service/route-state";
+import { notebookApiMessages } from "./messages";
 import { ResourceShortIdSchema, toPublicAttachment, toPublicNote, toPublicNotebook, toPublicSnapshotLog } from "./public-resources";
+import { notebookV as v } from "./validator";
 
 // ==========================
 // Zod Schemas
@@ -500,6 +503,54 @@ const getUserBackedActor = (c: Context<AuthContext>): User | null => {
   const actor = c.get("actor");
   return actor.kind === "user" ? actor.user : actor.delegatedUser;
 };
+const messages = (c: Context<AuthContext>) => notebookApiMessages.resolve([getLocale(c)]).t;
+const notFoundMessage = (message: string) => ({ code: "NOT_FOUND" as const, message, status: 404 as const });
+
+const fallbackServiceMessage = (locale: string, status: number, current: string): string => {
+  if (!locale.toLowerCase().startsWith("de")) return current;
+  const { t } = notebookApiMessages.resolve([locale]);
+  switch (status) {
+    case 400:
+      return t.requestInvalid;
+    case 401:
+      return t.authenticationRequired;
+    case 403:
+      return t.accessDenied;
+    case 404:
+      return t.resourceNotFound;
+    case 409:
+      return t.conflict;
+    case 429:
+      return t.rateLimited;
+    default:
+      return t.operationFailed;
+  }
+};
+
+const localizeResult = <T>(result: Result<T>, locale: string): Result<T> => {
+  if (result.ok) return result;
+  const localized = localizeNotebookServiceMessage(result.error.message, locale);
+  return fail({
+    ...result.error,
+    message: localized === result.error.message ? fallbackServiceMessage(locale, result.error.status, localized) : localized,
+  });
+};
+
+const localizeMutationResult = <T>(result: MutationResult<T>, locale: string): MutationResult<T> => {
+  if (result.ok) return result;
+  const localized = localizeNotebookServiceMessage(result.error, locale);
+  return { ...result, error: localized === result.error ? fallbackServiceMessage(locale, result.status, localized) : localized };
+};
+
+const localizeMessageResult = <T extends { message: string }>(result: Result<T>, locale: string): Result<T> => {
+  const localized = localizeResult(result, locale);
+  return localized.ok ? ok({ ...localized.data, message: localizeNotebookServiceMessage(localized.data.message, locale) }) : localized;
+};
+
+const localizeSnapshotConfig = <T extends { missing: string[] }>(config: T, locale: string): T => ({
+  ...config,
+  missing: config.missing.map((field) => localizeNotebookSnapshotField(field, locale)),
+});
 
 const getNotebookActivityActor = (c: Context<AuthContext>) => {
   const actor = c.get("actor");
@@ -511,7 +562,7 @@ const getNotebookActivityActor = (c: Context<AuthContext>) => {
 const requireUserBackedActor = (c: Context<AuthContext>): Result<User> => {
   const user = getUserBackedActor(c);
   if (!user) {
-    return fail(err.forbidden("This endpoint requires a user-backed actor"));
+    return fail(err.forbidden(messages(c).userRequired));
   }
   return ok(user);
 };
@@ -546,7 +597,7 @@ const getNotebookAccessSubject = (c: Context<AuthContext>) => {
   };
 };
 
-const getCollectionNotebookBinding = (subject: ReturnType<typeof getNotebookAccessSubject>): Result<string | null> => {
+const getCollectionNotebookBinding = (subject: ReturnType<typeof getNotebookAccessSubject>, locale?: string): Result<string | null> => {
   if (!subject.serviceAccountId) return ok(null);
   if (
     subject.serviceAccount?.kind !== "resource_bound" ||
@@ -556,7 +607,7 @@ const getCollectionNotebookBinding = (subject: ReturnType<typeof getNotebookAcce
     !z.uuid().safeParse(subject.serviceAccount.resourceId).success ||
     !hasPermission(permissionFromScopes(subject.serviceAccountScopes), "read")
   ) {
-    return fail(err.forbidden("Access denied"));
+    return fail(err.forbidden(notebookApiMessages.resolve(locale ? [locale] : []).t.accessDenied));
   }
   return ok(subject.serviceAccount.resourceId);
 };
@@ -570,7 +621,7 @@ const checkNotebookAccess = async (c: Context<AuthContext>, shortId: string, req
     return {
       notebook: null,
       permission: "none" as PermissionLevel,
-      error: await respond(c, fail(err.notFound("Notebook"))),
+      error: await respond(c, fail(notFoundMessage(messages(c).notebookNotFound))),
     };
   }
 
@@ -587,7 +638,7 @@ const checkNotebookAccess = async (c: Context<AuthContext>, shortId: string, req
     return {
       notebook: null,
       permission: "none" as PermissionLevel,
-      error: await respond(c, fail(err.forbidden("Access denied"))),
+      error: await respond(c, fail(err.forbidden(messages(c).accessDenied))),
     };
   }
 
@@ -605,7 +656,7 @@ const checkNotebookAccess = async (c: Context<AuthContext>, shortId: string, req
     return {
       notebook: null,
       permission: "none" as PermissionLevel,
-      error: await respond(c, fail(err.forbidden("Access denied"))),
+      error: await respond(c, fail(err.forbidden(messages(c).accessDenied))),
     };
   }
 
@@ -618,16 +669,19 @@ const checkNotebookAccess = async (c: Context<AuthContext>, shortId: string, req
 const respondMessage = async (c: Context, resultPromise: Promise<Result<void> | MutationResult<void>>, message: string) => {
   return respond(c, async () => {
     const result = await resultPromise;
-    if (!result.ok) return result;
+    if (!result.ok) {
+      return "status" in result ? localizeMutationResult(result, getLocale(c)) : localizeResult(result, getLocale(c));
+    }
     return ok({ message });
   });
 };
 
 /** Resolve a public note ID and enforce notebook ownership before using its UUID. */
-const requireNoteInNotebook = async (notebookId: string, noteShortId: string) => {
+const requireNoteInNotebook = async (notebookId: string, noteShortId: string, locale?: string) => {
   const note = await notebooksService.note.getByShortId({ shortId: noteShortId });
   if (!note || note.notebookId !== notebookId) {
-    return fail(err.notFound("Note"));
+    const { t } = notebookApiMessages.resolve(locale ? [locale] : []);
+    return fail(notFoundMessage(t.noteNotFound));
   }
   return ok(note);
 };
@@ -640,15 +694,19 @@ const toPublicNotes = async (notes: Parameters<typeof toPublicNote>[0][], notebo
   return notes.map((note) => toPublicNote(note, notebookShortId, note.parentId ? (parentShortIds.get(note.parentId) ?? null) : null));
 };
 
-const toPublicNoteResult = async (resultPromise: Promise<MutationResult<Parameters<typeof toPublicNote>[0]>>, notebookShortId: string) => {
-  const result = await resultPromise;
+const toPublicNoteResult = async (
+  resultPromise: Promise<MutationResult<Parameters<typeof toPublicNote>[0]>>,
+  notebookShortId: string,
+  locale?: string,
+) => {
+  const result = localizeMutationResult(await resultPromise, locale ?? "en");
   if (!result.ok) return result;
   const [note] = await toPublicNotes([result.data], notebookShortId);
   return { ...result, data: note! };
 };
 
-const toPublicNotebookResult = async (resultPromise: Promise<MutationResult<Parameters<typeof toPublicNotebook>[0]>>) => {
-  const result = await resultPromise;
+const toPublicNotebookResult = async (resultPromise: Promise<MutationResult<Parameters<typeof toPublicNotebook>[0]>>, locale?: string) => {
+  const result = localizeMutationResult(await resultPromise, locale ?? "en");
   return result.ok ? { ...result, data: toPublicNotebook(result.data) } : result;
 };
 
@@ -670,7 +728,7 @@ const toPublicNoteTree = async (nodes: InternalNoteTreeNode[], notebookShortId: 
 const fileTooLarge = (c: Context, maxBytes: number) =>
   respond(c, {
     ok: false,
-    error: `File exceeds ${Math.round(maxBytes / 1024 / 1024)} MB limit`,
+    error: notebookApiMessages.resolve([getLocale(c)]).t.fileTooLarge({ max: Math.round(maxBytes / 1024 / 1024) }),
     status: 413,
   });
 
@@ -698,24 +756,37 @@ const notePdfDisposition = (filename: string): string => {
   )}`;
 };
 
-const notePdfError = (error: unknown): { message: string; status: 413 | 422 | 502 | 503 | 504 } => {
+const notePdfError = (error: unknown, locale?: string): { message: string; status: 413 | 422 | 502 | 503 | 504 } => {
+  const { t } = notebookApiMessages.resolve(locale ? [locale] : []);
   if (error instanceof MarkdownPdfError) {
-    return { message: error.message, status: 422 };
+    const message =
+      error.message === "Custom CSS exceeds the 32 KiB limit."
+        ? t.cssTooLarge
+        : error.message === "Markdown must not be empty."
+          ? t.pdfMarkdownEmpty
+          : error.message === "Unknown Markdown PDF template."
+            ? t.pdfTemplateUnknown
+            : error.code === "invalid_css"
+              ? t.pdfCssInvalid
+              : error.code === "external_asset_unsupported"
+                ? t.pdfExternalAsset
+                : t.pdfMarkdownInvalid;
+    return { message, status: 422 };
   }
   if (error instanceof GotenbergRenderError) {
     switch (error.code) {
       case "html_too_large":
       case "pdf_too_large":
-        return { message: error.message, status: 413 };
+        return { message: t.pdfFailed, status: 413 };
       case "not_configured":
-        return { message: "PDF rendering is not configured.", status: 503 };
+        return { message: t.pdfNotConfigured, status: 503 };
       case "timeout":
-        return { message: "PDF rendering timed out. Try again.", status: 504 };
+        return { message: t.pdfTimeout, status: 504 };
       default:
-        return { message: "The PDF could not be generated.", status: 502 };
+        return { message: t.pdfFailed, status: 502 };
     }
   }
-  return { message: "The PDF could not be generated.", status: 502 };
+  return { message: t.pdfFailed, status: 502 };
 };
 
 // ==========================
@@ -766,7 +837,7 @@ const app = new Hono<AuthContext>()
     v("query", ListNotebooksQuerySchema),
     async (c) => {
       const subject = getNotebookAccessSubject(c);
-      const binding = getCollectionNotebookBinding(subject);
+      const binding = getCollectionNotebookBinding(subject, getLocale(c));
       if (!binding.ok) return respond(c, binding);
       const query = c.req.valid("query");
       const pagination = parsePagination(query);
@@ -806,7 +877,7 @@ const app = new Hono<AuthContext>()
       if (!userResult.ok) return respond(c, userResult);
       const user = userResult.data;
       const data = c.req.valid("json");
-      return respond(c, toPublicNotebookResult(notebooksService.notebook.create({ data, creatorId: user.id })));
+      return respond(c, toPublicNotebookResult(notebooksService.notebook.create({ data, creatorId: user.id }), getLocale(c)));
     },
   )
 
@@ -827,7 +898,7 @@ const app = new Hono<AuthContext>()
     v("query", GlobalNoteSearchQuerySchema),
     async (c) => {
       const subject = getNotebookAccessSubject(c);
-      const binding = getCollectionNotebookBinding(subject);
+      const binding = getCollectionNotebookBinding(subject, getLocale(c));
       if (!binding.ok) return respond(c, binding);
       const query = c.req.valid("query");
       const pagination = parsePagination(query);
@@ -874,10 +945,7 @@ const app = new Hono<AuthContext>()
       description: "List durable activity across accessible notebooks, optionally filtered to one notebook or note.",
       ...requiresAuth,
       responses: {
-        200: jsonResponse(
-          z.object({ data: z.array(NotebookActivitySchema), nextCursor: z.string().nullable() }),
-          "Notebook activity",
-        ),
+        200: jsonResponse(z.object({ data: z.array(NotebookActivitySchema), nextCursor: z.string().nullable() }), "Notebook activity"),
         400: jsonResponse(ErrorResponseSchema, "Invalid cursor or filter"),
         403: jsonResponse(ErrorResponseSchema, "Access denied"),
         404: jsonResponse(ErrorResponseSchema, "Notebook or note not found"),
@@ -886,7 +954,7 @@ const app = new Hono<AuthContext>()
     v("query", NotebookActivityQuerySchema),
     async (c) => {
       const subject = getNotebookAccessSubject(c);
-      const binding = getCollectionNotebookBinding(subject);
+      const binding = getCollectionNotebookBinding(subject, getLocale(c));
       if (!binding.ok) return respond(c, binding);
       const query = c.req.valid("query");
       let notebookId: string | null = binding.data;
@@ -900,13 +968,13 @@ const app = new Hono<AuthContext>()
 
       if (query.note) {
         const note = await notebooksService.note.getByShortId({ shortId: query.note });
-        if (!note) return respond(c, fail(err.notFound("Note")));
+        if (!note) return respond(c, fail(notFoundMessage(messages(c).noteNotFound)));
         const notebook = await notebooksService.notebook.get({ id: note.notebookId });
-        if (!notebook) return respond(c, fail(err.notFound("Notebook")));
+        if (!notebook) return respond(c, fail(notFoundMessage(messages(c).notebookNotFound)));
         const checked = await checkNotebookAccess(c, notebook.shortId);
         if (checked.error) return checked.error;
         if (notebookId && notebookId !== note.notebookId) {
-          return respond(c, fail(err.badInput("Note does not belong to the selected notebook")));
+          return respond(c, fail(err.badInput(messages(c).noteNotebookMismatch)));
         }
         notebookId = note.notebookId;
         noteId = note.id;
@@ -939,7 +1007,7 @@ const app = new Hono<AuthContext>()
         );
       } catch (error) {
         if (error instanceof Error && error.message === "Invalid activity cursor") {
-          return respond(c, fail(err.badInput(error.message)));
+          return respond(c, fail(err.badInput(messages(c).invalidActivityCursor)));
         }
         throw error;
       }
@@ -996,7 +1064,7 @@ const app = new Hono<AuthContext>()
 
       let homepageNoteId = data.homepageNoteId;
       if (homepageNoteId) {
-        const homepage = await requireNoteInNotebook(notebook!.id, homepageNoteId);
+        const homepage = await requireNoteInNotebook(notebook!.id, homepageNoteId, getLocale(c));
         if (!homepage.ok) return respond(c, homepage);
         homepageNoteId = homepage.data.id;
       }
@@ -1009,6 +1077,7 @@ const app = new Hono<AuthContext>()
             data: { ...data, homepageNoteId },
             dateConfig: getDateConfig(c),
           }),
+          getLocale(c),
         ),
       );
     },
@@ -1031,7 +1100,7 @@ const app = new Hono<AuthContext>()
     async (c) => {
       const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!, "admin");
       if (error) return error;
-      return respondMessage(c, notebooksService.notebook.remove({ id: notebook!.id }), "Notebook deleted");
+      return respondMessage(c, notebooksService.notebook.remove({ id: notebook!.id }), messages(c).notebookDeleted);
     },
   )
 
@@ -1200,7 +1269,7 @@ const app = new Hono<AuthContext>()
 
       let parentId: string | undefined;
       if (query.parentId) {
-        const parent = await requireNoteInNotebook(notebookId, query.parentId);
+        const parent = await requireNoteInNotebook(notebookId, query.parentId, getLocale(c));
         if (!parent.ok) return respond(c, parent);
         parentId = parent.data.id;
       }
@@ -1248,7 +1317,7 @@ const app = new Hono<AuthContext>()
       notebookId = notebook!.id;
       let parentId = data.parentId;
       if (parentId) {
-        const parentResult = await requireNoteInNotebook(notebookId, parentId);
+        const parentResult = await requireNoteInNotebook(notebookId, parentId, getLocale(c));
         if (!parentResult.ok) return respond(c, parentResult);
         parentId = parentResult.data.id;
       }
@@ -1262,6 +1331,7 @@ const app = new Hono<AuthContext>()
             dateConfig: getDateConfig(c),
           }),
           notebook!.shortId,
+          getLocale(c),
         ),
       );
     },
@@ -1289,7 +1359,7 @@ const app = new Hono<AuthContext>()
       if (error) return error;
       notebookId = notebook!.id;
 
-      const note = await requireNoteInNotebook(notebookId, noteId);
+      const note = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
       if (!note.ok) return respond(c, note);
       const [data] = await toPublicNotes([note.data], notebook!.shortId);
       return respond(c, ok(data!));
@@ -1322,11 +1392,17 @@ const app = new Hono<AuthContext>()
       const { notebook, error } = await checkNotebookAccess(c, notebookId);
       if (error) return error;
       notebookId = notebook!.id;
-      const noteCheck = await requireNoteInNotebook(notebookId, noteId);
+      const noteCheck = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
       if (!noteCheck.ok) return respond(c, noteCheck);
       noteId = noteCheck.data.id;
 
-      return respond(c, notebooksService.note.favorites.set({ notebookId, noteId, userId: user.id, favorite: data.favorite }));
+      return respond(
+        c,
+        localizeMutationResult(
+          await notebooksService.note.favorites.set({ notebookId, noteId, userId: user.id, favorite: data.favorite }),
+          getLocale(c),
+        ),
+      );
     },
   )
 
@@ -1354,7 +1430,7 @@ const app = new Hono<AuthContext>()
 
       const note = await notebooksService.note.getWithContentByShortId({ shortId: noteId });
       if (!note || note.notebookId !== notebookId) {
-        return respond(c, fail(err.notFound("Note")));
+        return respond(c, fail(notFoundMessage(messages(c).noteNotFound)));
       }
       const [data] = await toPublicNotes([note], notebook!.shortId);
       return respond(c, ok({ ...data!, yjsSnapshot: note.yjsSnapshot }));
@@ -1386,7 +1462,7 @@ const app = new Hono<AuthContext>()
     }),
     bodyLimit({
       maxSize: NOTE_PDF_MAX_REQUEST_BYTES,
-      onError: (c) => respond(c, { ok: false, error: "The request body exceeds the 300 KiB limit.", status: 413 }),
+      onError: (c) => respond(c, { ok: false, error: messages(c).requestTooLarge, status: 413 }),
     }),
     v("json", NotePdfRequestSchema),
     async (c) => {
@@ -1397,17 +1473,17 @@ const app = new Hono<AuthContext>()
       const { notebook, error } = await checkNotebookAccess(c, notebookId);
       if (error) return error;
       notebookId = notebook!.id;
-      const note = await requireNoteInNotebook(notebookId, noteId);
+      const note = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
       if (!note.ok) return respond(c, note);
 
       if (byteLength(input.markdown) > MARKDOWN_PDF_MAX_MARKDOWN_BYTES) {
-        return respond(c, { ok: false, error: "Markdown exceeds the 256 KiB limit.", status: 413 });
+        return respond(c, { ok: false, error: messages(c).markdownTooLarge, status: 413 });
       }
       if (input.customCss && byteLength(input.customCss) > MARKDOWN_PDF_MAX_CUSTOM_CSS_BYTES) {
-        return respond(c, { ok: false, error: "Custom CSS exceeds the 32 KiB limit.", status: 413 });
+        return respond(c, { ok: false, error: messages(c).cssTooLarge, status: 413 });
       }
       if (activeNotePdfConversions >= NOTE_PDF_MAX_ACTIVE_CONVERSIONS) {
-        return respond(c, { ok: false, error: "PDF rendering is busy. Try again in a moment.", status: 503 });
+        return respond(c, { ok: false, error: messages(c).pdfBusy, status: 503 });
       }
 
       activeNotePdfConversions += 1;
@@ -1428,7 +1504,7 @@ const app = new Hono<AuthContext>()
           },
         });
       } catch (cause) {
-        const projected = notePdfError(cause);
+        const projected = notePdfError(cause, getLocale(c));
         return respond(c, { ok: false, error: projected.message, status: projected.status });
       } finally {
         activeNotePdfConversions -= 1;
@@ -1461,7 +1537,7 @@ const app = new Hono<AuthContext>()
       const { notebook, user, error } = await checkNotebookAccess(c, notebookId, "write");
       if (error) return error;
       notebookId = notebook!.id;
-      const noteCheck = await requireNoteInNotebook(notebookId, noteId);
+      const noteCheck = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
       if (!noteCheck.ok) return respond(c, noteCheck);
       noteId = noteCheck.data.id;
 
@@ -1471,7 +1547,7 @@ const app = new Hono<AuthContext>()
         createdBy: user?.id ?? null,
         actor: getNotebookActivityActor(c),
       });
-      if (!result.ok) return respond(c, result);
+      if (!result.ok) return respond(c, localizeMutationResult(result, getLocale(c)));
       const [note] = await toPublicNotes([result.data.note], notebook!.shortId);
       return respond(c, ok({ ...result.data, note: note! }));
     },
@@ -1501,16 +1577,19 @@ const app = new Hono<AuthContext>()
       const { notebook, error } = await checkNotebookAccess(c, notebookId, "write");
       if (error) return error;
       notebookId = notebook!.id;
-      const noteCheck = await requireNoteInNotebook(notebookId, noteId);
+      const noteCheck = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
       if (!noteCheck.ok) return respond(c, noteCheck);
       noteId = noteCheck.data.id;
       let parentId = data.parentId;
       if (parentId) {
-        const parent = await requireNoteInNotebook(notebookId, parentId);
+        const parent = await requireNoteInNotebook(notebookId, parentId, getLocale(c));
         if (!parent.ok) return respond(c, parent);
         parentId = parent.data.id;
       }
-      return respond(c, toPublicNoteResult(notebooksService.note.update({ id: noteId, data: { ...data, parentId } }), notebook!.shortId));
+      return respond(
+        c,
+        toPublicNoteResult(notebooksService.note.update({ id: noteId, data: { ...data, parentId } }), notebook!.shortId, getLocale(c)),
+      );
     },
   )
 
@@ -1538,18 +1617,22 @@ const app = new Hono<AuthContext>()
       const { notebook, error } = await checkNotebookAccess(c, notebookId, "write");
       if (error) return error;
       notebookId = notebook!.id;
-      const noteCheck = await requireNoteInNotebook(notebookId, noteId);
+      const noteCheck = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
       if (!noteCheck.ok) return respond(c, noteCheck);
       noteId = noteCheck.data.id;
       let resolvedParentId: string | null = null;
       if (parentId) {
-        const parent = await requireNoteInNotebook(notebookId, parentId);
+        const parent = await requireNoteInNotebook(notebookId, parentId, getLocale(c));
         if (!parent.ok) return respond(c, parent);
         resolvedParentId = parent.data.id;
       }
       return respond(
         c,
-        toPublicNoteResult(notebooksService.note.move({ id: noteId, parentId: resolvedParentId, position }), notebook!.shortId),
+        toPublicNoteResult(
+          notebooksService.note.move({ id: noteId, parentId: resolvedParentId, position }),
+          notebook!.shortId,
+          getLocale(c),
+        ),
       );
     },
   )
@@ -1575,10 +1658,10 @@ const app = new Hono<AuthContext>()
       const { notebook, error } = await checkNotebookAccess(c, notebookId, "write");
       if (error) return error;
       notebookId = notebook!.id;
-      const noteCheck = await requireNoteInNotebook(notebookId, noteId);
+      const noteCheck = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
       if (!noteCheck.ok) return respond(c, noteCheck);
       noteId = noteCheck.data.id;
-      return respondMessage(c, notebooksService.note.remove({ id: noteId }), "Note deleted");
+      return respondMessage(c, notebooksService.note.remove({ id: noteId }), messages(c).noteDeleted);
     },
   )
 
@@ -1604,10 +1687,10 @@ const app = new Hono<AuthContext>()
       const { notebook, error } = await checkNotebookAccess(c, notebookId, "write");
       if (error) return error;
       notebookId = notebook!.id;
-      const noteCheck = await requireNoteInNotebook(notebookId, noteId);
+      const noteCheck = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
       if (!noteCheck.ok) return respond(c, noteCheck);
       noteId = noteCheck.data.id;
-      return respond(c, toPublicNoteResult(notebooksService.note.lock({ id: noteId }), notebook!.shortId));
+      return respond(c, toPublicNoteResult(notebooksService.note.lock({ id: noteId }), notebook!.shortId, getLocale(c)));
     },
   )
 
@@ -1642,12 +1725,12 @@ const app = new Hono<AuthContext>()
 
       let resolvedTargetParentId: string | null | undefined = targetParentId;
       if (targetParentId) {
-        const targetParent = await requireNoteInNotebook(targetNotebook!.id, targetParentId);
+        const targetParent = await requireNoteInNotebook(targetNotebook!.id, targetParentId, getLocale(c));
         if (!targetParent.ok) return respond(c, targetParent);
         resolvedTargetParentId = targetParent.data.id;
       }
 
-      const noteCheck = await requireNoteInNotebook(notebookId, noteId);
+      const noteCheck = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
       if (!noteCheck.ok) return respond(c, noteCheck);
       noteId = noteCheck.data.id;
       return respond(
@@ -1660,6 +1743,7 @@ const app = new Hono<AuthContext>()
             creatorId: user?.id ?? null,
           }),
           targetNotebook!.shortId,
+          getLocale(c),
         ),
       );
     },
@@ -1698,7 +1782,7 @@ const app = new Hono<AuthContext>()
       const { notebook, error } = await checkNotebookAccess(c, notebookId);
       if (error) return error;
       notebookId = notebook!.id;
-      const noteCheck = await requireNoteInNotebook(notebookId, noteId);
+      const noteCheck = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
       if (!noteCheck.ok) return respond(c, noteCheck);
       noteId = noteCheck.data.id;
 
@@ -1738,7 +1822,7 @@ const app = new Hono<AuthContext>()
       const { notebook, error } = await checkNotebookAccess(c, notebookId);
       if (error) return error;
       notebookId = notebook!.id;
-      const noteCheck = await requireNoteInNotebook(notebookId, noteId);
+      const noteCheck = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
       if (!noteCheck.ok) return respond(c, noteCheck);
       noteId = noteCheck.data.id;
 
@@ -1747,7 +1831,7 @@ const app = new Hono<AuthContext>()
         versionId,
       });
       if (!snapshot) {
-        return respond(c, fail(err.notFound("Version")));
+        return respond(c, fail(notFoundMessage(messages(c).versionNotFound)));
       }
 
       return respond(c, ok({ yjsSnapshot: Buffer.from(snapshot).toString("base64") }));
@@ -1782,12 +1866,16 @@ const app = new Hono<AuthContext>()
       const { notebook, user, error } = await checkNotebookAccess(c, notebookId, "write");
       if (error) return error;
       notebookId = notebook!.id;
-      const noteCheck = await requireNoteInNotebook(notebookId, noteId);
+      const noteCheck = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
       if (!noteCheck.ok) return respond(c, noteCheck);
       noteId = noteCheck.data.id;
       return respond(
         c,
-        toPublicNoteResult(notebooksService.note.versions.restore({ noteId, yjsSnapshot, createdBy: user?.id ?? null }), notebook!.shortId),
+        toPublicNoteResult(
+          notebooksService.note.versions.restore({ noteId, yjsSnapshot, createdBy: user?.id ?? null }),
+          notebook!.shortId,
+          getLocale(c),
+        ),
       );
     },
   )
@@ -1868,7 +1956,7 @@ const app = new Hono<AuthContext>()
       const { notebook, error } = await checkNotebookAccess(c, notebookId);
       if (error) return error;
       notebookId = notebook!.id;
-      const noteCheck = await requireNoteInNotebook(notebookId, noteId);
+      const noteCheck = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
       if (!noteCheck.ok) return respond(c, noteCheck);
       noteId = noteCheck.data.id;
 
@@ -1877,7 +1965,7 @@ const app = new Hono<AuthContext>()
         versionId,
       });
       if (!version) {
-        return respond(c, fail(err.notFound("Version")));
+        return respond(c, fail(notFoundMessage(messages(c).versionNotFound)));
       }
 
       return respond(
@@ -1915,12 +2003,12 @@ const app = new Hono<AuthContext>()
       const { notebook, error } = await checkNotebookAccess(c, notebookId);
       if (error) return error;
       notebookId = notebook!.id;
-      const noteCheck = await requireNoteInNotebook(notebookId, noteId);
+      const noteCheck = await requireNoteInNotebook(notebookId, noteId, getLocale(c));
       if (!noteCheck.ok) return respond(c, noteCheck);
       noteId = noteCheck.data.id;
 
       const subject = getNotebookAccessSubject(c);
-      const binding = getCollectionNotebookBinding(subject);
+      const binding = getCollectionNotebookBinding(subject, getLocale(c));
       if (!binding.ok) return respond(c, binding);
       const items = await notebooksService.note.backlinks.list({
         noteId,
@@ -2015,16 +2103,19 @@ const app = new Hono<AuthContext>()
 
       return respond(
         c,
-        notebooksService.notebook.access.apiKeys.create({
-          notebookId: notebook!.id,
-          actor: user,
-          notebookName: notebook!.name,
-          data: {
-            name: data.name,
-            expiresAt: data.expiresAt,
-            permission: data.permission,
-          },
-        }),
+        localizeResult(
+          await notebooksService.notebook.access.apiKeys.create({
+            notebookId: notebook!.id,
+            actor: user,
+            notebookName: notebook!.name,
+            data: {
+              name: data.name,
+              expiresAt: data.expiresAt,
+              permission: data.permission,
+            },
+          }),
+          getLocale(c),
+        ),
         201,
       );
     },
@@ -2051,7 +2142,11 @@ const app = new Hono<AuthContext>()
       const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!, "admin");
       if (error) return error;
 
-      return respond(c, notebooksService.notebook.access.apiKeys.revoke({ notebookId: notebook!.id, credentialId, actor: user }));
+      const result = localizeMessageResult(
+        await notebooksService.notebook.access.apiKeys.revoke({ notebookId: notebook!.id, credentialId, actor: user }),
+        getLocale(c),
+      );
+      return respond(c, result);
     },
   )
 
@@ -2114,11 +2209,14 @@ const app = new Hono<AuthContext>()
       notebookId = notebook!.id;
       return respond(
         c,
-        notebooksService.notebook.access.grant({
-          notebookId,
-          principal,
-          permission,
-        }),
+        localizeResult(
+          await notebooksService.notebook.access.grant({
+            notebookId,
+            principal,
+            permission,
+          }),
+          getLocale(c),
+        ),
       );
     },
   )
@@ -2155,13 +2253,13 @@ const app = new Hono<AuthContext>()
         accessId,
       });
       if (!guard.currentPermission) {
-        return respond(c, fail(err.notFound("Access entry")));
+        return respond(c, fail(notFoundMessage(messages(c).accessEntryNotFound)));
       }
 
       if (guard.currentPermission === "admin" && permission !== "admin" && guard.otherAdmins <= 0) {
-        return respond(c, fail(err.badInput("Cannot remove the last admin")));
+        return respond(c, fail(err.badInput(messages(c).lastAdmin)));
       }
-      return respondMessage(c, notebooksService.notebook.access.update({ notebookId, accessId, permission }), "Access updated");
+      return respondMessage(c, notebooksService.notebook.access.update({ notebookId, accessId, permission }), messages(c).accessUpdated);
     },
   )
 
@@ -2195,15 +2293,15 @@ const app = new Hono<AuthContext>()
         accessId,
       });
       if (!guard.currentPermission) {
-        return respond(c, fail(err.notFound("Access entry")));
+        return respond(c, fail(notFoundMessage(messages(c).accessEntryNotFound)));
       }
 
       if (guard.total <= 1) {
-        return respond(c, fail(err.badInput("Cannot remove the last access entry")));
+        return respond(c, fail(err.badInput(messages(c).lastAccess)));
       }
 
       if (guard.currentPermission === "admin" && guard.otherAdmins <= 0) {
-        return respond(c, fail(err.badInput("Cannot remove the last admin")));
+        return respond(c, fail(err.badInput(messages(c).lastAdmin)));
       }
       return respondMessage(
         c,
@@ -2211,7 +2309,7 @@ const app = new Hono<AuthContext>()
           notebookId,
           accessId,
         }),
-        "Access revoked",
+        messages(c).accessRevoked,
       );
     },
   );
@@ -2251,7 +2349,7 @@ const appWithAttachments = app
 
       const form = await c.req.formData().catch(() => null);
       const file = form?.get("file");
-      if (!(file instanceof File)) return respond(c, fail(err.badInput("Missing 'file' field")));
+      if (!(file instanceof File)) return respond(c, fail(err.badInput(messages(c).missingFile)));
       if (file.size > maxBytes) {
         return fileTooLarge(c, maxBytes);
       }
@@ -2312,7 +2410,7 @@ const appWithAttachments = app
       notebookId = notebook!.id;
 
       const att = await notebooksService.attachment.getContentByShortId({ shortId: attId });
-      if (!att || att.notebookId !== notebookId) return respond(c, fail(err.notFound("Attachment")));
+      if (!att || att.notebookId !== notebookId) return respond(c, fail(notFoundMessage(messages(c).attachmentNotFound)));
 
       const isSafeInline =
         att.mimeType === "application/pdf" ||
@@ -2387,7 +2485,7 @@ const appWithAttachments = app
       if (error) return error;
       notebookId = notebook!.id;
       const att = await notebooksService.attachment.getByShortId({ shortId: attachmentShortId });
-      if (!att || att.notebookId !== notebookId) return respond(c, fail(err.notFound("Attachment")));
+      if (!att || att.notebookId !== notebookId) return respond(c, fail(notFoundMessage(messages(c).attachmentNotFound)));
       return respond(c, ok(toPublicAttachment(att, notebook!.shortId)));
     },
   )
@@ -2413,9 +2511,9 @@ const appWithAttachments = app
       if (error) return error;
       notebookId = notebook!.id;
       const att = await notebooksService.attachment.getByShortId({ shortId: attachmentShortId });
-      if (!att || att.notebookId !== notebookId) return respond(c, fail(err.notFound("Attachment")));
+      if (!att || att.notebookId !== notebookId) return respond(c, fail(notFoundMessage(messages(c).attachmentNotFound)));
       await notebooksService.attachment.remove({ id: att.id });
-      return respond(c, ok({ message: "Attachment deleted" }));
+      return respond(c, ok({ message: messages(c).attachmentDeleted }));
     },
   );
 
@@ -2444,7 +2542,7 @@ const appWithExport = appWithAttachments
       notebookId = notebook!.id;
 
       const exported = await notebooksService.exporter.exportNotebookZip({ notebookId });
-      if (!exported) return respond(c, fail(err.notFound("Notebook")));
+      if (!exported) return respond(c, fail(notFoundMessage(messages(c).notebookNotFound)));
 
       const buffer = exported.zip.buffer.slice(exported.zip.byteOffset, exported.zip.byteOffset + exported.zip.byteLength) as ArrayBuffer;
       return new Response(new Blob([buffer], { type: "application/zip" }), {
@@ -2472,7 +2570,7 @@ const appWithExport = appWithAttachments
     async (c) => {
       const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!, "admin");
       if (error) return error;
-      return respond(c, ok(await notebooksService.backup.getConfig({ notebookId: notebook!.id })));
+      return respond(c, ok(localizeSnapshotConfig(await notebooksService.backup.getConfig({ notebookId: notebook!.id }), getLocale(c))));
     },
   )
   .put(
@@ -2496,14 +2594,15 @@ const appWithExport = appWithAttachments
       const user = userResult.data;
       const { notebook, error } = await checkNotebookAccess(c, c.req.param("id")!, "admin");
       if (error) return error;
-      return respond(
-        c,
+      const result = localizeResult(
         await notebooksService.backup.updateConfig({
           notebookId: notebook!.id,
           userId: user.id,
           data: c.req.valid("json"),
         }),
+        getLocale(c),
       );
+      return respond(c, result.ok ? ok(localizeSnapshotConfig(result.data, getLocale(c))) : result);
     },
   )
   .get(
@@ -2553,7 +2652,7 @@ const appWithExport = appWithAttachments
       const { notebook, error } = await checkNotebookAccess(c, notebookId, "admin");
       if (error) return error;
       notebookId = notebook!.id;
-      return respond(c, await notebooksService.backup.runS3({ notebookId }));
+      return respond(c, localizeMessageResult(await notebooksService.backup.runS3({ notebookId }), getLocale(c)));
     },
   );
 
@@ -2640,7 +2739,7 @@ const UpdateSettingSchema = z.object({
 const requireAdmin = (c: Context<AuthContext>) => {
   const user = getUserBackedActor(c);
   if (!user || !hasRole(user, "admin")) {
-    return respond(c, fail(err.forbidden("Admin access required")));
+    return respond(c, fail(err.forbidden(messages(c).adminRequired)));
   }
   return null;
 };
@@ -2686,27 +2785,30 @@ const appWithAdmin = appWithLimits
       if (denied) return denied;
       const key = c.req.param("key")!;
       if (!key.startsWith(NOTEBOOKS_SETTING_PREFIX)) {
-        return respond(c, fail(err.badInput(`Setting "${key}" is not in the notebooks namespace`)));
+        return respond(c, fail(err.badInput(messages(c).settingOutsideNamespace({ key }))));
       }
       const { value } = c.req.valid("json");
       const result =
         key === "notebooks.snapshot_cron" && typeof value === "string"
           ? await notebooksService.backup.updateCron(value)
           : await settingsService.entry.update({ key, value });
-      if (!result.ok) return respond(c, result);
+      if (!result.ok) {
+        const message =
+          key === "notebooks.snapshot_cron"
+            ? localizeNotebookServiceMessage(result.error.message, getLocale(c))
+            : messages(c).settingUpdateFailed;
+        return respond(c, fail({ ...result.error, message }));
+      }
       // If the user changed the reindex cron, reschedule live (no restart
       // needed). Logs go to `notebooks:reindex` for observability.
       if (key === "notebooks.reindex_cron" && typeof value === "string") {
         try {
           await reindexRuntime.updateCron(value);
-        } catch (error) {
-          return respond(
-            c,
-            fail(err.badInput(`Setting saved but rescheduling failed: ${error instanceof Error ? error.message : String(error)}`)),
-          );
+        } catch {
+          return respond(c, fail(err.badInput(messages(c).settingRescheduleFailed)));
         }
       }
-      return respond(c, ok({ message: "Setting updated" }));
+      return respond(c, ok({ message: messages(c).settingUpdated }));
     },
   );
 

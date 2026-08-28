@@ -27,4 +27,17 @@ describe("info block snippets", () => {
 key: value
 :::`);
   });
+
+  test("localizes visible help without changing directive names or snippets", () => {
+    const previousDocument = globalThis.document;
+    Object.assign(globalThis, { document: { documentElement: { lang: "de-CH" } } });
+    try {
+      const doc = ":::";
+      const result = infoBlockCompletionSource(new CompletionContext(stateFor(doc), doc.length, true));
+      expect(result?.options.find((option) => option.label === "data")?.detail).toBe("Referenzierbarer Datenblock");
+      expect(result?.options.map((option) => option.label)).toEqual(["note", "info", "success", "warning", "danger", "data"]);
+    } finally {
+      Object.assign(globalThis, { document: previousDocument });
+    }
+  });
 });

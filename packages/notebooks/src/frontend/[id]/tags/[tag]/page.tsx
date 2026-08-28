@@ -8,7 +8,7 @@
  */
 
 import { AppWorkspace, Pagination, Placeholder } from "@k2b/ui";
-import { type AuthContext, expectUserBackedActor, getDateConfig } from "@valentinkolb/cloud/server";
+import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { get } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { SearchBar } from "@valentinkolb/cloud/ssr/islands";
@@ -20,6 +20,7 @@ import NotebookSidebar from "../../_components/sidebar/NotebookSidebar.island";
 import type { NotebookContext } from "../../_components/sidebar/types";
 import WorkspaceEventBridge from "../../_components/sidebar/WorkspaceEventBridge.island";
 import { projectNotebook, projectTree } from "../../page-data";
+import { notebookWorkspaceMessages } from "../../messages";
 
 const PER_PAGE = 50;
 
@@ -28,9 +29,10 @@ const parsePage = (raw: string | undefined): number => {
   return Number.isFinite(n) && n > 0 ? n : 1;
 };
 
-const formatDate = (iso: string): string => new Date(iso).toLocaleDateString();
-
 export default ssr<AuthContext>(async (c) => {
+  const locale = getLocale(c);
+  const t = notebookWorkspaceMessages.resolve([locale]).t;
+  const formatDate = (iso: string): string => new Intl.DateTimeFormat(locale).format(new Date(iso));
   const user = expectUserBackedActor(c);
   const notebookShortId = c.req.param("id")!;
   const tagParam = (c.req.param("tag") ?? "").toLowerCase();
@@ -41,9 +43,9 @@ export default ssr<AuthContext>(async (c) => {
   const notebookId = notebook?.id;
   if (!notebook || !notebookId) {
     return () => (
-      <Layout c={c} title="Not Found">
+      <Layout c={c} title={t.notFound}>
         <div class="max-w-md mx-auto mt-16">
-          <Placeholder surface="paper" state="error" icon="ti ti-alert-circle" title="Notebook not found" />
+          <Placeholder surface="paper" state="error" icon="ti ti-alert-circle" title={t.notebookNotFound} />
         </div>
       </Layout>
     );
@@ -55,14 +57,14 @@ export default ssr<AuthContext>(async (c) => {
   });
   if (permission === "none") {
     return () => (
-      <Layout c={c} title="Access Denied">
+      <Layout c={c} title={t.accessDenied}>
         <div class="max-w-md mx-auto mt-16">
           <Placeholder
             surface="paper"
             state="error"
             icon="ti ti-lock"
-            title="Access denied"
-            description="You don't have access to this notebook."
+            title={t.accessDenied}
+            description={t.accessDeniedDescription}
           />
         </div>
       </Layout>
@@ -95,8 +97,8 @@ export default ssr<AuthContext>(async (c) => {
   ]);
   if (!snapshotNotebook) {
     return () => (
-      <Layout c={c} title="Not Found">
-        <Placeholder surface="paper" state="error" icon="ti ti-alert-circle" title="Notebook not found" />
+      <Layout c={c} title={t.notFound}>
+        <Placeholder surface="paper" state="error" icon="ti ti-alert-circle" title={t.notebookNotFound} />
       </Layout>
     );
   }
@@ -127,8 +129,8 @@ export default ssr<AuthContext>(async (c) => {
       c={c}
       fullPage
       title={[
-        { title: "Start", href: "/" },
-        { title: "Notebooks", href: "/app/notebooks" },
+        { title: t.start, href: "/" },
+        { title: t.notebooks, href: "/app/notebooks" },
         { title: notebook.name, href: `/app/notebooks/${notebook.shortId}` },
         { title: `#${tagParam}` },
       ]}
@@ -145,14 +147,14 @@ export default ssr<AuthContext>(async (c) => {
                 <SearchBar
                   value={search}
                   action={baseHref}
-                  placeholder={`Search in #${tagParam}…`}
-                  ariaLabel={`Search notes tagged ${tagParam}`}
+                  placeholder={t.searchTaggedNotes({ tag: tagParam })}
+                  ariaLabel={t.searchTaggedNotesLabel({ tag: tagParam })}
                 />
               </div>
               <span class="shrink-0 text-xs text-dimmed tabular-nums">
                 {search
-                  ? `${paginatedResult.total} of ${totalNotesForTag}`
-                  : `${totalNotesForTag} note${totalNotesForTag === 1 ? "" : "s"}`}
+                  ? t.filteredCount({ shown: paginatedResult.total, total: totalNotesForTag })
+                  : t.noteCount({ count: totalNotesForTag })}
               </span>
             </div>
 
@@ -183,15 +185,15 @@ export default ssr<AuthContext>(async (c) => {
                     <>
                       {search ? (
                         <p>
-                          No notes tagged #{tagParam} match "{search}".
+                          {t.noTaggedSearchResults({ tag: tagParam, query: search })}
                         </p>
                       ) : totalNotesForTag === 0 ? (
                         <>
-                          <p>No notes tagged #{tagParam}.</p>
-                          <p>The tag may have been removed since the index was last refreshed.</p>
+                          <p>{t.noTaggedNotes({ tag: tagParam })}</p>
+                          <p>{t.tagIndexMayBeStale}</p>
                         </>
                       ) : (
-                        <p>No results.</p>
+                        <p>{t.noResults}</p>
                       )}
                     </>
                   }

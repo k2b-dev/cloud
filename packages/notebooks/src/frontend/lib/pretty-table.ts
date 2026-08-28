@@ -1,5 +1,8 @@
+import { dates } from "@k2b/stdlib";
 import {
   type EvalContext,
+  type EvalError,
+  type EvalValue,
   evaluateFormula,
   formatValue,
   isFormula,
@@ -7,7 +10,8 @@ import {
   type ProgressValue,
   parseProgressValue,
 } from "@valentinkolb/cloud/shared";
-import { dates } from "@k2b/stdlib";
+import { notebookWorkspaceMessages } from "../[id]/messages";
+import { prettyTableMessages } from "./pretty-table-messages";
 
 export type PrettyTableAlign = "left" | "right" | "center" | null;
 
@@ -35,12 +39,12 @@ const alignClass = (align: PrettyTableAlign): string => {
 const tagHref = (notebookId: string | undefined, tag: string): string =>
   notebookId ? `/app/notebooks/${notebookId}/tags/${encodeURIComponent(tag.toLowerCase())}` : "#";
 
-const renderIsoDateTime = (raw: string): string | null => {
+const renderIsoDateTime = (raw: string, locale?: string): string | null => {
   const value = raw.trim();
   if (!ISO_DATE_TIME_RE.test(value)) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return `<time datetime="${escapeHtml(value)}" title="${escapeHtml(value)}">${escapeHtml(dates.formatDateTime(date))}</time>`;
+  return `<time datetime="${escapeHtml(value)}" title="${escapeHtml(value)}">${escapeHtml(dates.formatDateTime(date, { locale }))}</time>`;
 };
 
 const stashHtml = (html: string, placeholders: string[]): string => {
@@ -59,8 +63,8 @@ const renderInlineFormatting = (html: string): string =>
     .replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>")
     .replace(/(^|[\s(])_([^_\n]+)_/g, "$1<em>$2</em>");
 
-const renderInlineMarkdown = (raw: string, notebookId?: string): string => {
-  const formattedDateTime = renderIsoDateTime(raw);
+const renderInlineMarkdown = (raw: string, notebookId?: string, locale?: string): string => {
+  const formattedDateTime = renderIsoDateTime(raw, locale);
   if (formattedDateTime) return formattedDateTime;
 
   const placeholders: string[] = [];
@@ -82,32 +86,77 @@ const renderInlineMarkdown = (raw: string, notebookId?: string): string => {
   const formatted = renderInlineFormatting(escaped);
   const withTags = formatted.replace(TAG_RE, (_match, prefix: string, tag: string) => {
     const href = tagHref(notebookId, tag);
-    return `${prefix}<a href="${escapeHtml(href)}" class="cm-tag-pill inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 no-underline align-baseline font-medium" title="Show notes with #${escapeHtml(tag.toLowerCase())}">#${escapeHtml(tag)}</a>`;
+    const title = notebookWorkspaceMessages.resolve(locale ? [locale] : []).t.showNotesWithTag({ tag: tag.toLowerCase() });
+    return `${prefix}<a href="${escapeHtml(href)}" class="cm-tag-pill inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 no-underline align-baseline font-medium" title="${escapeHtml(title)}">#${escapeHtml(tag)}</a>`;
   });
 
   return restoreHtml(withTags, placeholders);
 };
 
-const renderProgressCell = (progress: ProgressValue, alignCls: string, title: string): string => {
-  const pct = Math.round(progress.ratio * 100);
-  return `<td><span class="md-table-cell md-table-progress${alignCls}" title="${escapeHtml(title)}"><span class="md-table-progress-track" aria-hidden="true"><span class="md-table-progress-fill" style="width:${pct}%"></span></span><span>${escapeHtml(progress.label)}</span></span></td>`;
+const localizeProgressLabel = (label: string, locale: string): string => {
+  const values = label.match(/^(-?\d+(?:\.\d+)?)\/(-?\d+(?:\.\d+)?)$/);
+  if (!values) return label;
+  return `${new Intl.NumberFormat(locale, { maximumFractionDigits: 6, useGrouping: false }).format(Number(values[1]))}/${new Intl.NumberFormat(locale, { maximumFractionDigits: 6, useGrouping: false }).format(Number(values[2]))}`;
 };
 
-const renderBodyCell = (cell: string, alignCls: string, ctx: EvalContext, notebookId?: string): string => {
+const renderProgressCell = (progress: ProgressValue, alignCls: string, title: string, locale: string): string => {
+  const pct = Math.round(progress.ratio * 100);
+  return `<td><span class="md-table-cell md-table-progress${alignCls}" title="${escapeHtml(title)}"><span class="md-table-progress-track" aria-hidden="true"><span class="md-table-progress-fill" style="width:${pct}%"></span></span><span>${escapeHtml(localizeProgressLabel(progress.label, locale))}</span></span></td>`;
+};
+
+export const formatFormulaValue = (value: EvalValue, locale?: string): string => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return formatValue(value);
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 6, useGrouping: false }).format(value);
+};
+
+const errorSubject = (error: EvalError): string | undefined => {
+  const quoted = error.message.match(/["“]([^"”]+)["”]/)?.[1];
+  if (quoted) return quoted;
+  return error.message.match(/^([A-Z][A-Z0-9_]*)\s*:/)?.[1];
+};
+
+export const formatFormulaError = (error: EvalError, locale?: string): string => {
+  const t = prettyTableMessages.resolve(locale ? [locale] : []).t;
+  const name = errorSubject(error) ?? t.formulaName;
+  const message = (() => {
+    switch (error.code) {
+      case "UNKNOWN_FUNCTION":
+        return t.unknownFunction({ name });
+      case "UNKNOWN_COLUMN":
+        return t.unknownColumn({ name });
+      case "WRONG_ARG_COUNT":
+        return t.wrongArgumentCount({ name });
+      case "NON_NUMERIC":
+        return t.nonNumeric({ name });
+      case "DIV_BY_ZERO":
+        return t.divisionByZero({ name });
+      case "TYPE_ERROR":
+        return t.typeError({ name });
+      case "CIRCULAR_REF":
+        return t.circularReference({ name });
+      case "PARSE_ERROR":
+        return t.parseError;
+    }
+  })();
+  return error.suggestion ? `${message}\n→ ${t.suggestion({ value: error.suggestion })}` : message;
+};
+
+const renderBodyCell = (cell: string, alignCls: string, ctx: EvalContext, notebookId?: string, locale?: string): string => {
   if (!isFormula(cell)) {
-    return `<td><span class="md-table-cell${alignCls}">${renderInlineMarkdown(cell, notebookId)}</span></td>`;
+    return `<td><span class="md-table-cell${alignCls}">${renderInlineMarkdown(cell, notebookId, locale)}</span></td>`;
   }
   const result = evaluateFormula(cell, ctx);
   if (result.kind === "ok") {
     const progress = parseProgressValue(result.value);
-    if (progress) return renderProgressCell(progress, alignCls, cell);
-    return `<td><span class="md-table-cell md-formula-ok${alignCls}" title="${escapeHtml(cell)}"><i class="ti ti-math-function"></i>${escapeHtml(formatValue(result.value))}</span></td>`;
+    if (progress) return renderProgressCell(progress, alignCls, cell, locale ?? "en");
+    return `<td><span class="md-table-cell md-formula-ok${alignCls}" title="${escapeHtml(cell)}"><i class="ti ti-math-function"></i>${escapeHtml(formatFormulaValue(result.value, locale))}</span></td>`;
   }
-  const tooltip = result.suggestion ? `${result.message}\n→ Suggestion: ${result.suggestion}` : result.message;
+  const tooltip = formatFormulaError(result, locale);
   return `<td><span class="md-table-cell md-formula-error${alignCls}" title="${escapeHtml(tooltip)}">⚠ ${escapeHtml(cell)}</span></td>`;
 };
 
-export const renderPrettyTableHtml = (data: PrettyTableData, options: { notebookId?: string } = {}): string => {
+export const renderPrettyTableHtml = (data: PrettyTableData, options: { notebookId?: string; locale?: string } = {}): string => {
+  const locale = options.locale ?? (typeof document === "undefined" ? "en" : document.documentElement.lang || "en");
   const align = data.align ?? [];
   const caption = data.caption
     ? `<div class="md-block-handle" data-block-name="${escapeHtml(data.caption)}">@${escapeHtml(data.caption)}</div>`
@@ -123,7 +172,7 @@ export const renderPrettyTableHtml = (data: PrettyTableData, options: { notebook
           const cell = row[colIdx] ?? "";
           const alignCls = alignClass(align[colIdx] ?? null);
           const ctx: EvalContext = { headers: data.headers, rows: data.rows, currentRow: rowIdx, currentCol: colIdx };
-          return renderBodyCell(cell, alignCls, ctx, options.notebookId);
+          return renderBodyCell(cell, alignCls, ctx, options.notebookId, locale);
         })
         .join("");
       return totalRow ? `<tr class="md-table-total-row">${cells}</tr>` : `<tr>${cells}</tr>`;

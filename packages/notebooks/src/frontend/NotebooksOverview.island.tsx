@@ -17,10 +17,12 @@ import {
   Paper,
   Placeholder,
   prompts,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { setLastNotebookId, setPinnedNotebookIds as writePinnedNotebookIds } from "./[id]/_components/settings/NotebookSettingsStore";
+import { notebooksPageMessages } from "./messages";
 
 type TemplateSummary = { id: string; name: string; description: string; icon: string };
 type PublicNotebook = { id: string; name: string; description: string | null; icon: string | null };
@@ -83,23 +85,23 @@ const errorMessage = async (response: Response, fallback: string) => {
   return fallback;
 };
 
-const activityDescription = (item: ActivityItem): string => {
+const activityDescription = (item: ActivityItem, t: ReturnType<(typeof notebooksPageMessages)["resolve"]>["t"]): string => {
   const target = item.note ? `“${item.note.title}”` : item.notebook.name;
   switch (item.action) {
     case "note.created":
-      return `Created ${target} in ${item.notebook.name}`;
+      return t.activityCreatedNote({ target, notebook: item.notebook.name });
     case "note.deleted":
-      return `Deleted a note in ${item.notebook.name}`;
+      return t.activityDeletedNote({ notebook: item.notebook.name });
     case "note.restored":
-      return `Restored ${target} in ${item.notebook.name}`;
+      return t.activityRestoredNote({ target, notebook: item.notebook.name });
     case "note.edited":
-      return `Edited ${target} in ${item.notebook.name}`;
+      return t.activityEditedNote({ target, notebook: item.notebook.name });
     case "notebook.created":
-      return `Created ${item.notebook.name}`;
+      return t.activityCreatedNotebook({ notebook: item.notebook.name });
     case "notebook.updated":
-      return `Updated ${item.notebook.name}`;
+      return t.activityUpdatedNotebook({ notebook: item.notebook.name });
     default:
-      return `${item.action.replaceAll(".", " ")} in ${item.notebook.name}`;
+      return t.activityUnknown({ action: item.action.replaceAll(".", " "), notebook: item.notebook.name });
   }
 };
 
@@ -137,6 +139,8 @@ const activityEventIcon = (action: string): string => {
 };
 
 export default function NotebooksOverview(props: Props) {
+  const locale = useLocale();
+  const t = () => notebooksPageMessages.resolve([locale()]).t;
   const [pinnedNotebookIds, setPinnedNotebookIds] = createSignal(props.initialPinnedNotebookIds);
   const [pinAnnouncement, setPinAnnouncement] = createSignal("");
   const [initialActivityError, setInitialActivityError] = createSignal(props.initialActivityError);
@@ -157,7 +161,7 @@ export default function NotebooksOverview(props: Props) {
       const pinned = current.includes(notebook.id);
       const next = pinned ? current.filter((id) => id !== notebook.id) : [notebook.id, ...current];
       writePinnedNotebookIds(next);
-      setPinAnnouncement(`${pinned ? "Unpinned" : "Pinned"} ${notebook.name}`);
+      setPinAnnouncement(pinned ? t().unpinned({ name: notebook.name }) : t().pinned({ name: notebook.name }));
       return next;
     });
   };
@@ -167,7 +171,7 @@ export default function NotebooksOverview(props: Props) {
     initial: { source: "all-notebooks", pages: [props.initialActivity] },
     loadPage: async (_source, { cursor, abortSignal }) => {
       const response = await apiClient.overview.activity.$get({ query: { limit: "30", cursor } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await errorMessage(response, "Failed to load notebook activity"));
+      if (!response.ok) throw new Error(await errorMessage(response, t().activityLoadFailed));
       const page = await response.json();
       setInitialActivityError(null);
       return { items: page.data, nextCursor: page.nextCursor };
@@ -185,7 +189,7 @@ export default function NotebooksOverview(props: Props) {
   const createNotebookMutation = mutations.create<CreatedNotebook, { name: string; description?: string }>({
     mutation: async (input) => {
       const response = await apiClient.index.$post({ json: { name: input.name, description: input.description || undefined } });
-      if (!response.ok) throw new Error(await errorMessage(response, "Failed to create notebook"));
+      if (!response.ok) throw new Error(await errorMessage(response, t().createFailed));
       return response.json();
     },
     onSuccess: openNotebook,
@@ -198,7 +202,7 @@ export default function NotebooksOverview(props: Props) {
         param: { templateId: input.templateId },
         json: { name: input.name?.trim() || undefined },
       });
-      if (!response.ok) throw new Error(await errorMessage(response, "Failed to create notebook from template"));
+      if (!response.ok) throw new Error(await errorMessage(response, t().createFromTemplateFailed));
       return response.json();
     },
     onSuccess: openNotebook,
@@ -207,13 +211,13 @@ export default function NotebooksOverview(props: Props) {
 
   const createBlank = async () => {
     const result = await prompts.form({
-      title: "New notebook",
+      title: t().newNotebook,
       icon: "ti ti-notebook",
       fields: {
-        name: { type: "text", label: "Name", required: true, placeholder: "Notebook name" },
-        description: { type: "text", label: "Description", multiline: true, placeholder: "Optional description" },
+        name: { type: "text", label: t().name, required: true, placeholder: t().notebookName },
+        description: { type: "text", label: t().description, multiline: true, placeholder: t().optionalDescription },
       },
-      confirmText: "Create",
+      confirmText: t().create,
     });
     if (!result) return;
     createNotebookMutation.mutate({
@@ -226,8 +230,8 @@ export default function NotebooksOverview(props: Props) {
     const result = await prompts.form({
       title: template.name,
       icon: template.icon,
-      fields: { name: { type: "text", label: "Name", placeholder: template.name } },
-      confirmText: "Create",
+      fields: { name: { type: "text", label: t().name, placeholder: template.name } },
+      confirmText: t().create,
     });
     if (!result) return;
     createFromTemplateMutation.mutate({
@@ -238,18 +242,18 @@ export default function NotebooksOverview(props: Props) {
 
   const createMenuItems = () => [
     {
-      sectionLabel: "Start",
+      sectionLabel: t().start,
       items: [
         {
-          label: "Blank notebook",
-          description: "Start with the standard welcome note.",
+          label: t().blankNotebook,
+          description: t().blankNotebookDescription,
           icon: "ti ti-plus",
           action: () => void createBlank(),
         },
       ],
     },
     {
-      sectionLabel: "Templates",
+      sectionLabel: t().templates,
       items: props.templates.map((template) => ({
         label: template.name,
         description: template.description,
@@ -265,7 +269,7 @@ export default function NotebooksOverview(props: Props) {
       fallback={
         <Placeholder
           state="error"
-          title="Could not load activity"
+          title={t().couldNotLoadActivity}
           description={activityError() ?? undefined}
           action={
             <Button
@@ -276,7 +280,7 @@ export default function NotebooksOverview(props: Props) {
                 void activityResults.refresh();
               }}
             >
-              <i class="ti ti-refresh" aria-hidden="true" /> Retry
+              <i class="ti ti-refresh" aria-hidden="true" /> {t().retry}
             </Button>
           }
         />
@@ -287,13 +291,13 @@ export default function NotebooksOverview(props: Props) {
         fallback={
           <Placeholder
             state={activityResults.loading() ? "loading" : "empty"}
-            title={activityResults.loading() ? "Loading activity" : "No activity yet"}
-            description={activityResults.loading() ? undefined : "Notebook and note changes will appear here."}
+            title={activityResults.loading() ? t().loadingActivity : t().noActivity}
+            description={activityResults.loading() ? undefined : t().activityEmptyDescription}
             icon="ti ti-history"
           />
         }
       >
-        <ol class="notebooks-overview-activity-list" aria-label="Recent notebook activity">
+        <ol class="notebooks-overview-activity-list" aria-label={t().recentActivity}>
           <For each={activityItems()}>
             {(item) => (
               <li class="notebooks-overview-activity-item">
@@ -307,7 +311,7 @@ export default function NotebooksOverview(props: Props) {
                       {dates.formatDateTimeRelative(item.lastOccurredAt, props.dateConfig)}
                     </time>
                   </span>
-                  <span class="notebooks-overview-activity-description">{activityDescription(item)}</span>
+                  <span class="notebooks-overview-activity-description">{activityDescription(item, t())}</span>
                 </Paper>
               </li>
             )}
@@ -319,10 +323,10 @@ export default function NotebooksOverview(props: Props) {
             variant="secondary"
             class="mx-auto mt-2"
             loading={activityResults.loadingMore()}
-            loadingLabel="Loading more activity"
+            loadingLabel={t().loadingMoreActivity}
             onClick={() => void activityResults.loadMore()}
           >
-            Load more
+            {t().loadMore}
           </Button>
         </Show>
       </Show>
@@ -333,7 +337,7 @@ export default function NotebooksOverview(props: Props) {
     void dialogCore.open<void>(
       (close) => (
         <PanelDialog>
-          <PanelDialog.Header title="Activity" subtitle="Recent changes across your notebooks." close={close} />
+          <PanelDialog.Header title={t().activity} subtitle={t().activityDescription} close={close} />
           <PanelDialog.Body>{activityFeed()}</PanelDialog.Body>
         </PanelDialog>
       ),
@@ -343,11 +347,11 @@ export default function NotebooksOverview(props: Props) {
 
   const openSearch = async () => {
     const selected = await openSpotlightSearch<SearchTarget>({
-      title: "Search notebooks and notes",
+      title: t().searchTitle,
       icon: "ti ti-search",
-      placeholder: "Search notebooks and notes...",
+      placeholder: t().searchPlaceholder,
       minQueryLength: 1,
-      noResultsText: "No notebooks or notes found.",
+      noResultsText: t().noSearchResults,
       resolve: async ({ query, abortSignal }) => {
         const trimmed = query.trim();
         if (!trimmed) return [];
@@ -358,7 +362,7 @@ export default function NotebooksOverview(props: Props) {
           .map((notebook) => ({
             value: { href: `/app/notebooks/${notebook.id}` },
             label: notebook.name,
-            desc: notebook.description ?? "Notebook",
+            desc: notebook.description ?? t().notebook,
             icon: notebook.icon || "ti ti-notebook",
           }));
 
@@ -366,7 +370,7 @@ export default function NotebooksOverview(props: Props) {
           { query: { q: trimmed, page: "1", per_page: "20" } },
           { init: { signal: abortSignal } },
         );
-        if (!response.ok) throw new Error("Notebooks and notes could not be searched. Try again.");
+        if (!response.ok) throw new Error(t().searchFailed);
         const payload = (await response.json()) as SearchResponse;
         const noteItems = payload.data.map((hit) => ({
           value: { href: `/app/notebooks/${hit.notebook.id}/notes/${hit.note.id}` },
@@ -387,25 +391,25 @@ export default function NotebooksOverview(props: Props) {
 
   return (
     <AppWorkspace class="notebooks-overview-workspace" resizable={false}>
-      <h1 class="sr-only">Notebooks</h1>
+      <h1 class="sr-only">{t().notebooks}</h1>
       <AppWorkspace.Content>
         <AppWorkspace.Main class="notebooks-overview-main">
           <header class="notebooks-overview-notebooks">
             <div class="notebooks-overview-heading">
               <div>
-                <h2>Notebooks</h2>
-                <p>Open a workspace, search its notes, or manage its settings.</p>
+                <h2>{t().notebooks}</h2>
+                <p>{t().overviewDescription}</p>
               </div>
               <div class="notebooks-overview-actions">
                 <Button type="button" variant="secondary" size="sm" onClick={() => void openSearch()}>
-                  <i class="ti ti-search" aria-hidden="true" /> Search
+                  <i class="ti ti-search" aria-hidden="true" /> {t().search}
                 </Button>
                 <Button type="button" variant="secondary" size="sm" class="notebooks-overview-mobile-activity" onClick={openMobileActivity}>
-                  <i class="ti ti-history" aria-hidden="true" /> Activity
+                  <i class="ti ti-history" aria-hidden="true" /> {t().activity}
                 </Button>
               </div>
             </div>
-            <nav class="notebooks-overview-notebook-list" aria-label="Notebooks">
+            <nav class="notebooks-overview-notebook-list" aria-label={t().notebooks}>
               <For each={orderedNotebooks()}>
                 {(notebook) => {
                   const pinned = () => notebookIsPinned(notebook.id);
@@ -422,7 +426,7 @@ export default function NotebooksOverview(props: Props) {
                         <span class="notebooks-overview-notebook-name">{notebook.name}</span>
                       </ButtonLink>
                       <IconButton
-                        label={`${pinned() ? "Unpin" : "Pin"} ${notebook.name}`}
+                        label={pinned() ? t().unpin({ name: notebook.name }) : t().pin({ name: notebook.name })}
                         size="xs"
                         variant="text"
                         class="notebooks-overview-notebook-pin"
@@ -439,14 +443,14 @@ export default function NotebooksOverview(props: Props) {
                 items={createMenuItems()}
                 position="bottom-right"
                 width="min(38rem, calc(100vw - 1rem))"
-                label="Create notebook"
+                label={t().newNotebook}
               >
                 <Dropdown.Trigger
                   variant="secondary"
                   size="sm"
                   disabled={createNotebookMutation.loading() || createFromTemplateMutation.loading()}
                 >
-                  <i class="ti ti-plus app-accent-text" aria-hidden="true" /> New notebook
+                  <i class="ti ti-plus app-accent-text" aria-hidden="true" /> {t().newNotebook}
                   <i class="ti ti-chevron-down" aria-hidden="true" />
                 </Dropdown.Trigger>
               </Dropdown.Root>
@@ -459,8 +463,8 @@ export default function NotebooksOverview(props: Props) {
           <section class="notebooks-overview-recent" aria-labelledby="notebooks-recent-title">
             <div class="notebooks-overview-heading">
               <div>
-                <h2 id="notebooks-recent-title">Recent notes</h2>
-                <p>Your latest work across every notebook you can access.</p>
+                <h2 id="notebooks-recent-title">{t().recentNotes}</h2>
+                <p>{t().recentNotesDescription}</p>
               </div>
             </div>
             <Show
@@ -468,8 +472,8 @@ export default function NotebooksOverview(props: Props) {
               fallback={
                 <Placeholder
                   state="empty"
-                  title="No notes yet"
-                  description="Create a notebook or open one above to start writing."
+                  title={t().noNotes}
+                  description={t().noNotesDescription}
                   icon="ti ti-note"
                   class="min-h-72"
                 />
@@ -494,7 +498,7 @@ export default function NotebooksOverview(props: Props) {
 
         <AppWorkspace.Detail id="notebooks-overview-activity" open width="lg" resizable={false} class="notebooks-overview-activity">
           <DetailPanel>
-            <DetailPanel.Header title="Activity" subtitle="Recent changes across your notebooks." />
+            <DetailPanel.Header title={t().activity} subtitle={t().activityDescription} />
             <DetailPanel.Body scrollPreserveKey="notebooks-overview-activity">{activityFeed()}</DetailPanel.Body>
           </DetailPanel>
         </AppWorkspace.Detail>

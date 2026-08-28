@@ -1,6 +1,6 @@
 import { navigateTo, refreshCurrentPath } from "@k2b/ssr/nav";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, Dropdown, type DropdownItem, IconButton, Placeholder, prompts } from "@k2b/ui";
+import { AppWorkspace, Button, Dropdown, type DropdownItem, IconButton, Placeholder, prompts, useLocale } from "@k2b/ui";
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
@@ -11,6 +11,7 @@ import { listAccessibleNotebooks } from "./notebooks";
 import { flattenTree, getNodeDepthLabel } from "./tree-utils";
 import type { Notebook, NoteTreeNode } from "./types";
 import { useFavoriteNotes } from "./useFavoriteNotes";
+import { notebookWorkspaceMessages } from "../../messages";
 
 type Props = {
   tree: NoteTreeNode[];
@@ -32,13 +33,15 @@ type Props = {
 // =============================================================================
 
 export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const createNoteMut = mutations.create<{ id: string }, { parentId?: string }>({
     mutation: async (data: { parentId?: string }) => {
       const res = await apiClient[":id"].notes.$post({
         param: { id: notebookId },
         json: data,
       });
-      if (!res.ok) throw new Error("Failed to create note");
+      if (!res.ok) throw new Error(t().failedCreateNote);
       return (await res.json()) as { id: string };
     },
     onSuccess: (data) => {
@@ -53,7 +56,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
         param: { id: notebookId, noteId: data.noteId },
         json: { parentId: data.parentId, position: data.position },
       });
-      if (!res.ok) throw new Error("Failed to move note");
+      if (!res.ok) throw new Error(t().failedMoveNote);
       return res.json();
     },
     onSuccess: () => refreshCurrentPath(),
@@ -72,7 +75,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
           targetParentId: data.targetParentId,
         },
       });
-      if (!res.ok) throw new Error("Failed to duplicate note");
+      if (!res.ok) throw new Error(t().failedDuplicateNote);
       return (await res.json()) as { id: string; notebookId: string };
     },
     onSuccess: (data) => {
@@ -86,7 +89,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
       const res = await apiClient[":id"].notes[":noteId"].$delete({
         param: { id: notebookId, noteId },
       });
-      if (!res.ok) throw new Error("Failed to delete note");
+      if (!res.ok) throw new Error(t().failedDeleteNote);
     },
     onSuccess: () => {
       navigateTo(`/app/notebooks/${notebookId}`);
@@ -101,7 +104,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
       });
       if (!res.ok) {
         const error = await res.json();
-        throw new Error(error.message ?? "Failed to lock note");
+        throw new Error(error.message ?? t().failedLockNote);
       }
       return res.json();
     },
@@ -121,7 +124,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
         return (
           <div class="flex flex-col gap-2">
             <p class="text-sm text-secondary">
-              Move <strong>{node.title}</strong> to:
+              {t().moveTo({ title: node.title })}
             </p>
 
             <div class="flex flex-col gap-1 max-h-64 overflow-y-auto">
@@ -133,7 +136,7 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
                 class="w-full justify-start text-left"
               >
                 <i class="ti ti-home text-xs mr-1.5" />
-                Root Level
+                {t().rootLevel}
               </Button>
 
               <For each={allFlat}>
@@ -153,16 +156,16 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
 
             <div class="flex justify-end gap-2">
               <Button variant="secondary" onClick={() => close(undefined)}>
-                Cancel
+                {t().cancel}
               </Button>
               <Button onClick={() => close({ parentId: selected() })} disabled={selected() === node.parentId}>
-                Move
+                {t().move}
               </Button>
             </div>
           </div>
         );
       },
-      { title: "Move Note", icon: "ti ti-arrow-move-right" },
+      { title: t().moveNote, icon: "ti ti-arrow-move-right" },
     );
 
     if (result) {
@@ -179,22 +182,22 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
     try {
       allNotebooks = await listAccessibleNotebooks();
     } catch (error) {
-      prompts.error(error instanceof Error ? error.message : "Failed to load notebooks.");
+      prompts.error(error instanceof Error ? error.message : t().failedLoadNotebooks);
       return;
     }
 
     if (allNotebooks.length === 0) {
-      await prompts.error("No notebooks available");
+      await prompts.error(t().noNotebooks);
       return;
     }
 
     const result = await prompts.form({
-      title: "Duplicate Note",
+      title: t().duplicateNote,
       icon: "ti ti-copy",
       fields: {
         targetNotebookId: {
           type: "select" as const,
-          label: "Target Notebook",
+          label: t().targetNotebook,
           required: true,
           default: notebookId,
           options: allNotebooks.map((nb) => ({
@@ -217,12 +220,12 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
   const handleDelete = async (node: NoteTreeNode) => {
     const hasKids = node.children.length > 0;
     const confirmed = await prompts.confirm(
-      hasKids ? `Delete "${node.title}" and all its sub-notes? This cannot be undone.` : `Delete "${node.title}"? This cannot be undone.`,
+      hasKids ? t().deleteNoteTreeConfirm({ title: node.title }) : t().deleteNoteConfirm({ title: node.title }),
       {
-        title: "Delete Note",
+        title: t().deleteNote,
         icon: "ti ti-trash",
         variant: "danger",
-        confirmText: "Delete",
+        confirmText: t().delete,
       },
     );
     if (confirmed) {
@@ -232,12 +235,12 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
 
   const handleLock = async (node: NoteTreeNode) => {
     const confirmed = await prompts.confirm(
-      `Lock "${node.title}"?\n\nLocked notes cannot be edited or restored from previous versions. This action is PERMANENT and cannot be undone.\n\nThe note can still be deleted.`,
+      t().lockConfirm({ title: node.title }),
       {
-        title: "Lock Note",
+        title: t().lockNote,
         icon: "ti ti-lock",
         variant: "danger",
-        confirmText: "Lock Permanently",
+        confirmText: t().lockPermanently,
       },
     );
     if (confirmed) {
@@ -256,27 +259,31 @@ export function useNoteActions(notebookId: string, tree: () => NoteTreeNode[]) {
   };
 }
 
-export const noteActionItems = (node: NoteTreeNode, actions: ReturnType<typeof useNoteActions>): DropdownItem[] => [
+export const noteActionItems = (
+  node: NoteTreeNode,
+  actions: ReturnType<typeof useNoteActions>,
+  t: ReturnType<(typeof notebookWorkspaceMessages)["resolve"]>["t"],
+): DropdownItem[] => [
   {
     icon: "ti ti-file-plus",
-    label: "New Subnote",
+    label: t.newSubnote,
     action: () => actions.handleCreateNote(node.id),
   },
   {
-    sectionLabel: "Manage",
+    sectionLabel: t.manage,
     items: [
       ...(node.lockedAt
         ? []
         : [
             {
               icon: "ti ti-arrow-move-right",
-              label: "Move",
+              label: t.move,
               action: () => actions.handleMove(node),
             },
           ]),
       {
         icon: "ti ti-copy",
-        label: "Duplicate",
+        label: t.duplicate,
         action: () => actions.handleCopy(node),
       },
     ],
@@ -285,11 +292,11 @@ export const noteActionItems = (node: NoteTreeNode, actions: ReturnType<typeof u
     ? []
     : [
         {
-          sectionLabel: "Security",
+          sectionLabel: t.security,
           items: [
             {
               icon: "ti ti-lock",
-              label: "Lock Note",
+              label: t.lockNote,
               variant: "danger" as const,
               action: () => actions.handleLock(node),
             },
@@ -301,7 +308,7 @@ export const noteActionItems = (node: NoteTreeNode, actions: ReturnType<typeof u
     items: [
       {
         icon: "ti ti-trash",
-        label: "Delete",
+        label: t.delete,
         variant: "danger",
         action: () => actions.handleDelete(node),
       },
@@ -317,11 +324,13 @@ function NoteTreeItems(props: {
   favoriteNoteIds?: () => Set<string>;
   onToggleFavorite?: (node: NoteTreeNode, event: MouseEvent) => void;
 }) {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   return (
     <For each={props.nodes}>
       {(node) => {
         const favorite = () => props.favoriteNoteIds?.().has(node.id) ?? false;
-        const label = () => node.title || "Untitled";
+        const label = () => node.title || t().untitled;
         return (
           <AppWorkspace.NavTree.Item
             id={node.id}
@@ -329,7 +338,7 @@ function NoteTreeItems(props: {
               <span class="flex min-w-0 items-center gap-1.5">
                 <span class="truncate">{label()}</span>
                 <Show when={node.lockedAt}>
-                  <i class="ti ti-lock shrink-0 text-xs text-amber-500" title="Locked" />
+                  <i class="ti ti-lock shrink-0 text-xs text-amber-500" title={t().locked} />
                 </Show>
               </span>
             }
@@ -343,10 +352,10 @@ function NoteTreeItems(props: {
                     {(toggleFavorite) => (
                       <AppWorkspace.SidebarItemActions visibility={favorite() ? "always" : "hover"}>
                         <IconButton
-                          label={favorite() ? "Remove favorite" : "Add favorite"}
+                          label={favorite() ? t().removeFavorite : t().addFavorite}
                           size="xs"
                           class={favorite() ? "!text-amber-500 hover:!text-amber-500" : undefined}
-                          title={favorite() ? "Remove favorite" : "Add favorite"}
+                          title={favorite() ? t().removeFavorite : t().addFavorite}
                           onClick={(event) => toggleFavorite()(node, event)}
                         >
                           <i class="ti ti-star text-xs" />
@@ -356,8 +365,8 @@ function NoteTreeItems(props: {
                   </Show>
                   <Show when={props.canWrite}>
                     <AppWorkspace.SidebarItemActions visibility="hover">
-                      <Dropdown.Root position="bottom-right" width="12rem" items={noteActionItems(node, props.actions)}>
-                        <Dropdown.Trigger iconOnly label={`Actions for ${label()}`} size="xs">
+                      <Dropdown.Root position="bottom-right" width="12rem" items={noteActionItems(node, props.actions, t())}>
+                        <Dropdown.Trigger iconOnly label={t().noteActions({ title: label() })} size="xs">
                           <i class="ti ti-dots text-xs" />
                         </Dropdown.Trigger>
                       </Dropdown.Root>
@@ -387,6 +396,8 @@ function NoteTreeItems(props: {
 // =============================================================================
 
 export default function NoteTree(props: Props) {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const actions = useNoteActions(props.notebookId, () => props.tree);
   const showHeaderActions = () => props.showHeaderActions ?? true;
   const [selectedNoteId, setSelectedNoteId] = createSignal(props.selectedNoteId);
@@ -410,20 +421,20 @@ export default function NoteTree(props: Props) {
       {/* Header with search + add buttons */}
       <Show when={showHeaderActions()}>
         <div class="flex items-center justify-between px-2 py-1">
-          <span class="section-label mb-0">Notes</span>
+          <span class="section-label mb-0">{t().notes}</span>
           <div class="flex items-center gap-1">
             <Show when={props.showSearch}>
               <SearchButton notebookId={props.notebookId} notebookName={props.notebookName} variant="compact" />
             </Show>
             <Show when={props.canWrite}>
               <IconButton
-                label="New note"
+                label={t().newNote}
                 size="xs"
                 onClick={() => actions.handleCreateNote()}
                 disabled={actions.loading()}
                 loading={actions.loading()}
-                loadingLabel="Creating note"
-                title="New Note (Mod+Alt+N)"
+                loadingLabel={t().creatingNote}
+                title={`${t().newNote} (Mod+Alt+N)`}
               >
                 <i class="ti ti-plus text-xs" />
               </IconButton>
@@ -434,7 +445,7 @@ export default function NoteTree(props: Props) {
 
       <div class="min-h-0 flex-1">
         <AppWorkspace.NavTree
-          ariaLabel="Notes"
+          ariaLabel={t().notes}
           selectedId={selectedNoteId()}
           defaultExpandedIds={flattenTree(props.tree)
             .filter((node) => node.children.length > 0)
@@ -451,7 +462,7 @@ export default function NoteTree(props: Props) {
         </AppWorkspace.NavTree>
       </div>
 
-      {props.tree.length === 0 && <Placeholder icon="ti ti-file-text" class="py-4" description={<>No notes yet</>} />}
+      {props.tree.length === 0 && <Placeholder icon="ti ti-file-text" class="py-4" description={t().noNotes} />}
     </div>
   );
 }

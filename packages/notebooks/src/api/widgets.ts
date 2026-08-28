@@ -1,9 +1,9 @@
-import type { WidgetListItem, WidgetResponse } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth } from "@valentinkolb/cloud/server";
 import { dates } from "@k2b/stdlib";
+import type { WidgetListItem, WidgetResponse } from "@valentinkolb/cloud/contracts";
+import { type AuthContext, auth, getDateConfig, getLocale, getUserBackedActor } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
-import { getUserBackedActor } from "@valentinkolb/cloud/server";
 import { notebooksService } from "../service";
+import { notebookApiMessages } from "./messages";
 
 const RECENT_LIMIT = 5;
 
@@ -16,6 +16,7 @@ const RECENT_LIMIT = 5;
  * visually echoes the user's notebook palette.
  */
 const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/recent", async (c) => {
+  const { t } = notebookApiMessages.resolve([getLocale(c)]);
   const user = getUserBackedActor(c);
   // Anonymous dashboard probes should silently skip this widget.
   if (!user) return c.body(null, 204);
@@ -27,7 +28,7 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/recent", as
 
   if (notes.length === 0) {
     const body: WidgetResponse = {
-      title: "Recent notes",
+      title: t.recentNotes,
       icon: "ti ti-notebook",
       href: "/app/notebooks",
       blocks: [
@@ -35,8 +36,8 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/recent", as
           kind: "hero",
           icon: "ti ti-notebook",
           tone: "blue",
-          title: "No notes yet",
-          subtitle: "Create a notebook to get started",
+          title: t.noNotes,
+          subtitle: t.noNotesDescription,
         },
       ],
     };
@@ -50,14 +51,14 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/recent", as
   // and the icon renders as a generic glyph.
   const items: WidgetListItem[] = notes.map((n) => ({
     icon: n.notebookIcon ? `ti ${n.notebookIcon}` : "ti ti-file-text",
-    label: n.title || "(untitled)",
+    label: n.title || t.untitled,
     sub: n.notebookName,
-    meta: dates.formatDateRelative(new Date(n.updatedAt)),
+    meta: dates.formatDateRelative(new Date(n.updatedAt), getDateConfig(c)),
     href: `/app/notebooks/${n.notebookShortId}/notes/${n.shortId}`,
   }));
 
   const body: WidgetResponse = {
-    title: "Recent notes",
+    title: t.recentNotes,
     icon: "ti ti-notebook",
     href: "/app/notebooks",
     blocks: [{ kind: "list", items, grow: true }],

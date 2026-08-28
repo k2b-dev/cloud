@@ -1,5 +1,6 @@
 import { openSpotlightSearch } from "@k2b/ui";
 import { apiClient } from "@/api/client";
+import { notebookWorkspaceMessages } from "../../messages";
 
 type NoteResult = {
   id: string;
@@ -36,13 +37,14 @@ type PromptDressing = {
   placeholder: string;
 };
 
-const runNotePrompt = async (notebookId: string, dressing: PromptDressing): Promise<PickedNote | undefined> => {
+const runNotePrompt = async (notebookId: string, dressing: PromptDressing, locale?: string): Promise<PickedNote | undefined> => {
+  const { t } = notebookWorkspaceMessages.resolve(locale ? [locale] : []);
   const selected = await openSpotlightSearch<PickedNote>({
     title: dressing.title,
     icon: dressing.icon,
     placeholder: dressing.placeholder,
     minQueryLength: 1,
-    noResultsText: "No notes found.",
+    noResultsText: t.noSearchResults,
     resolve: async ({ query, abortSignal }) => {
       const trimmed = query.trim();
       if (trimmed.length === 0) return [];
@@ -53,7 +55,7 @@ const runNotePrompt = async (notebookId: string, dressing: PromptDressing): Prom
         },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error("Notes could not be searched. Try again.");
+      if (!response.ok) throw new Error(t.searchFailed);
 
       const payload = await response.json();
       return (payload as SearchResponse).data.map((hit) => ({
@@ -69,27 +71,33 @@ const runNotePrompt = async (notebookId: string, dressing: PromptDressing): Prom
 
 /** Search prompt used by the global Cmd+Shift+K shortcut and the sidebar
  *  search button — selecting a note navigates to it. */
-export const openNoteSearchPrompt = (notebookId: string, notebookName: string): Promise<PickedNote | undefined> =>
-  runNotePrompt(notebookId, {
-    title: `Search in ${notebookName}`,
+export const openNoteSearchPrompt = (notebookId: string, notebookName: string, locale?: string): Promise<PickedNote | undefined> => {
+  const { t } = notebookWorkspaceMessages.resolve(locale ? [locale] : []);
+  return runNotePrompt(notebookId, {
+    title: t.searchNotesIn({ notebook: notebookName }),
     icon: "ti ti-notebook",
-    placeholder: "Search notes...",
-  });
+    placeholder: t.searchNotesPlaceholder,
+  }, locale);
+};
 
 /** Picker variant used by the editor's "Insert note link" action — wording
  *  makes it clear the picked note will be inserted as a link, not navigated to. */
-export const openNoteLinkPrompt = (notebookId: string): Promise<PickedNote | undefined> =>
-  runNotePrompt(notebookId, {
-    title: "Insert link to note",
+export const openNoteLinkPrompt = (notebookId: string, locale?: string): Promise<PickedNote | undefined> => {
+  const { t } = notebookWorkspaceMessages.resolve(locale ? [locale] : []);
+  return runNotePrompt(notebookId, {
+    title: t.insertNoteLink,
     icon: "ti ti-connection",
-    placeholder: "Search note to link to...",
-  });
+    placeholder: t.searchLinkTarget,
+  }, locale);
+};
 
 /** Picker variant used by the `/switch` slash command — picks a note to
  *  navigate to (within the current notebook). */
-export const openNoteSwitchPrompt = (notebookId: string): Promise<PickedNote | undefined> =>
-  runNotePrompt(notebookId, {
-    title: "Switch to note",
+export const openNoteSwitchPrompt = (notebookId: string, locale?: string): Promise<PickedNote | undefined> => {
+  const { t } = notebookWorkspaceMessages.resolve(locale ? [locale] : []);
+  return runNotePrompt(notebookId, {
+    title: t.switchNote,
     icon: "ti ti-arrows-right-left",
-    placeholder: "Search note to open...",
-  });
+    placeholder: t.searchNoteToOpen,
+  }, locale);
+};

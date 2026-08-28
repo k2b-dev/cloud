@@ -1,5 +1,5 @@
 import type { LinkNavigateEvent } from "@k2b/ssr/nav";
-import { AppWorkspace, Button, prompts } from "@k2b/ui";
+import { AppWorkspace, Button, prompts, useLocale } from "@k2b/ui";
 import { createMemo, Show } from "solid-js";
 import { hasOnlyNavigatorQuery } from "../../../../lib/navigator-url";
 import { requestSoftNoteNavigation } from "../../../lib/soft-navigation";
@@ -12,6 +12,7 @@ import NoteTree from "./NoteTree";
 import TagsButton from "./TagsButton";
 import type { NotebookContext, NoteTreeNode } from "./types";
 import { useNotebookWorkspaceState } from "./useNotebookWorkspaceState";
+import { notebookWorkspaceMessages } from "../../messages";
 
 type Props = {
   ctx: NotebookContext;
@@ -35,6 +36,8 @@ const resolveSameNotebookNoteHref = (url: URL, notebookShortId: string): string 
 };
 
 export default function NotebookSidebar(props: Props) {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const {
     notebook,
     noteTree,
@@ -57,8 +60,8 @@ export default function NotebookSidebar(props: Props) {
   const vt = (key: string) => `notebook-sidebar-${notebook().id}-${key}`;
 
   const explainMissingHomepage = () =>
-    void prompts.alert("No homepage is selected for this notebook yet. Open notebook settings and choose a homepage in the General tab.", {
-      title: "No homepage selected",
+    void prompts.alert(t().noHomepageDescription, {
+      title: t().noHomepage,
       icon: "ti ti-home",
     });
 
@@ -104,9 +107,9 @@ export default function NotebookSidebar(props: Props) {
           role="alert"
           class="mx-2 mt-2 flex items-center justify-between gap-2 rounded-md bg-red-50 px-2 py-1.5 text-xs text-red-700 dark:bg-red-950/40 dark:text-red-300"
         >
-          <span>Notebook updates could not be loaded.</span>
+          <span>{t().updateLoadFailed}</span>
           <Button type="button" variant="ghost" size="xs" loading={workspaceRefreshing()} onClick={() => void refreshWorkspace()}>
-            Retry
+            {t().retry}
           </Button>
         </div>
       </Show>
@@ -129,7 +132,7 @@ export default function NotebookSidebar(props: Props) {
               data={{ "notebooks-homepage-note-id": homepageNote()?.id }}
               viewTransitionName={vt("homepage-mobile")}
             >
-              Homepage
+              {t().homepage}
             </AppWorkspace.SidebarItem>
           )}
           <AppWorkspace.SidebarItem
@@ -138,7 +141,7 @@ export default function NotebookSidebar(props: Props) {
             navigation="document"
             viewTransitionName={vt("all-notebooks-mobile")}
           >
-            All Notebooks
+            {t().allNotebooks}
           </AppWorkspace.SidebarItem>
           <div style={`view-transition-name:${vt("search-mobile")}`}>
             <SearchButton notebookId={notebook().id} notebookName={notebook().name} variant="sidebar-mobile" />
@@ -150,7 +153,7 @@ export default function NotebookSidebar(props: Props) {
             navigation="document"
             viewTransitionName={vt("attachments-mobile")}
           >
-            Attachments
+            {t().attachments}
           </AppWorkspace.SidebarItem>
           {hasTags() && (
             <div style={`view-transition-name:${vt("tags-mobile")}`}>
@@ -187,7 +190,7 @@ export default function NotebookSidebar(props: Props) {
                   <AppWorkspace.SidebarIconAction
                     href={homepageHref()}
                     icon="ti ti-home"
-                    label={homepageHref() ? "Homepage" : "Set homepage in notebook settings"}
+                    label={homepageHref() ? t().homepage : t().setHomepage}
                     active={homepageIsActive()}
                     navigation="enhanced"
                     scroll="top"
@@ -198,14 +201,14 @@ export default function NotebookSidebar(props: Props) {
                   <AppWorkspace.SidebarIconAction
                     href={allNotebooksHref}
                     icon="ti ti-library"
-                    label="All Notebooks"
+                    label={t().allNotebooks}
                     navigation="document"
                     viewTransitionName={vt("all-notebooks-desktop")}
                   />
                   <AppWorkspace.SidebarIconAction
                     href={attachmentsHref()}
                     icon="ti ti-paperclip"
-                    label={`${attachmentCount()} attachment${attachmentCount() === 1 ? "" : "s"}`}
+                    label={t().attachmentCount({ count: attachmentCount() })}
                     navigation="document"
                     viewTransitionName={vt("attachments-desktop")}
                   />
@@ -216,7 +219,7 @@ export default function NotebookSidebar(props: Props) {
               </div>
 
               <AppWorkspace.SidebarBody scrollPreserveKey={`notebooks-simple-sidebar-${notebook().id}`}>
-                <AppWorkspace.SidebarSection title="Notes" class="min-h-0 flex-1">
+                <AppWorkspace.SidebarSection title={t().notes} class="min-h-0 flex-1">
                   {renderTreeView()}
                 </AppWorkspace.SidebarSection>
               </AppWorkspace.SidebarBody>

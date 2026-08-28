@@ -12,12 +12,14 @@ import {
   SettingsModal,
   SettingsPanelFooter,
   TextInput,
+  useLocale,
 } from "@k2b/ui";
 import { type Accessor, createEffect, createSignal, onCleanup, type Setter, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { Notebook } from "../sidebar/types";
 import type { BackupRunResult, BackupStatus } from "./types";
 import { backupDraftFromStatus, backupDraftIsDirty, readErrorMessage, snapshotLogEntryFromRun } from "./utils";
+import { notebookSettingsMessages } from "./messages";
 
 function SnapshotUploadAction(props: {
   enabled: boolean;
@@ -27,6 +29,8 @@ function SnapshotUploadAction(props: {
   lastRun: BackupRunResult | null;
   onRun: () => void;
 }) {
+  const locale = useLocale();
+  const t = () => notebookSettingsMessages.resolve([locale()]).t;
   return (
     <Show when={props.enabled}>
       <div class="flex flex-wrap items-center justify-end gap-2">
@@ -36,15 +40,15 @@ function SnapshotUploadAction(props: {
           disabled={props.disabled || !props.configured}
           onClick={props.onRun}
           loading={props.loading}
-          loadingLabel="Uploading"
+          loadingLabel={t().uploading}
         >
           <Show when={!props.loading} fallback={<i class="ti ti-loader-2 animate-spin" />}>
             <i class="ti ti-cloud-upload" />
-            Upload now
+            {t().uploadNow}
           </Show>
         </Button>
         <Show when={props.lastRun}>
-          {(result) => <span class="text-xs text-emerald-600 dark:text-emerald-300">Uploaded {Math.round(result().bytes / 1024)} KB.</span>}
+          {(result) => <span class="text-xs text-emerald-600 dark:text-emerald-300">{t().uploadedKb({ size: Math.round(result().bytes / 1024) })}</span>}
         </Show>
       </div>
     </Show>
@@ -69,11 +73,13 @@ function SnapshotConfigFields(props: {
   missing: string;
   saving: boolean;
 }) {
+  const locale = useLocale();
+  const t = () => notebookSettingsMessages.resolve([locale()]).t;
   return (
     <>
       <CheckboxCard
-        label="Enable S3 snapshots"
-        description="Writes latest.zip, a timestamped snapshot, and latest-manifest.json to your bucket."
+        label={t().enableSnapshots}
+        description={t().enableSnapshotsDescription}
         icon="ti ti-cloud-upload"
         value={props.enabled}
         onValueChange={props.setEnabled}
@@ -81,14 +87,14 @@ function SnapshotConfigFields(props: {
       />
 
       <NoticeCard tone="info" icon={false}>
-        Automatic schedule: <span class="font-mono text-primary">{props.status?.scheduleCron ?? "0 3 * * *"}</span>
-        <span class="ml-2 text-dimmed">Cloud admins edit it in /admin/notebooks.</span>
+        {t().automaticSchedule}: <span class="font-mono text-primary">{props.status?.scheduleCron ?? "0 3 * * *"}</span>
+        <span class="ml-2 text-dimmed">{t().scheduleAdminHint}</span>
       </NoticeCard>
 
       <Show when={props.enabled()}>
         <div class="grid gap-2">
           <TextInput
-            label="Endpoint"
+            label={t().endpoint}
             value={props.endpoint}
             onValueChange={props.setEndpoint}
             placeholder="https://..."
@@ -98,19 +104,14 @@ function SnapshotConfigFields(props: {
           <NoticeCard tone="info" icon={false} bodyClass="flex items-start gap-2">
             <i class="ti ti-info-circle mt-0.5 shrink-0" />
             <div>
-              <p class="font-medium text-primary">S3-compatible endpoint</p>
-              <p class="mt-0.5 text-dimmed">
-                Uses Bun's S3 client with virtual-hosted-style requests. Hetzner Object Storage works with endpoints like{" "}
-                <code>https://nbg1.your-objectstorage.com</code>, <code>https://fsn1.your-objectstorage.com</code>, or{" "}
-                <code>https://hel1.your-objectstorage.com</code>. Use the matching region such as <code>nbg1</code>. Objects are written
-                below <code>notebooks/{props.notebookShortId}/</code>.
-              </p>
+              <p class="font-medium text-primary">{t().s3Endpoint}</p>
+              <p class="mt-0.5 text-dimmed">{t().s3EndpointDescription} <code>notebooks/{props.notebookShortId}/</code></p>
             </div>
           </NoticeCard>
           <div class="grid gap-2 md:grid-cols-2">
-            <TextInput label="Region" value={props.region} onValueChange={props.setRegion} placeholder="eu-central-1" icon="ti ti-map" />
+            <TextInput label={t().region} value={props.region} onValueChange={props.setRegion} placeholder="eu-central-1" icon="ti ti-map" />
             <TextInput
-              label="Bucket"
+              label={t().bucket}
               value={props.bucket}
               onValueChange={props.setBucket}
               placeholder="my-notebook-backups"
@@ -119,25 +120,25 @@ function SnapshotConfigFields(props: {
           </div>
           <div class="grid gap-2 md:grid-cols-2">
             <TextInput
-              label="Access key ID"
+              label={t().accessKeyId}
               value={props.accessKeyId}
               onValueChange={props.setAccessKeyId}
-              placeholder={props.status?.accessKeyIdSet ? "Stored - leave empty to keep" : ""}
+              placeholder={props.status?.accessKeyIdSet ? t().storedKeep : ""}
               icon="ti ti-key"
             />
             <TextInput
-              label="Secret access key"
+              label={t().secretAccessKey}
               value={props.secretAccessKey}
               onValueChange={props.setSecretAccessKey}
-              placeholder={props.status?.secretAccessKeySet ? "Stored - leave empty to keep" : ""}
+              placeholder={props.status?.secretAccessKeySet ? t().storedKeep : ""}
               icon="ti ti-lock"
               password
             />
           </div>
           <NoticeCard tone="info" icon={false}>
-            Target: <span class="font-medium text-primary">{props.status?.target ?? "not configured"}</span>
+            {t().target}: <span class="font-medium text-primary">{props.status?.target ?? t().notConfigured}</span>
             <Show when={props.missing !== "none"}>
-              <span class="ml-2 text-amber-600 dark:text-amber-300">Missing: {props.missing}</span>
+              <span class="ml-2 text-amber-600 dark:text-amber-300">{t().missing}: {props.missing}</span>
             </Show>
           </NoticeCard>
         </div>
@@ -147,6 +148,8 @@ function SnapshotConfigFields(props: {
 }
 
 function SnapshotLogsSection(props: { entries: LogTableEntry[]; loading: boolean; error: string | null }) {
+  const locale = useLocale();
+  const t = () => notebookSettingsMessages.resolve([locale()]).t;
   return (
     <Show
       when={!props.error}
@@ -157,12 +160,14 @@ function SnapshotLogsSection(props: { entries: LogTableEntry[]; loading: boolean
         </NoticeCard>
       }
     >
-      <LogEntriesTable entries={props.entries} emptyMessage={props.loading ? "Loading snapshot logs..." : "No snapshot runs logged yet."} />
+      <LogEntriesTable entries={props.entries} emptyMessage={props.loading ? t().loadingSnapshotLogs : t().noSnapshotLogs} />
     </Show>
   );
 }
 
 export function ExportSection(props: { notebook: Notebook; onDirtyChange: (dirty: boolean) => void }) {
+  const locale = useLocale();
+  const t = () => notebookSettingsMessages.resolve([locale()]).t;
   const href = () => `/api/notebooks/${encodeURIComponent(props.notebook.id)}/export.zip`;
   const [lastRun, setLastRun] = createSignal<BackupRunResult | null>(null);
   const [base, setBase] = createSignal({
@@ -181,7 +186,7 @@ export function ExportSection(props: { notebook: Notebook; onDirtyChange: (dirty
     source: () => props.notebook.id,
     load: async (notebookId, { abortSignal }): Promise<BackupStatus> => {
       const res = await apiClient[":id"].snapshots.config.$get({ param: { id: notebookId } }, { init: { signal: abortSignal } });
-      if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load snapshot settings."));
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().snapshotSettingsLoadFailed));
       return await res.json();
     },
   });
@@ -195,7 +200,7 @@ export function ExportSection(props: { notebook: Notebook; onDirtyChange: (dirty
         },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to load snapshot logs."));
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().snapshotLogsLoadFailed));
       return await res.json();
     },
   });
@@ -226,7 +231,7 @@ export function ExportSection(props: { notebook: Notebook; onDirtyChange: (dirty
       setReconcileScope(null);
     } catch {
       setReconcileScope(includeStatus);
-      setReconcileError("Saved, but the latest snapshot state could not be reloaded. Retry the read instead of saving again.");
+      setReconcileError(t().snapshotReconcileFailed);
     } finally {
       setReconciling(false);
     }
@@ -249,7 +254,7 @@ export function ExportSection(props: { notebook: Notebook; onDirtyChange: (dirty
         },
         { init: { signal: abortSignal } },
       );
-      if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to update snapshot settings."));
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().snapshotUpdateFailed));
       return await res.json();
     },
     onSuccess: (saved) => {
@@ -262,7 +267,7 @@ export function ExportSection(props: { notebook: Notebook; onDirtyChange: (dirty
   const backupMutation = mutations.create<BackupRunResult, void>({
     mutation: async (_value, { abortSignal }) => {
       const res = await apiClient[":id"].snapshots.run.$post({ param: { id: props.notebook.id } }, { init: { signal: abortSignal } });
-      if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to upload snapshot."));
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().snapshotUploadFailed));
       return await res.json();
     },
     onSuccess: (result) => {
@@ -316,19 +321,19 @@ export function ExportSection(props: { notebook: Notebook; onDirtyChange: (dirty
 
   return (
     <>
-      <SettingsGroup title="Portable export" description="Download a complete copy for transfer or offline storage.">
+      <SettingsGroup title={t().portableExport} description={t().portableExportDescription}>
         <SettingsGroup.Action>
           <ButtonLink href={href()} download="" class="self-start">
             <i class="ti ti-download" />
-            Download ZIP export
+            {t().downloadZip}
           </ButtonLink>
         </SettingsGroup.Action>
         <NoticeCard tone="info" icon={false}>
-          Includes Markdown notes, raw attachments, and small JSON metadata files.
+          {t().exportIncludes}
         </NoticeCard>
       </SettingsGroup>
 
-      <SettingsGroup title="Automatic snapshots" description="Write one-way ZIP snapshots to S3-compatible object storage.">
+      <SettingsGroup title={t().automaticSnapshots} description={t().automaticSnapshotsDescription}>
         <SettingsGroup.Action>
           <SnapshotUploadAction
             enabled={enabled()}
@@ -339,19 +344,19 @@ export function ExportSection(props: { notebook: Notebook; onDirtyChange: (dirty
             onRun={() => backupMutation.mutate(undefined)}
           />
         </SettingsGroup.Action>
-        <Show when={!status.loading()} fallback={<Placeholder state="loading" variant="panel" title="Loading snapshot settings" />}>
+        <Show when={!status.loading()} fallback={<Placeholder state="loading" variant="panel" title={t().loadingSnapshotSettings} />}>
           <Show
             when={status.data()}
             fallback={
               <Placeholder
                 state="error"
                 variant="panel"
-                title="Could not load snapshot settings"
-                description={status.error()?.message ?? "Snapshot settings could not be loaded."}
+                title={t().couldNotLoadSnapshotSettings}
+                description={status.error()?.message ?? t().snapshotSettingsCouldNotLoad}
                 action={
                   <Button type="button" variant="secondary" size="sm" onClick={() => void status.refresh()}>
                     <i class="ti ti-refresh" aria-hidden="true" />
-                    Retry
+                    {t().retry}
                   </Button>
                 }
               />
@@ -379,7 +384,7 @@ export function ExportSection(props: { notebook: Notebook; onDirtyChange: (dirty
         </Show>
       </SettingsGroup>
 
-      <SettingsGroup title="Recent snapshots" description="Review the latest automatic and manually started uploads.">
+      <SettingsGroup title={t().recentSnapshots} description={t().recentSnapshotsDescription}>
         <SnapshotLogsSection entries={logEntries()} loading={logs.loading()} error={logError()} />
         <Show when={reconcileError()}>
           <div class="flex flex-wrap items-center justify-between gap-2">
@@ -393,7 +398,7 @@ export function ExportSection(props: { notebook: Notebook; onDirtyChange: (dirty
               disabled={reconciling()}
               onClick={() => void reconcile(reconcileScope() ?? true)}
             >
-              Retry reload
+              {t().retryReload}
             </Button>
           </div>
         </Show>

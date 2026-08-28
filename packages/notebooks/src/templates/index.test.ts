@@ -39,6 +39,44 @@ const fakeNote = (title: string, shortId: string, parentId: string | null): Note
   lockedAt: null,
 });
 
+const resolveContents = (locale: string) => {
+  const now = new Date(2031, 6, 14, 9, 30);
+  return templates.map((template) => {
+    const materialized = materializeTemplate(template, now, locale);
+    const notes = new Map<string, Note>();
+    for (const [index, note] of materialized.notes.entries()) {
+      const parent = note.parentKey ? notes.get(note.parentKey) : null;
+      notes.set(note.key, fakeNote("Neue Notiz", `n${String(index).padStart(5, "0")}`, parent?.id ?? null));
+    }
+    const ctx: TemplateNoteContentContext = {
+      now,
+      locale,
+      notebook: fakeNotebook,
+      notes,
+      link: (key, label) => {
+        const note = notes.get(key);
+        if (!note) throw new Error(`missing note ${key}`);
+        return `[${label}](note://${note.shortId})`;
+      },
+      noteId: (key) => {
+        const note = notes.get(key);
+        if (!note) throw new Error(`missing note ${key}`);
+        return note.shortId;
+      },
+    };
+    return {
+      template: materialized,
+      contents: materialized.notes.map((note) => (typeof note.content === "function" ? note.content(ctx) : (note.content ?? ""))),
+    };
+  });
+};
+
+const scripts = (source: string) => [...source.matchAll(/```script\n([\s\S]*?)```/g)].map((match) => match[1] ?? "").join("\n");
+const prose = (source: string) => source.replace(/```script\n[\s\S]*?```/g, "");
+const references = (source: string) => [...source.matchAll(/^@(\w[\w.]*)$/gm)].map((match) => match[1]).sort();
+const scriptSelectors = (source: string) =>
+  [...source.matchAll(/\.(?:data|table|todo|list|section)\("([^"]+)"\)/g)].map((match) => match[1]).sort();
+
 describe("built-in notebook templates", () => {
   test("template ids are unique", () => {
     assertUnique(
@@ -112,5 +150,45 @@ describe("built-in notebook templates", () => {
     const titles = materialized.notes.map((note) => (typeof note.content === "string" ? deriveNoteTitle(note.content) : null));
     expect(titles).toContain("2031");
     expect(titles).not.toContain("2026");
+  });
+
+  test("de-CH selects complete German metadata and starter content", () => {
+    const german = resolveContents("de-CH");
+    expect(german.map(({ template }) => template.name)).toEqual(["Tagebuch", "Gartentagebuch", "Rezepte und Vorräte", "Leseliste"]);
+
+    const visibleText = german.flatMap(({ contents }) => contents.map(prose)).join("\n");
+    expect(visibleText).not.toMatch(
+      /\b(?:Start here|How to use|Daily dashboard|Garden Dashboard|Reading Dashboard|Kitchen Dashboard|Monthly focus|Year notes|Inbox entries|Book notes|Recipe schema|No current reads|No recipe notes|Add queue item|Add garden task)\b/,
+    );
+    expect(visibleText).toContain("Beginne hier");
+    expect(visibleText).toContain("So verwendest du dieses Gartentagebuch");
+    expect(visibleText).toContain("Käsespätzle mit Röstzwiebeln");
+    expect(visibleText).toContain("Aufmerksamkeit wird als Praxis verstanden");
+
+    const fullText = german.flatMap(({ contents }) => contents).join("\n");
+    expect(fullText).not.toMatch(
+      /"(?:Daily dashboard|Garden dashboard|Reading dashboard|Kitchen dashboard|Open today's note|Make weekly review|Add garden task|Add queue item|No current reads\.|No recipe notes yet\.|No open dashboard tasks\.|Shopping items added)"/,
+    );
+    const scriptText = german.flatMap(({ contents }) => contents.map(scripts)).join("\n");
+    expect(scriptText).toContain("// Tagebuchübersicht");
+    expect(scriptText).toContain('ui.heading("Gartenübersicht für "');
+    expect(scriptText).toContain('ui.heading("Leseübersicht"');
+    expect(scriptText).toContain('ui.heading("Küchenübersicht"');
+  });
+
+  test("German templates preserve note ids and technical Markdown/script selectors", () => {
+    const english = resolveContents("en");
+    const german = resolveContents("de-CH");
+
+    for (const [index, englishTemplate] of english.entries()) {
+      const germanTemplate = german[index]!;
+      expect(germanTemplate.template.id).toBe(englishTemplate.template.id);
+      expect(germanTemplate.template.homepageNoteKey).toBe(englishTemplate.template.homepageNoteKey);
+      expect(germanTemplate.template.notes.map((note) => [note.key, note.parentKey])).toEqual(
+        englishTemplate.template.notes.map((note) => [note.key, note.parentKey]),
+      );
+      expect(germanTemplate.contents.flatMap(references)).toEqual(englishTemplate.contents.flatMap(references));
+      expect(germanTemplate.contents.flatMap(scriptSelectors)).toEqual(englishTemplate.contents.flatMap(scriptSelectors));
+    }
   });
 });

@@ -26,6 +26,7 @@
 import { charts as stdCharts } from "@k2b/stdlib";
 import { toast as platformToast, prompts } from "@k2b/ui";
 import { markdown } from "@valentinkolb/cloud/shared";
+import { notebookWorkspaceMessages } from "../../[id]/messages";
 import { renderPrettyTableHtml } from "../pretty-table";
 import type {
   KitButtonOptions,
@@ -142,7 +143,10 @@ const makeNoteLink = (note: KitNote | string, label: string | undefined, ctx: Ki
 };
 
 const makeNoteList = (notes: KitNote[], options: { emptyText?: string } | undefined, ctx: KitContext): KitElement => {
-  if (notes.length === 0) return makeText(options?.emptyText ?? "No notes", ctx);
+  if (notes.length === 0) {
+    const { t } = notebookWorkspaceMessages.resolve([document.documentElement.lang || "en"]);
+    return makeText(options?.emptyText ?? t.noNotes, ctx);
+  }
   const list = document.createElement("ul");
   list.className = "md-script-ui-note-list";
   for (const note of notes) {
@@ -202,7 +206,10 @@ const makeTable = (
   ctx: KitContext,
 ): KitElement => {
   const rows = isTableView(input) ? input.rows : input;
-  if (rows.length === 0) return makeText(options?.emptyText ?? "No rows", ctx);
+  if (rows.length === 0) {
+    const { t } = notebookWorkspaceMessages.resolve([document.documentElement.lang || "en"]);
+    return makeText(options?.emptyText ?? t.noRows, ctx);
+  }
   const columns =
     options?.columns ??
     (isTableView(input)
@@ -276,7 +283,7 @@ const makeChart = <K extends KitChartKind>(kind: K, options: KitChartOptions<K>,
       el.replaceChildren();
       const empty = document.createElement("div");
       empty.className = "md-script-ui-chart-empty";
-      empty.textContent = "No data";
+      empty.textContent = notebookWorkspaceMessages.resolve([document.documentElement.lang || "en"]).t.noData;
       el.appendChild(empty);
       return;
     }

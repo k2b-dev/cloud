@@ -1,12 +1,13 @@
 import type { DateContext } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { IconInput, prompts, Select, SettingsField, SettingsGroup, SettingsModal, SettingsPanelFooter, TextInput } from "@k2b/ui";
+import { IconInput, prompts, Select, SettingsField, SettingsGroup, SettingsModal, SettingsPanelFooter, TextInput, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { buildNoteTitleTemplateContext, renderNoteTitleTemplate } from "@/lib/note-title-template";
 import type { Notebook, NoteTreeNode } from "../sidebar/types";
 import type { NoteSelectOption } from "./types";
 import { flattenNoteOptions, readErrorMessage } from "./utils";
+import { notebookSettingsMessages } from "./messages";
 
 export function GeneralSection(props: {
   notebook: Notebook;
@@ -16,7 +17,9 @@ export function GeneralSection(props: {
   onNotebookChange: (notebook: Notebook) => void;
   onDirtyChange: (dirty: boolean) => void;
 }) {
-  const options = createMemo(() => flattenNoteOptions(props.tree));
+  const locale = useLocale();
+  const t = () => notebookSettingsMessages.resolve([locale()]).t;
+  const options = createMemo(() => flattenNoteOptions(props.tree, t().untitled));
   const [base, setBase] = createSignal({
     name: props.notebook.name,
     description: props.notebook.description ?? "",
@@ -44,7 +47,7 @@ export function GeneralSection(props: {
         error: null,
       };
     } catch (error) {
-      return { title: null, error: error instanceof Error ? error.message : "Invalid default note title template" };
+      return { title: null, error: error instanceof Error ? error.message : t().invalidTitleTemplate };
     }
   });
 
@@ -83,7 +86,7 @@ export function GeneralSection(props: {
 
   const mutation = mutations.create({
     mutation: async () => {
-      if (!name().trim()) throw new Error("Name is required");
+      if (!name().trim()) throw new Error(t().nameRequired);
       if (titlePreview().error) throw new Error(titlePreview().error!);
       const res = await apiClient[":id"].$patch({
         param: { id: props.notebook.id },
@@ -95,7 +98,7 @@ export function GeneralSection(props: {
           defaultNoteTitleTemplate: defaultNoteTitleTemplate(),
         },
       });
-      if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to update notebook."));
+      if (!res.ok) throw new Error(await readErrorMessage(res, t().updateFailed));
       return (await res.json()) as Notebook;
     },
     onSuccess: (next) => {
@@ -113,64 +116,64 @@ export function GeneralSection(props: {
 
   return (
     <>
-      <SettingsGroup title="Identity" description="Describe this notebook wherever it appears in Cloud.">
+      <SettingsGroup title={t().identity} description={t().identityDescription}>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <SettingsField
-            label="Name"
-            description="Shown in the sidebar and notebook overview."
-            error={() => (!name().trim() ? "Name is required" : undefined)}
+            label={t().name}
+            description={t().nameDescription}
+            error={() => (!name().trim() ? t().nameRequired : undefined)}
             changed={() => name() !== base().name}
           >
-            <TextInput aria-label="Name" value={name} onValueChange={setName} icon="ti ti-notebook" required disabled={!props.canWrite} />
+            <TextInput aria-label={t().name} value={name} onValueChange={setName} icon="ti ti-notebook" required disabled={!props.canWrite} />
           </SettingsField>
           <SettingsField
-            label="Icon"
-            description="Used in the sidebar and notebook overview."
+            label={t().icon}
+            description={t().iconDescription}
             error={() => undefined}
             changed={() => icon() !== base().icon}
           >
             <IconInput
-              aria-label="Icon"
+              aria-label={t().icon}
               value={icon}
               onValueChange={(value) => setIcon(value ?? "")}
-              placeholder="Search icons..."
+              placeholder={t().searchIcons}
               disabled={!props.canWrite}
             />
           </SettingsField>
         </div>
         <SettingsField
-          label="Description"
-          description="Optional context for people who can access this notebook."
+          label={t().description}
+          description={t().descriptionHelp}
           error={() => undefined}
           changed={() => description() !== base().description}
         >
           <TextInput
-            aria-label="Description"
+            aria-label={t().description}
             value={description}
             onValueChange={setDescription}
             multiline
             lines={2}
-            placeholder="What is this notebook for?"
+            placeholder={t().descriptionPlaceholder}
             icon="ti ti-align-left"
             disabled={!props.canWrite}
           />
         </SettingsField>
       </SettingsGroup>
 
-      <SettingsGroup title="New notes" description="Choose where this notebook opens and how new note titles begin.">
+      <SettingsGroup title={t().newNotes} description={t().newNotesDescription}>
         <SettingsField
-          label="Homepage"
-          description="Used when no note is selected and no valid recent note is available."
+          label={t().homepage}
+          description={t().homepageDescription}
           error={() => undefined}
           changed={() => homepageNoteId() !== base().homepageNoteId}
         >
           <Select
-            aria-label="Homepage"
+            aria-label={t().homepage}
             value={homepageNoteId}
             onValueChange={(value) => setHomepageNoteId(value ?? "")}
             selectedLabel={selectedLabel}
             fetchData={fetchNotes}
-            placeholder="Select a note..."
+            placeholder={t().selectNote}
             icon="ti ti-home"
             activeIcon="ti ti-search"
             clearable
@@ -179,13 +182,13 @@ export function GeneralSection(props: {
         </SettingsField>
 
         <SettingsField
-          label="Default note title"
-          description="Liquid template used for the first heading of an otherwise empty note."
+          label={t().defaultTitle}
+          description={t().defaultTitleDescription}
           error={() => titlePreview().error ?? undefined}
           changed={() => defaultNoteTitleTemplate() !== base().defaultNoteTitleTemplate}
         >
           <TextInput
-            aria-label="Default note title"
+            aria-label={t().defaultTitle}
             value={defaultNoteTitleTemplate}
             onValueChange={setDefaultNoteTitleTemplate}
             multiline
@@ -200,19 +203,19 @@ export function GeneralSection(props: {
 
         <div class="flex flex-col gap-1 text-xs">
           <div class="flex items-baseline gap-2">
-            <span class="font-semibold">Preview</span>
-            <span class={titlePreview().error ? "text-dimmed" : "font-medium"}>{titlePreview().title ?? "Unavailable"}</span>
+            <span class="font-semibold">{t().preview}</span>
+            <span class={titlePreview().error ? "text-dimmed" : "font-medium"}>{titlePreview().title ?? t().unavailable}</span>
           </div>
           <p class="text-dimmed">
-            Variables: <code>notebook.id</code>, <code>notebook.name</code>, <code>note.id</code>, <code>note.depth</code>,{" "}
+            {t().variables}: <code>notebook.id</code>, <code>notebook.name</code>, <code>note.id</code>, <code>note.depth</code>,{" "}
             <code>parent.exists</code>, <code>parent.id</code>, <code>parent.title</code>, <code>parent.path</code>, <code>date</code>,{" "}
-            <code>time</code>, <code>datetime</code>, and <code>timezone</code>.
+            <code>time</code>, <code>datetime</code>, {t().and} <code>timezone</code>.
           </p>
         </div>
       </SettingsGroup>
 
       <Show when={!props.canWrite}>
-        <p class="text-xs text-dimmed">You can view these settings, but only editors can change them.</p>
+        <p class="text-xs text-dimmed">{t().readOnlySettings}</p>
       </Show>
 
       <Show when={props.canWrite}>

@@ -10,10 +10,11 @@
  */
 
 import { timed } from "@k2b/stdlib/solid";
-import { AppWorkspace, Button, Placeholder, prompts, TextInput } from "@k2b/ui";
+import { AppWorkspace, Button, Placeholder, prompts, TextInput, useLocale } from "@k2b/ui";
 import { createMemo, createSignal, For, Show } from "solid-js";
 import { buildTagPageUrl } from "../../../params";
 import type { TagSummary } from "./types";
+import { notebookWorkspaceMessages } from "../../messages";
 
 type Variant = "sidebar" | "sidebar-mobile" | "icon";
 
@@ -25,6 +26,8 @@ type Props = {
 };
 
 const TagsModal = (props: { notebookId: string; tags: TagSummary[] }) => {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   // Two signals: `query` is the live input (immediate UI feedback),
   // `debouncedQuery` is what drives the filter — updated 150ms after
   // typing pause so the memo doesn't churn on every keystroke.
@@ -47,8 +50,8 @@ const TagsModal = (props: { notebookId: string; tags: TagSummary[] }) => {
   return (
     <div class="flex min-w-[24rem] w-full max-w-full flex-col gap-2">
       <TextInput
-        aria-label="Search tags"
-        placeholder="Search tags..."
+        aria-label={t().searchTags}
+        placeholder={t().searchTagsPlaceholder}
         autofocus
         value={query}
         onValueChange={onInput}
@@ -62,7 +65,7 @@ const TagsModal = (props: { notebookId: string; tags: TagSummary[] }) => {
             align="left"
             icon="ti ti-tags"
             class="py-2"
-            description={<>{props.tags.length === 0 ? "No tags yet." : `No tags match "${query()}".`}</>}
+            description={props.tags.length === 0 ? t().noTags : t().noMatchingTags({ query: query() })}
           />
         }
       >
@@ -90,20 +93,24 @@ const TagsModal = (props: { notebookId: string; tags: TagSummary[] }) => {
   );
 };
 
-const openTagsModal = (notebookId: string, tags: TagSummary[]) =>
-  prompts.dialog<void>(() => <TagsModal notebookId={notebookId} tags={tags} />, {
-    title: "Tags",
+const openTagsModal = (notebookId: string, tags: TagSummary[], locale: string) => {
+  const { t } = notebookWorkspaceMessages.resolve([locale]);
+  return prompts.dialog<void>(() => <TagsModal notebookId={notebookId} tags={tags} />, {
+    title: t.tags,
     icon: "ti ti-hash",
   });
+};
 
 export default function TagsButton(props: Props) {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const tagCount = () => props.tags.length;
   if (props.variant === "icon") {
     return (
       <AppWorkspace.SidebarIconAction
-        label={`${tagCount()} tag${tagCount() === 1 ? "" : "s"}`}
+        label={t().tagCount({ count: tagCount() })}
         icon="ti ti-hash"
-        onClick={() => void openTagsModal(props.notebookId, props.tags)}
+        onClick={() => void openTagsModal(props.notebookId, props.tags, locale())}
         viewTransitionName={props.viewTransitionName}
       />
     );
@@ -111,9 +118,9 @@ export default function TagsButton(props: Props) {
 
   if (props.variant === "sidebar-mobile") {
     return (
-      <Button variant="ghost" size="sm" class="w-full justify-start" onClick={() => void openTagsModal(props.notebookId, props.tags)}>
+      <Button variant="ghost" size="sm" class="w-full justify-start" onClick={() => void openTagsModal(props.notebookId, props.tags, locale())}>
         <i class="ti ti-hash" />
-        Tags ({tagCount()})
+        {t().tags} ({tagCount()})
       </Button>
     );
   }
@@ -121,10 +128,10 @@ export default function TagsButton(props: Props) {
     <AppWorkspace.SidebarItem
       icon="ti ti-hash"
       meta={tagCount()}
-      onClick={() => void openTagsModal(props.notebookId, props.tags)}
-      title={`${tagCount()} tag${tagCount() === 1 ? "" : "s"}`}
+      onClick={() => void openTagsModal(props.notebookId, props.tags, locale())}
+      title={t().tagCount({ count: tagCount() })}
     >
-      Tags
+      {t().tags}
     </AppWorkspace.SidebarItem>
   );
 }

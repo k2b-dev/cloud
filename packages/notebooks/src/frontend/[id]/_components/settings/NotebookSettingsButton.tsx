@@ -1,6 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
-import { AppWorkspace } from "@k2b/ui";
+import { AppWorkspace, useLocale } from "@k2b/ui";
 import type { Notebook, NoteTreeNode } from "../sidebar/types";
+import { notebookWorkspaceMessages } from "../../messages";
 import { openNotebookSettingsDialog } from "./NotebookSettingsPanel";
 
 type Props = {
@@ -12,6 +13,8 @@ type Props = {
 };
 
 export default function NotebookSettingsButton(props: Props) {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const isAdmin = () => props.permission === "admin";
   const canWrite = () => props.permission === "write" || props.permission === "admin";
 
@@ -29,10 +32,10 @@ export default function NotebookSettingsButton(props: Props) {
     <AppWorkspace.SidebarItem
       icon="ti ti-settings"
       onClick={() => void open()}
-      title="Settings"
+      title={t().settings}
       viewTransitionName={props.viewTransitionName}
     >
-      Settings
+      {t().settings}
     </AppWorkspace.SidebarItem>
   );
 }

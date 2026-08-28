@@ -1,15 +1,28 @@
 import { defineHelp } from "@valentinkolb/cloud/server";
-import coreModel from "./documents/notebooks-core-model.help.md" with { type: "text" };
-import scriptApi from "./documents/notebooks-script-api.help.md" with { type: "text" };
-import scripts from "./documents/notebooks-scripts.help.md" with { type: "text" };
-import settingsAccess from "./documents/notebooks-settings-access.help.md" with { type: "text" };
-import start from "./documents/notebooks-start.help.md" with { type: "text" };
-import structuredBlocks from "./documents/notebooks-structured-blocks.help.md" with { type: "text" };
-import tableFormulas from "./documents/notebooks-table-formulas.help.md" with { type: "text" };
-import troubleshooting from "./documents/notebooks-troubleshooting.help.md" with { type: "text" };
-import writeOrganize from "./documents/notebooks-write-organize.help.md" with { type: "text" };
+import coreModelDe from "./documents/de/notebooks-core-model.help.md" with { type: "text" };
+import scriptApiDe from "./documents/de/notebooks-script-api.help.md" with { type: "text" };
+import scriptsDe from "./documents/de/notebooks-scripts.help.md" with { type: "text" };
+import settingsAccessDe from "./documents/de/notebooks-settings-access.help.md" with { type: "text" };
+import startDe from "./documents/de/notebooks-start.help.md" with { type: "text" };
+import structuredBlocksDe from "./documents/de/notebooks-structured-blocks.help.md" with { type: "text" };
+import tableFormulasDe from "./documents/de/notebooks-table-formulas.help.md" with { type: "text" };
+import troubleshootingDe from "./documents/de/notebooks-troubleshooting.help.md" with { type: "text" };
+import writeOrganizeDe from "./documents/de/notebooks-write-organize.help.md" with { type: "text" };
+import coreModel from "./documents/en/notebooks-core-model.help.md" with { type: "text" };
+import scriptApi from "./documents/en/notebooks-script-api.help.md" with { type: "text" };
+import scripts from "./documents/en/notebooks-scripts.help.md" with { type: "text" };
+import settingsAccess from "./documents/en/notebooks-settings-access.help.md" with { type: "text" };
+import start from "./documents/en/notebooks-start.help.md" with { type: "text" };
+import structuredBlocks from "./documents/en/notebooks-structured-blocks.help.md" with { type: "text" };
+import tableFormulas from "./documents/en/notebooks-table-formulas.help.md" with { type: "text" };
+import troubleshooting from "./documents/en/notebooks-troubleshooting.help.md" with { type: "text" };
+import writeOrganize from "./documents/en/notebooks-write-organize.help.md" with { type: "text" };
 
 /** Explicit order keeps this corpus reviewable and independent of filesystem magic. */
 export const notebookHelp = defineHelp({
-  documents: [start, coreModel, writeOrganize, structuredBlocks, tableFormulas, scripts, scriptApi, settingsAccess, troubleshooting],
+  baseLocale: "en",
+  documents: {
+    en: [start, coreModel, writeOrganize, structuredBlocks, tableFormulas, scripts, scriptApi, settingsAccess, troubleshooting],
+    de: [startDe, coreModelDe, writeOrganizeDe, structuredBlocksDe, tableFormulasDe, scriptsDe, scriptApiDe, settingsAccessDe, troubleshootingDe],
+  },
 });

@@ -1,5 +1,5 @@
 import { type DateContext, dates, searchParams } from "@k2b/stdlib";
-import { AppWorkspace, Dropdown, IconButton, Placeholder, prompts, ScrollArea, SelectChip } from "@k2b/ui";
+import { AppWorkspace, Dropdown, IconButton, Placeholder, prompts, ScrollArea, SelectChip, useLocale } from "@k2b/ui";
 import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { type NavigatorQuery, parseNavigatorQuery, withNavigatorQuery } from "../../../../lib/navigator-url";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
@@ -12,6 +12,7 @@ import { noteActionItems, useNoteActions } from "./NoteTree";
 import { flattenTree } from "./tree-utils";
 import type { Notebook, NoteTreeNode, TagSummary } from "./types";
 import { useFavoriteNotes } from "./useFavoriteNotes";
+import { notebookWorkspaceMessages } from "../../messages";
 
 type SortMode = NotebookSettings["navigatorSort"];
 type TreeMode = "deep" | "level";
@@ -36,22 +37,6 @@ type Selection =
   | { root: "recents" }
   | { root: "notes"; noteId: string | null }
   | { root: "tags"; tag: string | null };
-
-const ROOTS: { id: RootMode; label: string; icon: string }[] = [
-  { id: "favorites", label: "Favorites", icon: "ti ti-star" },
-  { id: "recents", label: "Recents", icon: "ti ti-clock" },
-];
-
-const SORT_OPTIONS = [
-  { value: "updated", label: "Updated" },
-  { value: "created", label: "Created" },
-  { value: "title", label: "Name" },
-] satisfies { value: SortMode; label: string }[];
-
-const TREE_MODE_OPTIONS = [
-  { value: "deep", label: "Descendants" },
-  { value: "level", label: "Children" },
-] satisfies { value: TreeMode; label: string }[];
 
 const noteCardClass = (active: boolean) =>
   `group relative rounded-[var(--ui-radius-surface)] border border-[var(--ui-border)] bg-[var(--ui-surface)] shadow-[var(--ui-shadow-surface)] transition-colors hover:bg-[var(--ui-hover)] ${active ? "bg-[var(--ui-selected)]" : ""}`;
@@ -134,12 +119,15 @@ const expandedNavigationIds = (nodes: NoteTreeNode[]): string[] => [
     .map((note) => noteTreeId(note.id)),
 ];
 
-const NoteNavigationItems = (props: { nodes: NoteTreeNode[]; onSelect: (id: string) => void }) => (
+const NoteNavigationItems = (props: { nodes: NoteTreeNode[]; onSelect: (id: string) => void }) => {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
+  return (
   <For each={props.nodes}>
     {(note) => (
       <AppWorkspace.NavTree.Item
         id={noteTreeId(note.id)}
-        label={note.title || "Untitled"}
+        label={note.title || t().untitled}
         icon="ti ti-folder"
         onSelect={() => props.onSelect(note.id)}
       >
@@ -147,9 +135,25 @@ const NoteNavigationItems = (props: { nodes: NoteTreeNode[]; onSelect: (id: stri
       </AppWorkspace.NavTree.Item>
     )}
   </For>
-);
+  );
+};
 
 export default function NotebookNavigator(props: Props) {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
+  const roots = () => [
+    { id: "favorites" as const, label: t().favorites, icon: "ti ti-star" },
+    { id: "recents" as const, label: t().recents, icon: "ti ti-clock" },
+  ];
+  const sortOptions = () => [
+    { value: "updated" as const, label: t().updatedSort },
+    { value: "created" as const, label: t().createdSort },
+    { value: "title" as const, label: t().nameSort },
+  ];
+  const treeModeOptions = () => [
+    { value: "deep" as const, label: t().descendants },
+    { value: "level" as const, label: t().children },
+  ];
   const [selection, setSelection] = createSignal<Selection>(selectionFromQuery(props.initialQuery, props.tree, props.selectedNoteId));
   const [sortMode, setSortMode] = createSignal<SortMode>(props.initialSortMode);
   const [treeMode, setTreeMode] = createSignal<TreeMode>("deep");
@@ -255,8 +259,8 @@ export default function NotebookNavigator(props: Props) {
     const home = homepageNote();
     if (!home) {
       void prompts.alert(
-        "No homepage is selected for this notebook yet. Open notebook settings and choose a homepage in the General tab.",
-        { title: "No homepage selected", icon: "ti ti-home" },
+        t().noHomepageDescription,
+        { title: t().noHomepage, icon: "ti ti-home" },
       );
       return;
     }
@@ -269,7 +273,7 @@ export default function NotebookNavigator(props: Props) {
       <AppWorkspace.SidebarBody scrollPreserveKey={`notebooks-navigator-roots-${props.notebook.id}`}>
         <AppWorkspace.SidebarSection>
           <AppWorkspace.SidebarIconGrid columns={2}>
-            <For each={ROOTS}>
+            <For each={roots()}>
               {(root) => (
                 <AppWorkspace.SidebarIconAction
                   icon={root.icon}
@@ -281,7 +285,7 @@ export default function NotebookNavigator(props: Props) {
             </For>
             <AppWorkspace.SidebarIconAction
               icon="ti ti-home"
-              label="Homepage"
+              label={t().homepage}
               active={homepageNote()?.id === activeNoteId()}
               onClick={openHomepage}
             />
@@ -291,20 +295,20 @@ export default function NotebookNavigator(props: Props) {
 
         <AppWorkspace.SidebarSection>
           <AppWorkspace.NavTree
-            ariaLabel="Notebook folders and tags"
+            ariaLabel={t().foldersAndTags}
             selectedId={selectedNavigationId()}
             expandedIds={expandedTreeIds()}
             onExpandedIdsChange={setExpandedTreeIds}
           >
             <AppWorkspace.NavTree.Item
               id="notes"
-              label="All notes"
+              label={t().allNotes}
               icon="ti ti-folder"
               onSelect={() => select({ root: "notes", noteId: null })}
             >
               <NoteNavigationItems nodes={branchTree()} onSelect={(noteId) => select({ root: "notes", noteId })} />
             </AppWorkspace.NavTree.Item>
-            <AppWorkspace.NavTree.Item id="tags" label="Tags" icon="ti ti-tags">
+            <AppWorkspace.NavTree.Item id="tags" label={t().tags} icon="ti ti-tags">
               <For each={props.tags}>
                 {(tag) => (
                   <AppWorkspace.NavTree.Item
@@ -323,10 +327,10 @@ export default function NotebookNavigator(props: Props) {
 
       <AppWorkspace.SidebarFooter>
         <AppWorkspace.SidebarItem href="/app/notebooks" icon="ti ti-library" navigation="document">
-          All Notebooks
+          {t().allNotebooks}
         </AppWorkspace.SidebarItem>
         <AppWorkspace.SidebarItem href={attachmentsHref()} icon="ti ti-paperclip" navigation="document">
-          Attachments
+          {t().attachments}
         </AppWorkspace.SidebarItem>
         <NotebookSettingsButton
           notebook={props.notebook}
@@ -340,10 +344,10 @@ export default function NotebookNavigator(props: Props) {
   ) : (
     <div class="flex min-h-0 min-w-0 flex-1 flex-col">
       <div class="flex shrink-0 flex-wrap items-center gap-2 pb-2">
-        <SelectChip value={treeMode()} options={TREE_MODE_OPTIONS} onValueChange={setTreeMode} icon="ti ti-list-tree" />
-        <SelectChip value={sortMode()} options={SORT_OPTIONS} onValueChange={changeSortMode} icon="ti ti-sort-descending" />
+        <SelectChip value={treeMode()} options={treeModeOptions()} onValueChange={setTreeMode} icon="ti ti-list-tree" />
+        <SelectChip value={sortMode()} options={sortOptions()} onValueChange={changeSortMode} icon="ti ti-sort-descending" />
         <Show when={props.canWrite}>
-          <IconButton class="ml-auto text-green-600 dark:text-green-400" label="New note" onClick={() => actions.handleCreateNote()}>
+          <IconButton class="ml-auto text-green-600 dark:text-green-400" label={t().newNote} onClick={() => actions.handleCreateNote()}>
             <i class="ti ti-plus" />
           </IconButton>
         </Show>
@@ -352,7 +356,7 @@ export default function NotebookNavigator(props: Props) {
       <ScrollArea class="flex-1" scrollPreserveKey={`notebooks-navigator-list-${props.notebook.id}`}>
         <Show
           when={visibleNotes().length > 0 || pinnedNote()}
-          fallback={<Placeholder surface="paper" align="left" description={<>No notes here yet.</>} />}
+          fallback={<Placeholder surface="paper" align="left" description={t().noNotesHere} />}
         >
           <div class="flex flex-col gap-2">
             <Show when={pinnedNote()}>
@@ -375,20 +379,20 @@ export default function NotebookNavigator(props: Props) {
                             class={`ti ${selectedNoteRootId() ? "ti-folder" : "ti-home"} shrink-0 text-sm text-zinc-500 dark:text-zinc-400`}
                           />
                           <span class={`min-w-0 truncate ${active() ? "app-accent-text" : "text-dimmed dark:text-primary"}`}>
-                            {note().title || "Untitled"}
+                            {note().title || t().untitled}
                           </span>
                           <Show when={note().lockedAt}>
-                            <i class="ti ti-lock shrink-0 text-xs text-amber-500" title="Locked" />
+                            <i class="ti ti-lock shrink-0 text-xs text-amber-500" title={t().locked} />
                           </Show>
                         </p>
                       </div>
                     </a>
                     <div class="absolute right-2 top-2">
                       <Show when={props.canWrite}>
-                        <Dropdown.Root position="bottom-right" width="12rem" items={noteActionItems(note(), actions)}>
+                        <Dropdown.Root position="bottom-right" width="12rem" items={noteActionItems(note(), actions, t())}>
                           <Dropdown.Trigger
                             iconOnly
-                            label={`Actions for ${note().title || "Untitled"}`}
+                            label={t().noteActions({ title: note().title || t().untitled })}
                             size="xs"
                             class="opacity-70 group-hover:opacity-100"
                           >
@@ -420,10 +424,10 @@ export default function NotebookNavigator(props: Props) {
                       <div class="min-w-0">
                         <p class="flex min-w-0 items-center gap-1.5 truncate text-xs font-semibold text-primary">
                           <span class={`min-w-0 truncate ${active() ? "app-accent-text" : "text-dimmed dark:text-primary"}`}>
-                            {note.title || "Untitled"}
+                            {note.title || t().untitled}
                           </span>
                           <Show when={note.lockedAt}>
-                            <i class="ti ti-lock shrink-0 text-xs text-amber-500" title="Locked" />
+                            <i class="ti ti-lock shrink-0 text-xs text-amber-500" title={t().locked} />
                           </Show>
                         </p>
                         <Show when={plainPreview(note.contentMd)}>
@@ -438,7 +442,7 @@ export default function NotebookNavigator(props: Props) {
                             </span>
                           )}
                         </For>
-                        <span class="ml-auto shrink-0 text-[10px] text-dimmed">{dates.formatDateTimeRelative(note.updatedAt)}</span>
+                        <span class="ml-auto shrink-0 text-[10px] text-dimmed">{dates.formatDateTimeRelative(note.updatedAt, props.dateConfig)}</span>
                       </div>
                     </a>
                     <div class="absolute right-2 top-2 flex items-center gap-0.5">
@@ -447,17 +451,17 @@ export default function NotebookNavigator(props: Props) {
                         class={`opacity-70 group-hover:opacity-100 ${
                           favoriteIds().has(note.id) ? "!text-amber-500 hover:!text-amber-500" : ""
                         }`}
-                        title={favoriteIds().has(note.id) ? "Remove favorite" : "Add favorite"}
-                        label={favoriteIds().has(note.id) ? "Remove favorite" : "Add favorite"}
+                        title={favoriteIds().has(note.id) ? t().removeFavorite : t().addFavorite}
+                        label={favoriteIds().has(note.id) ? t().removeFavorite : t().addFavorite}
                         onClick={(event) => void toggleFavorite(note, event)}
                       >
                         <i class="ti ti-star" />
                       </IconButton>
                       <Show when={props.canWrite}>
-                        <Dropdown.Root position="bottom-right" width="12rem" items={noteActionItems(note, actions)}>
+                        <Dropdown.Root position="bottom-right" width="12rem" items={noteActionItems(note, actions, t())}>
                           <Dropdown.Trigger
                             iconOnly
-                            label={`Actions for ${note.title || "Untitled"}`}
+                            label={t().noteActions({ title: note.title || t().untitled })}
                             size="xs"
                             class="opacity-70 group-hover:opacity-100"
                           >

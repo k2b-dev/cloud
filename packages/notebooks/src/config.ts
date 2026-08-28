@@ -5,6 +5,15 @@ export const app = defineApp({
   name: "Notebooks",
   icon: "ti ti-note",
   description: "Collaborative notebooks with structured notes and realtime sync.",
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: {
+        name: "Notizbücher",
+        description: "Gemeinsam bearbeitete Notizbücher mit strukturierten Notizen und Echtzeitsynchronisierung.",
+      },
+    },
+  },
   appearance: {
     accent: "#eab308",
     background: {

@@ -55,10 +55,10 @@
 import { syntaxTree } from "@codemirror/language";
 import { type EditorState, type Extension, Prec, type Range, RangeSet, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, keymap, WidgetType } from "@codemirror/view";
-import { type EvalContext, evaluateFormula, formatValue, isFormula } from "@valentinkolb/cloud/shared";
+import { type EvalContext, evaluateFormula, isFormula } from "@valentinkolb/cloud/shared";
 import { clipboard } from "@k2b/stdlib/browser";
 import { isNamedBlockHandle } from "../../../lib/named-blocks";
-import { renderPrettyTableHtml } from "../pretty-table";
+import { formatFormulaError, formatFormulaValue, renderPrettyTableHtml } from "../pretty-table";
 import { refreshMarkdownDecorationsEffect, selectionIntersectsRange } from "./_lib/cursor-zone-field";
 
 type Align = "left" | "right" | "center" | null;
@@ -245,7 +245,8 @@ const buildLivePreviewDecorations = (state: EditorState, tableNode: { from: numb
         currentCol: colIdx,
       };
       const result = evaluateFormula(trimmed, ctx);
-      const previewText = result.kind === "ok" ? formatValue(result.value) : `⚠ ${result.message.split("\n")[0]}`;
+      const locale = typeof document === "undefined" ? undefined : document.documentElement.lang;
+      const previewText = result.kind === "ok" ? formatFormulaValue(result.value, locale) : `⚠ ${formatFormulaError(result, locale).split("\n")[0]}`;
       decorations.push(
         Decoration.widget({
           widget: new FormulaPreviewWidget(previewText, result.kind === "error"),

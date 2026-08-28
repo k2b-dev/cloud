@@ -1,7 +1,8 @@
-import { AppWorkspace, SPOTLIGHT_SHORTCUT_TITLE, SpotlightButton, type SpotlightButtonVariant } from "@k2b/ui";
+import { AppWorkspace, SPOTLIGHT_SHORTCUT_TITLE, SpotlightButton, type SpotlightButtonVariant, useLocale } from "@k2b/ui";
 import { navigateToNotebookNote } from "../../../lib/soft-navigation";
 import { buildNoteUrl } from "../../../params";
 import { openNoteSearchPrompt } from "./openNoteSearchPrompt";
+import { notebookWorkspaceMessages } from "../../messages";
 
 type Props = {
   notebookId: string;
@@ -11,8 +12,10 @@ type Props = {
 };
 
 export default function SearchButton(props: Props) {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const handleSearch = async () => {
-    const picked = await openNoteSearchPrompt(props.notebookId, props.notebookName);
+    const picked = await openNoteSearchPrompt(props.notebookId, props.notebookName, locale());
     if (picked) {
       void navigateToNotebookNote(buildNoteUrl(props.notebookId, picked.id));
     }
@@ -22,7 +25,7 @@ export default function SearchButton(props: Props) {
     return (
       <AppWorkspace.SidebarIconAction
         icon="ti ti-search"
-        label={`Search notes (${SPOTLIGHT_SHORTCUT_TITLE})`}
+        label={`${t().searchNotes} (${SPOTLIGHT_SHORTCUT_TITLE})`}
         onClick={() => void handleSearch()}
         viewTransitionName={props.viewTransitionName}
       />
@@ -32,7 +35,7 @@ export default function SearchButton(props: Props) {
   if (props.variant === "workspace-sidebar") {
     return (
       <AppWorkspace.SidebarItem icon="ti ti-search" onClick={() => void handleSearch()} viewTransitionName={props.viewTransitionName}>
-        Search
+        {t().searchNotes}
       </AppWorkspace.SidebarItem>
     );
   }
@@ -41,8 +44,8 @@ export default function SearchButton(props: Props) {
     <SpotlightButton
       variant={props.variant}
       onClick={handleSearch}
-      title={`Search notes (${SPOTLIGHT_SHORTCUT_TITLE})`}
-      ariaLabel="Search notes"
+      title={`${t().searchNotes} (${SPOTLIGHT_SHORTCUT_TITLE})`}
+      ariaLabel={t().searchNotes}
     />
   );
 }

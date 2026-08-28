@@ -1,12 +1,13 @@
 import { Prec } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 import { keymap } from "@codemirror/view";
-import { Dropdown, IconButton, Tooltip } from "@k2b/ui";
+import { Dropdown, IconButton, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { requestNotebookSearch } from "../../../lib/hotkeys";
 import { DETAIL_PANEL_STATE_EVENT, DETAIL_PANEL_TOGGLE_EVENT } from "../detail/events";
 import { openAttachmentPicker } from "./AttachmentPicker";
 import { cycleHeading, insertCallout, insertLinePrefix, insertLink, insertNoteLink, insertTable, wrapSelection } from "./editor-actions";
+import { notebookWorkspaceMessages } from "../../messages";
 
 type Props = {
   connected: boolean;
@@ -86,6 +87,8 @@ export function formattingKeymap(opts: { notebookId: string }) {
 /* ── Component ─────────────────────────────────────────── */
 
 export default function EditorToolbar(props: Props) {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const withView = (action: (view: EditorView) => void) => () => {
     if (props.editorView) action(props.editorView);
   };
@@ -95,13 +98,13 @@ export default function EditorToolbar(props: Props) {
   const strikethrough = withView((v) => wrapSelection(v, "~~"));
   const inlineCode = withView((v) => wrapSelection(v, "`"));
   const heading = withView(cycleHeading);
-  const link = withView(insertLink);
-  const linkToNote = withView((v) => void insertNoteLink(v, props.notebookId));
+  const link = withView((v) => insertLink(v, locale()));
+  const linkToNote = withView((v) => void insertNoteLink(v, props.notebookId, locale()));
   const bulletList = withView((v) => insertLinePrefix(v, "- "));
   const numberedList = withView((v) => insertLinePrefix(v, "1. "));
   const checkbox = withView((v) => insertLinePrefix(v, "- [ ] "));
   const callout = (type: string) => withView((v) => insertCallout(v, type));
-  const table = withView((v) => void insertTable(v));
+  const table = withView((v) => void insertTable(v, undefined, locale()));
 
   const [panelOpen, setPanelOpen] = createSignal(props.initialPanelOpen);
   const [showDisconnected, setShowDisconnected] = createSignal(false);
@@ -141,46 +144,46 @@ export default function EditorToolbar(props: Props) {
   return (
     <div class="mt-1 flex min-w-0 items-center gap-2 px-2 py-2 text-base text-dimmed">
       <div class="no-scrollbar flex min-w-0 flex-1 items-center gap-2 overflow-x-auto">
-        <Btn icon="ti-bold" title="Bold" onClick={bold} />
-        <Btn icon="ti-italic" title="Italic" onClick={italic} />
-        <Btn icon="ti-strikethrough" title="Strikethrough" onClick={strikethrough} />
-        <Btn icon="ti-heading" title="Heading" onClick={heading} />
-        <Btn icon="ti-link" title="Link" onClick={link} />
-        <Btn icon="ti-file-symlink" title="Link to note (Mod+Alt+K)" onClick={linkToNote} />
-        <Btn icon="ti-paperclip" title="Attach file or image" onClick={() => void openAttachmentPicker(props.notebookId)} />
+        <Btn icon="ti-bold" title={t().bold} onClick={bold} />
+        <Btn icon="ti-italic" title={t().italic} onClick={italic} />
+        <Btn icon="ti-strikethrough" title={t().strikethrough} onClick={strikethrough} />
+        <Btn icon="ti-heading" title={t().heading} onClick={heading} />
+        <Btn icon="ti-link" title={t().link} onClick={link} />
+        <Btn icon="ti-file-symlink" title={t().linkToNoteShortcut} onClick={linkToNote} />
+        <Btn icon="ti-paperclip" title={t().attachFile} onClick={() => void openAttachmentPicker(props.notebookId, locale())} />
 
         <Dropdown.Root
           position="top-right"
           width="13rem"
           items={[
             {
-              sectionLabel: "Lists",
+              sectionLabel: t().lists,
               items: [
-                { icon: "ti ti-list", label: "Bullet List", action: bulletList },
-                { icon: "ti ti-list-numbers", label: "Numbered List", action: numberedList },
-                { icon: "ti ti-checkbox", label: "Checkbox", action: checkbox },
+                { icon: "ti ti-list", label: t().bulletList, action: bulletList },
+                { icon: "ti ti-list-numbers", label: t().numberedList, action: numberedList },
+                { icon: "ti ti-checkbox", label: t().checkbox, action: checkbox },
               ],
             },
             {
-              sectionLabel: "Blocks",
+              sectionLabel: t().blocks,
               items: [
-                { icon: "ti ti-chevron-right", label: "Note", action: callout("note") },
-                { icon: "ti ti-info-circle", label: "Info", action: callout("info") },
-                { icon: "ti ti-check", label: "Success", action: callout("success") },
-                { icon: "ti ti-alert-circle", label: "Warning", action: callout("warning") },
-                { icon: "ti ti-alert-hexagon", label: "Danger", action: callout("danger") },
+                { icon: "ti ti-chevron-right", label: t().note, action: callout("note") },
+                { icon: "ti ti-info-circle", label: t().info, action: callout("info") },
+                { icon: "ti ti-check", label: t().success, action: callout("success") },
+                { icon: "ti ti-alert-circle", label: t().warning, action: callout("warning") },
+                { icon: "ti ti-alert-hexagon", label: t().danger, action: callout("danger") },
               ],
             },
             {
-              sectionLabel: "Misc",
+              sectionLabel: t().misc,
               items: [
-                { icon: "ti ti-table", label: "Table", action: table },
-                { icon: "ti ti-code", label: "Inline Code", action: inlineCode },
+                { icon: "ti ti-table", label: t().table, action: table },
+                { icon: "ti ti-code", label: t().inlineCode, action: inlineCode },
               ],
             },
           ]}
         >
-          <Dropdown.Trigger iconOnly label="Insert content" size="xs" class="text-dimmed" tooltip="Insert content">
+          <Dropdown.Trigger iconOnly label={t().insertContent} size="xs" class="text-dimmed" tooltip={t().insertContent}>
             <i class="ti ti-layout-grid-add text-sm" />
           </Dropdown.Trigger>
         </Dropdown.Root>
@@ -189,14 +192,14 @@ export default function EditorToolbar(props: Props) {
       <Show when={showDisconnected()}>
         <span class="flex shrink-0 items-center gap-1 text-xs" role="status">
           <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
-          Reconnecting...
+          {t().reconnecting}
         </span>
       </Show>
 
       {/* Detail panel toggle */}
       <Btn
         icon={panelOpen() ? "ti-layout-sidebar-right-collapse" : "ti-layout-sidebar-right-expand"}
-        title={panelOpen() ? "Collapse detail panel" : "Expand detail panel"}
+        title={panelOpen() ? t().collapseDetails : t().expandDetails}
         onClick={toggleDetailPanel}
       />
     </div>

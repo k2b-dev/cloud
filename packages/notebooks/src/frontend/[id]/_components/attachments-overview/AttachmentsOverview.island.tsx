@@ -14,9 +14,10 @@
 
 import { fileIcons } from "@k2b/stdlib";
 import { clipboard } from "@k2b/stdlib/browser";
-import { IconButton, Placeholder, prompts, Tooltip, toast } from "@k2b/ui";
+import { IconButton, Placeholder, prompts, Tooltip, toast, useLocale } from "@k2b/ui";
 import { createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
+import { notebookWorkspaceMessages } from "../../messages";
 import {
   type Attachment,
   attachmentMarkdown,
@@ -33,6 +34,8 @@ type Props = {
 };
 
 const AttachmentsOverview = (props: Props) => {
+  const locale = useLocale();
+  const t = () => notebookWorkspaceMessages.resolve([locale()]).t;
   const [items, setItems] = createSignal<Attachment[]>(props.initial);
 
   const onDownload = (att: Attachment) => void confirmAndDownload(att.filename, buildAttachmentContentUrl(props.notebookId, att.id));
@@ -40,9 +43,9 @@ const AttachmentsOverview = (props: Props) => {
   const onCopy = async (att: Attachment) => {
     try {
       await clipboard.copy(attachmentMarkdown({ id: att.id, kind: att.kind, filename: att.filename }));
-      toast.success("Attachment Markdown copied");
+      toast.success(t().attachmentMarkdownCopied);
     } catch {
-      toast.error("Could not copy attachment Markdown");
+      toast.error(t().attachmentMarkdownCopyFailed);
     }
   };
 
@@ -51,22 +54,18 @@ const AttachmentsOverview = (props: Props) => {
       param: { id: props.notebookId, attId: att.id },
     });
     if (!usageRes.ok) {
-      await prompts.error("Failed to check attachment usage");
+      await prompts.error(t().attachmentUsageFailed);
       return;
     }
     const { count } = await usageRes.json();
 
     const message =
-      count > 0
-        ? `"${att.filename}" is referenced in ${count} note${
-            count === 1 ? "" : "s"
-          }. Delete anyway? Existing references will become broken links.`
-        : `Delete "${att.filename}"?`;
+      count > 0 ? t().deleteReferencedAttachmentConfirm({ filename: att.filename, count }) : t().deleteAttachmentConfirm({ filename: att.filename });
 
     const ok = await prompts.confirm(message, {
-      title: "Delete attachment",
+      title: t().deleteAttachment,
       icon: "ti ti-trash",
-      confirmText: "Delete",
+      confirmText: t().delete,
       variant: "danger",
     });
     if (!ok) return;
@@ -78,7 +77,7 @@ const AttachmentsOverview = (props: Props) => {
       const data = (await delRes.json().catch(() => null)) as {
         message?: string;
       } | null;
-      await prompts.error(data?.message ?? "Failed to delete attachment");
+      await prompts.error(data?.message ?? t().deleteAttachmentFailed);
       return;
     }
 
@@ -90,17 +89,13 @@ const AttachmentsOverview = (props: Props) => {
       when={items().length > 0}
       fallback={
         props.searchQuery ? (
-          <Placeholder surface="paper" icon="ti ti-paperclip" description={<>No attachments match "{props.searchQuery}".</>} />
+          <Placeholder surface="paper" icon="ti ti-paperclip" description={t().noMatchingAttachments({ query: props.searchQuery })} />
         ) : (
           <Placeholder
             surface="paper"
             icon="ti ti-paperclip"
-            title="No attachments yet."
-            description={
-              <>
-                Drop files into the editor or use the <span class="font-mono">/file</span> command.
-              </>
-            }
+            title={t().noAttachments}
+            description={t().noAttachmentsDescription}
           />
         )
       }
@@ -138,9 +133,9 @@ const AttachmentsOverview = (props: Props) => {
                 {/* Hover overlay: download / copy / delete. Sits on the
                       preview so meta row stays clean (filename + size). */}
                 <div class="absolute right-1 top-1 flex items-center gap-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
-                  <Tooltip.Anchor content="Download attachment">
+                  <Tooltip.Anchor content={t().downloadAttachment}>
                     <IconButton
-                      label={`Download ${att.filename}`}
+                      label={t().downloadNamedAttachment({ filename: att.filename })}
                       size="xs"
                       onClick={() => onDownload(att)}
                       class="bg-white/90 text-dimmed backdrop-blur-sm dark:bg-zinc-950/80"
@@ -148,9 +143,9 @@ const AttachmentsOverview = (props: Props) => {
                       <i class="ti ti-download text-xs" />
                     </IconButton>
                   </Tooltip.Anchor>
-                  <Tooltip.Anchor content="Copy attachment Markdown">
+                  <Tooltip.Anchor content={t().copyAttachmentMarkdown}>
                     <IconButton
-                      label={`Copy Markdown for ${att.filename}`}
+                      label={t().copyNamedAttachmentMarkdown({ filename: att.filename })}
                       size="xs"
                       onClick={() => void onCopy(att)}
                       class="bg-white/90 text-dimmed backdrop-blur-sm dark:bg-zinc-950/80"
@@ -158,9 +153,9 @@ const AttachmentsOverview = (props: Props) => {
                       <i class="ti ti-copy text-xs" />
                     </IconButton>
                   </Tooltip.Anchor>
-                  <Tooltip.Anchor content="Delete attachment">
+                  <Tooltip.Anchor content={t().deleteAttachment}>
                     <IconButton
-                      label={`Delete ${att.filename}`}
+                      label={t().deleteNamedAttachment({ filename: att.filename })}
                       size="xs"
                       variant="danger"
                       onClick={() => void onDelete(att)}

@@ -1,3 +1,4 @@
+import { readingNotesDe } from "./reading.de";
 import type { NotebookTemplate, TemplateContext } from "./types";
 
 const readingDashboardScript = `// Reading dashboard
@@ -111,12 +112,23 @@ export const readingListTemplate: NotebookTemplate = {
   icon: "ti ti-books",
   notebookName: "Reading List",
   notebookDescription: "Track books, current reads, quotes, and a queue without turning reading into project management.",
+  translations: {
+    de: {
+      name: "Leseliste",
+      description: "Bücher, Leseliste, Notizen, Zitate, Bewertungen und Diagramme.",
+      notebookName: "Leseliste",
+      notebookDescription: "Bücher, aktuelle Lektüre, Zitate und eine Merkliste verwalten, ohne das Lesen zum Projektmanagement zu machen.",
+    },
+  },
   scriptsEnabled: true,
   homepageNoteKey: "dashboard",
-  notes: (ctx: TemplateContext) => [
-    {
-      key: "dashboard",
-      content: (c) => `# Reading Dashboard
+  notes: (ctx: TemplateContext) =>
+    ctx.locale?.toLowerCase().split("-")[0] === "de"
+      ? readingNotesDe(ctx)
+      : [
+          {
+            key: "dashboard",
+            content: (c) => `# Reading Dashboard
 
 #reading
 
@@ -144,10 +156,10 @@ ${readingDashboardScript}
 - [ ] Add a nonfiction book about attention
 - [ ] Pick one short evening novel
 `,
-    },
-    {
-      key: "books",
-      content: (c) => `# Books
+          },
+          {
+            key: "books",
+            content: (c) => `# Books
 
 #books
 
@@ -168,38 +180,38 @@ ${readingLibraryScript}
 Keep this table small. If a book needs real notes, create a page and link it from the title.
 :::
 `,
-    },
-    {
-      key: "creative-act",
-      content: bookContent(
-        "The Creative Act",
-        "Rick Rubin",
-        "Reading",
-        "",
-        [
-          "Attention is treated as a practice, not a mood.",
-          "Useful reminder: collect broadly, edit later.",
-          "Short sections make this easy to read in small sessions.",
+          },
+          {
+            key: "creative-act",
+            content: bookContent(
+              "The Creative Act",
+              "Rick Rubin",
+              "Reading",
+              "",
+              [
+                "Attention is treated as a practice, not a mood.",
+                "Useful reminder: collect broadly, edit later.",
+                "Short sections make this easy to read in small sessions.",
+              ],
+              [
+                "Good companion for notebook workflows because it separates capture from judgement.",
+                "Try a weekly pass over raw notes instead of editing during capture.",
+              ],
+            ),
+          },
+          {
+            key: "braiding-sweetgrass",
+            content: bookContent(
+              "Braiding Sweetgrass",
+              "Robin Wall Kimmerer",
+              "Want",
+              "",
+              ["Read with the garden log open.", "Track plant names and practices that connect to local ecology."],
+              [
+                "Potential bridge between reading notes and the native hedge plan.",
+                "Look for practical observations, not only beautiful passages.",
+              ],
+            ),
+          },
         ],
-        [
-          "Good companion for notebook workflows because it separates capture from judgement.",
-          "Try a weekly pass over raw notes instead of editing during capture.",
-        ],
-      ),
-    },
-    {
-      key: "braiding-sweetgrass",
-      content: bookContent(
-        "Braiding Sweetgrass",
-        "Robin Wall Kimmerer",
-        "Want",
-        "",
-        ["Read with the garden log open.", "Track plant names and practices that connect to local ecology."],
-        [
-          "Potential bridge between reading notes and the native hedge plan.",
-          "Look for practical observations, not only beautiful passages.",
-        ],
-      ),
-    },
-  ],
 };
