@@ -7,12 +7,13 @@ import {
   mutation as mutations,
   query,
 } from "@k2b/stdlib/solid";
-import { IconButton, prompts, Tooltip } from "@k2b/ui";
+import { IconButton, prompts, Tooltip, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ItemFilter, ItemListResult, SpaceColumn, SpaceItem, SpaceTag, SpaceWormhole, WormholeTransferResult } from "@/contracts";
 import { getDetailItemFromUrl, shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
 import { readResponseError } from "../../../lib/response";
+import { useSpaceMessages } from "../../messages";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
 import CreateItemButton from "../sidebar/CreateItemButton";
 import { invalidateSpacesData, requestSpacesRouteNavigation, subscribeToSpacesDataInvalidation } from "../workspace/workspace-events";
@@ -135,6 +136,8 @@ const buildRequest = (params: { bucket: KanbanBucketInitial; page: number; pageS
  * Kanban board with SSR-initialized buckets, drag/drop reordering and explicit per-column "load more".
  */
 export default function KanbanBoard(props: Props) {
+  const locale = useLocale();
+  const t = useSpaceMessages();
   const bucketQueries = props.initialBuckets.map((initialBucket) => {
     const source = `${props.spaceId}:${initialBucket.key}`;
     const initialPage: ItemListResult = {
@@ -155,9 +158,9 @@ export default function KanbanBoard(props: Props) {
           },
           { init: { signal: abortSignal } },
         );
-        if (!res.ok) throw new Error(await readResponseError(res, "Failed to load items"));
+        if (!res.ok) throw new Error(await readResponseError(res, t.loadItemsFailed));
         const result = await res.json();
-        if (result.page !== (cursor ?? 1)) throw new Error("The server returned an invalid Kanban page.");
+        if (result.page !== (cursor ?? 1)) throw new Error(t.invalidKanbanPage);
         return result;
       },
       getNextCursor: (page) => (page.page < page.totalPages ? page.page + 1 : null),
@@ -348,27 +351,27 @@ export default function KanbanBoard(props: Props) {
   };
 
   const describeDroppable = (over: DndDroppableSnapshot<DropMeta> | null) => {
-    if (!over) return "No target";
+    if (!over) return t.noTarget;
     if (over.meta.kind === "wormhole") {
       const target = getWormholeById(over.meta.wormholeId)?.target;
-      return target ? `Wormhole to ${target.spaceName}, ${target.columnName}` : "Unavailable wormhole";
+      return target ? t.wormholeTarget({ space: target.spaceName, column: target.columnName }) : t.unavailableWormhole;
     }
     const bucket = getBucketByKey(over.meta.bucketKey);
-    return bucket ? `Column ${bucket.label}` : "Unknown target";
+    return bucket ? t.columnTarget({ column: bucket.label }) : t.unknownTarget;
   };
 
   const describeActiveItem = (active: DndDraggableSnapshot<DragMeta>) => {
     const location = findItemLocation(active.meta.itemId);
-    return location?.item.title ?? "item";
+    return location?.item.title ?? t.genericItem;
   };
 
   const boardDnd = dnd.create<DragMeta, DropMeta, DropIntent>({
     buildIntent: buildDropIntent,
     announcements: {
-      dragStart: (active) => `Picked up ${describeActiveItem(active)}`,
+      dragStart: (active) => t.dragPickedUp({ item: describeActiveItem(active) }),
       dragOver: (_active, over) => describeDroppable(over),
-      drop: (active, over) => `Dropped ${describeActiveItem(active)} in ${describeDroppable(over)}`,
-      cancel: (active) => `Cancelled drag for ${describeActiveItem(active)}`,
+      drop: (active, over) => t.dragDropped({ item: describeActiveItem(active), target: describeDroppable(over) }),
+      cancel: (active) => t.dragCancelled({ item: describeActiveItem(active) }),
     },
     onDrop: ({ active, intent }) => {
       if (!intent || movingItemId() || moveMutation.loading() || transferMutation.loading()) return;
@@ -399,13 +402,13 @@ export default function KanbanBoard(props: Props) {
 
   const moveMutation = mutations.create<SpaceItem, { itemId: string; intent: DropIntent }, MoveContext>({
     onBefore: ({ itemId, intent }) => {
-      if (intent.kind !== "column") throw new Error("Invalid column drop target");
+      if (intent.kind !== "column") throw new Error(t.invalidColumnTarget);
       const previousBuckets = buckets();
       const resolved = resolveMoveTargets({
         itemId,
         bucketKey: intent.bucketKey,
       });
-      if (!resolved) throw new Error("Unable to resolve drop target");
+      if (!resolved) throw new Error(t.unresolvedDropTarget);
 
       const targetIndex = normalizeTargetIndex({
         sourceBucketKey: resolved.source.bucket.key,
@@ -417,7 +420,7 @@ export default function KanbanBoard(props: Props) {
 
       const targetColumnId = resolveTargetColumnId(resolved.targetBucket);
       if (!targetColumnId) {
-        throw new Error("Target column is unavailable");
+        throw new Error(t.targetColumnUnavailable);
       }
 
       const targetItemsWithoutSource = resolved.targetBucket.items.filter((item) => item.id !== itemId);
@@ -474,7 +477,7 @@ export default function KanbanBoard(props: Props) {
         },
       });
       if (!moveRes.ok) {
-        throw new Error(await readResponseError(moveRes, "Failed to move item"));
+        throw new Error(await readResponseError(moveRes, t.moveFailed));
       }
       return (await moveRes.json()) as SpaceItem;
     },
@@ -502,7 +505,7 @@ export default function KanbanBoard(props: Props) {
           );
         });
       });
-      void invalidateSpacesData(["view"]).catch(() => prompts.error("Item moved, but the board could not be refreshed."));
+      void invalidateSpacesData(["view"]).catch(() => prompts.error(t.moveRefreshFailed));
     },
     onError: (error, ctx) => {
       if (ctx?.previousBuckets) {
@@ -523,8 +526,8 @@ export default function KanbanBoard(props: Props) {
   const transferMutation = mutations.create<WormholeTransferResult, { itemId: string; wormholeId: string }, TransferContext>({
     onBefore: ({ itemId }) => {
       const source = findItemLocation(itemId);
-      if (!source) throw new Error("Item is no longer available");
-      if (!canTransferThroughWormhole(source.item)) throw new Error("Recurring items cannot move through wormholes");
+      if (!source) throw new Error(t.itemUnavailable);
+      if (!canTransferThroughWormhole(source.item)) throw new Error(t.recurringWormholeBlocked);
       const previousBuckets = buckets();
 
       withBoardScrollPreserved(() => {
@@ -548,10 +551,11 @@ export default function KanbanBoard(props: Props) {
         itemId: vars.itemId,
         wormholeId: vars.wormholeId,
         signal: context.abortSignal,
+        locale: locale(),
       }),
     onSuccess: (result) => {
-      showWormholeTransferToast(result);
-      void invalidateSpacesData(["view"]).catch(() => prompts.error("Item transferred, but the board could not be refreshed."));
+      showWormholeTransferToast(result, locale());
+      void invalidateSpacesData(["view"]).catch(() => prompts.error(t.transferRefreshFailed));
       if (selectedItemId() === result.item.id) {
         requestSpacesRouteNavigation(props.baseUrl, { scroll: "preserve" });
       }
@@ -622,7 +626,10 @@ export default function KanbanBoard(props: Props) {
                     }`}
                     data-scroll-preserve={`spaces-kanban-column-${props.spaceId}-${bucket.key}`}
                   >
-                    <Show when={bucket.items.length > 0} fallback={<p class="px-2 py-6 text-center text-[11px] text-dimmed">No items</p>}>
+                    <Show
+                      when={bucket.items.length > 0}
+                      fallback={<p class="px-2 py-6 text-center text-[11px] text-dimmed">{t.noItems}</p>}
+                    >
                       <For each={bucket.items}>
                         {(item, itemIndex) => {
                           const priority = item.priority ? priorityMeta[item.priority] : null;
@@ -673,8 +680,8 @@ export default function KanbanBoard(props: Props) {
                                       <button
                                         type="button"
                                         data-dnd-card-handle
-                                        aria-label={`Drag ${item.title}`}
-                                        title="Drag"
+                                        aria-label={t.dragItem({ title: item.title })}
+                                        title={t.drag}
                                         class="focus-ui absolute right-1.5 top-1.5 inline-flex h-5 w-5 cursor-grab items-center justify-center rounded-[var(--ui-radius-control)] text-dimmed opacity-0 transition-[color,background-color,opacity] hover:bg-[var(--ui-hover)] hover:text-primary group-hover/card:opacity-100 group-focus-within/card:opacity-100 active:cursor-grabbing"
                                         onClick={(event) => {
                                           event.preventDefault();
@@ -720,7 +727,7 @@ export default function KanbanBoard(props: Props) {
                                     <Show when={item.deadline}>
                                       <span class="inline-flex items-center gap-1 text-[11px] text-dimmed">
                                         <i class="ti ti-clock text-[10px]" />
-                                        {dates.formatDateRelative(item.deadline!)}
+                                        {dates.formatDateRelative(item.deadline!, props.dateConfig)}
                                       </span>
                                     </Show>
                                     <Show when={item.assignees && item.assignees.length > 0}>
@@ -743,12 +750,12 @@ export default function KanbanBoard(props: Props) {
 
                     <Show when={bucketQuery(bucket.key)?.hasMore()}>
                       <IconButton
-                        label={`Load more items in ${bucket.label}`}
+                        label={t.loadMoreIn({ group: bucket.label })}
                         size="sm"
                         onClick={() => void bucketQuery(bucket.key)?.loadMore()}
                         disabled={bucketQuery(bucket.key)?.loadingMore()}
                         class="mx-auto mt-1 h-7 w-7"
-                        title="Load more"
+                        title={t.loadMore}
                       >
                         <i class={`ti ${bucketQuery(bucket.key)?.loadingMore() ? "ti-loader-2 animate-spin" : "ti-arrow-down"} text-sm`} />
                       </IconButton>
@@ -787,9 +794,9 @@ export default function KanbanBoard(props: Props) {
             <section class="flex h-full w-72 shrink-0 flex-col rounded-[var(--ui-radius-surface)] border border-[var(--ui-border-strong)] bg-[var(--ui-surface-subtle)] p-1">
               <header class="flex items-center gap-2 px-1.5 py-1.5">
                 <i class="ti ti-arrow-bounce shrink-0 text-sm text-dimmed" />
-                <h3 class="flex-1 truncate text-xs font-medium">Wormholes</h3>
-                <Tooltip.Anchor content="Drop an item into a wormhole to move it directly into a status in another Space.">
-                  <IconButton label="About wormholes" size="xs" class="h-5 w-5">
+                <h3 class="flex-1 truncate text-xs font-medium">{t.wormholes}</h3>
+                <Tooltip.Anchor content={t.wormholesHelp}>
+                  <IconButton label={t.aboutWormholes} size="xs" class="h-5 w-5">
                     <i class="ti ti-info-circle text-xs" />
                   </IconButton>
                 </Tooltip.Anchor>
@@ -825,7 +832,7 @@ export default function KanbanBoard(props: Props) {
                             <i class="ti ti-arrow-bounce text-2xl" style={`color:${wormhole.color}`} />
                             <p class="mt-2 max-w-full truncate text-xs font-medium text-primary">{target.spaceName}</p>
                             <p class="mt-0.5 max-w-full truncate text-[11px] text-dimmed">{target.columnName}</p>
-                            <p class="mt-2 text-[11px] font-medium text-dimmed">{active() ? "Release to move" : "Drop item here"}</p>
+                            <p class="mt-2 text-[11px] font-medium text-dimmed">{active() ? t.releaseToMove : t.dropItemHere}</p>
                           </div>
                         );
                       }}

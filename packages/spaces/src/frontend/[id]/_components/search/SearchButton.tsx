@@ -9,6 +9,7 @@ import {
 import { onCleanup, onMount } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { ItemFilter, SpaceColumn, SpaceItem } from "@/contracts";
+import { useSpaceMessages } from "../../messages";
 import { requestSpacesRouteNavigation } from "../workspace/workspace-events";
 
 type Props = {
@@ -32,8 +33,6 @@ const buildItemHref = (spaceId: string, query: string, itemId: string) => {
 
 const itemIcon = (item: SpaceItem) => (item.startsAt && item.endsAt ? "ti ti-calendar-event" : "ti ti-checkbox");
 
-const itemKind = (item: SpaceItem) => (item.startsAt && item.endsAt ? "Event" : "Task");
-
 const compactDescription = (value: string | null | undefined, query: string): string | undefined => {
   if (!value) return undefined;
   const text = value.replace(/\s+/g, " ").trim();
@@ -46,13 +45,6 @@ const compactDescription = (value: string | null | undefined, query: string): st
   const start = Math.max(0, index - 40);
   const end = Math.min(text.length, index + needle.length + 80);
   return `${start > 0 ? "..." : ""}${text.slice(start, end)}${end < text.length ? "..." : ""}`;
-};
-
-const itemDescription = (item: SpaceItem, columns: SpaceColumn[], query: string): string | undefined => {
-  const column = columns.find((entry) => entry.id === item.columnId);
-  const meta = [itemKind(item), column?.name, item.completedAt ? "Completed" : undefined, item.priority ?? undefined].filter(Boolean);
-  const snippet = compactDescription(item.description, query);
-  return [...meta, snippet].join(" - ") || undefined;
 };
 
 const searchRequest = (query: string): ItemFilter => ({
@@ -69,13 +61,26 @@ const searchRequest = (query: string): ItemFilter => ({
 });
 
 export default function SearchButton(props: Props) {
+  const t = useSpaceMessages();
+  const itemDescription = (item: SpaceItem, query: string): string | undefined => {
+    const column = props.columns.find((entry) => entry.id === item.columnId);
+    const priority = item.priority ? { urgent: t.urgent, high: t.high, medium: t.medium, low: t.low }[item.priority] : undefined;
+    const meta = [
+      item.startsAt && item.endsAt ? t.event : t.task,
+      column?.name,
+      item.completedAt ? t.completed : undefined,
+      priority,
+    ].filter(Boolean);
+    const snippet = compactDescription(item.description, query);
+    return [...meta, snippet].join(" · ") || undefined;
+  };
   const openSearch = async () => {
     const selected = await openSpotlightSearch<SpaceItem>({
-      title: `Search in ${props.spaceName}`,
+      title: t.searchInSpace({ space: props.spaceName }),
       icon: "ti ti-layout-kanban",
-      placeholder: "Search items...",
+      placeholder: t.searchItems,
       minQueryLength: 1,
-      noResultsText: "No items found.",
+      noResultsText: t.noItemsFound,
       resolve: async ({ query, abortSignal }) => {
         const trimmed = query.trim();
         if (!trimmed) return [];
@@ -93,7 +98,7 @@ export default function SearchButton(props: Props) {
         return payload.items.map((item) => ({
           value: item,
           label: item.title,
-          desc: itemDescription(item, props.columns, trimmed),
+          desc: itemDescription(item, trimmed),
           icon: itemIcon(item),
         }));
       },
@@ -120,7 +125,7 @@ export default function SearchButton(props: Props) {
     return (
       <AppWorkspace.SidebarIconAction
         icon="ti ti-search"
-        label={`Search items (${SPOTLIGHT_SHORTCUT_TITLE})`}
+        label={t.searchItemsWithShortcut({ shortcut: SPOTLIGHT_SHORTCUT_TITLE })}
         onClick={() => void openSearch()}
       />
     );
@@ -129,10 +134,10 @@ export default function SearchButton(props: Props) {
   return (
     <SpotlightButton
       variant={props.variant}
-      label="Search Items"
+      label={t.searchItemsLabel}
       onClick={openSearch}
-      title={`Search items (${SPOTLIGHT_SHORTCUT_TITLE})`}
-      ariaLabel="Search items"
+      title={t.searchItemsWithShortcut({ shortcut: SPOTLIGHT_SHORTCUT_TITLE })}
+      ariaLabel={t.searchItems}
     />
   );
 }

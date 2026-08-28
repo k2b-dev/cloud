@@ -25,6 +25,7 @@ import {
   summarizeRecurrenceState,
   weekdayOptions,
 } from "@/presentation/recurrence";
+import { useSpaceMessages } from "../../messages";
 import {
   allDayEnd,
   allDayStart,
@@ -35,7 +36,7 @@ import {
   instantFromLocalDateTime,
   scheduleDatePresets,
 } from "./item-form/date";
-import { PRIORITY_OPTIONS } from "./item-form/options";
+import { priorityOptions } from "./item-form/options";
 import type { ItemFormProps, ItemType, Priority } from "./item-form/types";
 import SpaceAssigneePicker from "./SpaceAssigneePicker";
 
@@ -47,6 +48,7 @@ export type { ItemFormData } from "./item-form/types";
  * - Edit mode: item is provided, type is fixed based on existing data
  */
 export default function ItemForm(props: ItemFormProps) {
+  const t = useSpaceMessages();
   const isEditMode = () => !!props.item;
   const initialIsEvent = () => Boolean(props.item?.startsAt && props.item?.endsAt);
   const dateTimeInitial = (value?: string | null) => (props.dateConfig?.timeZone ? (value ?? "") : (value?.slice(0, 16) ?? ""));
@@ -84,8 +86,8 @@ export default function ItemForm(props: ItemFormProps) {
   const [showQuickEventDetails, setShowQuickEventDetails] = createSignal(Boolean(location() || url()));
 
   const isEvent = () => itemType() === "event";
-  const defaultTitle = () => (isEditMode() ? (isEvent() ? "Edit event" : "Edit task") : isEvent() ? "New event" : "New task");
-  const defaultSubmitLabel = () => (isEditMode() ? (isEvent() ? "Save Event" : "Save Task") : isEvent() ? "Create Event" : "Create Task");
+  const defaultTitle = () => (isEditMode() ? (isEvent() ? t.editEvent : t.editTask) : isEvent() ? t.newEvent : t.newTask);
+  const defaultSubmitLabel = () => (isEditMode() ? (isEvent() ? t.saveEvent : t.saveTask) : isEvent() ? t.createEvent : t.createTask);
   const eventRange = () =>
     allDay() ? dateOnlyRange(startsAt(), endsAt(), props.dateConfig) : { start: startsAt() || null, end: endsAt() || null };
   const recurrenceSummary = () =>
@@ -124,9 +126,9 @@ export default function ItemForm(props: ItemFormProps) {
     return "custom";
   };
   const quickRecurrenceOptions = [
-    { id: "never", label: "Does not repeat", icon: "ti ti-calendar-off" },
-    ...recurrenceFrequencyOptions,
-    { id: "custom", label: "Custom…", icon: "ti ti-adjustments" },
+    { id: "never", label: t.doesNotRepeat, icon: "ti ti-calendar-off" },
+    ...recurrenceFrequencyOptions(props.dateConfig),
+    { id: "custom", label: t.custom, icon: "ti ti-adjustments" },
   ];
 
   const toggleRecurrenceDay = (day: string) => {
@@ -207,12 +209,12 @@ export default function ItemForm(props: ItemFormProps) {
     setError("");
 
     if (!title().trim()) {
-      setError("Title is required");
+      setError(t.titleRequired);
       return;
     }
 
     if (!isEvent() && !columnId()) {
-      setError("Please select a status");
+      setError(t.selectStatusRequired);
       return;
     }
 
@@ -221,18 +223,18 @@ export default function ItemForm(props: ItemFormProps) {
 
     if (isEvent()) {
       if (!eventStartsAt || !eventEndsAt) {
-        setError("Events require both start and end time");
+        setError(t.eventTimesRequired);
         return;
       }
       if (new Date(eventEndsAt) <= new Date(eventStartsAt)) {
-        setError("End time must be after start time");
+        setError(t.endAfterStart);
         return;
       }
       if (url().trim()) {
         try {
           new URL(url().trim());
         } catch {
-          setError("Event URL must be a valid URL");
+          setError(t.validEventUrl);
           return;
         }
       }
@@ -280,17 +282,17 @@ export default function ItemForm(props: ItemFormProps) {
             when={quickCreate()}
             fallback={
               <>
-                <PanelDialog.Section title="General" subtitle="Core details and timing." icon="ti ti-info-circle">
+                <PanelDialog.Section title={t.general} subtitle={t.generalDescription} icon="ti ti-info-circle">
                   <Show when={!isEditMode() && !props.quickCreate}>
                     <div>
-                      <p class="mb-1 block text-sm font-medium">Type</p>
-                      <p class="mb-2 text-xs text-dimmed">Tasks have a deadline, events have a start and end time</p>
+                      <p class="mb-1 block text-sm font-medium">{t.type}</p>
+                      <p class="mb-2 text-xs text-dimmed">{t.typeDescription}</p>
                       <SegmentedControl
                         options={[
-                          { value: "task" as const, label: "Task", icon: "ti ti-checkbox" },
+                          { value: "task" as const, label: t.task, icon: "ti ti-checkbox" },
                           {
                             value: "event" as const,
-                            label: "Event",
+                            label: t.event,
                             icon: "ti ti-calendar-event",
                           },
                         ]}
@@ -300,9 +302,9 @@ export default function ItemForm(props: ItemFormProps) {
                     </div>
                   </Show>
                   <TextInput
-                    label="Title"
-                    description={!isEditMode() ? "A short summary of what needs to be done" : undefined}
-                    placeholder="What needs to be done?"
+                    label={t.title}
+                    description={!isEditMode() ? t.titleDescription : undefined}
+                    placeholder={t.titlePlaceholder}
                     icon="ti ti-text-caption"
                     value={title}
                     onValueChange={(v) => {
@@ -312,9 +314,9 @@ export default function ItemForm(props: ItemFormProps) {
                     required
                   />
                   <TextInput
-                    label="Description"
-                    description={!isEditMode() ? "Optional details or notes" : undefined}
-                    placeholder="Description in markdown ..."
+                    label={t.description}
+                    description={!isEditMode() ? t.descriptionHint : undefined}
+                    placeholder={t.markdownDescriptionPlaceholder}
                     value={description}
                     onValueChange={setDescription}
                     markdown
@@ -322,8 +324,8 @@ export default function ItemForm(props: ItemFormProps) {
                   <Show when={!isEvent()}>
                     <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <DateTimePicker
-                        label="Deadline"
-                        description={!isEditMode() ? "When should this be completed?" : undefined}
+                        label={t.deadline}
+                        description={!isEditMode() ? t.deadlineDescription : undefined}
                         value={() => deadline() || null}
                         onValueChange={(value) => setDeadline(value ?? "")}
                         dateConfig={props.dateConfig}
@@ -331,8 +333,8 @@ export default function ItemForm(props: ItemFormProps) {
                         clearable
                       />
                       <NumberInput
-                        label="Estimated duration"
-                        description={!isEditMode() ? "Planning estimate in minutes" : undefined}
+                        label={t.estimatedDuration}
+                        description={!isEditMode() ? t.estimatedDurationDescription : undefined}
                         value={estimatedDurationMinutes}
                         onValueChange={setEstimatedDurationMinutes}
                         min={1}
@@ -348,10 +350,8 @@ export default function ItemForm(props: ItemFormProps) {
                   <Show when={isEvent()}>
                     <DateRangePicker
                       withTime={!allDay()}
-                      label="Schedule"
-                      description={
-                        !isEditMode() ? (allDay() ? "Calendar days for the event" : "Start and end time for the event") : undefined
-                      }
+                      label={t.schedule}
+                      description={!isEditMode() ? (allDay() ? t.calendarDaysDescription : t.eventTimesDescription) : undefined}
                       value={eventRange}
                       onValueChange={(value) => {
                         setStartsAt(value.start ?? "");
@@ -365,8 +365,8 @@ export default function ItemForm(props: ItemFormProps) {
                       clearable
                     />
                     <CheckboxCard
-                      label="All-day event"
-                      description="Use dates only and show the event in the all-day calendar row"
+                      label={t.allDayEvent}
+                      description={t.allDayEventDescription}
                       icon="ti ti-calendar"
                       variant="input"
                       value={allDay}
@@ -376,10 +376,10 @@ export default function ItemForm(props: ItemFormProps) {
                 </PanelDialog.Section>
 
                 <Show when={isEvent()}>
-                  <PanelDialog.Section title="Repeat" subtitle="Optional recurring event series." icon="ti ti-repeat">
+                  <PanelDialog.Section title={t.repeat} subtitle={t.repeatDescription} icon="ti ti-repeat">
                     <CheckboxCard
-                      label="Repeat event"
-                      description="Create a recurring event series"
+                      label={t.repeatEvent}
+                      description={t.repeatEventDescription}
                       icon="ti ti-repeat"
                       variant="input"
                       value={recurrenceEnabled}
@@ -388,16 +388,16 @@ export default function ItemForm(props: ItemFormProps) {
                     <Show when={recurrenceEnabled()}>
                       <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <Select
-                          label="Frequency"
-                          description={!isEditMode() ? "Repeat cadence" : undefined}
+                          label={t.frequency}
+                          description={!isEditMode() ? t.frequencyDescription : undefined}
                           icon="ti ti-repeat"
                           value={recurrenceFrequency}
                           onValueChange={(value) => value && setRecurrenceFrequency(value as RecurrenceFrequency)}
-                          options={recurrenceFrequencyOptions}
+                          options={recurrenceFrequencyOptions(props.dateConfig)}
                         />
                         <NumberInput
-                          label="Every"
-                          description={!isEditMode() ? "Interval between repeats" : undefined}
+                          label={t.every}
+                          description={!isEditMode() ? t.intervalDescription : undefined}
                           icon="ti ti-refresh"
                           value={recurrenceInterval}
                           onValueChange={setRecurrenceInterval}
@@ -408,10 +408,10 @@ export default function ItemForm(props: ItemFormProps) {
                       </div>
                       <Show when={recurrenceFrequency() === "weekly"}>
                         <div>
-                          <p class="mb-1 block text-sm font-medium">Weekdays</p>
-                          <p class="mb-2 text-xs text-dimmed">Leave empty to use the event start weekday</p>
+                          <p class="mb-1 block text-sm font-medium">{t.weekdays}</p>
+                          <p class="mb-2 text-xs text-dimmed">{t.weekdaysDescription}</p>
                           <div class="grid grid-cols-7 gap-1">
-                            <For each={weekdayOptions}>
+                            <For each={weekdayOptions(props.dateConfig)}>
                               {(day) => (
                                 <Button
                                   type="button"
@@ -431,17 +431,17 @@ export default function ItemForm(props: ItemFormProps) {
                       </Show>
                       <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                         <Select
-                          label="Ends"
-                          description={!isEditMode() ? "Limit the series when needed" : undefined}
+                          label={t.ends}
+                          description={!isEditMode() ? t.endsDescription : undefined}
                           icon="ti ti-calendar-due"
                           value={recurrenceEndMode}
                           onValueChange={(value) => value && setRecurrenceEndMode(value as RecurrenceEndMode)}
-                          options={recurrenceEndOptions}
+                          options={recurrenceEndOptions(props.dateConfig)}
                         />
                         <Show when={recurrenceEndMode() === "on"}>
                           <DatePicker
-                            label="Until"
-                            description={!isEditMode() ? "Last date that may contain an occurrence" : undefined}
+                            label={t.until}
+                            description={!isEditMode() ? t.untilDescription : undefined}
                             value={() => recurrenceUntil() || null}
                             onValueChange={(value) => setRecurrenceUntil(value ?? "")}
                             dateConfig={props.dateConfig}
@@ -450,8 +450,8 @@ export default function ItemForm(props: ItemFormProps) {
                         </Show>
                         <Show when={recurrenceEndMode() === "after"}>
                           <NumberInput
-                            label="Occurrences"
-                            description={!isEditMode() ? "Maximum number of generated events" : undefined}
+                            label={t.occurrences}
+                            description={!isEditMode() ? t.occurrencesDescription : undefined}
                             icon="ti ti-list-numbers"
                             value={recurrenceCount}
                             onValueChange={setRecurrenceCount}
@@ -476,23 +476,19 @@ export default function ItemForm(props: ItemFormProps) {
                 </Show>
 
                 <Show when={isEvent()}>
-                  <PanelDialog.Section
-                    title="Event details"
-                    subtitle="Location and external reference for calendar subscriptions."
-                    icon="ti ti-map-pin"
-                  >
+                  <PanelDialog.Section title={t.eventDetails} subtitle={t.eventDetailsDescription} icon="ti ti-map-pin">
                     <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                       <TextInput
-                        label="Location"
-                        description={!isEditMode() ? "Where does it happen?" : undefined}
-                        placeholder="Office, meeting room, or address"
+                        label={t.location}
+                        description={!isEditMode() ? t.locationDescription : undefined}
+                        placeholder={t.locationPlaceholder}
                         icon="ti ti-map-pin"
                         value={location}
                         onValueChange={setLocation}
                       />
                       <TextInput
-                        label="URL"
-                        description={!isEditMode() ? "Meeting link or reference" : undefined}
+                        label={t.url}
+                        description={!isEditMode() ? t.urlDescription : undefined}
                         placeholder="https://..."
                         icon="ti ti-link"
                         type="url"
@@ -507,12 +503,12 @@ export default function ItemForm(props: ItemFormProps) {
                   </PanelDialog.Section>
                 </Show>
 
-                <PanelDialog.Section title="Organize" subtitle="Workflow, priority, tags, and ownership." icon="ti ti-tags">
+                <PanelDialog.Section title={t.organize} subtitle={t.organizeDescription} icon="ti ti-tags">
                   <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                     <Select
-                      label="Status"
-                      description={!isEditMode() ? "Current workflow state" : undefined}
-                      placeholder="Select column"
+                      label={t.status}
+                      description={!isEditMode() ? t.statusDescription : undefined}
+                      placeholder={t.selectColumn}
                       icon="ti ti-progress"
                       value={columnId}
                       onValueChange={(value) => value && setColumnId(value)}
@@ -520,22 +516,22 @@ export default function ItemForm(props: ItemFormProps) {
                       required={!isEvent()}
                     />
                     <Select
-                      label="Priority"
-                      description={!isEditMode() ? "How urgent is this?" : undefined}
-                      placeholder="Select priority"
+                      label={t.priority}
+                      description={!isEditMode() ? t.priorityDescription : undefined}
+                      placeholder={t.selectPriority}
                       icon="ti ti-flag"
                       value={priority}
                       onValueChange={(value) => setPriority(value ?? "")}
-                      options={PRIORITY_OPTIONS}
+                      options={priorityOptions(props.dateConfig?.locale)}
                       clearable
                     />
                   </div>
                   <Show when={props.tags && props.tags.length > 0}>
                     <MultiSelectInput
-                      label="Tags"
-                      description={!isEditMode() ? "Categorize with tags" : undefined}
-                      placeholder="Select tags"
-                      searchPlaceholder="Search tags..."
+                      label={t.tags}
+                      description={!isEditMode() ? t.tagsDescription : undefined}
+                      placeholder={t.selectTags}
+                      searchPlaceholder={t.searchTags}
                       icon="ti ti-tags"
                       value={selectedTags}
                       onValueChange={setSelectedTags}
@@ -546,14 +542,14 @@ export default function ItemForm(props: ItemFormProps) {
 
                   <div class="flex flex-col gap-3">
                     <div>
-                      <p class="mb-1 block text-sm font-medium">Assignees</p>
-                      <p class="text-xs text-dimmed">Assign initial owners or leave unassigned</p>
+                      <p class="mb-1 block text-sm font-medium">{t.assignees}</p>
+                      <p class="text-xs text-dimmed">{t.assigneesDescription}</p>
                     </div>
                     <SpaceAssigneePicker
                       spaceId={props.spaceId}
                       value={assignees}
                       onChange={(next) => setAssignees(next)}
-                      placeholder="Search people with access..."
+                      placeholder={t.searchPeople}
                     />
                   </div>
                 </PanelDialog.Section>
@@ -562,8 +558,8 @@ export default function ItemForm(props: ItemFormProps) {
           >
             <div class="flex flex-col gap-5">
               <TextInput
-                label="Title"
-                placeholder="Event title"
+                label={t.title}
+                placeholder={t.eventTitle}
                 icon="ti ti-text-caption"
                 value={title}
                 onValueChange={(value) => {
@@ -576,8 +572,8 @@ export default function ItemForm(props: ItemFormProps) {
 
               <DateRangePicker
                 withTime={!allDay()}
-                label="Schedule"
-                description={allDay() ? "Calendar days for the event" : "Start and end time"}
+                label={t.schedule}
+                description={allDay() ? t.calendarDaysDescription : t.startAndEnd}
                 value={eventRange}
                 onValueChange={(value) => {
                   setStartsAt(value.start ?? "");
@@ -591,10 +587,10 @@ export default function ItemForm(props: ItemFormProps) {
                 clearable
               />
 
-              <Switch label="All-day event" value={allDay} onValueChange={handleAllDayChange} />
+              <Switch label={t.allDayEvent} value={allDay} onValueChange={handleAllDayChange} />
 
               <Select
-                label="Repeat"
+                label={t.repeat}
                 icon="ti ti-repeat"
                 value={quickRecurrenceValue}
                 onValueChange={handleQuickRecurrenceChange}
@@ -615,8 +611,8 @@ export default function ItemForm(props: ItemFormProps) {
 
               <Show when={showQuickDescription()}>
                 <TextInput
-                  label="Description"
-                  placeholder="Description in markdown ..."
+                  label={t.description}
+                  placeholder={t.markdownDescriptionPlaceholder}
                   value={description}
                   onValueChange={setDescription}
                   markdown
@@ -626,14 +622,14 @@ export default function ItemForm(props: ItemFormProps) {
               <Show when={showQuickEventDetails()}>
                 <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
                   <TextInput
-                    label="Location"
-                    placeholder="Office, meeting room, or address"
+                    label={t.location}
+                    placeholder={t.locationPlaceholder}
                     icon="ti ti-map-pin"
                     value={location}
                     onValueChange={setLocation}
                   />
                   <TextInput
-                    label="URL"
+                    label={t.url}
                     placeholder="https://..."
                     icon="ti ti-link"
                     type="url"
@@ -651,13 +647,13 @@ export default function ItemForm(props: ItemFormProps) {
                 <Show when={!showQuickDescription()}>
                   <Button type="button" variant="ghost" size="sm" onClick={() => setShowQuickDescription(true)}>
                     <i class="ti ti-align-left" aria-hidden="true" />
-                    Add description
+                    {t.addDescription}
                   </Button>
                 </Show>
                 <Show when={!showQuickEventDetails()}>
                   <Button type="button" variant="ghost" size="sm" onClick={() => setShowQuickEventDetails(true)}>
                     <i class="ti ti-map-pin" aria-hidden="true" />
-                    Add location or link
+                    {t.addLocationOrLink}
                   </Button>
                 </Show>
               </div>
@@ -675,12 +671,12 @@ export default function ItemForm(props: ItemFormProps) {
         <PanelDialog.Footer>
           <Show when={quickCreate()}>
             <Button type="button" variant="ghost" size="sm" onClick={() => setShowFullEditor(true)}>
-              More options
+              {t.moreOptions}
             </Button>
           </Show>
           <div class="ml-auto flex items-center gap-2">
             <Button type="button" variant="secondary" size="sm" onClick={props.onCancel}>
-              Cancel
+              {t.cancel}
             </Button>
             <Button type="submit" size="sm">
               {props.submitLabel ?? defaultSubmitLabel()}

@@ -1,6 +1,7 @@
 import { SegmentedControl, SettingsField, SettingsGroup } from "@k2b/ui";
 import { createSignal } from "solid-js";
 import type { Priority } from "@/contracts";
+import { useSpaceMessages } from "../../messages";
 import {
   type EventsDaysAhead,
   readAllSettings,
@@ -12,30 +13,15 @@ import {
   writeWidgetSettings,
 } from "../settings/SpaceSettingsStore";
 
-const VIEW_OPTIONS: { value: ViewType; label: string; icon: string }[] = [
-  { value: "list", label: "Overview", icon: "ti-home" },
-  { value: "table", label: "Table", icon: "ti-table" },
-  { value: "kanban", label: "Kanban", icon: "ti-layout-kanban" },
-  { value: "calendar", label: "Calendar", icon: "ti-calendar" },
-];
-
-const EVENTS_DAYS_OPTIONS = [
-  { value: "1" as const, label: "Today" },
-  { value: "3" as const, label: "3 days" },
-  { value: "7" as const, label: "1 week" },
-  { value: "14" as const, label: "2 weeks" },
-];
-
-const TASKS_PRIORITY_OPTIONS = [
-  { value: "" as const, label: "All" },
-  { value: "low" as const, label: "Low+" },
-  { value: "medium" as const, label: "Med+" },
-  { value: "high" as const, label: "High+" },
-  { value: "urgent" as const, label: "Urgent" },
-];
-
 function LocalSettingsForm(props: { spaceId: string; initialSettings: SpaceUserSettings }) {
+  const m = useSpaceMessages();
   const [settings, setSettings] = createSignal<SpaceUserSettings>(props.initialSettings);
+  const viewOptions: { value: ViewType; label: string; icon: string }[] = [
+    { value: "list", label: m.overview, icon: "ti-home" },
+    { value: "table", label: m.table, icon: "ti-table" },
+    { value: "kanban", label: "Kanban", icon: "ti-layout-kanban" },
+    { value: "calendar", label: m.calendar, icon: "ti-calendar" },
+  ];
 
   const updateSetting = <K extends keyof SpaceUserSettings>(key: K, value: SpaceUserSettings[K]) => {
     const newSettings = { ...settings(), [key]: value };
@@ -47,10 +33,10 @@ function LocalSettingsForm(props: { spaceId: string; initialSettings: SpaceUserS
   };
 
   return (
-    <SettingsGroup title="This Space" description="Stored in this browser and applied immediately.">
-      <SettingsField label="Default view" description="Choose how this Space opens." error={() => undefined}>
+    <SettingsGroup title={m.thisSpace} description={m.localSettingsDescription}>
+      <SettingsField label={m.defaultView} description={m.defaultViewDescription} error={() => undefined}>
         <SegmentedControl
-          options={VIEW_OPTIONS.map((o) => ({
+          options={viewOptions.map((o) => ({
             value: o.value,
             label: o.label,
             icon: `ti ${o.icon}`,
@@ -64,7 +50,21 @@ function LocalSettingsForm(props: { spaceId: string; initialSettings: SpaceUserS
 }
 
 function WidgetSettingsForm() {
+  const m = useSpaceMessages();
   const [settings, setSettings] = createSignal<WidgetSettings>(readWidgetSettings());
+  const eventDaysOptions = [
+    { value: "1" as const, label: m.today },
+    { value: "3" as const, label: m.threeDays },
+    { value: "7" as const, label: m.oneWeek },
+    { value: "14" as const, label: m.twoWeeks },
+  ];
+  const taskPriorityOptions = [
+    { value: "" as const, label: m.all },
+    { value: "low" as const, label: m.lowPlus },
+    { value: "medium" as const, label: m.mediumPlus },
+    { value: "high" as const, label: m.highPlus },
+    { value: "urgent" as const, label: m.urgent },
+  ];
 
   const updateSetting = <K extends keyof WidgetSettings>(key: K, value: WidgetSettings[K]) => {
     const newSettings = { ...settings(), [key]: value };
@@ -73,18 +73,18 @@ function WidgetSettingsForm() {
   };
 
   return (
-    <SettingsGroup title="Home widgets" description="Stored in this browser and applied across all Spaces.">
-      <SettingsField label="Event range" description="How far ahead the home event widget looks." error={() => undefined}>
+    <SettingsGroup title={m.homeWidgets} description={m.homeWidgetsDescription}>
+      <SettingsField label={m.eventRange} description={m.eventRangeDescription} error={() => undefined}>
         <SegmentedControl
-          options={EVENTS_DAYS_OPTIONS}
+          options={eventDaysOptions}
           value={() => String(settings().eventsDaysAhead)}
           onValueChange={(v) => updateSetting("eventsDaysAhead", Number(v) as EventsDaysAhead)}
         />
       </SettingsField>
 
-      <SettingsField label="Task priority" description="The minimum priority shown in the home task widget." error={() => undefined}>
+      <SettingsField label={m.taskPriority} description={m.taskPriorityDescription} error={() => undefined}>
         <SegmentedControl
-          options={TASKS_PRIORITY_OPTIONS}
+          options={taskPriorityOptions}
           value={() => settings().tasksMinPriority ?? ""}
           onValueChange={(v) => updateSetting("tasksMinPriority", (v || null) as Priority | null)}
         />

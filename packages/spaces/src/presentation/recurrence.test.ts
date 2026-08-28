@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Recurrence } from "@/contracts";
-import { summarizeRecurrence } from "./recurrence";
+import { recurrenceMessages, summarizeRecurrence } from "./recurrence";
 
 const recurrence = (rrule: string): Recurrence => ({
   rrule,
@@ -9,6 +9,16 @@ const recurrence = (rrule: string): Recurrence => ({
 });
 
 describe("Spaces recurrence summaries", () => {
+  test("keeps translations complete and falls back from regional German locales", () => {
+    expect(recurrenceMessages.check()).toEqual([]);
+    expect(
+      summarizeRecurrence(recurrence("FREQ=WEEKLY;BYDAY=MO,WE;COUNT=2"), {
+        startsAt: "2026-08-14T09:00:00.000Z",
+        dateConfig: { timeZone: "UTC", locale: "de-CH" },
+      }),
+    ).toBe("Wiederholt sich jeden Montag und Mittwoch um 09:00 Uhr für 2 Termine");
+  });
+
   test("describes selected weekly days, time, and end date", () => {
     expect(
       summarizeRecurrence(recurrence("FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20260815T235959Z"), {

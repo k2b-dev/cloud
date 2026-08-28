@@ -1,16 +1,20 @@
 import type { AuthContext } from "@valentinkolb/cloud/server";
-import { expectUserBackedActor, getDateConfig } from "@valentinkolb/cloud/server";
+import { expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
+import { logger } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { spacesService } from "@/service";
 import { spacesPublicResources } from "@/service/public-resources";
 import { ssr } from "../config";
 import { parseLastSpaceId, parsePinnedSpaceIds } from "./[id]/_components/settings/SpaceSettingsStore";
-import SpacesOverview from "./SpacesOverview.island";
+import SpacesOverview, { overviewMessages } from "./SpacesOverview.island";
+
+const log = logger("spaces:overview");
 
 /**
  * Spaces list page - shows all spaces the user has access to
  */
 export default ssr<AuthContext>(async (c) => {
+  const { t } = overviewMessages.resolve([getLocale(c)]);
   const user = expectUserBackedActor(c);
   const url = new URL(c.req.raw.url);
   const initialView = url.searchParams.get("view");
@@ -25,10 +29,10 @@ export default ssr<AuthContext>(async (c) => {
     spacesService.activity
       .list({ subject, limit: 30 })
       .then((page) => ({ page, error: null }))
-      .catch((error: unknown) => ({
-        page: { items: [], nextCursor: null },
-        error: error instanceof Error ? error.message : "Failed to load Spaces activity",
-      })),
+      .catch((error: unknown) => {
+        log.warn("Failed to load Spaces activity", { error: error instanceof Error ? error.message : "Unknown error" });
+        return { page: { items: [], nextCursor: null }, error: t.activityLoadFailed };
+      }),
   ]);
   const userSpaces = await spacesPublicResources.projectSpaces(spacesPage.items);
 
@@ -41,7 +45,7 @@ export default ssr<AuthContext>(async (c) => {
   }
 
   return () => (
-    <Layout c={c} title={[{ title: "Start", href: "/" }, { title: "Spaces" }]}>
+    <Layout c={c} title={[{ title: t.start, href: "/" }, { title: "Spaces" }]}>
       <SpacesOverview
         spaces={userSpaces}
         initialView={view}

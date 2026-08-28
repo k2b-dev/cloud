@@ -16,6 +16,7 @@ import {
   Tag,
   Tooltip,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { openCloudResourcePicker } from "@valentinkolb/cloud/browser/resource-picker";
 import { createEffect, createSignal, For, Show } from "solid-js";
@@ -34,6 +35,7 @@ import type {
 import { summarizeRecurrence } from "@/presentation/recurrence";
 import { shouldHandleDetailClick } from "../../../lib/detail";
 import { readResponseError } from "../../../lib/response";
+import { useSpaceMessages } from "../../messages";
 import { openEditItemDialog, saveItemFormData } from "../shared/editItem";
 import SpaceAssigneePicker from "../shared/SpaceAssigneePicker";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
@@ -71,18 +73,6 @@ type Props = {
 // Constants
 // =============================================================================
 
-const PRIORITY_OPTIONS = [
-  {
-    value: "urgent",
-    label: "Urgent",
-    icon: "ti ti-alert-circle",
-    color: "#ef4444",
-  },
-  { value: "high", label: "High", icon: "ti ti-arrow-up", color: "#f97316" },
-  { value: "medium", label: "Medium", icon: "ti ti-minus", color: "#eab308" },
-  { value: "low", label: "Low", icon: "ti ti-arrow-down", color: "#3b82f6" },
-] as const;
-
 const formatEstimatedDuration = (minutes: number): string => {
   const hours = Math.floor(minutes / 60);
   const remainder = minutes % 60;
@@ -119,6 +109,7 @@ function AssigneesSection(props: {
   loading?: boolean;
   disabled?: boolean;
 }) {
+  const t = useSpaceMessages();
   return (
     <SpaceAssigneePicker
       spaceId={props.spaceId}
@@ -126,7 +117,7 @@ function AssigneesSection(props: {
       onChange={(next) => props.onUpdate(next.map((assignee) => assignee.id))}
       disabled={props.loading || props.disabled}
       variant="rows"
-      placeholder="Search people with access..."
+      placeholder={t.searchPeople}
     />
   );
 }
@@ -140,8 +131,15 @@ function AssigneesSection(props: {
  * All edits are saved immediately via API.
  */
 export default function ItemDetailPanel(props: Props) {
-  const reconcileAfterWrite = () =>
-    void invalidateSpacesData().catch(() => prompts.error("Changes were saved, but item data could not be refreshed."));
+  const locale = useLocale();
+  const t = useSpaceMessages();
+  const priorityOptions = [
+    { value: "urgent", label: t.urgent, icon: "ti ti-alert-circle", color: "#ef4444" },
+    { value: "high", label: t.high, icon: "ti ti-arrow-up", color: "#f97316" },
+    { value: "medium", label: t.medium, icon: "ti ti-minus", color: "#eab308" },
+    { value: "low", label: t.low, icon: "ti ti-arrow-down", color: "#3b82f6" },
+  ] as const;
+  const reconcileAfterWrite = () => void invalidateSpacesData().catch(() => prompts.error(t.itemRefreshFailed));
   const [selectedPriorityValue, setSelectedPriorityValue] = createSignal<string | null>(props.item.priority);
   const [selectedTagIds, setSelectedTagIds] = createSignal(props.item.tags?.map((tag) => tag.id) ?? []);
   let selectedItemId = props.item.id;
@@ -152,7 +150,7 @@ export default function ItemDetailPanel(props: Props) {
         { param: { id: props.spaceId, itemId: props.item.id }, json: { ref } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readResponseError(response, "Failed to unlink resource"));
+      if (!response.ok) throw new Error(await readResponseError(response, t.unlinkResourceFailed));
     },
     onSuccess: () => reconcileAfterWrite(),
     onError: (error) => prompts.error(error.message),
@@ -164,7 +162,7 @@ export default function ItemDetailPanel(props: Props) {
         { param: { id: props.spaceId, itemId: props.item.id }, json: reference },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readResponseError(response, "Failed to link resource"));
+      if (!response.ok) throw new Error(await readResponseError(response, t.linkResourceFailed));
     },
     onSuccess: () => reconcileAfterWrite(),
     onError: (error) => prompts.error(error.message),
@@ -176,7 +174,7 @@ export default function ItemDetailPanel(props: Props) {
         { param: { id: props.spaceId, itemId: props.item.id }, json: { blockerItemId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readResponseError(response, "Failed to add blocker"));
+      if (!response.ok) throw new Error(await readResponseError(response, t.addBlockerFailed));
     },
     onSuccess: () => reconcileAfterWrite(),
     onError: (error) => prompts.error(error.message),
@@ -188,7 +186,7 @@ export default function ItemDetailPanel(props: Props) {
         { param: { id: props.spaceId, itemId: props.item.id }, json: { blockerItemId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readResponseError(response, "Failed to remove blocker"));
+      if (!response.ok) throw new Error(await readResponseError(response, t.removeBlockerFailed));
     },
     onSuccess: () => reconcileAfterWrite(),
     onError: (error) => prompts.error(error.message),
@@ -196,7 +194,7 @@ export default function ItemDetailPanel(props: Props) {
 
   const linkCloudResource = async () => {
     const selected = await openCloudResourcePicker({
-      title: "Link Cloud resource",
+      title: t.linkCloudResource,
       excludeRefs: [{ type: "spaces.item", id: props.item.id }, ...(props.references?.map((reference) => reference.ref) ?? [])],
       requireReader: true,
     });
@@ -221,14 +219,14 @@ export default function ItemDetailPanel(props: Props) {
       },
       { init: { signal } },
     );
-    if (!response.ok) throw new Error(await readResponseError(response, "Failed to search tasks"));
+    if (!response.ok) throw new Error(await readResponseError(response, t.searchTasksFailed));
     const excluded = new Set([props.item.id, ...(props.blockedBy ?? []).map((dependency) => dependency.blocker.id)]);
     return (await response.json()).items
       .filter((item) => !excluded.has(item.id))
       .map((item) => ({
         id: item.id,
         label: item.title,
-        description: item.completedAt ? "Completed" : "Active",
+        description: item.completedAt ? t.completed : t.active,
         icon: item.completedAt ? "ti-circle-check" : "ti-checkbox",
       }));
   };
@@ -257,14 +255,14 @@ export default function ItemDetailPanel(props: Props) {
       json: data,
     });
     if (!res.ok) {
-      throw new Error(await readResponseError(res, "Failed to update"));
+      throw new Error(await readResponseError(res, t.updateItemFailed));
     }
     return (await res.json()) as SpaceItem;
   };
 
   const handleItemUpdated = (item: SpaceItem | null) => {
     if (!item) return;
-    toast.success("Item updated");
+    toast.success(t.itemUpdated);
     reconcileAfterWrite();
   };
 
@@ -280,7 +278,7 @@ export default function ItemDetailPanel(props: Props) {
       },
       { init: { signal } },
     );
-    if (!res.ok) throw new Error(await readResponseError(res, "Failed to refresh comments"));
+    if (!res.ok) throw new Error(await readResponseError(res, t.commentsRefreshFailed));
     return res.json();
   };
 
@@ -291,7 +289,7 @@ export default function ItemDetailPanel(props: Props) {
     loadPage: async (_source, { cursor, abortSignal }) => {
       const page = cursor ?? 1;
       const result = await loadCommentsPage(page, abortSignal);
-      if (result.page !== page) throw new Error("The server returned an invalid comments page.");
+      if (result.page !== page) throw new Error(t.invalidCommentsPage);
       return result;
     },
     getNextCursor: (page) => (page.hasNext ? page.page + 1 : null),
@@ -378,13 +376,13 @@ export default function ItemDetailPanel(props: Props) {
         json: { completed },
       });
       if (!res.ok) {
-        throw new Error(await readResponseError(res, "Failed to update"));
+        throw new Error(await readResponseError(res, t.updateItemFailed));
       }
       await res.json();
       return completed;
     },
     onSuccess: (completed) => {
-      toast.success(completed ? "Item completed" : "Item reopened");
+      toast.success(completed ? t.itemCompleted : t.itemReopened);
       reconcileAfterWrite();
     },
     onError: (err) => prompts.error(err.message),
@@ -408,11 +406,11 @@ export default function ItemDetailPanel(props: Props) {
         param: { id: props.spaceId },
         json: intent,
       });
-      if (!res.ok) throw new Error(await readResponseError(res, "Failed to duplicate item"));
+      if (!res.ok) throw new Error(await readResponseError(res, t.duplicateItemFailed));
       return res.json();
     },
     onSuccess: () => {
-      toast.success("Item duplicated");
+      toast.success(t.itemDuplicated);
       reconcileAfterWrite();
     },
     onError: (err) => prompts.error(err.message),
@@ -423,10 +421,10 @@ export default function ItemDetailPanel(props: Props) {
       const res = await apiClient[":id"].items[":itemId"].$delete({
         param: { id: props.spaceId, itemId },
       });
-      if (!res.ok) throw new Error(await readResponseError(res, "Failed to delete item"));
+      if (!res.ok) throw new Error(await readResponseError(res, t.deleteItemFailed));
     },
     onSuccess: () => {
-      toast.success("Item deleted");
+      toast.success(t.itemDeleted);
       requestSpacesRouteNavigation(props.baseUrl, { scroll: "preserve" });
     },
     onError: (err) => prompts.error(err.message),
@@ -439,9 +437,10 @@ export default function ItemDetailPanel(props: Props) {
         itemId: props.item.id,
         wormholeId,
         signal: context.abortSignal,
+        locale: locale(),
       }),
     onSuccess: (result) => {
-      showWormholeTransferToast(result);
+      showWormholeTransferToast(result, locale());
       requestSpacesRouteNavigation(props.baseUrl, { scroll: "preserve" });
     },
     onError: (error) => {
@@ -457,11 +456,11 @@ export default function ItemDetailPanel(props: Props) {
     if (deletePromptPending || deleteMutation.loading()) return;
     deletePromptPending = true;
     try {
-      const confirmed = await prompts.confirm(`Are you sure you want to delete "${props.item.title}"?`, {
-        title: "Delete Item",
+      const confirmed = await prompts.confirm(t.deleteItemQuestion({ title: props.item.title }), {
+        title: t.deleteItem,
         icon: "ti ti-trash",
         variant: "danger",
-        confirmText: "Delete",
+        confirmText: t.delete,
       });
       if (confirmed) void deleteMutation.mutate({ itemId: props.item.id });
     } finally {
@@ -473,7 +472,7 @@ export default function ItemDetailPanel(props: Props) {
   const editItemMutation = mutations.create<void, EditIntent>({
     mutation: saveItemFormData,
     onSuccess: () => {
-      toast.success("Item updated");
+      toast.success(t.itemUpdated);
       reconcileAfterWrite();
     },
     onError: (err) => prompts.error(err.message),
@@ -490,7 +489,7 @@ export default function ItemDetailPanel(props: Props) {
         tags: props.tags,
         dateConfig: props.dateConfig,
       });
-      if (data) void editItemMutation.mutate({ spaceId: props.spaceId, itemId: props.item.id, data });
+      if (data) void editItemMutation.mutate({ spaceId: props.spaceId, itemId: props.item.id, data, locale: props.dateConfig?.locale });
     } finally {
       editPromptPending = false;
     }
@@ -520,12 +519,12 @@ export default function ItemDetailPanel(props: Props) {
   const itemActions = (): DropdownItem[] => {
     const actions: DropdownItem[] = [
       {
-        label: "Edit item",
+        label: t.editItem,
         icon: "ti ti-pencil",
         action: () => void handleEdit(),
       },
       {
-        label: "Duplicate item",
+        label: t.duplicateItem,
         icon: "ti ti-copy",
         action: handleDuplicate,
       },
@@ -537,7 +536,7 @@ export default function ItemDetailPanel(props: Props) {
           wormhole.target
             ? [
                 {
-                  label: `Move to ${wormhole.target.spaceName} / ${wormhole.target.columnName}`,
+                  label: t.moveTo({ space: wormhole.target.spaceName, column: wormhole.target.columnName }),
                   icon: "ti ti-arrow-bounce",
                   action: () => transferMutation.mutate(wormhole.id),
                 },
@@ -550,7 +549,7 @@ export default function ItemDetailPanel(props: Props) {
     actions.push({
       items: [
         {
-          label: "Delete item",
+          label: t.deleteItem,
           icon: "ti ti-trash",
           variant: "danger",
           action: handleDelete,
@@ -560,8 +559,8 @@ export default function ItemDetailPanel(props: Props) {
     return actions;
   };
 
-  const scheduleTitle = () => (isEvent() ? "Event time" : "Deadline");
-  const selectedPriority = () => PRIORITY_OPTIONS.find((option) => option.value === selectedPriorityValue());
+  const scheduleTitle = () => (isEvent() ? t.eventTime : t.deadline);
+  const selectedPriority = () => priorityOptions.find((option) => option.value === selectedPriorityValue());
 
   const canShowClassification = () => canEditItem() || Boolean(props.item.priority) || (props.item.tags?.length ?? 0) > 0;
   const canShowAssignees = () => canEditItem() || (props.item.assignees?.length ?? 0) > 0;
@@ -576,7 +575,7 @@ export default function ItemDetailPanel(props: Props) {
     return `${url.pathname}${url.search}`;
   };
   const linkedResourcesSection = () => (
-    <DetailPanel.Section title="Linked resources" icon="ti ti-link" tone="neutral">
+    <DetailPanel.Section title={t.linkedResources} icon="ti ti-link" tone="neutral">
       <div class="flex flex-col gap-1">
         <For each={linkedResources()}>
           {(reference) => {
@@ -588,7 +587,7 @@ export default function ItemDetailPanel(props: Props) {
                     menuLabel: `More actions for ${reference.label}`,
                     menuItems: [
                       {
-                        label: "Unlink",
+                        label: t.unlink,
                         icon: "ti ti-unlink",
                         disabled: unlinkReference.loading(),
                         action: () => unlinkReference.mutate(reference.ref),
@@ -605,7 +604,7 @@ export default function ItemDetailPanel(props: Props) {
                     disabled
                     leading={<i class={icon()} aria-hidden="true" />}
                     title={reference.label}
-                    description="Resource unavailable or no longer accessible"
+                    description={t.resourceUnavailable}
                     {...menu()}
                   />
                 }
@@ -639,7 +638,7 @@ export default function ItemDetailPanel(props: Props) {
                 aria-hidden="true"
               />
             }
-            title="Link Cloud resource"
+            title={t.linkCloudResource}
           />
         </Show>
       </div>
@@ -653,12 +652,12 @@ export default function ItemDetailPanel(props: Props) {
           class="[view-transition-name:space-item-detail-header]"
           icon={`ti ${isEvent() ? "ti-calendar-event" : "ti-checkbox"}`}
           title={props.item.title}
-          subtitle={isEvent() ? "Event" : "Task"}
+          subtitle={isEvent() ? t.event : t.task}
           meta={
             <>
               <span class="inline-flex items-center gap-1.5 text-[0.6875rem] font-medium leading-4 text-[var(--k2b-success-text)]">
                 <span class="h-1 w-1 rounded-full bg-[var(--k2b-success-500)]" aria-hidden="true" />
-                {isCompleted() ? "Completed" : "Active"}
+                {isCompleted() ? t.completed : t.active}
               </span>
               <Show when={!props.canWrite}>
                 <span class="inline-flex items-center gap-1 text-dimmed">
@@ -676,12 +675,12 @@ export default function ItemDetailPanel(props: Props) {
             <>
               <Show when={canEditItem()}>
                 <Dropdown.Root position="bottom-left" items={itemActions()}>
-                  <Dropdown.Trigger iconOnly label="More item actions" tooltip="More item actions">
+                  <Dropdown.Trigger iconOnly label={t.moreItemActions} tooltip={t.moreItemActions}>
                     <i class="ti ti-dots" aria-hidden="true" />
                   </Dropdown.Trigger>
                 </Dropdown.Root>
               </Show>
-              <Tooltip.Anchor content="Close details">
+              <Tooltip.Anchor content={t.closeDetails}>
                 <ButtonLink
                   href={props.baseUrl}
                   onClick={(event) => {
@@ -692,7 +691,7 @@ export default function ItemDetailPanel(props: Props) {
                   variant="ghost"
                   size="sm"
                   class="h-8 w-8 px-0"
-                  aria-label="Close item details"
+                  aria-label={t.closeItemDetails}
                 >
                   <i class="ti ti-x" aria-hidden="true" />
                 </ButtonLink>
@@ -707,7 +706,7 @@ export default function ItemDetailPanel(props: Props) {
                     type="button"
                     onClick={() => completeMutation.mutate(!isCompleted())}
                     disabled={isLoading() || completionBlocked()}
-                    title={completionBlocked() ? "Complete all blocking tasks first" : undefined}
+                    title={completionBlocked() ? t.completeBlockersFirst : undefined}
                     variant={isCompleted() || completionBlocked() ? "secondary" : "success"}
                     size="sm"
                     class={
@@ -724,7 +723,7 @@ export default function ItemDetailPanel(props: Props) {
                     <Show when={!isCompleted() && !completeMutation.loading()}>
                       <i class={`ti ${completionBlocked() ? "ti-lock" : "ti-circle-check"}`} aria-hidden="true" />
                     </Show>
-                    {isCompleted() ? "Reopen" : completionBlocked() ? `Blocked by ${activeBlockerCount()}` : "Mark complete"}
+                    {isCompleted() ? t.reopen : completionBlocked() ? t.blockedByCount({ count: activeBlockerCount() }) : t.markComplete}
                   </Button>
                   <Button type="button" variant="ghost" size="sm" onClick={() => void handleEdit()} disabled={isLoading()}>
                     <i class="ti ti-pencil" aria-hidden="true" /> Edit
@@ -757,7 +756,7 @@ export default function ItemDetailPanel(props: Props) {
                 canEditItem() ? (
                   <IconActionButton
                     icon="ti ti-pencil"
-                    title={isEvent() ? "Edit event time" : "Edit deadline"}
+                    title={isEvent() ? t.editEventTime : t.editDeadline}
                     onClick={() => void handleEdit()}
                     disabled={isLoading()}
                   />
@@ -773,12 +772,12 @@ export default function ItemDetailPanel(props: Props) {
                     items={[
                       ...(props.item.deadline
                         ? [
-                            { term: "Deadline", description: dates.formatDateTime(props.item.deadline) },
-                            { term: "Due", description: dates.formatTimeSpan(props.item.deadline) },
+                            { term: t.deadline, description: dates.formatDateTime(props.item.deadline, props.dateConfig) },
+                            { term: t.due, description: dates.formatTimeSpan(props.item.deadline, props.dateConfig) },
                           ]
                         : []),
                       ...(props.item.estimatedDurationMinutes
-                        ? [{ term: "Estimate", description: formatEstimatedDuration(props.item.estimatedDurationMinutes) }]
+                        ? [{ term: t.estimate, description: formatEstimatedDuration(props.item.estimatedDurationMinutes) }]
                         : []),
                     ]}
                   />
@@ -788,13 +787,13 @@ export default function ItemDetailPanel(props: Props) {
                   layout="rows"
                   size="sm"
                   items={[
-                    { term: "Start", description: dates.formatDateTime(scheduleStart()!) },
-                    { term: "End", description: dates.formatDateTime(scheduleEnd()!) },
-                    { term: "Duration", description: dates.formatDuration(scheduleStart()!, scheduleEnd()!) },
+                    { term: t.start, description: dates.formatDateTime(scheduleStart()!, props.dateConfig) },
+                    { term: t.end, description: dates.formatDateTime(scheduleEnd()!, props.dateConfig) },
+                    { term: t.duration, description: dates.formatDuration(scheduleStart()!, scheduleEnd()!, props.dateConfig) },
                     ...(recurrenceSummary()
                       ? [
                           {
-                            term: "Repeat",
+                            term: t.repeatTerm,
                             description: (
                               <span class="inline-flex items-center gap-1 font-medium text-secondary">
                                 <i class="ti ti-repeat text-dimmed" aria-hidden="true" />
@@ -811,17 +810,17 @@ export default function ItemDetailPanel(props: Props) {
           </Show>
 
           <Show when={canShowEventContext()}>
-            <DetailPanel.Group label="Event context">
+            <DetailPanel.Group label={t.eventContext}>
               <Show when={props.item.location || props.item.url}>
                 <DetailPanel.Section
-                  title="Event details"
+                  title={t.eventDetails}
                   icon="ti ti-map-pin"
                   tone="accent"
                   actions={
                     canEditItem() ? (
                       <IconActionButton
                         icon="ti ti-pencil"
-                        title="Edit event details"
+                        title={t.editEventDetails}
                         onClick={() => void handleEdit()}
                         disabled={isLoading()}
                       />
@@ -832,11 +831,11 @@ export default function ItemDetailPanel(props: Props) {
                     layout="rows"
                     size="sm"
                     items={[
-                      ...(props.item.location ? [{ term: "Location", description: props.item.location }] : []),
+                      ...(props.item.location ? [{ term: t.location, description: props.item.location }] : []),
                       ...(props.item.url
                         ? [
                             {
-                              term: "URL",
+                              term: t.url,
                               description: (
                                 <a href={props.item.url} target="_blank" rel="noreferrer" class="link break-all">
                                   {props.item.url}
@@ -861,18 +860,18 @@ export default function ItemDetailPanel(props: Props) {
               (!isEvent() && (canEditItem() || (props.attachments?.some((attachment) => attachment.kind === "image") ?? false)))
             }
           >
-            <DetailPanel.Group label="Content">
+            <DetailPanel.Group label={t.content}>
               <Show when={props.item.description}>
                 <DetailPanel.Section
                   class="[view-transition-name:space-item-detail-description]"
-                  title="Description"
+                  title={t.description}
                   icon="ti ti-align-left"
                   tone="neutral"
                   actions={
                     canEditItem() ? (
                       <IconActionButton
                         icon="ti ti-pencil"
-                        title="Edit description"
+                        title={t.editDescription}
                         onClick={() => void handleEdit()}
                         disabled={isLoading()}
                       />
@@ -900,8 +899,8 @@ export default function ItemDetailPanel(props: Props) {
               (canEditItem() || (props.blockedBy?.length ?? 0) > 0 || (props.blocks?.length ?? 0) > 0 || linkedResources().length > 0)
             }
           >
-            <DetailPanel.Group label="Task context">
-              <DetailPanel.Section title="Blocked by" icon="ti ti-lock" tone={activeBlockerCount() > 0 ? "warning" : "neutral"}>
+            <DetailPanel.Group label={t.taskContext}>
+              <DetailPanel.Section title={t.blockedBy} icon="ti ti-lock" tone={activeBlockerCount() > 0 ? "warning" : "neutral"}>
                 <div class="flex flex-col gap-1">
                   <For each={props.blockedBy ?? []}>
                     {(dependency) => {
@@ -916,11 +915,11 @@ export default function ItemDetailPanel(props: Props) {
                           href={itemHref(dependency.blocker.id)}
                           leading={leading}
                           title={dependency.blocker.title}
-                          description={dependency.blocker.completedAt ? "Completed" : "Active blocker"}
+                          description={dependency.blocker.completedAt ? t.completed : t.activeBlocker}
                           menuLabel={`More actions for ${dependency.blocker.title}`}
                           menuItems={[
                             {
-                              label: "Remove blocker",
+                              label: t.removeBlocker,
                               icon: "ti ti-unlink",
                               disabled: removeBlocker.loading(),
                               action: () => removeBlocker.mutate(dependency.blocker.id),
@@ -932,7 +931,7 @@ export default function ItemDetailPanel(props: Props) {
                           href={itemHref(dependency.blocker.id)}
                           leading={leading}
                           title={dependency.blocker.title}
-                          description={dependency.blocker.completedAt ? "Completed" : "Active blocker"}
+                          description={dependency.blocker.completedAt ? t.completed : t.activeBlocker}
                           trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
                         />
                       );
@@ -940,8 +939,8 @@ export default function ItemDetailPanel(props: Props) {
                   </For>
                   <Show when={canEditItem()}>
                     <Combobox
-                      aria-label="Add task blocker"
-                      placeholder="Search tasks to add as blockers"
+                      aria-label={t.addTaskBlocker}
+                      placeholder={t.blockerSearchPlaceholder}
                       fetchData={blockerOptions}
                       onSelect={(option) => addBlocker.mutate(option.id)}
                       disabled={addBlocker.loading() || removeBlocker.loading()}
@@ -950,7 +949,7 @@ export default function ItemDetailPanel(props: Props) {
                 </div>
               </DetailPanel.Section>
               <Show when={(props.blocks?.length ?? 0) > 0}>
-                <DetailPanel.Section title="Blocks" icon="ti ti-git-branch" tone="neutral" meta={props.blocks?.length}>
+                <DetailPanel.Section title={t.blocks} icon="ti ti-git-branch" tone="neutral" meta={props.blocks?.length}>
                   <div class="flex flex-col gap-1">
                     <For each={props.blocks ?? []}>
                       {(dependency) => (
@@ -963,7 +962,7 @@ export default function ItemDetailPanel(props: Props) {
                             />
                           }
                           title={dependency.dependent.title}
-                          description={dependency.dependent.completedAt ? "Completed" : "Blocked by this task"}
+                          description={dependency.dependent.completedAt ? t.completed : t.blockedByThisTask}
                           trailing={<i class="ti ti-chevron-right" aria-hidden="true" />}
                         />
                       )}
@@ -976,11 +975,11 @@ export default function ItemDetailPanel(props: Props) {
           </Show>
 
           <Show when={isEvent() && (canEditItem() || linkedResources().length > 0)}>
-            <DetailPanel.Group label="Resource context">{linkedResourcesSection()}</DetailPanel.Group>
+            <DetailPanel.Group label={t.resourceContext}>{linkedResourcesSection()}</DetailPanel.Group>
           </Show>
 
           <Show when={relatedTasks().length > 0}>
-            <DetailPanel.Section title="Related tasks" icon="ti ti-list-details" tone="neutral">
+            <DetailPanel.Section title={t.relatedTasks} icon="ti ti-list-details" tone="neutral">
               <div class="flex flex-col gap-1">
                 <For each={relatedTasks()}>
                   {(reference) => {
@@ -991,7 +990,7 @@ export default function ItemDetailPanel(props: Props) {
                             menuLabel: `More actions for ${reference.label}`,
                             menuItems: [
                               {
-                                label: "Unlink",
+                                label: t.unlink,
                                 icon: "ti ti-unlink",
                                 disabled: unlinkReference.loading(),
                                 action: () => unlinkReference.mutate(reference.ref),
@@ -1008,7 +1007,7 @@ export default function ItemDetailPanel(props: Props) {
                             disabled
                             leading={<i class="ti ti-checkbox" aria-hidden="true" />}
                             title={reference.label}
-                            description="Task unavailable or no longer accessible"
+                            description={t.taskUnavailable}
                             {...menu()}
                           />
                         }
@@ -1032,16 +1031,16 @@ export default function ItemDetailPanel(props: Props) {
           </Show>
 
           <Show when={canShowClassification() || canShowAssignees()}>
-            <DetailPanel.Group label="Organization">
+            <DetailPanel.Group label={t.organization}>
               <Show when={canShowClassification()}>
-                <DetailPanel.Section title="Classify" icon="ti ti-tags" tone="accent">
+                <DetailPanel.Section title={t.classify} icon="ti ti-tags" tone="accent">
                   <div class="grid grid-cols-1 gap-3">
                     <Show
                       when={canEditItem()}
                       fallback={
                         <div>
-                          <h4 class="section-label mb-1">Priority</h4>
-                          <Show when={selectedPriority()} fallback={<span class="text-xs text-secondary">No priority</span>}>
+                          <h4 class="section-label mb-1">{t.priority}</h4>
+                          <Show when={selectedPriority()} fallback={<span class="text-xs text-secondary">{t.noPriority}</span>}>
                             {(priority) => (
                               <Tag color={priority().color} icon={priority().icon}>
                                 {priority().label}
@@ -1052,11 +1051,11 @@ export default function ItemDetailPanel(props: Props) {
                       }
                     >
                       <Select
-                        label="Priority"
-                        placeholder="No priority"
+                        label={t.priority}
+                        placeholder={t.noPriority}
                         icon="ti ti-flag"
                         value={selectedPriorityValue}
-                        options={PRIORITY_OPTIONS.map((option) => ({ id: option.value, ...option }))}
+                        options={priorityOptions.map((option) => ({ id: option.value, ...option }))}
                         onValueChange={updatePriority}
                         disabled={isLoading()}
                         clearable
@@ -1066,9 +1065,12 @@ export default function ItemDetailPanel(props: Props) {
                       when={canEditItem()}
                       fallback={
                         <div>
-                          <h4 class="section-label mb-1">Tags</h4>
+                          <h4 class="section-label mb-1">{t.tags}</h4>
                           <div class="flex min-h-8 flex-wrap items-center gap-1.5">
-                            <Show when={(props.item.tags?.length ?? 0) > 0} fallback={<span class="text-xs text-secondary">No tags</span>}>
+                            <Show
+                              when={(props.item.tags?.length ?? 0) > 0}
+                              fallback={<span class="text-xs text-secondary">{t.noTags}</span>}
+                            >
                               {props.item.tags?.map((tag) => (
                                 <Tag color={tag.color} size="sm">
                                   {tag.name}
@@ -1080,9 +1082,9 @@ export default function ItemDetailPanel(props: Props) {
                       }
                     >
                       <MultiSelectInput
-                        label="Tags"
-                        placeholder="No tags"
-                        searchPlaceholder="Search tags..."
+                        label={t.tags}
+                        placeholder={t.noTags}
+                        searchPlaceholder={t.searchTags}
                         icon="ti ti-tags"
                         value={selectedTagIds}
                         options={props.tags.map((tag) => ({ id: tag.id, label: tag.name, color: tag.color }))}
@@ -1096,7 +1098,7 @@ export default function ItemDetailPanel(props: Props) {
               </Show>
 
               <Show when={canShowAssignees()}>
-                <DetailPanel.Section title="Assignees" icon="ti ti-users" tone="neutral">
+                <DetailPanel.Section title={t.assignees} icon="ti ti-users" tone="neutral">
                   <AssigneesSection
                     spaceId={props.spaceId}
                     assignees={props.item.assignees ?? []}
@@ -1123,22 +1125,20 @@ export default function ItemDetailPanel(props: Props) {
               onLoadMore={() => commentsQuery.loadMore()}
               onRetry={() => commentsQuery.refresh()}
               currentUserId={props.currentUserId}
-              onUpdate={() =>
-                void commentsQuery.invalidate().catch(() => prompts.error("Comment saved, but comments could not be refreshed."))
-              }
+              onUpdate={() => void commentsQuery.invalidate().catch(() => prompts.error(t.commentRefreshAfterSaveFailed))}
               dateConfig={props.dateConfig}
               canWrite={props.canWrite}
             />
           </Show>
 
-          <DetailPanel.Group label="Item metadata">
-            <DetailPanel.Section title="Item information" icon="ti ti-info-circle" tone="neutral" collapsible>
+          <DetailPanel.Group label={t.itemMetadata}>
+            <DetailPanel.Section title={t.itemInformation} icon="ti ti-info-circle" tone="neutral" collapsible>
               <DescriptionList
                 layout="rows"
                 size="sm"
                 items={[
-                  { term: "Created", description: dates.formatDateTime(props.item.createdAt) },
-                  { term: "Updated", description: dates.formatDateTime(props.item.updatedAt) },
+                  { term: t.created, description: dates.formatDateTime(props.item.createdAt, props.dateConfig) },
+                  { term: t.updated, description: dates.formatDateTime(props.item.updatedAt, props.dateConfig) },
                   { term: "ID", description: <span class="break-all font-mono text-dimmed">{props.item.id}</span> },
                 ]}
               />

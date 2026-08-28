@@ -1,5 +1,6 @@
 import { Button, ColorInput, TextInput } from "@k2b/ui";
 import { createSignal } from "solid-js";
+import { useSpaceMessages } from "../../messages";
 
 export function NameColorForm(props: {
   mode: "create" | "edit";
@@ -12,6 +13,7 @@ export function NameColorForm(props: {
   onCancel: () => void;
   loading: boolean;
 }) {
+  const m = useSpaceMessages();
   const [name, setName] = createSignal(props.initialName ?? "");
   const [color, setColor] = createSignal(props.initialColor ?? "#6b7280");
 
@@ -28,13 +30,13 @@ export function NameColorForm(props: {
   return (
     <form onSubmit={handleSubmit} class="flex flex-col gap-2 py-2">
       <TextInput label={props.nameLabel} placeholder={props.namePlaceholder} value={name} onValueChange={setName} required />
-      <ColorInput label="Color" value={color} onValueChange={setColor} />
+      <ColorInput label={m.color} value={color} onValueChange={setColor} />
       <div class="flex gap-2 mt-1">
         <Button type="submit" disabled={props.loading} size="sm">
-          {props.loading ? <i class="ti ti-loader-2 animate-spin" /> : props.mode === "create" ? props.createLabel : "Save"}
+          {props.loading ? <i class="ti ti-loader-2 animate-spin" /> : props.mode === "create" ? props.createLabel : m.save}
         </Button>
         <Button type="button" onClick={props.onCancel} variant="secondary" size="sm">
-          Cancel
+          {m.cancel}
         </Button>
       </div>
     </form>

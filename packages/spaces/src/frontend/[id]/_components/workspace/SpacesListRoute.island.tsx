@@ -1,9 +1,10 @@
 import type { DateContext } from "@k2b/stdlib";
 import { query } from "@k2b/stdlib/solid";
-import { Button, Pagination, Placeholder, ScrollArea } from "@k2b/ui";
+import { Button, Pagination, Placeholder, ScrollArea, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import type { ItemListResult, SpaceColumn, SpaceTag } from "@/contracts";
 import { subscribeToDetailSelection } from "../../../lib/detail";
+import { useSpaceMessages } from "../../messages";
 import FilterBar from "../filter/FilterBar";
 import { buildFilterUrl, defaultFilter, type FilterState, hasActiveFilters } from "../filter/types";
 import ItemsList from "../list";
@@ -27,15 +28,17 @@ type Props = {
 };
 
 export default function SpacesListRoute(props: Props) {
+  const locale = useLocale();
+  const t = useSpaceMessages();
   const [selectedItemId, setSelectedItemId] = createSignal(props.initialSelectedItemId);
   const source = () => props.itemLinkBaseUrl;
   const view = query.create<string, { source: string; itemsResult: ItemListResult }, { cursor: string | null }>({
     source,
     initial: { source: props.itemLinkBaseUrl, data: { source: props.itemLinkBaseUrl, itemsResult: props.initialItemsResult } },
     load: async (href, { abortSignal }) => {
-      const snapshot = await loadSpacesViewSnapshot(href, abortSignal);
+      const snapshot = await loadSpacesViewSnapshot(href, abortSignal, locale());
       if (snapshot.kind !== "list" || snapshot.currentView !== props.currentView)
-        throw new SpacesViewUnavailableError("Workspace view changed");
+        throw new SpacesViewUnavailableError(t.workspaceViewChanged);
       return { source: href, itemsResult: snapshot.itemsResult };
     },
     subscribe: ({ invalidate }) => subscribeToSpacesDataInvalidation(["view"], invalidate),
@@ -76,7 +79,7 @@ export default function SpacesListRoute(props: Props) {
           <div class="flex items-center justify-between gap-2 py-1 text-xs text-red-600" role="alert">
             <span>{error().message}</span>
             <Button type="button" variant="ghost" size="xs" disabled={view.refreshing()} onClick={() => void view.refresh()}>
-              Retry
+              {t.retry}
             </Button>
           </div>
         )}
@@ -89,10 +92,8 @@ export default function SpacesListRoute(props: Props) {
             <Placeholder
               icon="ti ti-checkbox"
               variant="panel"
-              title="No items yet"
-              description={
-                props.canWrite ? "Create a task to start organizing work in this space." : "This space does not contain any items yet."
-              }
+              title={t.noItemsYet}
+              description={props.canWrite ? t.noItemsWritableDescription : t.noItemsReadonlyDescription}
               action={
                 props.canWrite ? (
                   <CreateItemButton
@@ -110,11 +111,11 @@ export default function SpacesListRoute(props: Props) {
             <Placeholder
               icon="ti ti-filter-off"
               variant="panel"
-              title="No matching items"
-              description="Try a different search or clear the active filters."
+              title={t.noMatchingItems}
+              description={t.noMatchingItemsDescription}
               action={
                 <Button type="button" variant="secondary" size="sm" onClick={clearFilters}>
-                  <i class="ti ti-filter-off" /> Clear filters
+                  <i class="ti ti-filter-off" /> {t.clearFiltersButton}
                 </Button>
               }
             />

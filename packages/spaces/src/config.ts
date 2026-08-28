@@ -5,6 +5,12 @@ export const app = defineApp({
   name: "Spaces",
   icon: "ti ti-layout-kanban",
   description: "Plan, track, and collaborate on boards, tasks, and events.",
+  presentation: {
+    baseLocale: "en",
+    translations: {
+      de: { description: "Aufgaben und Termine gemeinsam in übersichtlichen Spaces planen und bearbeiten." },
+    },
+  },
   appearance: { accent: "#4d7c0f", background: { from: "#65a30d", to: "#84cc16", angle: 135 } },
   basePath: "/app/spaces",
   baseUrl: "http://app-spaces:3000",

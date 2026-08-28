@@ -2,6 +2,7 @@ import { mutation as mutations } from "@k2b/stdlib/solid";
 import { prompts, SettingsGroup, TagEditor, toast } from "@k2b/ui";
 import { apiClient } from "@/api/client";
 import type { SpaceTag } from "@/contracts";
+import { useSpaceMessages } from "../../messages";
 import { readErrorMessage } from "./utils";
 
 export function TagsSection(props: {
@@ -11,6 +12,7 @@ export function TagsSection(props: {
   onSettingsChange?: () => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
 }) {
+  const m = useSpaceMessages();
   const reconcile = () => void props.onSettingsChange?.().catch((error) => prompts.error(error.message));
 
   const createMut = mutations.create({
@@ -20,12 +22,12 @@ export function TagsSection(props: {
         json: data,
       });
       if (!res.ok) {
-        throw new Error(await readErrorMessage(res, "Failed to create tag"));
+        throw new Error(await readErrorMessage(res, m.createTagFailed));
       }
       return res.json();
     },
     onSuccess: () => {
-      toast.success("Tag created");
+      toast.success(m.tagCreated);
       props.onWorkspaceChange?.();
       reconcile();
     },
@@ -38,12 +40,12 @@ export function TagsSection(props: {
         json: { name: data.name, color: data.color },
       });
       if (!res.ok) {
-        throw new Error(await readErrorMessage(res, "Failed to update tag"));
+        throw new Error(await readErrorMessage(res, m.updateTagFailed));
       }
       return res.json();
     },
     onSuccess: () => {
-      toast.success("Tag updated");
+      toast.success(m.tagUpdated);
       props.onWorkspaceChange?.();
       reconcile();
     },
@@ -55,12 +57,12 @@ export function TagsSection(props: {
         param: { id: props.spaceId, tagId: tag.id },
       });
       if (!res.ok) {
-        throw new Error(await readErrorMessage(res, "Failed to delete tag"));
+        throw new Error(await readErrorMessage(res, m.deleteTagFailed));
       }
       return tag;
     },
     onSuccess: () => {
-      toast.success("Tag deleted");
+      toast.success(m.tagDeleted);
       props.onWorkspaceChange?.();
       reconcile();
     },
@@ -72,7 +74,7 @@ export function TagsSection(props: {
   let deletePromptPending = false;
 
   return (
-    <SettingsGroup title="Vocabulary" description="Create tags here, then assign them from item editors.">
+    <SettingsGroup title={m.vocabulary} description={m.vocabularyDescription}>
       <TagEditor
         items={props.tags}
         defaultColor="#3b82f6"
@@ -90,7 +92,7 @@ export function TagsSection(props: {
           if (deletePromptPending || deleteMut.loading()) return;
           deletePromptPending = true;
           try {
-            const confirmed = await prompts.confirm("Delete this tag?", { title: "Delete Tag", variant: "danger" });
+            const confirmed = await prompts.confirm(m.deleteTagConfirm, { title: m.deleteTag, variant: "danger" });
             if (!confirmed) return;
             await deleteMut.mutate(tag);
             throwMutationError(deleteMut.error());

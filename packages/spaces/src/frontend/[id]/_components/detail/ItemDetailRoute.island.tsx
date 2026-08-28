@@ -5,6 +5,7 @@ import { createEffect, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceColumn, SpaceTag, SpaceWormhole } from "@/contracts";
 import { readResponseError } from "../../../lib/response";
+import { useSpaceMessages } from "../../messages";
 import {
   publishSpacesDetailState,
   SPACES_DETAIL_NAVIGATION_EVENT,
@@ -77,6 +78,7 @@ const writeHistory = (href: string, history: DetailHistory) => {
 };
 
 export default function ItemDetailRoute(props: Props) {
+  const t = useSpaceMessages();
   const initialSource = props.initialDetail ? canonicalDetailHref(props.initialSource, props.initialDetail) : props.initialSource;
   const initialRequest = detailRequest(props.initialSource);
   const [source, setSource] = createSignal(initialSource);
@@ -90,7 +92,7 @@ export default function ItemDetailRoute(props: Props) {
     enabled: () => props.canWrite,
     load: async (spaceId, { abortSignal }) => {
       const response = await apiClient[":id"].wormholes.$get({ param: { id: spaceId } }, { init: { signal: abortSignal } });
-      if (!response.ok) throw new Error(await readResponseError(response, "Failed to load wormholes"));
+      if (!response.ok) throw new Error(await readResponseError(response, t.loadWormholesFailed));
       return response.json();
     },
     subscribe: ({ invalidate }) =>
@@ -114,9 +116,9 @@ export default function ItemDetailRoute(props: Props) {
         },
         { init: { signal: abortSignal } },
       );
-      if (response.status === 401 || response.status === 403) throw new DetailAccessChangedError("Workspace access changed");
+      if (response.status === 401 || response.status === 403) throw new DetailAccessChangedError(t.workspaceAccessChanged);
       if (response.status === 404) return { source: href, detail: null, notFound: true };
-      if (!response.ok) throw new Error(await readResponseError(response, "Failed to load item"));
+      if (!response.ok) throw new Error(await readResponseError(response, t.loadItemFailed));
       return { source: href, detail: await response.json(), notFound: false };
     },
     subscribe: ({ invalidate }) =>
@@ -147,7 +149,7 @@ export default function ItemDetailRoute(props: Props) {
 
     if (request && snapshot?.source === request.source && !detailQuery.stale()) {
       if (snapshot.notFound) {
-        restoreCommitted(request, new Error("Item not found"));
+        restoreCommitted(request, new Error(t.itemNotFound));
         return;
       }
       const href = snapshot.detail ? canonicalDetailHref(request.source, snapshot.detail) : request.source;
@@ -233,18 +235,18 @@ export default function ItemDetailRoute(props: Props) {
             detailQuery.error() ? (
               <Placeholder
                 state="error"
-                title="Could not load item details"
+                title={t.couldNotLoadDetails}
                 description={detailQuery.error()!.message}
                 action={
                   <Button type="button" variant="secondary" size="sm" onClick={() => void detailQuery.refresh()}>
-                    Retry
+                    {t.retry}
                   </Button>
                 }
               />
             ) : hasDetailSelection() ? (
-              <Placeholder state="loading" title="Loading item details" />
+              <Placeholder state="loading" title={t.loadingDetails} />
             ) : (
-              <Placeholder icon="ti ti-click" description={<>Select an item to view details</>} />
+              <Placeholder icon="ti ti-click" description={<>{t.selectItemForDetails}</>} />
             )
           }
         >

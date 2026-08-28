@@ -1,5 +1,5 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { type DateContext, dates } from "@k2b/stdlib";
+import { type DateContext, dates, i18n } from "@k2b/stdlib";
 import { mutation as mutations, query as queries } from "@k2b/stdlib/solid";
 import {
   AppWorkspace,
@@ -8,19 +8,20 @@ import {
   ButtonLink,
   ColorInput,
   DetailPanel,
-  dialogCore,
   Dropdown,
+  dialogCore,
   IconButton,
   NoticeCard,
   openSpotlightSearch,
   PanelDialog,
-  panelDialogOptions,
   Paper,
   Placeholder,
+  panelDialogOptions,
   prompts,
   Tabs,
   TextInput,
   toast,
+  useLocale,
 } from "@k2b/ui";
 import { createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { apiClient } from "@/api/client";
@@ -69,6 +70,172 @@ type Props = {
 type SpaceStarter = { id: string; name: string; description: string; icon: string; color: string };
 type SpaceDraft = { name: string; description: string; color: string };
 
+export const overviewMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      taskBoard: "Task board",
+      taskBoardDescription: "Plan work with lists, kanban, deadlines, and assignees.",
+      eventCalendar: "Event calendar",
+      eventCalendarDescription: "Coordinate dated events, all-day work, and schedules.",
+      projectTracker: "Project tracker",
+      projectTrackerDescription: "Track delivery across statuses, owners, and priorities.",
+      blankSpace: "Blank space",
+      blankSpaceDescription: "Start with only To Do and Done, then shape the workflow as needed.",
+      adminNotice: "You are automatically the admin of this space. Access can be changed later in settings.",
+      name: "Name",
+      nameDescription: "A short name for this workspace",
+      description: "Description",
+      descriptionDescription: "Optional context shown on the space overview",
+      color: "Color",
+      colorDescription: "Used for cards, calendars, and visual identification",
+      cancel: "Cancel",
+      create: "Create",
+      start: "Start",
+      starters: "Starters",
+      newSpace: "New space",
+      createSpace: "Create Space",
+      createFailed: "Failed to create space",
+      created: "Space created",
+      pinned: ({ name }: { name: string }) => `Pinned ${name}`,
+      unpinned: ({ name }: { name: string }) => `Unpinned ${name}`,
+      pin: ({ name }: { name: string }) => `Pin ${name}`,
+      unpin: ({ name }: { name: string }) => `Unpin ${name}`,
+      searchTitle: "Search Spaces",
+      searchPlaceholder: "Search spaces, tasks, and events...",
+      noSearchResults: "No Spaces results found.",
+      searchFailed: "Spaces could not be searched. Try again.",
+      space: "Space",
+      activityLoadFailed: "Failed to load Spaces activity",
+      couldNotLoadActivity: "Could not load activity",
+      retry: "Retry",
+      loadingActivity: "Loading activity",
+      noActivity: "No activity yet",
+      noActivityDescription: "Space and item changes will appear here.",
+      recentActivity: "Recent Spaces activity",
+      loadingMoreActivity: "Loading more activity",
+      loadMore: "Load more",
+      activity: "Activity",
+      activityDescription: "Recent changes across your Spaces.",
+      nothingAssigned: "Nothing assigned to you",
+      nothingToday: "Nothing due today",
+      nothingUpcoming: "No upcoming work",
+      allCaughtUp: "You are all caught up.",
+      overviewDescription: "Open a workspace or find work across every Space you can access.",
+      search: "Search",
+      myWork: "My work",
+      myWorkDescription: "Tasks and events that need attention across your Spaces.",
+      workView: "Spaces work view",
+      forMe: "For me",
+      today: "Today",
+      upcoming: "Upcoming",
+      urgent: "Urgent",
+      high: "High",
+      medium: "Medium",
+      low: "Low",
+      activityCreatedSpace: ({ space }: { space: string }) => `Created ${space}`,
+      activityUpdatedSpace: ({ space }: { space: string }) => `Updated ${space}`,
+      activityCreatedTask: ({ title, space }: { title: string; space: string }) => `Created “${title}” in ${space}`,
+      activityCreatedEvent: ({ title, space }: { title: string; space: string }) => `Created event “${title}” in ${space}`,
+      activityUpdatedTask: ({ title, space }: { title: string; space: string }) => `Updated “${title}” in ${space}`,
+      activityUpdatedEvent: ({ title, space }: { title: string; space: string }) => `Updated event “${title}” in ${space}`,
+      activityCompletedTask: ({ title, space }: { title: string; space: string }) => `Completed “${title}” in ${space}`,
+      activityReopenedTask: ({ title, space }: { title: string; space: string }) => `Reopened “${title}” in ${space}`,
+      activityCompletedEvent: ({ title, space }: { title: string; space: string }) => `Completed event “${title}” in ${space}`,
+      activityReopenedEvent: ({ title, space }: { title: string; space: string }) => `Reopened event “${title}” in ${space}`,
+      activityDeletedTask: ({ title, space }: { title: string; space: string }) => `Deleted task “${title}” from ${space}`,
+      activityDeletedEvent: ({ title, space }: { title: string; space: string }) => `Deleted event “${title}” from ${space}`,
+      activityMoved: ({ title, space }: { title: string; space: string }) => `Moved “${title}” in ${space}`,
+      activityCommented: ({ title, space }: { title: string; space: string }) => `Commented on “${title}” in ${space}`,
+      activityAssignees: ({ title, space }: { title: string; space: string }) => `Changed assignees for “${title}” in ${space}`,
+      activityTags: ({ title, space }: { title: string; space: string }) => `Changed tags for “${title}” in ${space}`,
+      activityCommentUpdated: ({ title, space }: { title: string; space: string }) => `Updated a comment on “${title}” in ${space}`,
+      activityCommentDeleted: ({ title, space }: { title: string; space: string }) => `Deleted a comment from “${title}” in ${space}`,
+      activityOther: ({ action, space }: { action: string; space: string }) => `${action} in ${space}`,
+    },
+    de: {
+      taskBoard: "Aufgabenboard",
+      taskBoardDescription: "Aufgaben in Listen oder auf einem Kanban-Board mit Fristen und Zuständigkeiten planen.",
+      eventCalendar: "Veranstaltungskalender",
+      eventCalendarDescription: "Termine, ganztägige Ereignisse und Zeitpläne koordinieren.",
+      projectTracker: "Projektübersicht",
+      projectTrackerDescription: "Projektfortschritt nach Status, Zuständigkeit und Priorität verfolgen.",
+      blankSpace: "Leerer Space",
+      blankSpaceDescription: "Mit den Status „Offen“ und „Erledigt“ beginnen und den Ablauf später anpassen.",
+      adminNotice: "Du verwaltest diesen Space zunächst selbst. Den Zugriff kannst du später in den Einstellungen ändern.",
+      name: "Name",
+      nameDescription: "Kurzer Name für diesen Arbeitsbereich",
+      description: "Beschreibung",
+      descriptionDescription: "Optionale Informationen für die Space-Übersicht",
+      color: "Farbe",
+      colorDescription: "Kennzeichnet Karten, Kalendereinträge und den Space",
+      cancel: "Abbrechen",
+      create: "Erstellen",
+      start: "Neu beginnen",
+      starters: "Vorlagen",
+      newSpace: "Neuer Space",
+      createSpace: "Space erstellen",
+      createFailed: "Der Space konnte nicht erstellt werden",
+      created: "Space erstellt",
+      pinned: ({ name }) => `${name} angeheftet`,
+      unpinned: ({ name }) => `${name} nicht mehr angeheftet`,
+      pin: ({ name }) => `${name} anheften`,
+      unpin: ({ name }) => `${name} lösen`,
+      searchTitle: "Spaces durchsuchen",
+      searchPlaceholder: "Spaces, Aufgaben und Termine durchsuchen...",
+      noSearchResults: "Keine Ergebnisse in Spaces gefunden.",
+      searchFailed: "Spaces konnte nicht durchsucht werden. Versuche es erneut.",
+      space: "Space",
+      activityLoadFailed: "Die Aktivitäten konnten nicht geladen werden",
+      couldNotLoadActivity: "Aktivitäten konnten nicht geladen werden",
+      retry: "Erneut versuchen",
+      loadingActivity: "Aktivitäten werden geladen",
+      noActivity: "Noch keine Aktivitäten",
+      noActivityDescription: "Änderungen an Spaces und Einträgen erscheinen hier.",
+      recentActivity: "Letzte Aktivitäten in Spaces",
+      loadingMoreActivity: "Weitere Aktivitäten werden geladen",
+      loadMore: "Mehr laden",
+      activity: "Aktivitäten",
+      activityDescription: "Letzte Änderungen in deinen Spaces.",
+      nothingAssigned: "Dir ist nichts zugewiesen",
+      nothingToday: "Heute ist nichts fällig",
+      nothingUpcoming: "Keine anstehenden Aufgaben oder Termine",
+      allCaughtUp: "Alles erledigt.",
+      overviewDescription: "Öffne einen Arbeitsbereich oder finde Aufgaben und Termine in deinen Spaces.",
+      search: "Suchen",
+      myWork: "Meine Arbeit",
+      myWorkDescription: "Aufgaben und Termine, die deine Aufmerksamkeit erfordern.",
+      workView: "Ansicht für meine Arbeit",
+      forMe: "Für mich",
+      today: "Heute",
+      upcoming: "Anstehend",
+      urgent: "Dringend",
+      high: "Hoch",
+      medium: "Mittel",
+      low: "Niedrig",
+      activityCreatedSpace: ({ space }) => `${space} erstellt`,
+      activityUpdatedSpace: ({ space }) => `${space} aktualisiert`,
+      activityCreatedTask: ({ title, space }) => `„${title}“ in ${space} erstellt`,
+      activityCreatedEvent: ({ title, space }) => `Termin „${title}“ in ${space} erstellt`,
+      activityUpdatedTask: ({ title, space }) => `„${title}“ in ${space} aktualisiert`,
+      activityUpdatedEvent: ({ title, space }) => `Termin „${title}“ in ${space} aktualisiert`,
+      activityCompletedTask: ({ title, space }) => `„${title}“ in ${space} erledigt`,
+      activityReopenedTask: ({ title, space }) => `„${title}“ in ${space} wieder geöffnet`,
+      activityCompletedEvent: ({ title, space }) => `Termin „${title}“ in ${space} abgeschlossen`,
+      activityReopenedEvent: ({ title, space }) => `Termin „${title}“ in ${space} wieder geöffnet`,
+      activityDeletedTask: ({ title, space }) => `Aufgabe „${title}“ aus ${space} gelöscht`,
+      activityDeletedEvent: ({ title, space }) => `Termin „${title}“ aus ${space} gelöscht`,
+      activityMoved: ({ title, space }) => `„${title}“ in ${space} verschoben`,
+      activityCommented: ({ title, space }) => `„${title}“ in ${space} kommentiert`,
+      activityAssignees: ({ title, space }) => `Zuständigkeit für „${title}“ in ${space} geändert`,
+      activityTags: ({ title, space }) => `Tags für „${title}“ in ${space} geändert`,
+      activityCommentUpdated: ({ title, space }) => `Kommentar zu „${title}“ in ${space} aktualisiert`,
+      activityCommentDeleted: ({ title, space }) => `Kommentar zu „${title}“ in ${space} gelöscht`,
+      activityOther: ({ action, space }) => `${action} in ${space}`,
+    },
+  },
+});
+
 const starterView: Record<string, ViewType> = { blank: "list", tasks: "kanban", calendar: "calendar", project: "table" };
 const starters: SpaceStarter[] = [
   {
@@ -102,6 +269,8 @@ const blankStarter: SpaceStarter = {
 };
 
 function CreateSpaceForm(props: { starter: SpaceStarter; close: (value: SpaceDraft | null) => void }) {
+  const locale = useLocale();
+  const { t } = overviewMessages.resolve([locale()]);
   const [name, setName] = createSignal(props.starter.id === "blank" ? "" : props.starter.name);
   const [description, setDescription] = createSignal(props.starter.id === "blank" ? "" : props.starter.description);
   const [color, setColor] = createSignal(props.starter.color);
@@ -114,11 +283,11 @@ function CreateSpaceForm(props: { starter: SpaceStarter; close: (value: SpaceDra
       }}
     >
       <NoticeCard tone="info" icon={false}>
-        You are automatically the admin of this space. Access can be changed later in settings.
+        {t.adminNotice}
       </NoticeCard>
       <TextInput
-        label="Name"
-        description="A short name for this workspace"
+        label={t.name}
+        description={t.nameDescription}
         placeholder={props.starter.name}
         icon="ti ti-typography"
         value={name}
@@ -126,8 +295,8 @@ function CreateSpaceForm(props: { starter: SpaceStarter; close: (value: SpaceDra
         required
       />
       <TextInput
-        label="Description"
-        description="Optional context shown on the space overview"
+        label={t.description}
+        description={t.descriptionDescription}
         placeholder={props.starter.description}
         icon="ti ti-align-left"
         value={description}
@@ -135,43 +304,19 @@ function CreateSpaceForm(props: { starter: SpaceStarter; close: (value: SpaceDra
         multiline
         lines={3}
       />
-      <ColorInput label="Color" description="Used for cards, calendars, and visual identification" value={color} onValueChange={setColor} />
+      <ColorInput label={t.color} description={t.colorDescription} value={color} onValueChange={setColor} />
       <div class="flex justify-end gap-2 pt-2">
         <Button type="button" variant="secondary" size="sm" onClick={() => props.close(null)}>
-          Cancel
+          {t.cancel}
         </Button>
         <Button type="submit" size="sm">
-          Create
+          {t.create}
         </Button>
       </div>
     </form>
   );
 }
 
-const activityDescription = (entry: ActivityItem) => {
-  const title = entry.item?.title ?? String(entry.metadata.itemTitle ?? entry.space.name);
-  const labels: Record<string, string> = {
-    "space.created": `Created ${entry.space.name}`,
-    "space.updated": `Updated ${entry.space.name}`,
-    "task.created": `Created “${title}” in ${entry.space.name}`,
-    "event.created": `Created event “${title}” in ${entry.space.name}`,
-    "task.updated": `Updated “${title}” in ${entry.space.name}`,
-    "event.updated": `Updated event “${title}” in ${entry.space.name}`,
-    "task.completed": `Completed “${title}” in ${entry.space.name}`,
-    "task.reopened": `Reopened “${title}” in ${entry.space.name}`,
-    "event.completed": `Completed event “${title}” in ${entry.space.name}`,
-    "event.reopened": `Reopened event “${title}” in ${entry.space.name}`,
-    "task.deleted": `Deleted task “${title}” from ${entry.space.name}`,
-    "event.deleted": `Deleted event “${title}” from ${entry.space.name}`,
-    "item.moved": `Moved “${title}” in ${entry.space.name}`,
-    "comment.created": `Commented on “${title}” in ${entry.space.name}`,
-    "item.assignees.updated": `Changed assignees for “${title}” in ${entry.space.name}`,
-    "item.tags.updated": `Changed tags for “${title}” in ${entry.space.name}`,
-    "comment.updated": `Updated a comment on “${title}” in ${entry.space.name}`,
-    "comment.deleted": `Deleted a comment from “${title}” in ${entry.space.name}`,
-  };
-  return labels[entry.action] ?? `${entry.action.replaceAll(".", " ")} in ${entry.space.name}`;
-};
 const activityIcon = (action: string) =>
   action.includes("completed")
     ? "ti ti-check"
@@ -186,6 +331,54 @@ const activityIcon = (action: string) =>
             : "ti ti-pencil";
 
 export default function SpacesOverview(props: Props) {
+  const locale = useLocale();
+  const { t } = overviewMessages.resolve([locale()]);
+  const localizeStarter = (starter: SpaceStarter): SpaceStarter => ({
+    ...starter,
+    name:
+      starter.id === "tasks"
+        ? t.taskBoard
+        : starter.id === "calendar"
+          ? t.eventCalendar
+          : starter.id === "project"
+            ? t.projectTracker
+            : t.blankSpace,
+    description:
+      starter.id === "tasks"
+        ? t.taskBoardDescription
+        : starter.id === "calendar"
+          ? t.eventCalendarDescription
+          : starter.id === "project"
+            ? t.projectTrackerDescription
+            : t.blankSpaceDescription,
+  });
+  const localizedStarters = starters.map(localizeStarter);
+  const localizedBlankStarter = localizeStarter(blankStarter);
+  const activityDescription = (entry: ActivityItem) => {
+    const title = entry.item?.title ?? String(entry.metadata.itemTitle ?? entry.space.name);
+    const params = { title, space: entry.space.name };
+    const labels: Record<string, string> = {
+      "space.created": t.activityCreatedSpace({ space: entry.space.name }),
+      "space.updated": t.activityUpdatedSpace({ space: entry.space.name }),
+      "task.created": t.activityCreatedTask(params),
+      "event.created": t.activityCreatedEvent(params),
+      "task.updated": t.activityUpdatedTask(params),
+      "event.updated": t.activityUpdatedEvent(params),
+      "task.completed": t.activityCompletedTask(params),
+      "task.reopened": t.activityReopenedTask(params),
+      "event.completed": t.activityCompletedEvent(params),
+      "event.reopened": t.activityReopenedEvent(params),
+      "task.deleted": t.activityDeletedTask(params),
+      "event.deleted": t.activityDeletedEvent(params),
+      "item.moved": t.activityMoved(params),
+      "comment.created": t.activityCommented(params),
+      "item.assignees.updated": t.activityAssignees(params),
+      "item.tags.updated": t.activityTags(params),
+      "comment.updated": t.activityCommentUpdated(params),
+      "comment.deleted": t.activityCommentDeleted(params),
+    };
+    return labels[entry.action] ?? t.activityOther({ action: entry.action.replaceAll(".", " "), space: entry.space.name });
+  };
   const [view, setView] = createSignal<OverviewView>(props.initialView);
   const [pinned, setPinned] = createSignal(props.initialPinnedSpaceIds);
   const [pinAnnouncement, setPinAnnouncement] = createSignal("");
@@ -202,6 +395,8 @@ export default function SpacesOverview(props: Props) {
     }),
   );
   const workItems = () => (view() === "mine" ? props.mine : view() === "today" ? props.today : props.upcoming);
+  const priorityLabel = (priority: NonNullable<WorkItem["priority"]>) =>
+    ({ urgent: t.urgent, high: t.high, medium: t.medium, low: t.low })[priority];
 
   const activity = queries.createInfinite<string, ActivityPage, string>({
     source: () => "spaces",
@@ -211,7 +406,7 @@ export default function SpacesOverview(props: Props) {
         { query: { limit: "30", ...(cursor ? { cursor } : {}) } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readResponseError(response, "Failed to load Spaces activity"));
+      if (!response.ok) throw new Error(await readResponseError(response, t.activityLoadFailed));
       setInitialActivityError(null);
       return response.json();
     },
@@ -230,11 +425,11 @@ export default function SpacesOverview(props: Props) {
           starter: starter.id as "blank" | "tasks" | "calendar" | "project",
         },
       });
-      if (!response.ok) throw new Error(await readResponseError(response, "Failed to create space"));
+      if (!response.ok) throw new Error(await readResponseError(response, t.createFailed));
       return { space: await response.json(), starter };
     },
     onSuccess: ({ space, starter }) => {
-      toast.success("Space created");
+      toast.success(t.created);
       setLastSpaceId(space.id);
       writeSpaceSettings(space.id, { view: starterView[starter.id] });
       navigateTo(`/app/spaces/${space.id}`);
@@ -246,7 +441,7 @@ export default function SpacesOverview(props: Props) {
     setDialogPending(true);
     try {
       const draft = await prompts.dialog<SpaceDraft | null>((close) => <CreateSpaceForm starter={starter} close={close} />, {
-        title: starter.id === "blank" ? "New space" : starter.name,
+        title: starter.id === "blank" ? t.newSpace : starter.name,
         icon: starter.icon,
       });
       if (draft) void createSpaceMutation.mutate({ starter, draft });
@@ -256,19 +451,19 @@ export default function SpacesOverview(props: Props) {
   };
   const createMenuItems = () => [
     {
-      sectionLabel: "Start",
+      sectionLabel: t.start,
       items: [
         {
-          label: "Blank space",
-          description: blankStarter.description,
-          icon: blankStarter.icon,
-          action: () => void createSpace(blankStarter),
+          label: localizedBlankStarter.name,
+          description: localizedBlankStarter.description,
+          icon: localizedBlankStarter.icon,
+          action: () => void createSpace(localizedBlankStarter),
         },
       ],
     },
     {
-      sectionLabel: "Starters",
-      items: starters.map((starter) => ({
+      sectionLabel: t.starters,
+      items: localizedStarters.map((starter) => ({
         label: starter.name,
         description: starter.description,
         icon: starter.icon,
@@ -297,17 +492,17 @@ export default function SpacesOverview(props: Props) {
       const isPinned = current.includes(space.id);
       const next = isPinned ? current.filter((id) => id !== space.id) : [space.id, ...current];
       setPinnedSpaceIds(next);
-      setPinAnnouncement(`${isPinned ? "Unpinned" : "Pinned"} ${space.name}`);
+      setPinAnnouncement(isPinned ? t.unpinned({ name: space.name }) : t.pinned({ name: space.name }));
       return next;
     });
 
   const openSearch = async () => {
     const selected = await openSpotlightSearch<{ href: string }>({
-      title: "Search Spaces",
+      title: t.searchTitle,
       icon: "ti ti-search",
-      placeholder: "Search spaces, tasks, and events...",
+      placeholder: t.searchPlaceholder,
       minQueryLength: 1,
-      noResultsText: "No Spaces results found.",
+      noResultsText: t.noSearchResults,
       resolve: async ({ query, abortSignal }) => {
         const term = query.trim();
         const normalized = term.toLowerCase();
@@ -317,11 +512,11 @@ export default function SpacesOverview(props: Props) {
           .map((space) => ({
             value: { href: `/app/spaces/${space.id}` },
             label: space.name,
-            desc: space.description ?? "Space",
+            desc: space.description ?? t.space,
             icon: "ti ti-layout-kanban",
           }));
         const response = await apiClient.overview.search.$get({ query: { q: term, limit: "20" } }, { init: { signal: abortSignal } });
-        if (!response.ok) throw new Error("Spaces could not be searched. Try again.");
+        if (!response.ok) throw new Error(t.searchFailed);
         const hits = await response.json();
         return [
           ...spaces,
@@ -343,7 +538,7 @@ export default function SpacesOverview(props: Props) {
       fallback={
         <Placeholder
           state="error"
-          title="Could not load activity"
+          title={t.couldNotLoadActivity}
           description={activityError() ?? undefined}
           icon="ti ti-alert-circle"
           action={
@@ -355,7 +550,7 @@ export default function SpacesOverview(props: Props) {
                 void activity.refresh();
               }}
             >
-              <i class="ti ti-refresh" aria-hidden="true" /> Retry
+              <i class="ti ti-refresh" aria-hidden="true" /> {t.retry}
             </Button>
           }
         />
@@ -366,13 +561,13 @@ export default function SpacesOverview(props: Props) {
         fallback={
           <Placeholder
             state={activity.loading() ? "loading" : "empty"}
-            title={activity.loading() ? "Loading activity" : "No activity yet"}
-            description={activity.loading() ? undefined : "Space and item changes will appear here."}
+            title={activity.loading() ? t.loadingActivity : t.noActivity}
+            description={activity.loading() ? undefined : t.noActivityDescription}
             icon="ti ti-history"
           />
         }
       >
-        <ol class="spaces-overview-activity-list" aria-label="Recent Spaces activity">
+        <ol class="spaces-overview-activity-list" aria-label={t.recentActivity}>
           <For each={activityItems()}>
             {(entry) => (
               <li class="spaces-overview-activity-item">
@@ -418,10 +613,10 @@ export default function SpacesOverview(props: Props) {
             variant="secondary"
             class="mx-auto mt-2"
             loading={activity.loadingMore()}
-            loadingLabel="Loading more activity"
+            loadingLabel={t.loadingMoreActivity}
             onClick={() => void activity.loadMore()}
           >
-            Load more
+            {t.loadMore}
           </Button>
         </Show>
       </Show>
@@ -431,7 +626,7 @@ export default function SpacesOverview(props: Props) {
     void dialogCore.open<void>(
       (close) => (
         <PanelDialog>
-          <PanelDialog.Header title="Activity" subtitle="Recent changes across your Spaces." close={close} />
+          <PanelDialog.Header title={t.activity} subtitle={t.activityDescription} close={close} />
           <PanelDialog.Body>{activityFeed()}</PanelDialog.Body>
         </PanelDialog>
       ),
@@ -444,8 +639,8 @@ export default function SpacesOverview(props: Props) {
       fallback={
         <Placeholder
           state="empty"
-          title={view() === "mine" ? "Nothing assigned to you" : view() === "today" ? "Nothing due today" : "No upcoming work"}
-          description="You are all caught up."
+          title={view() === "mine" ? t.nothingAssigned : view() === "today" ? t.nothingToday : t.nothingUpcoming}
+          description={t.allCaughtUp}
           icon="ti ti-circle-check"
           class="min-h-64"
         />
@@ -465,7 +660,7 @@ export default function SpacesOverview(props: Props) {
                 <span>{item.spaceName}</span>
               </span>
               <Show when={item.priority}>
-                <span class={`spaces-overview-priority is-${item.priority}`}>{item.priority}</span>
+                <span class={`spaces-overview-priority is-${item.priority}`}>{priorityLabel(item.priority!)}</span>
               </Show>
               <Show when={item.startsAt || item.deadline}>
                 <time datetime={item.startsAt ?? item.deadline ?? undefined}>
@@ -490,14 +685,14 @@ export default function SpacesOverview(props: Props) {
             <div class="spaces-overview-heading">
               <div>
                 <h2>Spaces</h2>
-                <p>Open a workspace or find work across every Space you can access.</p>
+                <p>{t.overviewDescription}</p>
               </div>
               <div class="spaces-overview-actions">
                 <Button variant="secondary" size="sm" onClick={() => void openSearch()}>
-                  <i class="ti ti-search" aria-hidden="true" /> Search
+                  <i class="ti ti-search" aria-hidden="true" /> {t.search}
                 </Button>
                 <Button variant="secondary" size="sm" class="spaces-overview-mobile-activity" onClick={openMobileActivity}>
-                  <i class="ti ti-history" aria-hidden="true" /> Activity
+                  <i class="ti ti-history" aria-hidden="true" /> {t.activity}
                 </Button>
               </div>
             </div>
@@ -519,7 +714,7 @@ export default function SpacesOverview(props: Props) {
                         <span class="spaces-overview-space-name">{space.name}</span>
                       </ButtonLink>
                       <IconButton
-                        label={`${isPinned() ? "Unpin" : "Pin"} ${space.name}`}
+                        label={isPinned() ? t.unpin({ name: space.name }) : t.pin({ name: space.name })}
                         size="xs"
                         variant="text"
                         class="spaces-overview-space-pin"
@@ -532,9 +727,9 @@ export default function SpacesOverview(props: Props) {
                   );
                 }}
               </For>
-              <Dropdown.Root items={createMenuItems()} position="bottom-right" width="min(38rem, calc(100vw - 1rem))" label="Create Space">
+              <Dropdown.Root items={createMenuItems()} position="bottom-right" width="min(38rem, calc(100vw - 1rem))" label={t.createSpace}>
                 <Dropdown.Trigger variant="secondary" size="sm" disabled={createSpaceMutation.loading()}>
-                  <i class="ti ti-plus app-accent-text" aria-hidden="true" /> New space
+                  <i class="ti ti-plus app-accent-text" aria-hidden="true" /> {t.newSpace}
                   <i class="ti ti-chevron-down" aria-hidden="true" />
                 </Dropdown.Trigger>
               </Dropdown.Root>
@@ -546,16 +741,16 @@ export default function SpacesOverview(props: Props) {
           <section class="spaces-overview-focus" aria-labelledby="spaces-work-title">
             <div class="spaces-overview-heading">
               <div>
-                <h2 id="spaces-work-title">My work</h2>
-                <p>Tasks and events that need attention across your Spaces.</p>
+                <h2 id="spaces-work-title">{t.myWork}</h2>
+                <p>{t.myWorkDescription}</p>
               </div>
             </div>
-            <Tabs<OverviewView> ariaLabel="Spaces work view" value={view} onValueChange={selectView}>
+            <Tabs<OverviewView> ariaLabel={t.workView} value={view} onValueChange={selectView}>
               <Tabs.Item
                 value="mine"
                 label={
                   <>
-                    For me <span class="spaces-overview-tab-count">{props.counts.mine}</span>
+                    {t.forMe} <span class="spaces-overview-tab-count">{props.counts.mine}</span>
                   </>
                 }
               >
@@ -565,7 +760,7 @@ export default function SpacesOverview(props: Props) {
                 value="today"
                 label={
                   <>
-                    Today <span class="spaces-overview-tab-count">{props.counts.today}</span>
+                    {t.today} <span class="spaces-overview-tab-count">{props.counts.today}</span>
                   </>
                 }
               >
@@ -575,7 +770,7 @@ export default function SpacesOverview(props: Props) {
                 value="upcoming"
                 label={
                   <>
-                    Upcoming <span class="spaces-overview-tab-count">{props.counts.upcoming}</span>
+                    {t.upcoming} <span class="spaces-overview-tab-count">{props.counts.upcoming}</span>
                   </>
                 }
               >
@@ -586,7 +781,7 @@ export default function SpacesOverview(props: Props) {
         </AppWorkspace.Main>
         <AppWorkspace.Detail id="spaces-overview-activity" open width="lg" resizable={false} class="spaces-overview-activity">
           <DetailPanel>
-            <DetailPanel.Header title="Activity" subtitle="Recent changes across your Spaces." />
+            <DetailPanel.Header title={t.activity} subtitle={t.activityDescription} />
             <DetailPanel.Body scrollPreserveKey="spaces-overview-activity">{activityFeed()}</DetailPanel.Body>
           </DetailPanel>
         </AppWorkspace.Detail>

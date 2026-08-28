@@ -14,6 +14,8 @@ process.once("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const { default: SpaceEditPanel } = await import("./SpaceEditPanel.tsx");
 const { StatusesSection } = await import("./StatusesSection.tsx");
+const { spaceMessages } = await import("../../messages.ts");
+const { LocaleProvider } = await import("@k2b/ui");
 
 const spaceId = "Space1";
 const columns: SpaceColumn[] = [
@@ -46,22 +48,33 @@ const space: SpaceDetail = {
   tags: [],
 };
 
-const renderSettings = (permission: "read" | "admin") =>
+const renderSettings = (permission: "read" | "admin", locale = "en") =>
   renderToString(() =>
-    createComponent(SpaceEditPanel, {
-      space,
-      baseUrl: "https://cloud.example.test",
-      initialSettings: { view: "list", hideSettings: false },
-      accessEntries: [],
-      apiKeys: [],
-      wormholes: [],
-      isAdmin: permission === "admin",
-      canWrite: permission === "admin",
-      onClose: () => undefined,
+    createComponent(LocaleProvider, {
+      locale,
+      get children() {
+        return createComponent(SpaceEditPanel, {
+          space,
+          baseUrl: "https://cloud.example.test",
+          initialSettings: { view: "list", hideSettings: false },
+          accessEntries: [],
+          apiKeys: [],
+          wormholes: [],
+          isAdmin: permission === "admin",
+          canWrite: permission === "admin",
+          onClose: () => undefined,
+        });
+      },
     }),
   );
 
 describe("Spaces settings", () => {
+  test("has a complete German catalog with regional fallback", () => {
+    expect(spaceMessages.check()).toEqual([]);
+    expect(spaceMessages.resolve(["de-CH"]).locale).toBe("de");
+    expect(spaceMessages.resolve(["de-CH"]).t.spaceSettings).toBe("Space-Einstellungen");
+  });
+
   test("renders grouped admin navigation and the shared save footer", () => {
     const html = renderSettings("admin");
 
@@ -106,5 +119,18 @@ describe("Spaces settings", () => {
     expect(html).toContain("Position 1 of 2");
     expect(html).toContain('aria-label="Edit Open"');
     expect(html).toContain('aria-label="Move Done down"');
+  });
+
+  test("renders German settings through the inherited locale", () => {
+    const html = renderSettings("admin", "de-CH");
+
+    expect(html).toContain('aria-label="Bereiche von Space-Einstellungen"');
+    expect(html).toContain("Persönlich");
+    expect(html).toContain("Verbindungen");
+    expect(html).toContain("Freigabe");
+    expect(html).toContain("Gefahrenbereich");
+    expect(html).toContain("Allgemeine Angaben");
+    expect(html).toContain("Keine ungespeicherten Änderungen");
+    expect(html).not.toContain("Danger zone");
   });
 });

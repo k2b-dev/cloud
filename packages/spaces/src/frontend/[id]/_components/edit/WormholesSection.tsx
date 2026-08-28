@@ -3,6 +3,7 @@ import { Button, ColorInput, IconButton, prompts, Select, SettingsCollection, Se
 import { createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceWormhole, SpaceWormholeDestination } from "@/contracts";
+import { useSpaceMessages } from "../../messages";
 import { subscribeToSpacesDataInvalidation } from "../workspace/workspace-events";
 import { readErrorMessage } from "./utils";
 
@@ -15,6 +16,7 @@ function WormholeForm(props: {
   onCancel: () => void;
   onSave: (value: FormValue) => void;
 }) {
+  const m = useSpaceMessages();
   const initialTarget = props.initial?.target;
   const [targetSpaceId, setTargetSpaceId] = createSignal(initialTarget?.spaceId ?? props.destinations[0]?.spaceId ?? "");
   const [targetColumnId, setTargetColumnId] = createSignal(initialTarget?.columnId ?? "");
@@ -39,8 +41,8 @@ function WormholeForm(props: {
   return (
     <form onSubmit={submit} class="flex flex-col gap-3 py-2">
       <Select
-        label="Destination space"
-        description="Only Spaces where you are also an admin are available."
+        label={m.destinationSpace}
+        description={m.destinationSpaceDescription}
         value={targetSpaceId}
         onValueChange={(value) => value && changeTargetSpace(value)}
         options={props.destinations.map((destination) => ({
@@ -51,22 +53,22 @@ function WormholeForm(props: {
         required
       />
       <Select
-        label="Destination status"
-        description="Items moved through this wormhole enter this status."
+        label={m.destinationStatus}
+        description={m.destinationStatusDescription}
         value={selectedColumnId}
         onValueChange={(value) => value && setTargetColumnId(value)}
         options={columns().map((column) => ({ value: column.id, label: column.name, icon: "ti ti-columns-3" }))}
         disabled={columns().length === 0}
         required
       />
-      <ColorInput label="Color" description="Used to recognize this wormhole on the Kanban board." value={color} onValueChange={setColor} />
+      <ColorInput label={m.color} description={m.wormholeColorDescription} value={color} onValueChange={setColor} />
       <div class="flex items-center gap-2">
         <Button type="submit" size="sm" disabled={props.loading || !selectedColumnId()}>
           <i class={`ti ${props.loading ? "ti-loader-2 animate-spin" : "ti-check"}`} />
-          {props.initial ? "Save" : "Create wormhole"}
+          {props.initial ? m.save : m.createWormhole}
         </Button>
         <Button type="button" variant="secondary" size="sm" onClick={props.onCancel} disabled={props.loading}>
-          Cancel
+          {m.cancel}
         </Button>
       </div>
     </form>
@@ -74,6 +76,7 @@ function WormholeForm(props: {
 }
 
 export function WormholesSection(props: { spaceId: string; initialWormholes: SpaceWormhole[]; onDirtyChange: (dirty: boolean) => void }) {
+  const m = useSpaceMessages();
   const [optimisticOrder, setOptimisticOrder] = createSignal<SpaceWormhole[] | null>(null);
   const [editingId, setEditingId] = createSignal<string | "new" | null>(null);
 
@@ -85,16 +88,13 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
     initial: { source: props.spaceId, data: props.initialWormholes },
     load: async (spaceId, ctx) => {
       const response = await apiClient[":id"].wormholes.configured.$get({ param: { id: spaceId } }, { init: { signal: ctx.abortSignal } });
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to load wormholes"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, m.loadWormholesFailed));
       return response.json();
     },
     subscribe: ({ invalidate }) => subscribeToSpacesDataInvalidation(["wormholes"], invalidate),
   });
   const wormholes = () => optimisticOrder() ?? wormholesQuery.data() ?? props.initialWormholes;
-  const refreshWormholes = () =>
-    void wormholesQuery
-      .invalidate({ cursor: null })
-      .catch(() => prompts.error("Changes were saved, but wormholes could not be refreshed."));
+  const refreshWormholes = () => void wormholesQuery.invalidate({ cursor: null }).catch(() => prompts.error(m.refreshWormholesFailed));
 
   const destinationsQuery = query.create<string, SpaceWormholeDestination[], { cursor: string | null }>({
     source: () => props.spaceId,
@@ -103,7 +103,7 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
         { param: { id: spaceId } },
         { init: { signal: ctx.abortSignal } },
       );
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to load destinations"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, m.loadDestinationsFailed));
       return response.json();
     },
     subscribe: ({ invalidate }) => subscribeToSpacesDataInvalidation(["wormholes"], invalidate),
@@ -112,12 +112,12 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
   const createMutation = mutations.create<SpaceWormhole, FormValue>({
     mutation: async (value) => {
       const response = await apiClient[":id"].wormholes.$post({ param: { id: props.spaceId }, json: value });
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to create wormhole"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, m.createWormholeFailed));
       return response.json();
     },
     onSuccess: () => {
       setEditingId(null);
-      toast.success("Wormhole created");
+      toast.success(m.wormholeCreated);
       refreshWormholes();
     },
     onError: (error) => prompts.error(error.message),
@@ -129,12 +129,12 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
         param: { id: props.spaceId, wormholeId: id },
         json: value,
       });
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to update wormhole"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, m.updateWormholeFailed));
       return response.json();
     },
     onSuccess: () => {
       setEditingId(null);
-      toast.success("Wormhole updated");
+      toast.success(m.wormholeUpdated);
       refreshWormholes();
     },
     onError: (error) => prompts.error(error.message),
@@ -145,12 +145,12 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
       const response = await apiClient[":id"].wormholes[":wormholeId"].$delete({
         param: { id: props.spaceId, wormholeId: wormhole.id },
       });
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to delete wormhole"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, m.deleteWormholeFailed));
       return wormhole.id;
     },
     onSuccess: (id) => {
       if (editingId() === id) setEditingId(null);
-      toast.success("Wormhole deleted");
+      toast.success(m.wormholeDeleted);
       refreshWormholes();
     },
     onError: (error) => prompts.error(error.message),
@@ -160,12 +160,12 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
     if (deletePromptPending || deleteMutation.loading()) return;
     deletePromptPending = true;
     try {
-      const label = wormhole.target ? `${wormhole.target.spaceName} / ${wormhole.target.columnName}` : "the unavailable destination";
-      const confirmed = await prompts.confirm(`Delete the wormhole to ${label}?`, {
-        title: "Delete wormhole",
+      const label = wormhole.target ? `${wormhole.target.spaceName} / ${wormhole.target.columnName}` : m.unavailableDestinationArticle;
+      const confirmed = await prompts.confirm(m.deleteWormholeConfirm({ destination: label }), {
+        title: m.deleteWormhole,
         icon: "ti ti-trash",
         variant: "danger",
-        confirmText: "Delete",
+        confirmText: m.delete,
       });
       if (confirmed) void deleteMutation.mutate(wormhole);
     } finally {
@@ -179,12 +179,12 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
         param: { id: props.spaceId },
         json: { wormholeIds: ids },
       });
-      if (!response.ok) throw new Error(await readErrorMessage(response, "Failed to reorder wormholes"));
+      if (!response.ok) throw new Error(await readErrorMessage(response, m.reorderWormholesFailed));
     },
     onSuccess: () => {
       void wormholesQuery
         .invalidate({ cursor: null })
-        .catch(() => prompts.error("Wormholes were reordered, but the latest order could not be loaded."))
+        .catch(() => prompts.error(m.refreshWormholeOrderFailed))
         .finally(() => setOptimisticOrder(null));
     },
     onError: (error) => {
@@ -221,10 +221,7 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
     <>
       <Show when={editingId()}>
         {(id) => (
-          <SettingsGroup
-            title={id() === "new" ? "New wormhole" : "Edit wormhole"}
-            description="Choose the destination status and the color shown on this Space's Kanban board."
-          >
+          <SettingsGroup title={id() === "new" ? m.newWormhole : m.editWormhole} description={m.wormholeFormDescription}>
             <WormholeForm
               destinations={destinations()}
               initial={editingWormhole()}
@@ -240,11 +237,7 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
         )}
       </Show>
 
-      <SettingsCollection
-        title="Destinations"
-        description="Move items directly into a status in another Space. Changes save immediately."
-        empty="No wormholes yet. Create one to connect this workflow to another Space."
-      >
+      <SettingsCollection title={m.destinations} description={m.destinationsDescription} empty={m.noWormholes}>
         <SettingsCollection.Action>
           <Button
             type="button"
@@ -253,23 +246,23 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
             onClick={() => setEditingId("new")}
           >
             <i class={`ti ${destinationsQuery.loading() ? "ti-loader-2 animate-spin" : "ti-plus"}`} aria-hidden="true" />
-            New wormhole
+            {m.newWormholeAction}
           </Button>
         </SettingsCollection.Action>
         <For each={wormholes()}>
           {(wormhole, index) => (
             <SettingsCollection.Item
-              title={wormhole.target ? `${wormhole.target.spaceName} / ${wormhole.target.columnName}` : "Unavailable destination"}
+              title={wormhole.target ? `${wormhole.target.spaceName} / ${wormhole.target.columnName}` : m.unavailableDestination}
               description={
                 wormhole.target
-                  ? `Position ${index() + 1} of ${wormholes().length} · Items move completely to this destination.`
-                  : "Restore destination admin access or delete this wormhole."
+                  ? m.wormholePositionDescription({ position: index() + 1, count: wormholes().length })
+                  : m.restoreDestinationAccess
               }
               icon={<span class="h-3 w-3 rounded-full" style={`background-color:${wormhole.color}`} />}
             >
               <SettingsCollection.Item.Actions>
                 <SettingsCollection.Item.Reorder
-                  label={wormhole.target ? `${wormhole.target.spaceName} / ${wormhole.target.columnName}` : "wormhole"}
+                  label={wormhole.target ? `${wormhole.target.spaceName} / ${wormhole.target.columnName}` : m.wormholeLabel}
                   index={index()}
                   count={wormholes().length}
                   disabled={reorderMutation.loading()}
@@ -277,9 +270,9 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
                 />
                 <Show when={wormhole.target}>
                   <IconButton
-                    label="Edit wormhole"
+                    label={m.editWormhole}
                     size="sm"
-                    title="Edit"
+                    title={m.edit}
                     disabled={editingId() !== null || destinationsQuery.loading() || destinations().length === 0}
                     onClick={() => setEditingId(wormhole.id)}
                   >
@@ -287,9 +280,9 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
                   </IconButton>
                 </Show>
                 <IconButton
-                  label="Delete wormhole"
+                  label={m.deleteWormhole}
                   size="sm"
-                  title="Delete"
+                  title={m.delete}
                   disabled={deleteMutation.loading()}
                   onClick={() => void deleteWormhole(wormhole)}
                 >
@@ -302,17 +295,17 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
       </SettingsCollection>
 
       <Show when={wormholesQuery.error()}>
-        <SettingsGroup title="Wormholes unavailable" description={wormholesQuery.error()!.message}>
+        <SettingsGroup title={m.wormholesUnavailable} description={wormholesQuery.error()!.message}>
           <SettingsGroup.Action>
             <Button type="button" variant="secondary" size="sm" onClick={() => void wormholesQuery.refresh()}>
-              <i class="ti ti-refresh" aria-hidden="true" /> Retry
+              <i class="ti ti-refresh" aria-hidden="true" /> {m.retry}
             </Button>
           </SettingsGroup.Action>
         </SettingsGroup>
       </Show>
 
       <Show when={destinationsQuery.error()}>
-        <SettingsGroup title="Destinations unavailable" description="Spaces could not load the destinations you can administer.">
+        <SettingsGroup title={m.destinationsUnavailable} description={m.destinationsUnavailableDescription}>
           <SettingsGroup.Action>
             <Button
               type="button"
@@ -322,14 +315,14 @@ export function WormholesSection(props: { spaceId: string; initialWormholes: Spa
                 void destinationsQuery.refresh();
               }}
             >
-              <i class="ti ti-refresh" aria-hidden="true" /> Retry
+              <i class="ti ti-refresh" aria-hidden="true" /> {m.retry}
             </Button>
           </SettingsGroup.Action>
         </SettingsGroup>
       </Show>
 
       <Show when={!destinationsQuery.loading() && !destinationsQuery.error() && destinations().length === 0}>
-        <p class="text-sm text-dimmed">No other Space with admin access and at least one status is available.</p>
+        <p class="text-sm text-dimmed">{m.noWormholeDestination}</p>
       </Show>
     </>
   );

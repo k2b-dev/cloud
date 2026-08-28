@@ -5,6 +5,7 @@ import { createSignal } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
 import { readResponseError } from "../../../lib/response";
+import { useSpaceMessages } from "../../messages";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
 import type { ItemType } from "../shared/item-form/types";
 import { invalidateSpacesData } from "../workspace/workspace-events";
@@ -20,8 +21,9 @@ type Props = {
 };
 
 export default function CreateItemButton(props: Props) {
+  const t = useSpaceMessages();
   const defaultType = () => props.defaultType ?? "task";
-  const label = () => (defaultType() === "event" ? "New event" : "New task");
+  const label = () => (defaultType() === "event" ? t.newEvent : t.newTask);
   const [dialogPending, setDialogPending] = createSignal(false);
   const mutation = mutations.create<SpaceItem, ItemFormData>({
     mutation: async (intent) => {
@@ -36,12 +38,12 @@ export default function CreateItemButton(props: Props) {
           estimatedDurationMinutes: intent.estimatedDurationMinutes ?? undefined,
         },
       });
-      if (!res.ok) throw new Error(await readResponseError(res, "Failed to create item"));
+      if (!res.ok) throw new Error(await readResponseError(res, t.createItemFailed));
       return res.json();
     },
     onSuccess: () => {
-      toast.success(defaultType() === "event" ? "Event created" : "Task created");
-      void invalidateSpacesData().catch(() => prompts.error("Item was created, but the workspace could not be refreshed."));
+      toast.success(defaultType() === "event" ? t.eventCreated : t.taskCreated);
+      void invalidateSpacesData().catch(() => prompts.error(t.workspaceRefreshAfterCreateFailed));
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -123,7 +125,7 @@ export default function CreateItemButton(props: Props) {
         class="w-full justify-start text-left text-[11px] text-dimmed hover:text-primary [&_.k2b-button__label]:w-full [&_.k2b-button__label]:justify-start"
       >
         <i class={`ti ${pending() ? "ti-loader-2 animate-spin" : "ti-plus"} text-xs`} />
-        <span>{defaultType() === "event" ? "Add event" : "Add task"}</span>
+        <span>{defaultType() === "event" ? t.addEvent : t.addTask}</span>
       </Button>
     );
   }

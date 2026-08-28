@@ -1,6 +1,7 @@
 import { timed as timing } from "@k2b/stdlib/solid";
 import { TextInput } from "@k2b/ui";
 import { createEffect, createSignal } from "solid-js";
+import { useSpaceMessages } from "../../messages";
 import { requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import { buildSearchUrl } from "./types";
 
@@ -16,6 +17,7 @@ type SearchInputProps = {
  * Navigates to new URL after user stops typing.
  */
 export default function SearchInput(props: SearchInputProps) {
+  const t = useSpaceMessages();
   const [value, setValue] = createSignal(props.value);
   const [focused, setFocused] = createSignal(false);
   const [pending, setPending] = createSignal(false);
@@ -44,8 +46,8 @@ export default function SearchInput(props: SearchInputProps) {
     <div onFocusIn={() => setFocused(true)} onFocusOut={() => setFocused(false)}>
       <TextInput
         icon="ti ti-search"
-        aria-label="Search items"
-        placeholder="Search..."
+        aria-label={t.searchItems}
+        placeholder={t.searchPlaceholder}
         value={value}
         onValueChange={handleInput}
         clearable

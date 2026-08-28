@@ -1,5 +1,6 @@
 import { prompts, SettingsModal } from "@k2b/ui";
 import { createSignal } from "solid-js";
+import { useSpaceMessages } from "../../messages";
 import { requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import { ApiKeysSection, PermissionsSection } from "./AccessSection";
 import { CalendarSection } from "./CalendarSection";
@@ -12,6 +13,7 @@ import type { SpaceEditPanelProps } from "./types";
 import { WormholesSection } from "./WormholesSection";
 
 export default function SpaceEditPanel(props: SpaceEditPanelProps) {
+  const m = useSpaceMessages();
   const isAdmin = () => props.isAdmin === true;
   const canWrite = () => props.canWrite === true;
   const [activeTab, setActiveTab] = createSignal(canWrite() ? "general" : "defaults");
@@ -32,10 +34,10 @@ export default function SpaceEditPanel(props: SpaceEditPanelProps) {
   };
   const confirmDiscard = async () =>
     !activeTabDirty() ||
-    prompts.confirm("Discard the unfinished changes in this section?", {
-      title: "Discard changes?",
+    prompts.confirm(m.discardChangesConfirm, {
+      title: m.discardChanges,
       icon: "ti ti-alert-triangle",
-      confirmText: "Discard",
+      confirmText: m.discard,
       variant: "danger",
     });
   const requestTabChange = async (nextTab: string) => {
@@ -49,18 +51,18 @@ export default function SpaceEditPanel(props: SpaceEditPanelProps) {
   return (
     <div class="flex h-full min-h-0 flex-col overflow-hidden">
       <SettingsModal
-        title="Space settings"
+        title={m.spaceSettings}
         activeTab={activeTab()}
         onTabChange={(tab) => void requestTabChange(tab)}
         onClose={() => void requestClose()}
-        closeLabel="Close settings"
+        closeLabel={m.closeSettings}
       >
         {canWrite() && (
-          <SettingsModal.Group title="Space">
-            <SettingsModal.Tab id="general" title="General" icon="ti ti-id" description="Name, description, and color.">
+          <SettingsModal.Group title={m.space}>
+            <SettingsModal.Tab id="general" title={m.settingsGeneral} icon="ti ti-id" description={m.settingsGeneralDescription}>
               <GeneralSection space={props.space} onWorkspaceChange={props.onWorkspaceChange} onDirtyChange={setGeneralDirty} />
             </SettingsModal.Tab>
-            <SettingsModal.Tab id="tags" title="Tags" icon="ti ti-tags" description="Vocabulary used to categorize space items.">
+            <SettingsModal.Tab id="tags" title={m.tags} icon="ti ti-tags" description={m.settingsTagsDescription}>
               <TagsSection
                 spaceId={props.space.id}
                 tags={props.space.tags}
@@ -69,7 +71,7 @@ export default function SpaceEditPanel(props: SpaceEditPanelProps) {
                 onDirtyChange={setTagsDirty}
               />
             </SettingsModal.Tab>
-            <SettingsModal.Tab id="statuses" title="Statuses" icon="ti ti-columns-3" description="Kanban columns and workflow states.">
+            <SettingsModal.Tab id="statuses" title={m.statuses} icon="ti ti-columns-3" description={m.statusesDescription}>
               <StatusesSection
                 spaceId={props.space.id}
                 columns={props.space.columns}
@@ -81,55 +83,45 @@ export default function SpaceEditPanel(props: SpaceEditPanelProps) {
           </SettingsModal.Group>
         )}
 
-        <SettingsModal.Group title="Personal">
-          <SettingsModal.Tab
-            id="defaults"
-            title="Defaults"
-            icon="ti ti-layout-sidebar"
-            description="Browser defaults for this space and home widgets. Changes apply immediately."
-          >
+        <SettingsModal.Group title={m.personal}>
+          <SettingsModal.Tab id="defaults" title={m.defaults} icon="ti ti-layout-sidebar" description={m.defaultsDescription}>
             <DefaultsSection spaceId={props.space.id} initialSettings={props.initialSettings} />
           </SettingsModal.Tab>
         </SettingsModal.Group>
 
-        <SettingsModal.Group title="Connections">
-          <SettingsModal.Tab id="calendar" title="Calendar" icon="ti ti-calendar-share" description="iCal export and subscription URL.">
+        <SettingsModal.Group title={m.connections}>
+          <SettingsModal.Tab id="calendar" title={m.calendar} icon="ti ti-calendar-share" description={m.calendarTabDescription}>
             <CalendarSection spaceId={props.space.id} icalToken={props.space.icalToken} baseUrl={props.baseUrl} isAdmin={isAdmin()} />
           </SettingsModal.Tab>
           {isAdmin() && (
-            <SettingsModal.Tab id="wormholes" title="Wormholes" icon="ti ti-arrow-bounce" description="Move items into another Space.">
+            <SettingsModal.Tab id="wormholes" title={m.wormholes} icon="ti ti-arrow-bounce" description={m.wormholesTabDescription}>
               <WormholesSection spaceId={props.space.id} initialWormholes={props.wormholes ?? []} onDirtyChange={setWormholesDirty} />
             </SettingsModal.Tab>
           )}
         </SettingsModal.Group>
 
         {isAdmin() && props.accessEntries && (
-          <SettingsModal.Group title="Sharing">
-            <SettingsModal.Tab id="access" title="Access" icon="ti ti-shield" description="Permission changes save immediately.">
+          <SettingsModal.Group title={m.sharing}>
+            <SettingsModal.Tab id="access" title={m.access} icon="ti ti-shield" description={m.accessTabDescription}>
               <PermissionsSection
                 spaceId={props.space.id}
                 accessEntries={props.accessEntries}
                 onWorkspaceChange={props.onWorkspaceChange}
               />
             </SettingsModal.Tab>
-            <SettingsModal.Tab
-              id="api-keys"
-              title="API keys"
-              icon="ti ti-key"
-              description="Resource-bound integration credentials. Changes save immediately."
-            >
+            <SettingsModal.Tab id="api-keys" title={m.apiKeys} icon="ti ti-key" description={m.apiKeysTabDescription}>
               <ApiKeysSection spaceId={props.space.id} apiKeys={props.apiKeys ?? []} />
             </SettingsModal.Tab>
           </SettingsModal.Group>
         )}
 
         {isAdmin() && (
-          <SettingsModal.Group title="Lifecycle">
+          <SettingsModal.Group title={m.lifecycle}>
             <SettingsModal.Tab
               id="danger"
-              title="Danger zone"
+              title={m.dangerZone}
               icon="ti ti-alert-triangle"
-              description="Permanently delete this space and all of its items."
+              description={m.dangerZoneDescription}
               tone="danger"
             >
               <DangerZone spaceId={props.space.id} spaceName={props.space.name} />

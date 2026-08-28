@@ -3,9 +3,11 @@ import { ColorInput, prompts, SettingsField, SettingsGroup, SettingsModal, Setti
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceDetail } from "@/contracts";
+import { useSpaceMessages } from "../../messages";
 import { readErrorMessage } from "./utils";
 
 export function GeneralSection(props: { space: SpaceDetail; onWorkspaceChange?: () => void; onDirtyChange: (dirty: boolean) => void }) {
+  const m = useSpaceMessages();
   const [base, setBase] = createSignal({
     name: props.space.name,
     description: props.space.description ?? "",
@@ -41,11 +43,11 @@ export function GeneralSection(props: { space: SpaceDetail; onWorkspaceChange?: 
           color: intent.color,
         },
       });
-      if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to save Space settings"));
+      if (!res.ok) throw new Error(await readErrorMessage(res, m.saveSpaceSettingsFailed));
     },
     onSuccess: (_result, context) => {
       if (context) setBase({ name: context.name, description: context.description, color: context.color });
-      toast.success("Space settings saved");
+      toast.success(m.spaceSettingsSaved);
       props.onWorkspaceChange?.();
     },
     onError: (err) => prompts.error(err.message),
@@ -65,16 +67,16 @@ export function GeneralSection(props: { space: SpaceDetail; onWorkspaceChange?: 
 
   return (
     <>
-      <SettingsGroup title="Identity" description="Describe this Space wherever it appears in Cloud.">
+      <SettingsGroup title={m.identity} description={m.identityDescription}>
         <SettingsField
-          label="Name"
-          description="Shown in navigation, overviews, and destination pickers."
-          error={() => (!name().trim() ? "Name is required" : undefined)}
+          label={m.name}
+          description={m.spaceNameDescription}
+          error={() => (!name().trim() ? m.nameRequired : undefined)}
           changed={nameChanged}
         >
           <TextInput
-            aria-label="Name"
-            placeholder="Product planning"
+            aria-label={m.name}
+            placeholder={m.spaceNamePlaceholder}
             icon="ti ti-typography"
             value={name}
             onValueChange={setName}
@@ -84,14 +86,14 @@ export function GeneralSection(props: { space: SpaceDetail; onWorkspaceChange?: 
         </SettingsField>
 
         <SettingsField
-          label="Description"
-          description="Optional context for people who can access this Space."
+          label={m.description}
+          description={m.spaceDescriptionDescription}
           error={() => undefined}
           changed={descriptionChanged}
         >
           <TextInput
-            aria-label="Description"
-            placeholder="What belongs in this Space?"
+            aria-label={m.description}
+            placeholder={m.spaceDescriptionPlaceholder}
             icon="ti ti-align-left"
             value={description}
             onValueChange={setDescription}
@@ -100,13 +102,8 @@ export function GeneralSection(props: { space: SpaceDetail; onWorkspaceChange?: 
           />
         </SettingsField>
 
-        <SettingsField
-          label="Color"
-          description="Identifies this Space in navigation and overview surfaces."
-          error={() => undefined}
-          changed={colorChanged}
-        >
-          <ColorInput aria-label="Color" value={color} onValueChange={setColor} />
+        <SettingsField label={m.color} description={m.spaceColorDescription} error={() => undefined} changed={colorChanged}>
+          <ColorInput aria-label={m.color} value={color} onValueChange={setColor} />
         </SettingsField>
       </SettingsGroup>
 

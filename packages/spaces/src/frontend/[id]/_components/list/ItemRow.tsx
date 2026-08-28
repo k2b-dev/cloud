@@ -6,6 +6,7 @@ import { apiClient } from "@/api/client";
 import type { SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
 import { shouldHandleDetailClick, subscribeToDetailSelection } from "../../../lib/detail";
 import { readResponseError } from "../../../lib/response";
+import { useSpaceMessages } from "../../messages";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 
@@ -41,6 +42,7 @@ const formatEstimate = (minutes: number) => {
  * Only the completion toggle is interactive here.
  */
 export default function ItemRow(props: ItemRowProps) {
+  const t = useSpaceMessages();
   const [isSelectedLocal, setIsSelectedLocal] = createSignal(props.isSelected);
 
   createEffect(() => {
@@ -61,14 +63,14 @@ export default function ItemRow(props: ItemRowProps) {
         json: { completed },
       });
       if (!res.ok) {
-        throw new Error(await readResponseError(res, "Failed to update item"));
+        throw new Error(await readResponseError(res, t.updateFailed));
       }
       await res.json();
       return completed;
     },
     onSuccess: (completed) => {
-      toast.success(completed ? "Item completed" : "Item reopened");
-      void invalidateSpacesData().catch(() => prompts.error("Item was saved, but the list could not be refreshed."));
+      toast.success(completed ? t.itemCompleted : t.itemReopened);
+      void invalidateSpacesData().catch(() => prompts.error(t.listRefreshFailed));
     },
     onError: (err) => prompts.error(err.message),
   });
@@ -81,7 +83,7 @@ export default function ItemRow(props: ItemRowProps) {
   const schedule = () => (isEvent() ? props.item.startsAt : props.item.deadline) ?? null;
   const eventTime = () => {
     if (!isEvent()) return null;
-    if (props.item.allDay) return "All day";
+    if (props.item.allDay) return t.allDay;
     return `${dates.formatTime(props.item.startsAt!, props.dateConfig)}–${dates.formatTime(props.item.endsAt!, props.dateConfig)}`;
   };
   const hasMetadata = () =>
@@ -114,7 +116,7 @@ export default function ItemRow(props: ItemRowProps) {
                 ? "border-emerald-500 bg-emerald-500 text-white"
                 : `${isSelectedLocal() ? "app-accent-border" : "border-[var(--ui-border)]"} bg-[var(--ui-surface-muted)] text-dimmed`
             }`}
-            aria-label={isCompleted() ? "Completed" : "Active"}
+            aria-label={isCompleted() ? t.completed : t.active}
           >
             <Show when={isCompleted()}>
               <i class="ti ti-check text-xs" />
@@ -130,7 +132,7 @@ export default function ItemRow(props: ItemRowProps) {
             completeMutation.mutate(!isCompleted());
           }}
           disabled={completeMutation.loading() || completionBlocked()}
-          title={completionBlocked() ? "Complete all blocking tasks first" : undefined}
+          title={completionBlocked() ? t.completeBlockersFirst : undefined}
           class={`flex h-5 w-5 shrink-0 items-center justify-center rounded border transition-colors ${
             isCompleted()
               ? "border-emerald-500 bg-emerald-500 text-white [box-shadow:inset_0_1px_0_0_rgb(255_255_255/0.35)]"
@@ -138,7 +140,7 @@ export default function ItemRow(props: ItemRowProps) {
                 ? "cursor-not-allowed border-[var(--ui-field-border)] bg-[var(--ui-surface-muted)] opacity-50"
                 : `${isSelectedLocal() ? "app-accent-border" : "border-[var(--ui-field-border)]"} bg-[var(--ui-field)] hover:border-emerald-500`
           }`}
-          aria-label={isCompleted() ? "Mark incomplete" : "Mark complete"}
+          aria-label={isCompleted() ? t.markIncomplete : t.markComplete}
         >
           <Show when={isCompleted() || completeMutation.loading()}>
             <i class={`ti ${completeMutation.loading() ? "ti-loader-2 animate-spin" : "ti-check"} text-xs`} />
@@ -183,7 +185,7 @@ export default function ItemRow(props: ItemRowProps) {
               </Show>
               <Show when={!props.agenda && isEvent()}>
                 <span class="inline-flex items-center gap-1 text-[11px] text-purple-600 dark:text-purple-300">
-                  <i class="ti ti-calendar-event" /> Event
+                  <i class="ti ti-calendar-event" /> {t.event}
                 </span>
               </Show>
               <Show when={props.item.estimatedDurationMinutes !== null}>

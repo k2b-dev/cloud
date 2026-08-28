@@ -1,7 +1,8 @@
 import { documentNavigate, listenPopState, navigate } from "@k2b/ssr/nav";
 import { query } from "@k2b/stdlib/solid";
-import { prompts } from "@k2b/ui";
+import { prompts, useLocale } from "@k2b/ui";
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { useSpaceMessages } from "../../messages";
 import { parseCalendarRoute } from "../calendar/filter";
 import { loadSpacesViewSnapshot, SpacesViewUnavailableError } from "./view-query";
 import { reconcileSpacesDetailRoute, resolveCalendarNavigationHref, subscribeToSpacesDataInvalidation } from "./workspace-events";
@@ -30,6 +31,8 @@ export const useSpacesCalendarQuery = (params: {
   initialSnapshot: CalendarSnapshot;
   dateConfig?: Parameters<typeof parseCalendarRoute>[1];
 }) => {
+  const locale = useLocale();
+  const t = useSpaceMessages();
   const expectedPath = `/app/spaces/${params.spaceId}`;
   const normalize = (href: string) => resolveCalendarNavigationHref(href, window.location.origin, expectedPath);
   const [source, setSource] = createSignal(params.initialSource);
@@ -43,8 +46,8 @@ export const useSpacesCalendarQuery = (params: {
     source,
     initial: { source: params.initialSource, data: { source: params.initialSource, snapshot: params.initialSnapshot } },
     load: async (href, { abortSignal }) => {
-      const snapshot = await loadSpacesViewSnapshot(href, abortSignal);
-      if (snapshot.kind !== "calendar") throw new SpacesViewUnavailableError("Workspace view changed");
+      const snapshot = await loadSpacesViewSnapshot(href, abortSignal, locale());
+      if (snapshot.kind !== "calendar") throw new SpacesViewUnavailableError(t.workspaceViewChanged);
       return { source: href, snapshot };
     },
     subscribe: ({ invalidate }) => subscribeToSpacesDataInvalidation(["view"], invalidate),

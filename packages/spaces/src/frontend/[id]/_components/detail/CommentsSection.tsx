@@ -5,6 +5,7 @@ import { For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceComment } from "@/contracts";
 import { readResponseError } from "../../../lib/response";
+import { useSpaceMessages } from "../../messages";
 
 type Props = {
   spaceId: string;
@@ -25,6 +26,7 @@ type Props = {
 };
 
 export default function CommentsSection(props: Props) {
+  const t = useSpaceMessages();
   const createCommentMutation = mutations.create({
     mutation: async (content: string) => {
       const res = await apiClient[":id"].items[":itemId"].comments.$post({
@@ -33,12 +35,12 @@ export default function CommentsSection(props: Props) {
         json: { content },
       });
       if (!res.ok) {
-        throw new Error(await readResponseError(res, "Failed to add comment"));
+        throw new Error(await readResponseError(res, t.addCommentFailed));
       }
       return res.json();
     },
     onSuccess: () => {
-      toast.success("Comment added");
+      toast.success(t.commentAdded);
       props.onUpdate();
     },
     onError: (err) => prompts.error(err.message),
@@ -50,12 +52,12 @@ export default function CommentsSection(props: Props) {
         param: { id: props.spaceId, itemId: props.itemId, commentId: id },
       });
       if (!res.ok) {
-        throw new Error(await readResponseError(res, "Failed to delete comment"));
+        throw new Error(await readResponseError(res, t.deleteCommentFailed));
       }
       await res.json();
     },
     onSuccess: () => {
-      toast.success("Comment deleted");
+      toast.success(t.commentDeleted);
       props.onUpdate();
     },
     onError: (err) => prompts.error(err.message),
@@ -66,30 +68,30 @@ export default function CommentsSection(props: Props) {
         param: { id: props.spaceId, itemId: props.itemId, commentId: id },
         json: { content },
       });
-      if (!res.ok) throw new Error(await readResponseError(res, "Failed to update comment"));
+      if (!res.ok) throw new Error(await readResponseError(res, t.updateCommentFailed));
       await res.json();
     },
     onSuccess: () => {
-      toast.success("Comment updated");
+      toast.success(t.commentUpdated);
       props.onUpdate();
     },
     onError: (err) => prompts.error(err.message),
   });
   const editComment = async (comment: SpaceComment) => {
     const values = await prompts.form({
-      title: "Edit comment",
+      title: t.editComment,
       icon: "ti ti-pencil",
       fields: {
         content: {
           type: "text",
-          label: "Comment",
+          label: t.comment,
           default: comment.content,
           required: true,
           multiline: true,
           lines: 5,
         },
       },
-      confirmText: "Save comment",
+      confirmText: t.saveComment,
     });
     if (!values) return;
     const content = String(values.content ?? "").trim();
@@ -101,11 +103,11 @@ export default function CommentsSection(props: Props) {
     if (deletePromptPending || deleteCommentMutation.loading()) return;
     deletePromptPending = true;
     try {
-      const confirmed = await prompts.confirm("Are you sure? This cannot be undone.", {
-        title: "Delete Comment",
+      const confirmed = await prompts.confirm(t.deleteCommentQuestion, {
+        title: t.deleteComment,
         icon: "ti ti-trash",
         variant: "danger",
-        confirmText: "Delete",
+        confirmText: t.delete,
       });
       if (confirmed) void deleteCommentMutation.mutate(id);
     } finally {
@@ -132,16 +134,16 @@ export default function CommentsSection(props: Props) {
 
   return (
     <Discussion
-      label={props.recurrenceId ? "Occurrence comments" : "Comments"}
+      label={props.recurrenceId ? t.occurrenceComments : t.comments}
       icon="ti ti-message"
       count={props.total}
       style="view-transition-name: space-item-detail-comments"
     >
       <Show when={props.canWrite}>
         <Discussion.Composer
-          label="Add comment"
-          placeholder="Write a comment in markdown…"
-          submitLabel="Post comment"
+          label={t.addComment}
+          placeholder={t.commentPlaceholder}
+          submitLabel={t.postComment}
           onSubmit={async (content) => {
             await createCommentMutation.mutate(content);
             return createCommentMutation.error() === null;
@@ -151,12 +153,12 @@ export default function CommentsSection(props: Props) {
 
       <Discussion.List
         loading={props.loading && sortedComments().length === 0}
-        loadingLabel="Loading comments"
+        loadingLabel={t.loadingComments}
         error={props.loadError}
         onRetry={props.onRetry}
         hasMore={props.hasMore}
         loadingMore={props.loadingMore}
-        loadMoreLabel="Load earlier comments"
+        loadMoreLabel={t.loadEarlierComments}
         onLoadMore={props.onLoadMore}
       >
         <For each={sortedComments()}>
@@ -164,8 +166,8 @@ export default function CommentsSection(props: Props) {
             <Discussion.Item
               avatar={
                 <Avatar
-                  name={comment.userName ?? "Unknown"}
-                  fallback={((comment.userName ?? "Unknown").trim() || "?").slice(0, 2).toUpperCase()}
+                  name={comment.userName ?? t.unknownUser}
+                  fallback={((comment.userName ?? t.unknownUser).trim() || "?").slice(0, 2).toUpperCase()}
                   src={
                     comment.userId && comment.userAvatarHash
                       ? `/api/accounts/users/${encodeURIComponent(comment.userId)}/avatar?rev=${encodeURIComponent(comment.userAvatarHash)}`
@@ -174,7 +176,7 @@ export default function CommentsSection(props: Props) {
                   size="xs"
                 />
               }
-              author={comment.userName ?? "Unknown"}
+              author={comment.userName ?? t.unknownUser}
               timestamp={
                 <time dateTime={comment.createdAt} title={dates.formatDateTime(comment.createdAt, props.dateConfig)}>
                   {formatDate(comment.createdAt)}
@@ -184,9 +186,9 @@ export default function CommentsSection(props: Props) {
                 props.canWrite && (comment.canEdit || comment.canDelete) ? (
                   <>
                     <Show when={comment.canEdit}>
-                      <Tooltip.Anchor content="Edit comment">
+                      <Tooltip.Anchor content={t.editComment}>
                         <IconButton
-                          label="Edit comment"
+                          label={t.editComment}
                           size="xs"
                           onClick={() => void editComment(comment)}
                           disabled={updateCommentMutation.loading()}
@@ -196,9 +198,9 @@ export default function CommentsSection(props: Props) {
                       </Tooltip.Anchor>
                     </Show>
                     <Show when={comment.canDelete}>
-                      <Tooltip.Anchor content="Delete comment">
+                      <Tooltip.Anchor content={t.deleteComment}>
                         <IconButton
-                          label="Delete comment"
+                          label={t.deleteComment}
                           size="xs"
                           onClick={() => void deleteComment(comment.id)}
                           disabled={deleteCommentMutation.loading()}

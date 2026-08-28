@@ -1,5 +1,5 @@
 import { ButtonLink, Placeholder } from "@k2b/ui";
-import { type AuthContext, expectUserBackedActor, getDateConfig } from "@valentinkolb/cloud/server";
+import { type AuthContext, expectUserBackedActor, getDateConfig, getLocale } from "@valentinkolb/cloud/server";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import { ResourceShortIdSchema } from "../../contracts";
@@ -7,8 +7,10 @@ import { isMailInvitationIntegrationAvailable } from "../../service/mail-integra
 import { spacesPublicResources } from "../../service/public-resources";
 import SpacesWorkspace from "./_components/workspace/SpacesWorkspace";
 import { loadSpacesWorkspaceState } from "./_components/workspace/workspace-state";
+import { spaceMessages } from "./messages";
 
 export default ssr<AuthContext>(async (c) => {
+  const { t } = spaceMessages.resolve([getLocale(c)]);
   const spaceShortId = c.req.param("id") ?? "";
   const spaceId = ResourceShortIdSchema.safeParse(spaceShortId).success
     ? await spacesPublicResources.resolvePublicId("spaces", spaceShortId)
@@ -16,17 +18,17 @@ export default ssr<AuthContext>(async (c) => {
   const dateConfig = getDateConfig(c);
   if (!spaceId) {
     return () => (
-      <Layout c={c} title="Not found">
+      <Layout c={c} title={t.notFound}>
         <Placeholder
           state="error"
           variant="panel"
           icon="ti ti-alert-circle"
-          title="Not found"
-          description="Space not found"
+          title={t.notFound}
+          description={t.spaceNotFound}
           class="mx-auto max-w-md"
           action={
             <ButtonLink href="/app/spaces" size="sm">
-              Back to Spaces
+              {t.allSpaces}
             </ButtonLink>
           }
         />
@@ -58,7 +60,7 @@ export default ssr<AuthContext>(async (c) => {
           class="mx-auto max-w-md"
           action={
             <ButtonLink href="/app/spaces" size="sm">
-              Back to Spaces
+              {t.allSpaces}
             </ButtonLink>
           }
         />

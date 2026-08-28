@@ -2,6 +2,7 @@ import { Avatar, Combobox, type ComboboxOption, IconButton } from "@k2b/ui";
 import { For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceItemAssignee } from "@/contracts";
+import { useSpaceMessages } from "../../messages";
 
 type SpaceAssigneePickerProps = {
   spaceId: string;
@@ -19,6 +20,7 @@ const removeAssignee = (assignees: SpaceItemAssignee[], id: string) => assignees
 type AssigneeOption = ComboboxOption & { avatarHash: string | null };
 
 export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
+  const t = useSpaceMessages();
   const variant = () => props.variant ?? "chips";
   const current = () => props.value();
 
@@ -33,7 +35,7 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
       },
       { init: { signal } },
     );
-    if (!res.ok) throw new Error("Could not load assignable users");
+    if (!res.ok) throw new Error(t.loadAssigneesFailed);
     const users = await res.json();
     return users.map((user) => ({
       id: user.id,
@@ -74,7 +76,7 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
                     <span>{assignee.displayName}</span>
                     <Show when={!props.disabled}>
                       <IconButton
-                        label={`Remove ${assignee.displayName}`}
+                        label={t.removeAssignee({ name: assignee.displayName })}
                         size="xs"
                         onClick={() => remove(assignee.id)}
                         class="text-dimmed hover:text-red-500"
@@ -107,11 +109,11 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
                   </div>
                   <Show when={!props.disabled}>
                     <IconButton
-                      label={`Remove ${assignee.displayName}`}
+                      label={t.removeAssignee({ name: assignee.displayName })}
                       size="xs"
                       onClick={() => remove(assignee.id)}
                       class="text-zinc-400 opacity-0 transition-all hover:text-red-500 focus:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100"
-                      title={`Remove ${assignee.displayName}`}
+                      title={t.removeAssignee({ name: assignee.displayName })}
                     >
                       <i class="ti ti-x text-sm" />
                     </IconButton>
@@ -125,8 +127,8 @@ export default function SpaceAssigneePicker(props: SpaceAssigneePickerProps) {
 
       <Show when={!props.disabled}>
         <Combobox
-          aria-label="Add assignee"
-          placeholder={props.placeholder ?? "Search people with access..."}
+          aria-label={t.addAssignee}
+          placeholder={props.placeholder ?? t.searchPeople}
           fetchData={fetchAssignableUsers}
           onSelect={addAssignee}
         />

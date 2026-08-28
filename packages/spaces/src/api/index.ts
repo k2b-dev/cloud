@@ -4,6 +4,7 @@ import {
   type AuthContext,
   auth,
   getDateConfig,
+  getLocale,
   hasPermission,
   jsonResponse,
   rateLimit,
@@ -77,6 +78,7 @@ import {
 import { CreateEventInvitationDraftInputSchema, EventInvitationContextSchema, EventInvitationDraftSchema } from "../integration";
 import { spacesService } from "../service";
 import { isSpaceResourceId, SPACE_RESOURCE_TYPE, SPACES_APP_ID } from "../service/access";
+import { localizeSpacesMessage } from "../service/messages";
 import {
   projectCalendarItems,
   projectColumns,
@@ -147,6 +149,25 @@ const SpaceActivitySchema = z.object({
   createdAt: z.string(),
   lastOccurredAt: z.string(),
 });
+
+const localizeApiResponse = async (c: Context, next: () => Promise<void>) => {
+  await next();
+  if (!c.res.headers.get("content-type")?.includes("application/json")) return;
+  const parsed: unknown = await c.res
+    .clone()
+    .json()
+    .catch(() => null);
+  if (!parsed || typeof parsed !== "object" || !("message" in parsed) || typeof parsed.message !== "string") return;
+  const message = localizeSpacesMessage(parsed.message, getLocale(c));
+  if (message === parsed.message) return;
+  const headers = new Headers(c.res.headers);
+  headers.delete("content-length");
+  c.res = new Response(JSON.stringify({ ...parsed, message }), {
+    status: c.res.status,
+    statusText: c.res.statusText,
+    headers,
+  });
+};
 
 const attachmentTooLarge = (c: Context) =>
   respond(c, {
@@ -361,7 +382,7 @@ const respondMessage = async (c: Context, resultPromise: Promise<Result<void> | 
   return respond(c, async () => {
     const result = await resultPromise;
     if (!result.ok) return result;
-    return ok({ message });
+    return ok({ message: localizeSpacesMessage(message, getLocale(c)) });
   });
 };
 
@@ -1040,7 +1061,10 @@ const app = new Hono<AuthContext>()
       const data = c.req.valid("json");
       return respond(
         c,
-        projectMutation(spacesService.space.create({ data, creatorId: user.id, actor: getSpaceActivityActor(c) }), projectSpaces),
+        projectMutation(
+          spacesService.space.create({ data, creatorId: user.id, actor: getSpaceActivityActor(c), locale: getLocale(c) }),
+          projectSpaces,
+        ),
       );
     },
   )
@@ -2255,7 +2279,10 @@ const app = new Hono<AuthContext>()
       const { internalId: spaceId, error } = await checkSpaceAccess(c, c.req.param("id") ?? "", "admin");
       if (error) return error;
 
-      return respond(c, spacesService.access.apiKeys.revoke({ spaceId: spaceId!, credentialId, actor: user }));
+      return respond(c, async () => {
+        const result = await spacesService.access.apiKeys.revoke({ spaceId: spaceId!, credentialId, actor: user });
+        return result.ok ? ok({ message: localizeSpacesMessage(result.data.message, getLocale(c)) }) : result;
+      });
     },
   )
 
@@ -2606,6 +2633,7 @@ const icalApp = new Hono().get(
 // honours registration order for overlapping static-vs-dynamic paths.
 const combined = new Hono()
   .use(rateLimit())
+  .use(localizeApiResponse)
   .route("/admin", adminApp)
   .route("/calendar", calendarApp)
   .route("/calendar", icalApp)

@@ -1,6 +1,7 @@
 import { refreshCurrentPath } from "@k2b/ssr/nav";
 import { AppWorkspace, prompts } from "@k2b/ui";
 import { createSignal } from "solid-js";
+import { useSpaceMessages } from "../../messages";
 import SpaceSettingsDialog from "../edit/SpaceSettingsDialog";
 
 type Props = {
@@ -11,6 +12,7 @@ type Props = {
 };
 
 export default function SpaceSettingsButton(props: Props) {
+  const t = useSpaceMessages();
   const [open, setOpen] = createSignal(false);
 
   const openDialog = async () => {
@@ -41,7 +43,7 @@ export default function SpaceSettingsButton(props: Props) {
     return (
       <AppWorkspace.SidebarIconAction
         icon={open() ? "ti ti-loader-2 animate-spin" : "ti ti-settings"}
-        label="Space settings"
+        label={t.spaceSettings}
         disabled={open()}
         viewTransitionName={props.viewTransitionName}
         onClick={() => void openDialog()}
@@ -56,7 +58,7 @@ export default function SpaceSettingsButton(props: Props) {
       viewTransitionName={props.viewTransitionName}
       onClick={() => void openDialog()}
     >
-      Space settings
+      {t.spaceSettings}
     </AppWorkspace.SidebarItem>
   );
 }

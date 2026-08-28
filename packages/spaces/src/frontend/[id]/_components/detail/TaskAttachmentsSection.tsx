@@ -3,6 +3,7 @@ import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { MAX_TASK_ATTACHMENTS, type SpaceItemAttachment } from "@/contracts";
 import { readResponseError } from "../../../lib/response";
+import { useSpaceMessages } from "../../messages";
 
 const MAX_IMAGE_LONGEST_SIDE = 2048;
 
@@ -13,6 +14,7 @@ export default function TaskAttachmentsSection(props: {
   canWrite: boolean;
   onChanged: () => void;
 }) {
+  const t = useSpaceMessages();
   const [attachments, setAttachments] = createSignal([...props.attachments]);
   const [uploading, setUploading] = createSignal(false);
   const [deletingId, setDeletingId] = createSignal<string | null>(null);
@@ -64,24 +66,25 @@ export default function TaskAttachmentsSection(props: {
             { param: { id: props.spaceId, itemId: props.itemId } },
             { init: { body: form } },
           );
-          if (!response.ok) throw new Error(await readResponseError(response, "Failed to upload image"));
+          if (!response.ok) throw new Error(await readResponseError(response, t.uploadImageFailed));
           const attachment = await response.json();
           setAttachments((current) => [...current, attachment]);
           changed = true;
         } catch (error) {
           failures.push({
             filename: source.name,
-            message: error instanceof Error ? error.message : "Failed to upload image",
+            message: error instanceof Error ? error.message : t.uploadImageFailed,
           });
         }
       }
 
       const firstFailure = failures[0];
-      if (failures.length === 1 && firstFailure) toast.error(`Could not add ${firstFailure.filename}: ${firstFailure.message}`);
-      else if (failures.length > 1) toast.error(`${failures.length} images could not be added`);
+      if (failures.length === 1 && firstFailure)
+        toast.error(t.addImageFileFailed({ filename: firstFailure.filename, message: firstFailure.message }));
+      else if (failures.length > 1) toast.error(t.addImagesFailed({ count: failures.length }));
     } catch (error) {
       if (error instanceof Error && (error.message === "File dialog cancelled" || error.message === "No file selected")) return;
-      toast.error(error instanceof Error ? error.message : "Failed to upload images");
+      toast.error(error instanceof Error ? error.message : t.uploadImagesFailed);
     } finally {
       if (changed) props.onChanged();
       setUploading(false);
@@ -89,8 +92,8 @@ export default function TaskAttachmentsSection(props: {
   };
 
   const removeAttachment = async (attachment: SpaceItemAttachment) => {
-    const confirmed = await prompts.confirm(`Delete "${attachment.filename}"?`, {
-      title: "Delete attachment",
+    const confirmed = await prompts.confirm(t.deleteAttachmentQuestion({ filename: attachment.filename }), {
+      title: t.deleteAttachment,
       variant: "danger",
     });
     if (!confirmed) return;
@@ -99,11 +102,11 @@ export default function TaskAttachmentsSection(props: {
       const response = await apiClient[":id"].items[":itemId"].attachments[":attachmentId"].$delete({
         param: { id: props.spaceId, itemId: props.itemId, attachmentId: attachment.id },
       });
-      if (!response.ok) throw new Error(await readResponseError(response, "Failed to delete attachment"));
+      if (!response.ok) throw new Error(await readResponseError(response, t.deleteAttachmentFailed));
       setAttachments((current) => current.filter((entry) => entry.id !== attachment.id));
       props.onChanged();
     } catch (error) {
-      prompts.error(error instanceof Error ? error.message : "Failed to delete attachment");
+      prompts.error(error instanceof Error ? error.message : t.deleteAttachmentFailed);
     } finally {
       setDeletingId(null);
     }
@@ -111,7 +114,7 @@ export default function TaskAttachmentsSection(props: {
 
   return (
     <>
-      <DetailPanel.Section title="Attachments" icon="ti ti-paperclip" tone="neutral" meta={images().length || undefined}>
+      <DetailPanel.Section title={t.attachments} icon="ti ti-paperclip" tone="neutral" meta={images().length || undefined}>
         <div class="flex flex-col gap-2">
           <Show when={images().length > 0}>
             <div class="flex flex-wrap gap-2">
@@ -124,7 +127,7 @@ export default function TaskAttachmentsSection(props: {
                     <button
                       type="button"
                       class="absolute inset-0 size-full focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--k2b-focus-ring)]"
-                      aria-label={`Preview ${attachment.filename}`}
+                      aria-label={t.previewAttachment({ filename: attachment.filename })}
                       title={attachment.filename}
                       onClick={() => setLightboxIndex(images().findIndex((image) => image.id === attachment.id))}
                     >
@@ -132,9 +135,9 @@ export default function TaskAttachmentsSection(props: {
                     </button>
                     <Show when={props.canWrite}>
                       <div class="absolute right-1 top-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
-                        <Tooltip.Anchor content="Delete attachment">
+                        <Tooltip.Anchor content={t.deleteAttachment}>
                           <IconButton
-                            label={`Delete ${attachment.filename}`}
+                            label={t.deleteAttachmentNamed({ filename: attachment.filename })}
                             size="xs"
                             class="bg-white/90 text-dimmed backdrop-blur-sm dark:bg-zinc-950/80"
                             disabled={deletingId() !== null}
@@ -156,7 +159,7 @@ export default function TaskAttachmentsSection(props: {
               onClick={() => void chooseAndUploadImage()}
               disabled={uploading() || deletingId() !== null}
               leading={<i class={`ti ${uploading() ? "ti-loader-2 animate-spin" : "ti-photo-plus"}`} aria-hidden="true" />}
-              title={uploading() ? "Adding image..." : "Add image"}
+              title={uploading() ? t.addingImage : t.addImage}
             />
           </Show>
         </div>

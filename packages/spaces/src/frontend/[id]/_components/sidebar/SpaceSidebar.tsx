@@ -1,6 +1,7 @@
 import type { DateContext } from "@k2b/stdlib";
 import { AppWorkspace } from "@k2b/ui";
 import { Show } from "solid-js";
+import { useSpaceMessages } from "../../messages";
 import SearchButton from "../search/SearchButton.island";
 import type { ViewType } from "../settings/SpaceSettingsStore";
 import CopyICalButton from "./CopyICalButton.island";
@@ -14,13 +15,6 @@ type Props = {
   dateConfig?: DateContext;
 };
 
-const views: Array<{ id: ViewType; label: string; icon: string }> = [
-  { id: "list", label: "Overview", icon: "ti-home" },
-  { id: "table", label: "Table", icon: "ti-table" },
-  { id: "kanban", label: "Kanban", icon: "ti-layout-kanban" },
-  { id: "calendar", label: "Calendar", icon: "ti-calendar" },
-];
-
 const buildViewHref = (ctx: SpaceContext, view: ViewType): string => {
   const query = new URLSearchParams(ctx.query);
   query.set("view", view);
@@ -28,6 +22,13 @@ const buildViewHref = (ctx: SpaceContext, view: ViewType): string => {
 };
 
 export default function SpaceSidebar(props: Props) {
+  const t = useSpaceMessages();
+  const views: Array<{ id: ViewType; label: string; icon: string }> = [
+    { id: "list", label: t.overview, icon: "ti-home" },
+    { id: "table", label: t.table, icon: "ti-table" },
+    { id: "kanban", label: t.kanban, icon: "ti-layout-kanban" },
+    { id: "calendar", label: t.calendar, icon: "ti-calendar" },
+  ];
   const vt = (key: string) => `space-sidebar-${props.ctx.space.id}-${key}`;
 
   return (
@@ -63,7 +64,7 @@ export default function SpaceSidebar(props: Props) {
             icon="ti ti-layout-grid"
             viewTransitionName={vt("all-spaces-mobile")}
           >
-            All Spaces
+            {t.allSpaces}
           </AppWorkspace.SidebarItem>
           {views.map((view) => {
             const href = buildViewHref(props.ctx, view.id);
@@ -120,7 +121,7 @@ export default function SpaceSidebar(props: Props) {
               href="/app/spaces"
               navigation="document"
               icon="ti ti-layout-grid"
-              label="All Spaces"
+              label={t.allSpaces}
               viewTransitionName={vt("all-spaces-desktop")}
             />
           </AppWorkspace.SidebarIconGrid>
@@ -161,7 +162,7 @@ export default function SpaceSidebar(props: Props) {
             query={props.ctx.query}
             variant="icon"
           />
-          <AppWorkspace.SidebarIconAction href="/app/spaces" navigation="document" icon="ti ti-layout-grid" label="All Spaces" />
+          <AppWorkspace.SidebarIconAction href="/app/spaces" navigation="document" icon="ti ti-layout-grid" label={t.allSpaces} />
           {views.map((view) => (
             <AppWorkspace.SidebarIconAction
               href={buildViewHref(props.ctx, view.id)}

@@ -253,6 +253,18 @@ beforeEach(() => {
 });
 
 describe("spaces capabilities", () => {
+  test("returns final capability errors in the caller locale", async () => {
+    const result = await spacesCapabilities.actions["comment.create"].review?.(
+      { itemId, content: "Status" },
+      { ...serviceAccountContext, locale: "de-CH" },
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: { code: "FORBIDDEN", message: "Für Kommentare ist ein Benutzerkonto erforderlich" },
+    });
+  });
+
   test("compiles calendar integration inputs into the registered manifest", () => {
     const manifest = compileCapabilityManifest("spaces", spacesCapabilities);
     expect(manifest.queries.some((query) => query.localId === "calendar-invitation.preview")).toBeTrue();
@@ -698,6 +710,26 @@ describe("spaces capabilities", () => {
           { label: "Estimated duration", value: "90 minutes" },
         ],
         approvalScope: `space:${spaceId}`,
+      },
+    });
+
+    const german = await spacesCapabilities.actions["task.update"].review!(
+      {
+        itemId,
+        description: null,
+        estimatedDurationMinutes: 90,
+      },
+      { ...userContext, locale: "de-CH" },
+    );
+    expect(german).toMatchObject({
+      ok: true,
+      data: {
+        message: `Aufgabe ${task.title} aktualisieren.`,
+        details: [
+          { label: "Aufgabe", value: task.title },
+          { label: "Beschreibung", value: "Beschreibung entfernen" },
+          { label: "Geschätzte Dauer", value: "90 Minuten" },
+        ],
       },
     });
   });

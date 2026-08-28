@@ -3,6 +3,7 @@ import { Button, IconButton, prompts, SettingsCollection, SettingsGroup, toast }
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import type { SpaceColumn } from "@/contracts";
+import { useSpaceMessages } from "../../messages";
 import { NameColorForm } from "./NameColorForm";
 import { readErrorMessage } from "./utils";
 
@@ -13,6 +14,7 @@ export function StatusesSection(props: {
   onSettingsChange?: () => Promise<void>;
   onDirtyChange: (dirty: boolean) => void;
 }) {
+  const m = useSpaceMessages();
   const [optimisticColumns, setOptimisticColumns] = createSignal<SpaceColumn[] | null>(null);
   const columns = () => optimisticColumns() ?? props.columns;
   const [editingId, setEditingId] = createSignal<string | "new" | null>(null);
@@ -28,13 +30,13 @@ export function StatusesSection(props: {
         json: data,
       });
       if (!res.ok) {
-        throw new Error(await readErrorMessage(res, "Failed to create status"));
+        throw new Error(await readErrorMessage(res, m.createStatusFailed));
       }
       return res.json();
     },
     onSuccess: () => {
       setEditingId(null);
-      toast.success("Status created");
+      toast.success(m.statusCreated);
       props.onWorkspaceChange?.();
       reconcile();
     },
@@ -48,13 +50,13 @@ export function StatusesSection(props: {
         json: { name: data.name, color: data.color },
       });
       if (!res.ok) {
-        throw new Error(await readErrorMessage(res, "Failed to update status"));
+        throw new Error(await readErrorMessage(res, m.updateStatusFailed));
       }
       return res.json();
     },
     onSuccess: () => {
       setEditingId(null);
-      toast.success("Status updated");
+      toast.success(m.statusUpdated);
       props.onWorkspaceChange?.();
       reconcile();
     },
@@ -67,12 +69,12 @@ export function StatusesSection(props: {
         param: { id: props.spaceId, columnId: column.id },
       });
       if (!res.ok) {
-        throw new Error(await readErrorMessage(res, "Failed to delete status"));
+        throw new Error(await readErrorMessage(res, m.deleteStatusFailed));
       }
       return column;
     },
     onSuccess: () => {
-      toast.success("Status deleted");
+      toast.success(m.statusDeleted);
       props.onWorkspaceChange?.();
       reconcile();
     },
@@ -87,7 +89,7 @@ export function StatusesSection(props: {
         json: { columnIds },
       });
       if (!res.ok) {
-        throw new Error(await readErrorMessage(res, "Failed to reorder"));
+        throw new Error(await readErrorMessage(res, m.reorderStatusesFailed));
       }
     },
     onSuccess: () => {
@@ -111,8 +113,8 @@ export function StatusesSection(props: {
     if (deletePromptPending || deleteMut.loading()) return;
     deletePromptPending = true;
     try {
-      const confirmed = await prompts.confirm(`Delete status "${column.name}"?`, {
-        title: "Delete Status",
+      const confirmed = await prompts.confirm(m.deleteStatusConfirm({ name: column.name }), {
+        title: m.deleteStatus,
         variant: "danger",
       });
       if (confirmed) await deleteMut.mutate(column);
@@ -143,16 +145,16 @@ export function StatusesSection(props: {
           const column = () => columns().find((item) => item.id === id());
           return (
             <SettingsGroup
-              title={id() === "new" ? "New status" : `Edit ${column()?.name ?? "status"}`}
-              description="Choose a concise workflow label and recognizable color."
+              title={id() === "new" ? m.newStatus : column() ? m.editStatus({ name: column()!.name }) : m.editGenericStatus}
+              description={m.statusFormDescription}
             >
               <NameColorForm
                 mode={id() === "new" ? "create" : "edit"}
                 initialName={column()?.name}
                 initialColor={column()?.color}
-                nameLabel="Name"
-                namePlaceholder="In progress"
-                createLabel="Create status"
+                nameLabel={m.name}
+                namePlaceholder={m.statusNamePlaceholder}
+                createLabel={m.createStatus}
                 onSave={(data) => {
                   const current = column();
                   if (id() === "new") createMut.mutate(data);
@@ -166,22 +168,18 @@ export function StatusesSection(props: {
         }}
       </Show>
 
-      <SettingsCollection
-        title="Workflow statuses"
-        description="Ordered stages used by Kanban and item status controls. Changes save immediately."
-        empty="No statuses yet. Create one to organize work."
-      >
+      <SettingsCollection title={m.workflowStatuses} description={m.workflowStatusesDescription} empty={m.noStatuses}>
         <SettingsCollection.Action>
           <Button type="button" size="sm" disabled={editingId() !== null} onClick={() => setEditingId("new")}>
             <i class="ti ti-plus" aria-hidden="true" />
-            New status
+            {m.newStatus}
           </Button>
         </SettingsCollection.Action>
         <For each={columns()}>
           {(column, index) => (
             <SettingsCollection.Item
               title={column.name}
-              description={`Position ${index() + 1} of ${columns().length}`}
+              description={m.positionOf({ position: index() + 1, count: columns().length })}
               icon={<span class="h-3 w-3 rounded-full" style={`background-color:${column.color || "#6b7280"}`} />}
             >
               <SettingsCollection.Item.Actions>
@@ -192,10 +190,20 @@ export function StatusesSection(props: {
                   disabled={reorderMut.loading()}
                   onMove={(direction) => moveColumn(index(), direction)}
                 />
-                <IconButton label={`Edit ${column.name}`} size="sm" onClick={() => setEditingId(column.id)} title="Edit status">
+                <IconButton
+                  label={m.editNamedStatus({ name: column.name })}
+                  size="sm"
+                  onClick={() => setEditingId(column.id)}
+                  title={m.editGenericStatus}
+                >
                   <i class="ti ti-pencil" aria-hidden="true" />
                 </IconButton>
-                <IconButton label={`Delete ${column.name}`} size="sm" onClick={() => void deleteColumn(column)} title="Delete status">
+                <IconButton
+                  label={m.deleteNamedStatus({ name: column.name })}
+                  size="sm"
+                  onClick={() => void deleteColumn(column)}
+                  title={m.deleteStatus}
+                >
                   <i class="ti ti-trash" aria-hidden="true" />
                 </IconButton>
               </SettingsCollection.Item.Actions>

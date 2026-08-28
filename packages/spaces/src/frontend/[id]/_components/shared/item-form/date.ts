@@ -1,5 +1,6 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import type { DatePreset, DateRangeValue, DurationPreset } from "@k2b/ui";
+import { spaceMessages } from "../../../messages";
 
 const pickerContext = (dateConfig?: DateContext): DateContext => ({ weekStartsOn: 1, ...dateConfig });
 
@@ -38,14 +39,15 @@ export const dateOnlyRange = (start: string, end: string, dateConfig?: DateConte
 });
 
 export const scheduleDatePresets = (dateConfig?: DateContext): DatePreset<string | null>[] => {
+  const { t } = spaceMessages.resolve(dateConfig?.locale ? [dateConfig.locale] : []);
   const context = pickerContext(dateConfig);
   const today = dates.today(context);
   const tomorrow = dates.addDays(today, 1, context);
   const nextWeek = dates.addWeeks(today, 1, context);
   return [
-    { label: "Today", value: dateKey(today, context) },
-    { label: "Tomorrow", value: dateKey(tomorrow, context) },
-    { label: "Next week", value: dateKey(nextWeek, context) },
+    { label: t.today, value: dateKey(today, context) },
+    { label: t.tomorrow, value: dateKey(tomorrow, context) },
+    { label: t.nextWeek, value: dateKey(nextWeek, context) },
   ];
 };
 
@@ -58,14 +60,15 @@ export const EVENT_DURATION_PRESETS: DurationPreset[] = [
 ];
 
 export const deadlinePresets = (dateConfig?: DateContext): DatePreset<string | null>[] => {
+  const { t } = spaceMessages.resolve(dateConfig?.locale ? [dateConfig.locale] : []);
   const context = pickerContext(dateConfig);
   const todayDate = dates.today(context);
   const tomorrowDate = dates.addDays(todayDate, 1, context);
   const weekStart = dates.startOfWeek(todayDate, context);
   const friday = dates.addDays(weekStart, 4, context);
   return [
-    { label: "Today", value: instantFromLocalDateTime(dateKey(todayDate, context), "17:00", context) },
-    { label: "Tomorrow", value: instantFromLocalDateTime(dateKey(tomorrowDate, context), "17:00", context) },
-    { label: "End of week", value: instantFromLocalDateTime(dateKey(friday, context), "17:00", context) },
+    { label: t.today, value: instantFromLocalDateTime(dateKey(todayDate, context), "17:00", context) },
+    { label: t.tomorrow, value: instantFromLocalDateTime(dateKey(tomorrowDate, context), "17:00", context) },
+    { label: t.endOfWeek, value: instantFromLocalDateTime(dateKey(friday, context), "17:00", context) },
   ];
 };

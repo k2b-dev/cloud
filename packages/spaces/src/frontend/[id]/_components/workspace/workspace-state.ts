@@ -14,6 +14,7 @@ import { latestSpaceEventCursor } from "@/service/events";
 import { spacesPublicResources } from "@/service/public-resources";
 import { resolveRecurringOccurrence } from "@/service/recurrence";
 import { resolveReferenceViews } from "@/service/resource-reference-views";
+import { spaceMessages } from "../../messages";
 import { type CalendarFilter, parseCalendarFilter } from "../calendar/filter";
 import type { CalendarView, DayWeather } from "../calendar/types";
 import { defaultFilter, type FilterState, parseFilterFromUrl } from "../filter/types";
@@ -554,8 +555,8 @@ const loadWorkspaceData = async (params: {
   return { wormholes, itemsResult, kanbanBuckets, calendarState };
 };
 
-const buildWorkspaceTitle = (space: SpaceDetail): Array<{ title: string; href?: string }> => [
-  { title: "Start", href: "/" },
+const buildWorkspaceTitle = (space: SpaceDetail, locale?: string): Array<{ title: string; href?: string }> => [
+  { title: spaceMessages.resolve(locale ? [locale] : []).t.start, href: "/" },
   { title: "Spaces", href: "/app/spaces" },
   { title: space.name, href: `/app/spaces/${space.id}` },
 ];
@@ -590,14 +591,15 @@ type WorkspaceContext = {
 const authorizeWorkspace = async (
   params: WorkspaceRequest,
 ): Promise<{ ok: true; value: AuthorizedWorkspaceContext } | { ok: false; error: WorkspaceError }> => {
+  const { t } = spaceMessages.resolve(params.dateConfig?.locale ? [params.dateConfig.locale] : []);
   const route = resolveRouteState(params);
   const [existingSpace, permissions] = await Promise.all([
     spacesService.space.get({ id: params.spaceId }),
     resolvePermissions({ spaceId: params.spaceId, user: params.user }),
   ]);
-  if (!existingSpace) return { ok: false, error: { kind: "notFound", title: "Not found", message: "Space not found" } };
+  if (!existingSpace) return { ok: false, error: { kind: "notFound", title: t.notFound, message: t.spaceNotFound } };
   if (!permissions) {
-    return { ok: false, error: { kind: "accessDenied", title: "Access denied", message: "You don't have access to this space" } };
+    return { ok: false, error: { kind: "accessDenied", title: t.accessDenied, message: t.spaceAccessDenied } };
   }
   return { ok: true, value: { route, permissions } };
 };
@@ -606,11 +608,12 @@ const loadWorkspaceContext = async (
   params: WorkspaceRequest,
   authorized?: AuthorizedWorkspaceContext,
 ): Promise<{ ok: true; value: WorkspaceContext } | { ok: false; error: WorkspaceError }> => {
+  const { t } = spaceMessages.resolve(params.dateConfig?.locale ? [params.dateConfig.locale] : []);
   const access = authorized ? { ok: true as const, value: authorized } : await authorizeWorkspace(params);
   if (!access.ok) return access;
 
   const space = await spacesService.space.getDetail({ id: params.spaceId });
-  if (!space) return { ok: false, error: { kind: "notFound", title: "Not found", message: "Space not found" } };
+  if (!space) return { ok: false, error: { kind: "notFound", title: t.notFound, message: t.spaceNotFound } };
   const publicSpace = await projectSpaceDetail(space);
   const tagIds = new Map(publicSpace.tags.map((tag, index) => [tag.id, space.tags[index]!.id]));
   const columnIdsByPublicId = new Map(publicSpace.columns.map((column, index) => [column.id, space.columns[index]!.id]));
@@ -728,15 +731,16 @@ export const loadSpaceItemDetail = async (params: {
   cookieHeader?: string;
   authorizationHeader?: string;
 }): Promise<{ kind: "ok"; detail: SpaceItemDetail } | Extract<SpacesWorkspaceState, { kind: "notFound" | "accessDenied" }>> => {
+  const { t } = spaceMessages.resolve(params.dateConfig?.locale ? [params.dateConfig.locale] : []);
   const [space, permissions] = await Promise.all([
     spacesService.space.get({ id: params.spaceId }),
     resolvePermissions({ spaceId: params.spaceId, user: params.user }),
   ]);
-  if (!space) return { kind: "notFound", title: "Not found", message: "Space not found" };
-  if (!permissions) return { kind: "accessDenied", title: "Access denied", message: "You don't have access to this space" };
+  if (!space) return { kind: "notFound", title: t.notFound, message: t.spaceNotFound };
+  if (!permissions) return { kind: "accessDenied", title: t.accessDenied, message: t.spaceAccessDenied };
 
   const item = await spacesService.item.get({ id: params.itemId });
-  if (!item || item.spaceId !== params.spaceId) return { kind: "notFound", title: "Not found", message: "Item not found" };
+  if (!item || item.spaceId !== params.spaceId) return { kind: "notFound", title: t.notFound, message: t.itemNotFound };
   const recurringDetail = params.occurrenceId
     ? await resolveRecurringDetail({
         item,
@@ -746,7 +750,7 @@ export const loadSpaceItemDetail = async (params: {
       })
     : null;
   if (params.occurrenceId && !recurringDetail) {
-    return { kind: "notFound", title: "Not found", message: "Recurring occurrence not found" };
+    return { kind: "notFound", title: t.notFound, message: t.occurrenceNotFound };
   }
   const detailItem = recurringDetail?.item ?? item;
   const recurringContext = recurringDetail?.context ?? null;
@@ -822,7 +826,7 @@ export const loadSpacesWorkspaceState = async (params: WorkspaceRequest): Promis
 
   return {
     kind: "ok",
-    title: buildWorkspaceTitle(publicSpace),
+    title: buildWorkspaceTitle(publicSpace, params.dateConfig?.locale),
     currentUserId: params.user.id,
     space: publicSpace,
     settings: route.settings,

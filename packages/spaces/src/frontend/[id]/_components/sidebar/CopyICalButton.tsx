@@ -1,6 +1,7 @@
 import { clipboard } from "@k2b/stdlib/browser";
 import { AppWorkspace, Button } from "@k2b/ui";
 import { createSignal } from "solid-js";
+import { useSpaceMessages } from "../../messages";
 
 type Props = {
   icalToken: string | null;
@@ -8,6 +9,7 @@ type Props = {
 };
 
 export default function CopyICalButton(props: Props) {
+  const t = useSpaceMessages();
   const [copied, setCopied] = createSignal(false);
 
   const icalUrl = () =>
@@ -30,13 +32,13 @@ export default function CopyICalButton(props: Props) {
     return (
       <Button type="button" variant="secondary" size="sm" onClick={handleCopy}>
         <i class={`ti ${copied() ? "ti-check" : "ti-calendar-share"}`} />
-        <span>{copied() ? "Copied!" : "iCal URL"}</span>
+        <span>{copied() ? t.copied : t.icalUrl}</span>
       </Button>
     );
   }
 
   if (props.variant === "icon") {
-    const label = () => (copied() ? "Copied iCal URL" : "Copy iCal URL");
+    const label = () => (copied() ? t.copiedIcalUrl : t.copyIcalUrl);
     return (
       <AppWorkspace.SidebarIconAction
         icon={`ti ${copied() ? "ti-check" : "ti-calendar-share"}`}
@@ -48,7 +50,7 @@ export default function CopyICalButton(props: Props) {
 
   return (
     <AppWorkspace.SidebarItem onClick={handleCopy} icon={copied() ? "ti ti-check" : "ti ti-calendar-share"}>
-      {copied() ? "Copied!" : "Copy iCal URL"}
+      {copied() ? t.copied : t.copyIcalUrl}
     </AppWorkspace.SidebarItem>
   );
 }

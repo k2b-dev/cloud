@@ -2,11 +2,13 @@ import { SettingsGroup } from "@k2b/ui";
 import { PermissionEditor, type ResourceApiKey, ResourceApiKeys } from "@valentinkolb/cloud/access/ui";
 import { apiClient } from "@/api/client";
 import type { AccessEntry } from "@/contracts";
+import { useSpaceMessages } from "../../messages";
 import { readErrorMessage } from "./utils";
 
 export function PermissionsSection(props: { spaceId: string; accessEntries: AccessEntry[]; onWorkspaceChange?: () => void }) {
+  const m = useSpaceMessages();
   return (
-    <SettingsGroup title="People and groups" description="Grant read, write, or admin access. Changes save immediately.">
+    <SettingsGroup title={m.peopleAndGroups} description={m.accessDescription}>
       <PermissionEditor
         initialEntries={props.accessEntries.filter((entry) => entry.principal.type !== "service_account")}
         canEdit
@@ -15,7 +17,7 @@ export function PermissionsSection(props: { spaceId: string; accessEntries: Acce
             param: { id: props.spaceId },
             json: { principal, permission },
           });
-          if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to grant access"));
+          if (!res.ok) throw new Error(await readErrorMessage(res, m.grantAccessFailed));
           const entry = await res.json();
           props.onWorkspaceChange?.();
           return entry;
@@ -25,14 +27,14 @@ export function PermissionsSection(props: { spaceId: string; accessEntries: Acce
             param: { id: props.spaceId, accessId },
             json: { permission },
           });
-          if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to update permission"));
+          if (!res.ok) throw new Error(await readErrorMessage(res, m.updatePermissionFailed));
           props.onWorkspaceChange?.();
         }}
         revokeAccess={async (accessId) => {
           const res = await apiClient[":id"].access[":accessId"].$delete({
             param: { id: props.spaceId, accessId },
           });
-          if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to revoke access"));
+          if (!res.ok) throw new Error(await readErrorMessage(res, m.revokeAccessFailed));
           props.onWorkspaceChange?.();
         }}
       />
@@ -41,25 +43,26 @@ export function PermissionsSection(props: { spaceId: string; accessEntries: Acce
 }
 
 export function ApiKeysSection(props: { spaceId: string; apiKeys: ResourceApiKey[] }) {
+  const m = useSpaceMessages();
   return (
-    <SettingsGroup title="Integration access" description="Create resource-bound credentials for services that need this Space.">
+    <SettingsGroup title={m.integrationAccess} description={m.integrationAccessDescription}>
       <ResourceApiKeys
-        title="API keys"
-        description="Keys inherit access to this Space and can be revoked at any time."
+        title={m.apiKeys}
+        description={m.apiKeysDescription}
         initialKeys={props.apiKeys}
         createKey={async (input) => {
           const res = await apiClient[":id"]["api-keys"].$post({
             param: { id: props.spaceId },
             json: input,
           });
-          if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to create API key."));
+          if (!res.ok) throw new Error(await readErrorMessage(res, m.createApiKeyFailed));
           return (await res.json()) as { credential: ResourceApiKey; token: string };
         }}
         revokeKey={async (credentialId) => {
           const res = await apiClient[":id"]["api-keys"][":credentialId"].$delete({
             param: { id: props.spaceId, credentialId },
           });
-          if (!res.ok) throw new Error(await readErrorMessage(res, "Failed to revoke API key."));
+          if (!res.ok) throw new Error(await readErrorMessage(res, m.revokeApiKeyFailed));
         }}
       />
     </SettingsGroup>

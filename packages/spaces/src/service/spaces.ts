@@ -12,9 +12,10 @@ import {
   SPACE_RESOURCE_TYPE,
   SPACES_APP_ID,
 } from "./access";
-import * as activity from "./activity";
 import type { SpaceActivityIdentity } from "./activity";
+import * as activity from "./activity";
 import { publishSpaceEvent } from "./events";
+import { spacesMessages } from "./messages";
 import { rank } from "./rank";
 
 // ==========================
@@ -86,29 +87,28 @@ const mapToSpaceAdminItem = (row: DbSpaceAdmin): SpaceAdminListItem => ({
   permissionCount: row.permission_count,
 });
 
-const DEFAULT_COLUMNS = [
-  { name: "To Do", color: "#6b7280", isDone: false },
-  { name: "In Progress", color: "#3b82f6", isDone: false },
-  { name: "Done", color: "#22c55e", isDone: true },
-];
-
-const STARTER_COLUMNS: Record<NonNullable<CreateSpace["starter"]>, typeof DEFAULT_COLUMNS> = {
-  blank: [
-    { name: "To Do", color: "#6b7280", isDone: false },
-    { name: "Done", color: "#22c55e", isDone: true },
-  ],
-  tasks: DEFAULT_COLUMNS,
-  calendar: [
-    { name: "Ideas", color: "#8b5cf6", isDone: false },
-    { name: "Scheduled", color: "#3b82f6", isDone: false },
-    { name: "Done", color: "#22c55e", isDone: true },
-  ],
-  project: [
-    { name: "Backlog", color: "#6b7280", isDone: false },
-    { name: "In Progress", color: "#3b82f6", isDone: false },
-    { name: "Review", color: "#f59e0b", isDone: false },
-    { name: "Done", color: "#22c55e", isDone: true },
-  ],
+const starterColumns = (starter: NonNullable<CreateSpace["starter"]>, locale?: string | null) => {
+  const t = spacesMessages(locale);
+  const defaults = [
+    { name: t.starterToDo, color: "#6b7280", isDone: false },
+    { name: t.starterInProgress, color: "#3b82f6", isDone: false },
+    { name: t.starterDone, color: "#22c55e", isDone: true },
+  ];
+  if (starter === "blank") return [defaults[0]!, defaults[2]!];
+  if (starter === "tasks") return defaults;
+  if (starter === "calendar") {
+    return [
+      { name: t.starterIdeas, color: "#8b5cf6", isDone: false },
+      { name: t.starterScheduled, color: "#3b82f6", isDone: false },
+      defaults[2]!,
+    ];
+  }
+  return [
+    { name: t.starterBacklog, color: "#6b7280", isDone: false },
+    defaults[1]!,
+    { name: t.starterReview, color: "#f59e0b", isDone: false },
+    defaults[2]!,
+  ];
 };
 
 /**
@@ -391,9 +391,10 @@ export const create = async (params: {
   data: CreateSpace;
   creatorId: string;
   actor?: SpaceActivityIdentity;
+  locale?: string | null;
 }): Promise<MutationResult<Space>> => {
   const { data, creatorId } = params;
-  const columns = STARTER_COLUMNS[data.starter ?? "blank"];
+  const columns = starterColumns(data.starter ?? "blank", params.locale);
 
   const row = await withShortIdRetry(["space", "column"], () =>
     sql.begin(async (tx): Promise<DbSpace | null> => {

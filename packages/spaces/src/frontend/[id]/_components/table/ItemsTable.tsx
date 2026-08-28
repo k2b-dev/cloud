@@ -3,6 +3,7 @@ import { DataTable, type DataTableColumn, Tag } from "@k2b/ui";
 import type { JSX } from "solid-js";
 import type { SpaceColumn, SpaceItem, SpaceTag } from "@/contracts";
 import { shouldHandleDetailClick } from "../../../lib/detail";
+import { useSpaceMessages } from "../../messages";
 import AssigneeAvatars from "../shared/AssigneeAvatars";
 import { requestSpacesRouteNavigation } from "../workspace/workspace-events";
 
@@ -15,13 +16,6 @@ type Props = {
   baseUrl: string;
   scrollPreserveKey?: string;
   dateConfig?: DateContext;
-};
-
-const PRIORITY_LABEL: Record<string, string> = {
-  urgent: "Urgent",
-  high: "High",
-  medium: "Medium",
-  low: "Low",
 };
 
 const PRIORITY_COLOR: Record<string, string> = {
@@ -60,32 +54,34 @@ const formatSchedule = (item: SpaceItem, dateConfig?: DateContext) => {
 };
 
 export default function ItemsTable(props: Props) {
+  const t = useSpaceMessages();
+  const priorityLabel: Record<string, string> = { urgent: t.urgent, high: t.high, medium: t.medium, low: t.low };
   const columnsById = new Map(props.columns.map((column) => [column.id, column]));
   const tableColumns: DataTableColumn<SpaceItem>[] = [
-    { id: "title", header: "Title", value: (item) => item.title, cellClass: "max-w-[24rem]" },
-    { id: "status", header: "Status", value: (item) => columnsById.get(item.columnId)?.name },
+    { id: "title", header: t.title, value: (item) => item.title, cellClass: "max-w-[24rem]" },
+    { id: "status", header: t.status, value: (item) => columnsById.get(item.columnId)?.name },
     {
       id: "kind",
-      header: "Kind",
-      value: (item) => (Boolean(item.startsAt && item.endsAt) ? "Event" : "Task"),
+      header: t.kind,
+      value: (item) => (Boolean(item.startsAt && item.endsAt) ? t.event : t.task),
       cellClass: "whitespace-nowrap",
     },
-    { id: "priority", header: "Priority", value: (item) => item.priority, cellClass: "whitespace-nowrap" },
-    { id: "schedule", header: "Schedule", value: (item) => formatSchedule(item, props.dateConfig), cellClass: "max-w-[18rem]" },
+    { id: "priority", header: t.priority, value: (item) => item.priority, cellClass: "whitespace-nowrap" },
+    { id: "schedule", header: t.schedule, value: (item) => formatSchedule(item, props.dateConfig), cellClass: "max-w-[18rem]" },
     {
       id: "assignees",
-      header: "Assignees",
+      header: t.assignees,
       value: (item) => item.assignees?.map((assignee) => assignee.displayName).join(", "),
       cellClass: "max-w-[14rem]",
     },
     {
       id: "tags",
-      header: "Tags",
+      header: t.tags,
       value: (item) => item.tags?.map((tag) => tag.name).join(", "),
       cellClass: "max-w-[12rem]",
     },
-    { id: "updated", header: "Updated", value: (item) => item.updatedAt, cellClass: "whitespace-nowrap" },
-    { id: "created", header: "Created", value: (item) => item.createdAt, cellClass: "whitespace-nowrap" },
+    { id: "updated", header: t.updated, value: (item) => item.updatedAt, cellClass: "whitespace-nowrap" },
+    { id: "created", header: t.created, value: (item) => item.createdAt, cellClass: "whitespace-nowrap" },
   ];
 
   return (
@@ -130,7 +126,7 @@ export default function ItemsTable(props: Props) {
           if (col.id === "kind") {
             return (
               <CellLink href={href} class="block text-secondary" tabIndex={-1}>
-                {isEvent ? "Event" : "Task"}
+                {isEvent ? t.event : t.task}
               </CellLink>
             );
           }
@@ -139,7 +135,7 @@ export default function ItemsTable(props: Props) {
               <CellLink href={href} class="block" tabIndex={-1}>
                 {item.priority ? (
                   <Tag size="sm" color={PRIORITY_COLOR[item.priority]} icon="ti ti-flag">
-                    {PRIORITY_LABEL[item.priority]}
+                    {priorityLabel[item.priority]}
                   </Tag>
                 ) : (
                   <span class="text-dimmed">—</span>
@@ -197,14 +193,14 @@ export default function ItemsTable(props: Props) {
           if (col.id === "updated") {
             return (
               <CellLink href={href} class="block text-dimmed" tabIndex={-1}>
-                {dates.formatDateTime(item.updatedAt)}
+                {dates.formatDateTime(item.updatedAt, props.dateConfig)}
               </CellLink>
             );
           }
           if (col.id === "created") {
             return (
               <CellLink href={href} class="block text-dimmed" tabIndex={-1}>
-                {dates.formatDateTime(item.createdAt)}
+                {dates.formatDateTime(item.createdAt, props.dateConfig)}
               </CellLink>
             );
           }

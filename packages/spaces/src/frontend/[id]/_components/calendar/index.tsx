@@ -18,6 +18,7 @@ import { createEffect, createSignal, Show } from "solid-js";
 import { apiClient } from "@/api/client";
 import { AssignedToFilterSchema, type CalendarItem, ItemTypeSchema, PrioritySchema, type Recurrence, type SpaceItem } from "@/contracts";
 import { readResponseError } from "../../../lib/response";
+import { spaceMessages, useSpaceMessages } from "../../messages";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import { type CalendarFilter, defaultCalendarFilter, writeCalendarFilter } from "./filter";
@@ -65,6 +66,7 @@ const toCalendarEvent = (
   filter: CalendarFilter,
   dateConfig?: DateContext,
 ): CalendarEvent => {
+  const { t } = spaceMessages.resolve(dateConfig?.locale ? [dateConfig.locale] : []);
   const isDeadline = Boolean(item.deadline && !item.startsAt);
   const detailItemId = item.isRecurringInstance ? (item.recurringEventId ?? item.id) : item.id;
   const occurrenceId = item.recurrenceId ?? undefined;
@@ -81,7 +83,7 @@ const toCalendarEvent = (
     dataSpaceItemId: detailItemId,
     calendarName: item.spaceName,
     location: item.location ?? undefined,
-    meta: isDeadline ? "Deadline" : item.spaceName,
+    meta: isDeadline ? t.deadline : item.spaceName,
     recurrence: item.recurrence
       ? {
           rrule: item.recurrence.rrule,
@@ -133,22 +135,17 @@ const createPayloadFromItem = (item: SpaceItem, overrides: Partial<ItemFormData>
   tagIds: overrides.tagIds ?? item.tags?.map((tag) => tag.id),
 });
 
-const chooseRecurringEditScope = async (): Promise<RecurringEditScope | null> =>
+const chooseRecurringEditScope = async (t: ReturnType<typeof useSpaceMessages>): Promise<RecurringEditScope | null> =>
   (await dialogCore.open<RecurringEditScope | null>(
     (close) => (
       <PanelDialog>
-        <PanelDialog.Header
-          title="Edit recurring event"
-          subtitle="Choose how this change should affect the series."
-          icon="ti ti-repeat"
-          close={() => close(null)}
-        />
+        <PanelDialog.Header title={t.editRecurringEvent} subtitle={t.recurrenceChangeHelp} icon="ti ti-repeat" close={() => close(null)} />
         <PanelDialog.Body>
           <div class="flex flex-col gap-2 py-1">
             {[
-              ["occurrence", "This occurrence", "Only this visible event instance changes.", "ti ti-calendar-event"],
-              ["future", "This and future", "Split the series from this occurrence onward.", "ti ti-arrow-forward-up"],
-              ["series", "Entire series", "Update the source event and all generated occurrences.", "ti ti-repeat"],
+              ["occurrence", t.thisOccurrence, t.thisOccurrenceHelp, "ti ti-calendar-event"],
+              ["future", t.thisAndFuture, t.thisAndFutureHelp, "ti ti-arrow-forward-up"],
+              ["series", t.entireSeries, t.entireSeriesHelp, "ti ti-repeat"],
             ].map(([scope, label, description, icon]) => (
               <button
                 type="button"
@@ -170,7 +167,7 @@ const chooseRecurringEditScope = async (): Promise<RecurringEditScope | null> =>
         <PanelDialog.Footer>
           <span />
           <Button type="button" variant="secondary" size="sm" onClick={() => close(null)}>
-            Cancel
+            {t.cancel}
           </Button>
         </PanelDialog.Footer>
       </PanelDialog>
@@ -179,21 +176,21 @@ const chooseRecurringEditScope = async (): Promise<RecurringEditScope | null> =>
   )) ?? null;
 
 export default function Calendar(props: CalendarProps) {
+  const t = useSpaceMessages();
   const [optimisticTimes, setOptimisticTimes] = createSignal<Record<string, CalendarEventTimeChange>>({});
   const [createDialogPending, setCreateDialogPending] = createSignal(false);
   const [seriesItemSource, setSeriesItemSource] = createSignal<string | null>(null);
-  const reconcileAfterWrite = () =>
-    void invalidateSpacesData().catch(() => prompts.error("Changes were saved, but the calendar could not be refreshed."));
+  const reconcileAfterWrite = () => void invalidateSpacesData().catch(() => prompts.error(t.calendarRefreshFailed));
   const seriesItemQuery = query.create<string | null, { source: string; item: SpaceItem }, { cursor: string | null }>({
     source: seriesItemSource,
     enabled: () => seriesItemSource() !== null,
     load: async (itemId, { abortSignal }) => {
-      if (!itemId) throw new Error("Recurring series is missing");
+      if (!itemId) throw new Error(t.recurringSeriesMissing);
       const response = await apiClient[":id"].items[":itemId"].$get(
         { param: { id: props.spaceId, itemId } },
         { init: { signal: abortSignal } },
       );
-      if (!response.ok) throw new Error(await readResponseError(response, "Could not load event"));
+      if (!response.ok) throw new Error(await readResponseError(response, t.eventLoadFailed));
       return { source: itemId, item: await response.json() };
     },
   });
@@ -249,20 +246,20 @@ export default function Calendar(props: CalendarProps) {
   ];
   const scopeOptions: FilterChipSection[] = [
     {
-      label: "Type",
+      label: t.type,
       options: [
-        { value: "type:all", label: "Events & deadlines", icon: "ti ti-calendar" },
-        { value: "type:event", label: "Events", icon: "ti ti-calendar-event" },
-        { value: "type:task", label: "Deadlines", icon: "ti ti-calendar-due" },
+        { value: "type:all", label: t.eventsAndDeadlines, icon: "ti ti-calendar" },
+        { value: "type:event", label: t.events, icon: "ti ti-calendar-event" },
+        { value: "type:task", label: t.deadlines, icon: "ti ti-calendar-due" },
       ],
     },
     {
-      label: "Assignment",
+      label: t.assignment,
       options: [
-        { value: "assigned:all", label: "Anyone", icon: "ti ti-users" },
-        { value: "assigned:assigned", label: "Assigned", icon: "ti ti-user-check" },
-        { value: "assigned:me", label: "Me", icon: "ti ti-user" },
-        { value: "assigned:unassigned", label: "Unassigned", icon: "ti ti-user-off" },
+        { value: "assigned:all", label: t.anyone, icon: "ti ti-users" },
+        { value: "assigned:assigned", label: t.assigned, icon: "ti ti-user-check" },
+        { value: "assigned:me", label: t.me, icon: "ti ti-user" },
+        { value: "assigned:unassigned", label: t.unassigned, icon: "ti ti-user-off" },
       ],
     },
   ];
@@ -270,10 +267,10 @@ export default function Calendar(props: CalendarProps) {
     {
       multiple: true,
       options: [
-        { value: "urgent", label: "Urgent", color: "#ef4444" },
-        { value: "high", label: "High", color: "#f97316" },
-        { value: "medium", label: "Medium", color: "#eab308" },
-        { value: "low", label: "Low", color: "#3b82f6" },
+        { value: "urgent", label: t.urgent, color: "#ef4444" },
+        { value: "high", label: t.high, color: "#f97316" },
+        { value: "medium", label: t.medium, color: "#eab308" },
+        { value: "low", label: t.low, color: "#3b82f6" },
       ],
     },
   ];
@@ -301,14 +298,14 @@ export default function Calendar(props: CalendarProps) {
     await seriesItemQuery.refresh();
     const snapshot = seriesItemQuery.data();
     if (snapshot?.source === itemId && !seriesItemQuery.stale()) return snapshot.item;
-    throw seriesItemQuery.error() ?? new Error("Could not load event");
+    throw seriesItemQuery.error() ?? new Error(t.eventLoadFailed);
   };
   const createItem = async (data: ItemFormData & { recurringEventId?: string; recurrenceId?: string }) => {
     const res = await apiClient[":id"].items.$post({
       param: { id: props.spaceId },
       json: normalizeCreatePayload(data),
     });
-    if (!res.ok) throw new Error(await readResponseError(res, "Could not create event"));
+    if (!res.ok) throw new Error(await readResponseError(res, t.eventCreateFailed));
   };
   const patchItemTime = async (
     itemId: string,
@@ -318,7 +315,7 @@ export default function Calendar(props: CalendarProps) {
       param: { id: props.spaceId, itemId },
       json: data,
     });
-    if (!res.ok) throw new Error(await readResponseError(res, "Could not update event"));
+    if (!res.ok) throw new Error(await readResponseError(res, t.eventUpdateFailed));
   };
   const updateRecurringOccurrence = async (
     event: CalendarEvent,
@@ -342,7 +339,7 @@ export default function Calendar(props: CalendarProps) {
     });
   };
   const splitRecurringSeries = async (parent: SpaceItem, recurrenceId: string, next: CalendarEventTimeChange) => {
-    if (!parent.recurrence) throw new Error("Recurring series data is missing");
+    if (!parent.recurrence) throw new Error(t.recurringDataMissing);
     const res = await apiClient[":id"].items[":itemId"].recurrence.split.$post({
       param: { id: props.spaceId, itemId: parent.id },
       json: {
@@ -352,12 +349,12 @@ export default function Calendar(props: CalendarProps) {
         allDay: next.allDay ?? false,
       },
     });
-    if (!res.ok) throw new Error(await readResponseError(res, "Could not update recurring event"));
+    if (!res.ok) throw new Error(await readResponseError(res, t.recurringEventUpdateFailed));
   };
   const updateRecurringSeries = async (event: CalendarEvent, parent: SpaceItem, next: CalendarEventTimeChange) => {
     const sourceStart = new Date(event.start);
     const sourceEnd = new Date(event.end ?? event.start);
-    if (Number.isNaN(sourceStart.getTime()) || Number.isNaN(sourceEnd.getTime())) throw new Error("Recurring event time is invalid");
+    if (Number.isNaN(sourceStart.getTime()) || Number.isNaN(sourceEnd.getTime())) throw new Error(t.invalidRecurringTime);
     const startsAt = shiftedIso(parent.startsAt ?? sourceStart.toISOString(), next.start.getTime() - sourceStart.getTime());
     const endsAt = shiftedIso(parent.endsAt ?? sourceEnd.toISOString(), next.end.getTime() - sourceEnd.getTime());
     await patchItemTime(parent.id, {
@@ -412,7 +409,7 @@ export default function Calendar(props: CalendarProps) {
           param: { id: props.spaceId, itemId },
           json: { deadline: next.start.toISOString(), startsAt: null, endsAt: null, allDay: true },
         });
-        if (!res.ok) throw new Error(await readResponseError(res, "Could not update deadline"));
+        if (!res.ok) throw new Error(await readResponseError(res, t.deadlineUpdateFailed));
         return true;
       }
       if (isRecurringCalendarEvent(event)) {
@@ -429,7 +426,7 @@ export default function Calendar(props: CalendarProps) {
           allDay: next.allDay ?? false,
         },
       });
-      if (!res.ok) throw new Error(await readResponseError(res, "Could not update event time"));
+      if (!res.ok) throw new Error(await readResponseError(res, t.eventTimeUpdateFailed));
       return true;
     },
     onSuccess: (changed, context) => {
@@ -453,15 +450,13 @@ export default function Calendar(props: CalendarProps) {
             minute: "2-digit",
             timeZone: props.dateConfig?.timeZone,
           });
-      toast.success(context.action === "resize" ? "Event duration updated" : `Event moved to ${target}`);
+      toast.success(context.action === "resize" ? t.eventDurationUpdated : t.eventMoved({ target }));
       reconcileAfterWrite();
     },
     onError: (error, context) => {
       if (context) clearOptimisticTime(context.eventId);
       prompts.error(error.message);
-      void invalidateSpacesData().catch(() =>
-        prompts.error("The calendar could not confirm the latest event state. Refresh the page before editing it again."),
-      );
+      void invalidateSpacesData().catch(() => prompts.error(t.eventStateUnconfirmed));
     },
   });
   let updateSubmitting = false;
@@ -473,7 +468,7 @@ export default function Calendar(props: CalendarProps) {
       let parent: SpaceItem | undefined;
       const sourceItem = props.items.find((item) => item.id === event.id);
       if (isRecurringCalendarEvent(event)) {
-        const scope = await chooseRecurringEditScope();
+        const scope = await chooseRecurringEditScope(t);
         if (!scope) return;
         recurringScope = scope;
         const seriesItemId = sourceItem?.recurringEventId ?? event.dataSpaceItemId ?? event.id;
@@ -492,10 +487,10 @@ export default function Calendar(props: CalendarProps) {
         param: { id: props.spaceId },
         json: { ...normalizeCreatePayload(intent) },
       });
-      if (!res.ok) throw new Error(await readResponseError(res, "Could not create event"));
+      if (!res.ok) throw new Error(await readResponseError(res, t.eventCreateFailed));
     },
     onSuccess: () => {
-      toast.success("Event created");
+      toast.success(t.eventCreated);
       reconcileAfterWrite();
     },
     onError: (error) => prompts.error(error.message),
@@ -521,7 +516,7 @@ export default function Calendar(props: CalendarProps) {
             }}
             onSubmit={(data) => close(data)}
             onCancel={() => close(null)}
-            title="New event"
+            title={t.newEvent}
             icon="ti ti-calendar-plus"
             dateConfig={props.dateConfig}
           />
@@ -566,14 +561,14 @@ export default function Calendar(props: CalendarProps) {
               onClick={() => void createEventFromSlot(defaultNewEventSlot())}
             >
               <i class={`ti ${creatingEvent() ? "ti-loader-2 animate-spin" : "ti-calendar-plus"}`} />
-              New event
+              {t.newEvent}
             </Button>
           </Show>
         }
         toolbarContent={
           <div class="no-scrollbar flex shrink-0 items-center gap-2 overflow-x-auto border-b border-zinc-100 bg-zinc-50/65 px-2 py-2 dark:border-zinc-800/70 dark:bg-zinc-950/35">
             <FilterChip
-              label="Scope"
+              label={t.scope}
               icon="ti ti-filter"
               options={scopeOptions}
               value={[`type:${props.filter.type}`, `assigned:${props.filter.assignedTo}`]}
@@ -589,14 +584,14 @@ export default function Calendar(props: CalendarProps) {
               }}
             />
             <FilterChip
-              label="Priority"
+              label={t.priority}
               icon="ti ti-flag"
               options={priorityOptions}
               value={props.filter.priorities}
               onValueChange={(priorities) => setFilter({ priorities: PrioritySchema.array().catch([]).parse(priorities) })}
             />
             <FilterChip
-              label="Status"
+              label={t.status}
               icon="ti ti-layout-kanban"
               options={columnOptions()}
               value={props.filter.columnIds}
@@ -604,7 +599,7 @@ export default function Calendar(props: CalendarProps) {
             />
             <Show when={props.tags.length > 0}>
               <FilterChip
-                label="Tags"
+                label={t.tags}
                 icon="ti ti-tag"
                 options={tagOptions()}
                 value={props.filter.tagIds}
@@ -612,9 +607,9 @@ export default function Calendar(props: CalendarProps) {
               />
             </Show>
             <span class="ml-auto inline-flex min-w-16 shrink-0 items-center justify-end gap-1 text-xs text-dimmed">
-              <Show when={props.navigationPending} fallback={`${props.items.length} shown`}>
+              <Show when={props.navigationPending} fallback={t.shownCount({ count: props.items.length })}>
                 <i class="ti ti-loader-2 animate-spin" aria-hidden="true" />
-                Updating
+                {t.updating}
               </Show>
             </span>
           </div>

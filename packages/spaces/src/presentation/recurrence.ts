@@ -1,4 +1,4 @@
-import { type DateContext, dates } from "@k2b/stdlib";
+import { type DateContext, dates, i18n } from "@k2b/stdlib";
 import type { Recurrence } from "../contracts";
 
 export type RecurrencePreset = "never" | "daily" | "weekly" | "monthly" | "yearly" | "custom";
@@ -36,37 +36,132 @@ const PRESET_TO_FREQ: Record<Exclude<RecurrencePreset, "never">, string> = {
   custom: "WEEKLY",
 };
 
-export const weekdayOptions = [
-  { id: "MO", label: "M", fullLabel: "Monday" },
-  { id: "TU", label: "T", fullLabel: "Tuesday" },
-  { id: "WE", label: "W", fullLabel: "Wednesday" },
-  { id: "TH", label: "T", fullLabel: "Thursday" },
-  { id: "FR", label: "F", fullLabel: "Friday" },
-  { id: "SA", label: "S", fullLabel: "Saturday" },
-  { id: "SU", label: "S", fullLabel: "Sunday" },
-] as const;
+export const recurrenceMessages = i18n.define({
+  baseLocale: "en",
+  messages: {
+    en: {
+      doesNotRepeat: "Does not repeat",
+      singleEvent: "Single event only.",
+      daily: "Daily",
+      dailyDescription: "Repeats every day.",
+      weekly: "Weekly",
+      weeklyDescription: "Repeats on this weekday.",
+      monthly: "Monthly",
+      monthlyDescription: "Repeats on this day of the month.",
+      yearly: "Yearly",
+      yearlyDescription: "Repeats on this date each year.",
+      custom: "Custom",
+      customDescription: "Choose frequency and interval.",
+      everyNDays: "Every N days.",
+      everyNWeeks: "Every N weeks.",
+      everyNMonths: "Every N months.",
+      everyNYears: "Every N years.",
+      noEnd: "No end",
+      noEndDescription: "Continues until changed.",
+      onDate: "On date",
+      onDateDescription: "Stops after a date.",
+      afterCount: "After count",
+      afterCountDescription: "Stops after the selected number of occurrences.",
+      every: ({ value }: { value: string; frequency: RecurrenceFrequency; interval: number }) => `Repeats every ${value}`,
+      everyOn: ({ value, weekdays }: { value: string; weekdays: string; frequency: RecurrenceFrequency; interval: number }) =>
+        `Repeats every ${value} on ${weekdays}`,
+      everyWeekdays: ({ weekdays }: { weekdays: string }) => `Repeats every ${weekdays}`,
+      onDay: ({ day }: { day: string }) => ` on day ${day}`,
+      annuallyOnDate: ({ date }: { date: string }) => ` on ${date}`,
+      at: ({ time }: { time: string }) => ` at ${time}`,
+      until: ({ date }: { date: string }) => ` until ${date}`,
+      occurrences: ({ count }: { count: number }) => ` for ${count} ${count === 1 ? "occurrence" : "occurrences"}`,
+    },
+    de: {
+      doesNotRepeat: "Keine Wiederholung",
+      singleEvent: "Ein einzelner Termin.",
+      daily: "Täglich",
+      dailyDescription: "Wird jeden Tag wiederholt.",
+      weekly: "Wöchentlich",
+      weeklyDescription: "Wird an diesem Wochentag wiederholt.",
+      monthly: "Monatlich",
+      monthlyDescription: "Wird an diesem Tag des Monats wiederholt.",
+      yearly: "Jährlich",
+      yearlyDescription: "Wird jedes Jahr an diesem Datum wiederholt.",
+      custom: "Benutzerdefiniert",
+      customDescription: "Häufigkeit und Abstand festlegen.",
+      everyNDays: "Alle N Tage.",
+      everyNWeeks: "Alle N Wochen.",
+      everyNMonths: "Alle N Monate.",
+      everyNYears: "Alle N Jahre.",
+      noEnd: "Ohne Ende",
+      noEndDescription: "Wird wiederholt, bis die Serie geändert wird.",
+      onDate: "An einem Datum",
+      onDateDescription: "Endet nach dem ausgewählten Datum.",
+      afterCount: "Nach einer Anzahl",
+      afterCountDescription: "Endet nach der ausgewählten Anzahl von Terminen.",
+      every: ({ value, frequency, interval }) =>
+        interval > 1
+          ? `Wiederholt sich alle ${value}`
+          : frequency === "daily"
+            ? "Wiederholt sich jeden Tag"
+            : frequency === "weekly"
+              ? "Wiederholt sich jede Woche"
+              : frequency === "monthly"
+                ? "Wiederholt sich jeden Monat"
+                : "Wiederholt sich jedes Jahr",
+      everyOn: ({ value, weekdays, frequency, interval }) =>
+        frequency === "weekly" && interval === 1
+          ? `Wiederholt sich jeden ${weekdays}`
+          : `Wiederholt sich ${interval > 1 ? `alle ${value}` : frequency === "daily" ? "jeden Tag" : frequency === "monthly" ? "jeden Monat" : "jedes Jahr"} am ${weekdays}`,
+      everyWeekdays: ({ weekdays }) => `Wiederholt sich jeden ${weekdays}`,
+      onDay: ({ day }) => ` am ${day}.`,
+      annuallyOnDate: ({ date }) => ` am ${date}`,
+      at: ({ time }) => ` um ${time} Uhr`,
+      until: ({ date }) => ` bis ${date}`,
+      occurrences: ({ count }) => ` für ${count} ${count === 1 ? "Termin" : "Termine"}`,
+    },
+  },
+});
 
-export const recurrencePresetOptions = [
-  { id: "never", label: "Does not repeat", description: "Single event only.", icon: "ti ti-calendar-event" },
-  { id: "daily", label: "Daily", description: "Repeats every day.", icon: "ti ti-repeat" },
-  { id: "weekly", label: "Weekly", description: "Repeats on this weekday.", icon: "ti ti-calendar-week" },
-  { id: "monthly", label: "Monthly", description: "Repeats on this day of month.", icon: "ti ti-calendar-month" },
-  { id: "yearly", label: "Yearly", description: "Repeats on this date each year.", icon: "ti ti-calendar" },
-  { id: "custom", label: "Custom", description: "Choose frequency and interval.", icon: "ti ti-adjustments" },
-];
+const recurrenceText = (dateConfig?: DateContext) => recurrenceMessages.resolve(dateConfig?.locale ? [dateConfig.locale] : []).t;
 
-export const recurrenceFrequencyOptions = [
-  { id: "daily", label: "Daily", description: "Every N days.", icon: "ti ti-repeat" },
-  { id: "weekly", label: "Weekly", description: "Every N weeks.", icon: "ti ti-calendar-week" },
-  { id: "monthly", label: "Monthly", description: "Every N months.", icon: "ti ti-calendar-month" },
-  { id: "yearly", label: "Yearly", description: "Every N years.", icon: "ti ti-calendar" },
-];
+export const weekdayOptions = (dateConfig?: DateContext) => {
+  const ids = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const;
+  const context = { ...dateConfig, timeZone: dateConfig?.timeZone ?? "UTC" };
+  const monday = new Date("2024-01-01T12:00:00Z");
+  return ids.map((id, index) => {
+    const date = dates.addDays(monday, index, context);
+    const fullLabel = dates.formatWeekdayLong(date, context);
+    return { id, label: fullLabel.slice(0, 1), fullLabel };
+  });
+};
 
-export const recurrenceEndOptions = [
-  { id: "never", label: "No end", description: "Continues until changed.", icon: "ti ti-infinity" },
-  { id: "on", label: "On date", description: "Stops after a date.", icon: "ti ti-calendar-due" },
-  { id: "after", label: "After count", description: "Stops after occurrences.", icon: "ti ti-list-numbers" },
-];
+export const recurrencePresetOptions = (dateConfig?: DateContext) => {
+  const t = recurrenceText(dateConfig);
+  return [
+    { id: "never", label: t.doesNotRepeat, description: t.singleEvent, icon: "ti ti-calendar-event" },
+    { id: "daily", label: t.daily, description: t.dailyDescription, icon: "ti ti-repeat" },
+    { id: "weekly", label: t.weekly, description: t.weeklyDescription, icon: "ti ti-calendar-week" },
+    { id: "monthly", label: t.monthly, description: t.monthlyDescription, icon: "ti ti-calendar-month" },
+    { id: "yearly", label: t.yearly, description: t.yearlyDescription, icon: "ti ti-calendar" },
+    { id: "custom", label: t.custom, description: t.customDescription, icon: "ti ti-adjustments" },
+  ];
+};
+
+export const recurrenceFrequencyOptions = (dateConfig?: DateContext) => {
+  const t = recurrenceText(dateConfig);
+  return [
+    { id: "daily", label: t.daily, description: t.everyNDays, icon: "ti ti-repeat" },
+    { id: "weekly", label: t.weekly, description: t.everyNWeeks, icon: "ti ti-calendar-week" },
+    { id: "monthly", label: t.monthly, description: t.everyNMonths, icon: "ti ti-calendar-month" },
+    { id: "yearly", label: t.yearly, description: t.everyNYears, icon: "ti ti-calendar" },
+  ];
+};
+
+export const recurrenceEndOptions = (dateConfig?: DateContext) => {
+  const t = recurrenceText(dateConfig);
+  return [
+    { id: "never", label: t.noEnd, description: t.noEndDescription, icon: "ti ti-infinity" },
+    { id: "on", label: t.onDate, description: t.onDateDescription, icon: "ti ti-calendar-due" },
+    { id: "after", label: t.afterCount, description: t.afterCountDescription, icon: "ti ti-list-numbers" },
+  ];
+};
 
 export const emptyRecurrenceState = (): RecurrenceFormState => ({
   preset: "never",
@@ -117,11 +212,6 @@ export const recurrenceFromFormState = (state: RecurrenceFormState, startsAt: st
   return { rrule: parts.join(";"), dtstart: startsAt ? new Date(startsAt).toISOString() : null, exdate: [] };
 };
 
-const joinWords = (values: string[]): string => {
-  if (values.length <= 1) return values[0] ?? "";
-  return `${values.slice(0, -1).join(", ")} and ${values.at(-1)}`;
-};
-
 const validDate = (value: string | null | undefined): Date | null => {
   if (!value) return null;
   const date = new Date(value);
@@ -146,52 +236,56 @@ const dateInputInstant = (value: string, dateConfig?: DateContext): Date | null 
   }
 };
 
-const weekdayLabels = (byDay: string[]): string[] =>
-  byDay.map((value) => weekdayOptions.find((option) => option.id === value)?.fullLabel ?? value);
-
-const formatWeekdayShort = (date: Date, dateConfig?: DateContext): string =>
-  new Intl.DateTimeFormat(dateConfig?.locale ?? "en", {
-    weekday: "short",
-    timeZone: dateConfig?.timeZone ?? "UTC",
-  }).format(date);
-
-const recurrenceBase = (state: RecurrenceFormState, startsAt: Date | null, dateConfig?: DateContext): string => {
-  const interval = Math.max(1, Math.floor(state.interval));
-  if (state.frequency === "daily") return interval === 1 ? "Repeats every day" : `Repeats every ${interval} days`;
-
-  if (state.frequency === "weekly") {
-    const weekdays = weekdayLabels(state.byDay);
-    if (weekdays.length === 0 && startsAt) weekdays.push(dates.formatWeekdayLong(startsAt, dateConfig));
-    if (interval === 1 && weekdays.length > 0) return `Repeats every ${joinWords(weekdays)}`;
-    return `Repeats every ${interval === 1 ? "week" : `${interval} weeks`}${weekdays.length > 0 ? ` on ${joinWords(weekdays)}` : ""}`;
-  }
-
-  if (state.frequency === "monthly") {
-    const day = startsAt ? dates.formatDayNumber(startsAt, dateConfig) : null;
-    return `Repeats every ${interval === 1 ? "month" : `${interval} months`}${day ? ` on day ${day}` : ""}`;
-  }
-
-  const yearlyDate = startsAt
-    ? new Intl.DateTimeFormat(dateConfig?.locale ?? "en", {
-        day: "numeric",
-        month: "long",
-        timeZone: dateConfig?.timeZone ?? "UTC",
-      }).format(startsAt)
-    : null;
-  return `Repeats every ${interval === 1 ? "year" : `${interval} years`}${yearlyDate ? ` on ${yearlyDate}` : ""}`;
-};
-
 export const summarizeRecurrenceState = (state: RecurrenceFormState, options: RecurrenceSummaryOptions = {}): string | null => {
   if (state.preset === "never") return null;
   const startsAt = validDate(options.startsAt);
-  const time = !options.allDay && startsAt ? ` at ${formatStartTime(options.startsAt, startsAt, options.dateConfig)}` : "";
+  const t = recurrenceText(options.dateConfig);
   const until = state.endMode === "on" ? dateInputInstant(state.until, options.dateConfig) : null;
-  const end = until
-    ? ` until ${formatWeekdayShort(until, options.dateConfig)} ${dates.formatDate(until, options.dateConfig)}`
-    : state.endMode === "after" && state.count
-      ? ` for ${state.count} ${state.count === 1 ? "occurrence" : "occurrences"}`
+  const weekdayMap: Record<string, number> = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
+  const byWeekday = state.byDay.map((day) => weekdayMap[day]).filter((day): day is number => day !== undefined);
+  if (state.frequency === "weekly" && byWeekday.length === 0 && startsAt) byWeekday.push(startsAt.getUTCDay());
+  const parts = dates.formatRecurrenceParts(
+    {
+      freq: state.frequency,
+      interval: Math.max(1, Math.floor(state.interval)),
+      ...(byWeekday.length > 0 ? { byWeekday } : {}),
+      ...(until ? { until } : {}),
+      ...(state.endMode === "after" && state.count ? { count: state.count } : {}),
+    },
+    options.dateConfig,
+  );
+  const interval = Math.max(1, Math.floor(state.interval));
+  const longWeekdays = i18n.formatList(
+    state.byDay.map((day) => weekdayOptions(options.dateConfig).find((option) => option.id === day)?.fullLabel ?? day),
+    options.dateConfig?.locale,
+  );
+  let base =
+    state.frequency === "weekly" && interval === 1 && (longWeekdays || startsAt)
+      ? t.everyWeekdays({ weekdays: longWeekdays || dates.formatWeekdayLong(startsAt!, options.dateConfig) })
+      : parts.weekdays
+        ? t.everyOn({ value: parts.every, weekdays: parts.weekdays, frequency: state.frequency, interval })
+        : t.every({ value: parts.every, frequency: state.frequency, interval });
+  if (state.frequency === "monthly" && startsAt) base += t.onDay({ day: dates.formatDayNumber(startsAt, options.dateConfig) });
+  if (state.frequency === "yearly" && startsAt) {
+    const date = new Intl.DateTimeFormat(options.dateConfig?.locale ?? "en", {
+      day: "numeric",
+      month: "long",
+      timeZone: options.dateConfig?.timeZone ?? "UTC",
+    }).format(startsAt);
+    base += t.annuallyOnDate({ date });
+  }
+  const time = !options.allDay && startsAt ? t.at({ time: formatStartTime(options.startsAt, startsAt, options.dateConfig) }) : "";
+  const end = parts.until
+    ? t.until({
+        date: `${new Intl.DateTimeFormat(options.dateConfig?.locale ?? "en", {
+          weekday: "short",
+          timeZone: options.dateConfig?.timeZone ?? "UTC",
+        }).format(until!)} ${parts.until}`,
+      })
+    : parts.count
+      ? t.occurrences({ count: parts.count })
       : "";
-  return `${recurrenceBase(state, startsAt, options.dateConfig)}${time}${end}`;
+  return `${base}${time}${end}`;
 };
 
 export const summarizeRecurrence = (recurrence: Recurrence | null | undefined, options: RecurrenceSummaryOptions = {}): string | null =>

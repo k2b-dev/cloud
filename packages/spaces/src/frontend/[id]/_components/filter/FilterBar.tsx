@@ -10,6 +10,7 @@ import type {
   SpaceColumn,
   SpaceTag,
 } from "@/contracts";
+import { useSpaceMessages } from "../../messages";
 import { requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import SearchInput from "./SearchInput";
 import { buildFilterUrl, defaultFilter, type FilterState, hasActiveFilters } from "./types";
@@ -27,104 +28,6 @@ type FilterBarProps = {
   onClearFilters?: () => void;
 };
 
-// Static filter options (defined outside component to avoid recreation)
-const VIEW_OPTIONS: FilterChipSection[] = [
-  {
-    label: "Type",
-    options: [
-      { value: "type:all", label: "All", icon: "ti ti-list" },
-      { value: "type:task", label: "Tasks", icon: "ti ti-checkbox" },
-      { value: "type:event", label: "Events", icon: "ti ti-calendar-event" },
-    ],
-  },
-  {
-    label: "Status",
-    options: [
-      { value: "status:active", label: "Active", icon: "ti ti-circle" },
-      { value: "status:completed", label: "Done", icon: "ti ti-circle-check" },
-      { value: "status:all", label: "All", icon: "ti ti-list" },
-    ],
-  },
-  {
-    label: "Assigned to",
-    options: [
-      { value: "assigned:all", label: "All", icon: "ti ti-users" },
-      {
-        value: "assigned:assigned",
-        label: "Assigned",
-        icon: "ti ti-user-check",
-      },
-      { value: "assigned:me", label: "Me", icon: "ti ti-user" },
-      {
-        value: "assigned:unassigned",
-        label: "Unassigned",
-        icon: "ti ti-user-off",
-      },
-    ],
-  },
-];
-
-const PRIORITY_OPTIONS: FilterChipSection[] = [
-  {
-    multiple: true,
-    options: [
-      { value: "urgent", label: "Urgent", color: "#ef4444" },
-      { value: "high", label: "High", color: "#f97316" },
-      { value: "medium", label: "Medium", color: "#eab308" },
-      { value: "low", label: "Low", color: "#3b82f6" },
-    ],
-  },
-];
-
-const DEADLINE_OPTIONS: FilterChipSection[] = [
-  {
-    options: [
-      { value: "all", label: "All", icon: "ti ti-calendar" },
-      { value: "overdue", label: "Overdue", icon: "ti ti-alert-triangle" },
-      { value: "today", label: "Today", icon: "ti ti-calendar-due" },
-      { value: "week", label: "This week", icon: "ti ti-calendar-week" },
-      { value: "none", label: "No deadline", icon: "ti ti-calendar-off" },
-    ],
-  },
-];
-
-const SORT_OPTIONS: FilterChipSection[] = [
-  {
-    label: "Sort by",
-    options: [
-      { value: "sort:column", label: "Status", icon: "ti ti-layout-kanban" },
-      { value: "sort:deadline", label: "Schedule", icon: "ti ti-calendar-time" },
-      { value: "sort:priority", label: "Priority", icon: "ti ti-flag" },
-      { value: "sort:created", label: "Created", icon: "ti ti-calendar-plus" },
-      { value: "sort:updated", label: "Updated", icon: "ti ti-history" },
-      {
-        value: "sort:title",
-        label: "Title",
-        icon: "ti ti-sort-ascending-letters",
-      },
-    ],
-  },
-  {
-    label: "Direction",
-    options: [
-      { value: "dir:asc", label: "Ascending", icon: "ti ti-sort-ascending" },
-      { value: "dir:desc", label: "Descending", icon: "ti ti-sort-descending" },
-    ],
-  },
-];
-
-const GROUP_BY_OPTIONS: FilterChipSection[] = [
-  {
-    options: [
-      { value: "none", label: "None", icon: "ti ti-list" },
-      { value: "column", label: "Status", icon: "ti ti-layout-kanban" },
-      { value: "priority", label: "Priority", icon: "ti ti-flag" },
-      { value: "tag", label: "Tag", icon: "ti ti-tag" },
-      { value: "deadline", label: "Schedule", icon: "ti ti-calendar-time" },
-    ],
-  },
-];
-
 // Default values for reset
 const VIEW_DEFAULT = [`type:${defaultFilter.type}`, `status:${defaultFilter.status}`, `assigned:${defaultFilter.assignedTo}`];
 const SORT_DEFAULT = [`sort:${defaultFilter.sort}`, `dir:asc`];
@@ -133,6 +36,87 @@ const SORT_DEFAULT = [`sort:${defaultFilter.sort}`, `dir:asc`];
  * Filter bar for the items list.
  */
 export default function FilterBar(props: FilterBarProps) {
+  const t = useSpaceMessages();
+  const viewOptions: FilterChipSection[] = [
+    {
+      label: t.type,
+      options: [
+        { value: "type:all", label: t.all, icon: "ti ti-list" },
+        { value: "type:task", label: t.tasks, icon: "ti ti-checkbox" },
+        { value: "type:event", label: t.events, icon: "ti ti-calendar-event" },
+      ],
+    },
+    {
+      label: t.status,
+      options: [
+        { value: "status:active", label: t.active, icon: "ti ti-circle" },
+        { value: "status:completed", label: t.done, icon: "ti ti-circle-check" },
+        { value: "status:all", label: t.all, icon: "ti ti-list" },
+      ],
+    },
+    {
+      label: t.assignedTo,
+      options: [
+        { value: "assigned:all", label: t.all, icon: "ti ti-users" },
+        { value: "assigned:assigned", label: t.assigned, icon: "ti ti-user-check" },
+        { value: "assigned:me", label: t.me, icon: "ti ti-user" },
+        { value: "assigned:unassigned", label: t.unassigned, icon: "ti ti-user-off" },
+      ],
+    },
+  ];
+  const priorityOptions: FilterChipSection[] = [
+    {
+      multiple: true,
+      options: [
+        { value: "urgent", label: t.urgent, color: "#ef4444" },
+        { value: "high", label: t.high, color: "#f97316" },
+        { value: "medium", label: t.medium, color: "#eab308" },
+        { value: "low", label: t.low, color: "#3b82f6" },
+      ],
+    },
+  ];
+  const deadlineOptions: FilterChipSection[] = [
+    {
+      options: [
+        { value: "all", label: t.all, icon: "ti ti-calendar" },
+        { value: "overdue", label: t.overdue, icon: "ti ti-alert-triangle" },
+        { value: "today", label: t.today, icon: "ti ti-calendar-due" },
+        { value: "week", label: t.thisWeek, icon: "ti ti-calendar-week" },
+        { value: "none", label: t.noDeadline, icon: "ti ti-calendar-off" },
+      ],
+    },
+  ];
+  const sortOptions: FilterChipSection[] = [
+    {
+      label: t.sortBy,
+      options: [
+        { value: "sort:column", label: t.status, icon: "ti ti-layout-kanban" },
+        { value: "sort:deadline", label: t.schedule, icon: "ti ti-calendar-time" },
+        { value: "sort:priority", label: t.priority, icon: "ti ti-flag" },
+        { value: "sort:created", label: t.created, icon: "ti ti-calendar-plus" },
+        { value: "sort:updated", label: t.updated, icon: "ti ti-history" },
+        { value: "sort:title", label: t.title, icon: "ti ti-sort-ascending-letters" },
+      ],
+    },
+    {
+      label: t.direction,
+      options: [
+        { value: "dir:asc", label: t.ascending, icon: "ti ti-sort-ascending" },
+        { value: "dir:desc", label: t.descending, icon: "ti ti-sort-descending" },
+      ],
+    },
+  ];
+  const groupByOptions: FilterChipSection[] = [
+    {
+      options: [
+        { value: "none", label: t.none, icon: "ti ti-list" },
+        { value: "column", label: t.status, icon: "ti ti-layout-kanban" },
+        { value: "priority", label: t.priority, icon: "ti ti-flag" },
+        { value: "tag", label: t.tag, icon: "ti ti-tag" },
+        { value: "deadline", label: t.schedule, icon: "ti ti-calendar-time" },
+      ],
+    },
+  ];
   const navigate = (params: Partial<FilterState>) => {
     if (props.onFilterChange) {
       props.onFilterChange(params);
@@ -188,9 +172,9 @@ export default function FilterBar(props: FilterBarProps) {
       <div class="no-scrollbar flex items-center gap-2 overflow-x-auto sm:flex-wrap sm:overflow-visible">
         {/* Scope: item type + completion state + assignment */}
         <FilterChip
-          label="Scope"
+          label={t.scope}
           icon="ti ti-filter"
-          options={VIEW_OPTIONS}
+          options={viewOptions}
           value={[`type:${props.filter.type}`, `status:${props.filter.status}`, `assigned:${props.filter.assignedTo}`]}
           onValueChange={(v) => {
             const type = (v.find((x) => x.startsWith("type:"))?.slice(5) ?? defaultFilter.type) as ItemType;
@@ -208,18 +192,18 @@ export default function FilterBar(props: FilterBarProps) {
 
         {/* Priority */}
         <FilterChip
-          label="Priority"
+          label={t.priority}
           icon="ti ti-flag"
-          options={PRIORITY_OPTIONS}
+          options={priorityOptions}
           value={props.filter.priority}
           onValueChange={(v) => navigate({ priority: v as Priority[] })}
         />
 
         {/* Deadline */}
         <FilterChip
-          label="Deadline"
+          label={t.deadline}
           icon="ti ti-clock"
-          options={DEADLINE_OPTIONS}
+          options={deadlineOptions}
           value={[props.filter.deadlineFilter]}
           onValueChange={(v) => navigate({ deadlineFilter: (v[0] ?? "all") as DeadlineFilter })}
           isActive={props.filter.deadlineFilter !== defaultFilter.deadlineFilter}
@@ -229,7 +213,7 @@ export default function FilterBar(props: FilterBarProps) {
         {/* Tags */}
         {props.tags.length > 0 && (
           <FilterChip
-            label="Tags"
+            label={t.tags}
             icon="ti ti-tag"
             options={tagOptions()}
             value={props.filter.tagIds}
@@ -240,7 +224,7 @@ export default function FilterBar(props: FilterBarProps) {
         {/* Workflow status */}
         <div class="shrink-0">
           <FilterChip
-            label="Status"
+            label={t.status}
             icon="ti ti-layout-kanban"
             options={columnOptions()}
             value={props.filter.columnIds}
@@ -251,9 +235,9 @@ export default function FilterBar(props: FilterBarProps) {
         {/* Sort */}
         <div class="shrink-0">
           <FilterChip
-            label="Sort"
+            label={t.sort}
             icon="ti ti-arrows-sort"
-            options={SORT_OPTIONS}
+            options={sortOptions}
             value={[`sort:${props.filter.sort}`, `dir:${props.filter.sortDesc ? "desc" : "asc"}`]}
             onValueChange={(v) => {
               const sort = (v.find((x) => x.startsWith("sort:"))?.slice(5) ?? defaultFilter.sort) as ItemSort;
@@ -269,9 +253,9 @@ export default function FilterBar(props: FilterBarProps) {
         {!props.hideGroupBy && (
           <div class="shrink-0">
             <FilterChip
-              label="Group By"
+              label={t.groupBy}
               icon="ti ti-layout-list"
-              options={GROUP_BY_OPTIONS}
+              options={groupByOptions}
               value={[props.filter.groupBy]}
               onValueChange={(v) =>
                 navigate({
@@ -292,17 +276,17 @@ export default function FilterBar(props: FilterBarProps) {
             variant="ghost"
             size="sm"
             class="shrink-0"
-            aria-label="Clear all filters"
+            aria-label={t.clearFilters}
           >
             <i class="ti ti-x" />
-            <span class="hidden sm:inline">Clear</span>
+            <span class="hidden sm:inline">{t.clear}</span>
           </ButtonLink>
         )}
 
         <span class="shrink-0 whitespace-nowrap text-xs text-dimmed">
-          {props.filter.search && `Results for "${props.filter.search}": `}
-          {props.total === 0 ? "No items" : props.total === 1 ? "1 item" : `${props.total} items`}
-          {hasFilters && !props.filter.search && " (filtered)"}
+          {props.filter.search && `${t.resultsFor({ query: props.filter.search })} `}
+          {props.total === 0 ? t.noItems : t.itemCount({ count: props.total })}
+          {hasFilters && !props.filter.search && ` (${t.filtered})`}
         </span>
       </div>
     </div>

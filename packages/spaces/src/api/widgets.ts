@@ -1,9 +1,10 @@
 import { type DateContext, dates } from "@k2b/stdlib";
 import type { WidgetBlock, WidgetListItem, WidgetResponse, WidgetTone } from "@valentinkolb/cloud/contracts";
-import { type AuthContext, auth, getDateConfig, getUserBackedActor } from "@valentinkolb/cloud/server";
+import { type AuthContext, auth, getDateConfig, getLocale, getUserBackedActor } from "@valentinkolb/cloud/server";
 import { Hono } from "hono";
 import { buildSpaceItemHref } from "../routes";
 import { spacesService } from "../service";
+import { type SpacesMessages, spacesMessages } from "../service/messages";
 import { projectItemReferences } from "../service/public-resources";
 
 /**
@@ -33,21 +34,21 @@ const todoIcon = (priority: Priority): { icon: string; iconTone?: WidgetTone } =
   return { icon: "ti ti-circle" };
 };
 
-const formatRelativeDeadline = (iso: string | null): string | undefined => {
+const formatRelativeDeadline = (iso: string | null, t: SpacesMessages): string | undefined => {
   if (!iso) return undefined;
   const ms = new Date(iso).getTime() - Date.now();
-  if (ms < 0) return "overdue";
+  if (ms < 0) return t.widgetOverdue;
   const hours = ms / 3600_000;
-  if (hours < 24) return `in ${Math.round(hours)}h`;
+  if (hours < 24) return t.widgetInHours({ count: Math.round(hours) });
   const days = Math.round(hours / 24);
-  return `in ${days}d`;
+  return t.widgetInDays({ count: days });
 };
 
-const formatTimeRange = (startsAt: string | null, endsAt: string | null, dateConfig?: DateContext): string => {
+const formatTimeRange = (startsAt: string | null, endsAt: string | null, t: SpacesMessages, dateConfig?: DateContext): string => {
   const fmt = (iso: string) => dates.formatTime(iso, dateConfig);
   if (startsAt && endsAt) return `${fmt(startsAt)}–${fmt(endsAt)}`;
   if (startsAt) return fmt(startsAt);
-  return "today";
+  return t.widgetToday;
 };
 
 const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/today", async (c) => {
@@ -55,6 +56,8 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/today", asy
   // 403 = unauthenticated; signed-in users always have access (data may be empty → 204).
   if (!user) return c.body(null, 403);
 
+  const locale = getLocale(c);
+  const t = spacesMessages(locale);
   const dateConfig = getDateConfig(c);
   const internalSnapshot = await spacesService.item.dashboardSnapshot({
     userId: user.id,
@@ -69,7 +72,7 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/today", asy
 
   if (snap.openTodoCount === 0 && snap.events.length === 0) {
     const body: WidgetResponse = {
-      title: "Today",
+      title: t.widgetTitle,
       icon: "ti ti-checklist",
       href: "/app/spaces",
       blocks: [
@@ -77,8 +80,8 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/today", asy
           kind: "hero",
           icon: "ti ti-circle-check",
           tone: "emerald",
-          title: "Nothing on today",
-          subtitle: "No events scheduled and no open todos",
+          title: t.widgetEmptyTitle,
+          subtitle: t.widgetEmptySubtitle,
         },
       ],
     };
@@ -94,32 +97,32 @@ const app = new Hono<AuthContext>().use(auth.requireRole("*")).get("/today", asy
         iconTone: "blue",
         label: e.title,
         sub: e.spaceName,
-        meta: formatTimeRange(e.startsAt, e.endsAt, dateConfig),
+        meta: formatTimeRange(e.startsAt, e.endsAt, t, dateConfig),
         href: buildSpaceItemHref(e.spaceId, e.id),
       }),
     ),
-    ...snap.todos.map((t): WidgetListItem => {
-      const ic = todoIcon(t.priority);
+    ...snap.todos.map((todo): WidgetListItem => {
+      const ic = todoIcon(todo.priority);
       return {
         icon: ic.icon,
         iconTone: ic.iconTone,
-        label: t.title,
-        sub: t.spaceName,
-        meta: formatRelativeDeadline(t.deadline),
-        href: buildSpaceItemHref(t.spaceId, t.id),
+        label: todo.title,
+        sub: todo.spaceName,
+        meta: formatRelativeDeadline(todo.deadline, t),
+        href: buildSpaceItemHref(todo.spaceId, todo.id),
       };
     }),
   ];
   const blocks: WidgetBlock[] = [{ kind: "list", items: items.slice(0, 3) }];
 
   const body: WidgetResponse = {
-    title: "Today",
+    title: t.widgetTitle,
     icon: "ti ti-checklist",
     href: "/app/spaces",
     meta: [
-      snap.events.length > 0 ? `${snap.events.length} today` : null,
-      snap.openTodoCount > 0 ? `${snap.openTodoCount} open` : null,
-      snap.urgentCount > 0 ? `${snap.urgentCount} urgent` : null,
+      snap.events.length > 0 ? t.widgetTodayCount({ count: snap.events.length }) : null,
+      snap.openTodoCount > 0 ? t.widgetOpenCount({ count: snap.openTodoCount }) : null,
+      snap.urgentCount > 0 ? t.widgetUrgentCount({ count: snap.urgentCount }) : null,
     ]
       .filter(Boolean)
       .join(" · "),
