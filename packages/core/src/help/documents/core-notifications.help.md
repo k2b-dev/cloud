@@ -11,9 +11,9 @@ Notifications keep account and app events in one history. Delivery channels and 
 ## Use notification history {icon="bell"}
 
 - Open Notifications to review recent entries rather than relying only on a temporary toast or email.
-- Filter the history when you need a specific status, app, or time period.
+- Filter the history by delivery status when you need to distinguish delivered, pending, failed, or suppressed attempts.
 - Open the related app or record from the notification when a link is provided.
-- Marking or dismissing a notification changes its presentation; it does not undo the event that created it.
+- The history contains delivery metadata, not the notification message body.
 
 ## Browser notifications {icon="bell"}
 

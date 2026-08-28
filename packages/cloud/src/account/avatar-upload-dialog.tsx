@@ -11,16 +11,38 @@ export type AvatarUploadDialogOptions = {
   subtitle?: string;
   visibilityText?: string;
   saveLabel?: string;
+  messages?: Partial<{
+    processFailed: string;
+    typeInvalid: string;
+    tooLarge: string;
+    empty: string;
+    unsupported: string;
+    compressionFailed: string;
+    saveFailed: string;
+    removeFailed: string;
+    replaceDrop: string;
+    chooseDrop: string;
+    cropHint: string;
+    removing: string;
+    remove: string;
+    removeAria: string;
+    cancel: string;
+    saving: string;
+  }>;
   onSave: (dataUrl: string) => Promise<void> | void;
   onRemove?: () => Promise<void> | void;
 };
 
-const avatarErrorMessage = (error: unknown): string => {
-  if (!(error instanceof Error)) return "Failed to process avatar image.";
+const avatarErrorMessage = (error: unknown, messages?: AvatarUploadDialogOptions["messages"]): string => {
+  if (!(error instanceof Error)) return messages?.processFailed ?? "Failed to process avatar image.";
+  if (error.message === "Choose a PNG, JPEG, or WebP image.") return messages?.typeInvalid ?? error.message;
+  if (error.message === "Choose an image smaller than 32 MB.") return messages?.tooLarge ?? error.message;
+  if (error.message === "Avatar image is empty.") return messages?.empty ?? error.message;
+  if (error.message === "Avatar image processing is not supported in this browser.") return messages?.unsupported ?? error.message;
   if (error.message.includes("could not be compressed")) {
-    return "This image could not be prepared as a small avatar. Try a simpler image.";
+    return messages?.compressionFailed ?? "This image could not be prepared as a small avatar. Try a simpler image.";
   }
-  return error.message;
+  return messages?.processFailed ?? "Failed to process avatar image.";
 };
 
 function AvatarUploadDialog(props: AvatarUploadDialogOptions & { close: (saved?: boolean) => void }) {
@@ -44,7 +66,7 @@ function AvatarUploadDialog(props: AvatarUploadDialogOptions & { close: (saved?:
     } catch (err) {
       setSourceFile(null);
       setCropState(null);
-      setError(avatarErrorMessage(err));
+      setError(avatarErrorMessage(err, props.messages));
     } finally {
       setProcessing(false);
     }
@@ -61,7 +83,12 @@ function AvatarUploadDialog(props: AvatarUploadDialogOptions & { close: (saved?:
       await props.onSave(nextAvatar);
       props.close(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save avatar.");
+      setError(
+        avatarErrorMessage(err, {
+          ...props.messages,
+          processFailed: props.messages?.saveFailed ?? "Failed to save avatar.",
+        }),
+      );
     } finally {
       setSaving(false);
     }
@@ -75,7 +102,7 @@ function AvatarUploadDialog(props: AvatarUploadDialogOptions & { close: (saved?:
       await props.onRemove();
       props.close(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to remove avatar.");
+      setError(err instanceof Error ? err.message : (props.messages?.removeFailed ?? "Failed to remove avatar."));
     } finally {
       setRemoving(false);
     }
@@ -124,9 +151,13 @@ function AvatarUploadDialog(props: AvatarUploadDialogOptions & { close: (saved?:
               busy={processing()}
               error={error}
               icon="ti-photo-plus"
-              title={sourceFile() ? "Drop another image or click to replace" : "Drop image or click to choose"}
+              title={
+                sourceFile()
+                  ? (props.messages?.replaceDrop ?? "Drop another image or click to replace")
+                  : (props.messages?.chooseDrop ?? "Drop image or click to choose")
+              }
               subtitle="PNG, JPEG, or WebP"
-              hint="Adjust the crop, then save."
+              hint={props.messages?.cropHint ?? "Adjust the crop, then save."}
               onDrop={handleFiles}
             />
           </div>
@@ -135,18 +166,25 @@ function AvatarUploadDialog(props: AvatarUploadDialogOptions & { close: (saved?:
       <PanelDialog.Footer>
         <div class="min-w-0">
           <Show when={props.avatarHash && props.onRemove}>
-            <Button type="button" variant="secondary" size="sm" onClick={handleRemove} disabled={busy()} aria-label="Remove current avatar">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={handleRemove}
+              disabled={busy()}
+              aria-label={props.messages?.removeAria ?? "Remove current avatar"}
+            >
               <i class="ti ti-user-x" aria-hidden="true" />
-              {removing() ? "Removing..." : "Remove Avatar"}
+              {removing() ? (props.messages?.removing ?? "Removing...") : (props.messages?.remove ?? "Remove Avatar")}
             </Button>
           </Show>
         </div>
         <div class="flex shrink-0 items-center gap-2">
           <Button type="button" variant="secondary" size="sm" onClick={() => props.close(false)} disabled={saving() || removing()}>
-            Cancel
+            {props.messages?.cancel ?? "Cancel"}
           </Button>
           <Button type="button" variant="primary" size="sm" onClick={handleSave} disabled={!sourceFile() || !cropState() || busy()}>
-            {saving() ? "Saving..." : (props.saveLabel ?? "Save Avatar")}
+            {saving() ? (props.messages?.saving ?? "Saving...") : (props.saveLabel ?? "Save Avatar")}
           </Button>
         </div>
       </PanelDialog.Footer>

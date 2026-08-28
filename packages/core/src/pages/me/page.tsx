@@ -1,21 +1,24 @@
 import { dates } from "@k2b/stdlib";
-import { NoticeCard, ButtonLink, Placeholder } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { ButtonLink, NoticeCard, Placeholder } from "@k2b/ui";
+import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService, audit, coreSettings, notifications, serviceAccountCredentials, webauthn } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import AccountHub, { AccountPageHeader, AccountProfileActions } from "./AccountHub";
+import { type AccountMessages, accountMessages } from "./messages";
 import SignOutButton from "./SignOutButton.island";
 
-const accountExpiryCopy = (expiresAt: string): string => {
+const accountExpiryCopy = (expiresAt: string, t: AccountMessages): string => {
   const days = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 86_400_000);
-  if (days < 0) return "Your account has expired.";
-  if (days === 0) return "Your account expires today.";
-  return `Your account expires in ${days} ${days === 1 ? "day" : "days"}.`;
+  if (days < 0) return t.accountExpired;
+  if (days === 0) return t.accountExpiresToday;
+  return t.accountExpiresIn({ count: days });
 };
 
 export default ssr<AuthContext>(async (c) => {
   const user = c.get("user");
+  const locale = getLocale(c);
+  const { t } = accountMessages.resolve([locale]);
   const [rawAppName, freeIpaEnabledRaw] = await Promise.all([
     coreSettings.get<string>("app.name"),
     coreSettings.get<boolean>("freeipa.enable"),
@@ -33,7 +36,7 @@ export default ssr<AuthContext>(async (c) => {
   const action = c.req.query("action");
 
   return () => (
-    <Layout c={c} title={[{ title: "Start", href: "/" }, { title: "Account" }]}>
+    <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account }]}>
       <AccountHub
         user={user}
         active="overview"
@@ -45,11 +48,11 @@ export default ssr<AuthContext>(async (c) => {
         }
       >
         <div class="flex flex-col gap-2">
-          <AccountPageHeader title="Account overview" description="Your identity, access, security, and personal Cloud setup." />
+          <AccountPageHeader title={t.overviewTitle} description={t.overviewDescription} />
 
           {action === "extend" && (
             <NoticeCard tone="info" icon={false}>
-              Use <strong>Extend Account</strong> above to renew your account expiry.
+              {t.extendHint}
             </NoticeCard>
           )}
 
@@ -59,10 +62,8 @@ export default ssr<AuthContext>(async (c) => {
                 <i class="ti ti-calendar-exclamation" />
               </span>
               <div class="min-w-0 flex-1">
-                <h3 class="text-sm font-semibold text-primary">{accountExpiryCopy(user.accountExpires)}</h3>
-                <p class="mt-1 text-xs text-dimmed">
-                  Extend access before {dates.formatDate(user.accountExpires)} to avoid an interruption.
-                </p>
+                <h3 class="text-sm font-semibold text-primary">{accountExpiryCopy(user.accountExpires, t)}</h3>
+                <p class="mt-1 text-xs text-dimmed">{t.extendBefore({ date: dates.formatDate(user.accountExpires, { locale }) })}</p>
               </div>
               <AccountProfileActions user={user} appName={appName} freeIpaEnabled={freeIpaEnabled} actions={["extend"]} />
             </section>
@@ -77,9 +78,9 @@ export default ssr<AuthContext>(async (c) => {
                 <i class="ti ti-clock" />
               </span>
               <div class="min-w-0 flex-1">
-                <h3 class="text-sm font-semibold text-primary">FreeIPA account request pending</h3>
+                <h3 class="text-sm font-semibold text-primary">{t.requestPending}</h3>
                 <p class="mt-1 text-xs text-dimmed">
-                  Submitted {dates.formatDate(pendingRequest.createdAt.toISOString())}. Open Access to review it.
+                  {t.requestSubmitted({ date: dates.formatDate(pendingRequest.createdAt.toISOString(), { locale }) })}
                 </p>
               </div>
               <i class="ti ti-chevron-right text-dimmed" />
@@ -88,7 +89,7 @@ export default ssr<AuthContext>(async (c) => {
 
           {user.provider === "ipa" && user.profile === "guest" && (
             <NoticeCard tone="info" icon={false}>
-              Your account has limited access. Ask a group manager to add you to a group to unlock full features.
+              {t.limitedAccess}
             </NoticeCard>
           )}
 
@@ -99,10 +100,10 @@ export default ssr<AuthContext>(async (c) => {
                   <i class="ti ti-shield-lock" />
                 </span>
                 <div class="min-w-0 flex-1">
-                  <h3 class="text-sm font-semibold text-primary group-hover:text-secondary">Security</h3>
+                  <h3 class="text-sm font-semibold text-primary group-hover:text-secondary">{t.security}</h3>
                   <p class="mt-1 text-xs text-dimmed">
-                    {passkeys.length} {passkeys.length === 1 ? "passkey" : "passkeys"} ·{" "}
-                    {activityPage.items.length > 0 ? "Recent activity available" : "No recent activity"}
+                    {t.passkeyCount({ count: passkeys.length })} ·{" "}
+                    {activityPage.items.length > 0 ? t.recentActivityAvailable : t.noRecentActivity}
                   </p>
                 </div>
                 <i class="ti ti-chevron-right text-dimmed" />
@@ -115,9 +116,9 @@ export default ssr<AuthContext>(async (c) => {
                   <i class="ti ti-users-group" />
                 </span>
                 <div class="min-w-0 flex-1">
-                  <h3 class="text-sm font-semibold text-primary group-hover:text-secondary">Access and groups</h3>
+                  <h3 class="text-sm font-semibold text-primary group-hover:text-secondary">{t.accessAndGroups}</h3>
                   <p class="mt-1 text-xs text-dimmed">
-                    {user.memberofGroup.length} direct memberships · {user.manages.length} managed groups
+                    {t.membershipSummary({ direct: user.memberofGroup.length, managed: user.manages.length })}
                   </p>
                 </div>
                 <i class="ti ti-chevron-right text-dimmed" />
@@ -130,11 +131,9 @@ export default ssr<AuthContext>(async (c) => {
                   <i class="ti ti-bell" />
                 </span>
                 <div class="min-w-0 flex-1">
-                  <h3 class="text-sm font-semibold text-primary group-hover:text-secondary">Notifications</h3>
+                  <h3 class="text-sm font-semibold text-primary group-hover:text-secondary">{t.notifications}</h3>
                   <p class="mt-1 text-xs text-dimmed">
-                    {customizedNotifications > 0
-                      ? `${customizedNotifications} customized ${customizedNotifications === 1 ? "preference" : "preferences"}`
-                      : "Using app defaults"}
+                    {customizedNotifications > 0 ? t.customizedPreferences({ count: customizedNotifications }) : t.usingAppDefaults}
                   </p>
                 </div>
                 <i class="ti ti-chevron-right text-dimmed" />
@@ -147,10 +146,8 @@ export default ssr<AuthContext>(async (c) => {
                   <i class="ti ti-terminal-2" />
                 </span>
                 <div class="min-w-0 flex-1">
-                  <h3 class="text-sm font-semibold text-primary group-hover:text-secondary">Developer</h3>
-                  <p class="mt-1 text-xs text-dimmed">
-                    {apiKeys.length} personal API {apiKeys.length === 1 ? "key" : "keys"} · CLI and SSH setup
-                  </p>
+                  <h3 class="text-sm font-semibold text-primary group-hover:text-secondary">{t.developer}</h3>
+                  <p class="mt-1 text-xs text-dimmed">{t.apiKeySummary({ count: apiKeys.length })}</p>
                 </div>
                 <i class="ti ti-chevron-right text-dimmed" />
               </div>
@@ -160,11 +157,11 @@ export default ssr<AuthContext>(async (c) => {
           <section class="paper p-5">
             <div class="mb-4 flex items-start justify-between gap-3">
               <div>
-                <h3 class="text-sm font-semibold text-primary">Recent security activity</h3>
-                <p class="mt-1 text-xs text-dimmed">The latest account-relevant events. Full history remains in Security.</p>
+                <h3 class="text-sm font-semibold text-primary">{t.recentSecurityActivity}</h3>
+                <p class="mt-1 text-xs text-dimmed">{t.recentSecurityActivityDescription}</p>
               </div>
               <ButtonLink href="/me/security" variant="ghost" size="sm" class="shrink-0">
-                View all
+                {t.viewAll}
                 <i class="ti ti-arrow-right" />
               </ButtonLink>
             </div>
@@ -174,14 +171,14 @@ export default ssr<AuthContext>(async (c) => {
                   <div class="grid gap-1 rounded-[var(--ui-radius-control)] p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                     <div class="min-w-0">
                       <p class="truncate text-sm font-medium text-primary">{entry.label}</p>
-                      <p class="mt-0.5 truncate text-xs text-dimmed">{entry.context || "Account"}</p>
+                      <p class="mt-0.5 truncate text-xs text-dimmed">{entry.context || t.accountContext}</p>
                     </div>
-                    <span class="text-xs text-dimmed">{dates.formatDateTimeRelative(entry.createdAt)}</span>
+                    <span class="text-xs text-dimmed">{dates.formatDateTimeRelative(entry.createdAt, { locale })}</span>
                   </div>
                 ))}
               </div>
             ) : (
-              <Placeholder align="left" description="No recent account activity." />
+              <Placeholder align="left" description={t.noRecentAccountActivity} />
             )}
           </section>
         </div>

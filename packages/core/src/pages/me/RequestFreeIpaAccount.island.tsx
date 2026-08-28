@@ -1,6 +1,7 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { NoticeCard, Button, prompts } from "@k2b/ui";
+import { Button, NoticeCard, prompts, useLocale } from "@k2b/ui";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
+import { accountMessages } from "./messages";
 
 type RequestFreeIpaAccountProps = {
   givenname: string;
@@ -13,6 +14,8 @@ type RequestFreeIpaAccountProps = {
 };
 
 export default function RequestFreeIpaAccount(props: RequestFreeIpaAccountProps) {
+  const locale = useLocale();
+  const t = () => accountMessages.resolve([locale()]).t;
   const mutation = mutations.create<
     { id: string; message?: string },
     {
@@ -33,8 +36,7 @@ export default function RequestFreeIpaAccount(props: RequestFreeIpaAccountProps)
         },
       });
       if (!profileRes.ok) {
-        const data = await profileRes.json();
-        throw new Error((data as { message?: string }).message ?? "Failed to update profile.");
+        throw new Error(t().requestProfileUpdateFailed);
       }
 
       const res = await apiClient.me["account-request"].$post({
@@ -46,13 +48,13 @@ export default function RequestFreeIpaAccount(props: RequestFreeIpaAccountProps)
       });
       const data = (await res.json()) as { id?: string; message?: string };
       if (!res.ok) {
-        throw new Error(data.message ?? "Failed to submit request.");
+        throw new Error(t().requestSubmitFailed);
       }
       return { id: data.id ?? "", message: data.message };
     },
     onSuccess: () => {
-      prompts.alert("Your FreeIPA account request has been submitted. You will be notified once it has been reviewed.", {
-        title: "Request Submitted",
+      prompts.alert(t().requestSubmittedBody, {
+        title: t().requestSubmittedTitle,
         icon: "ti ti-check",
       });
       window.location.reload();
@@ -62,82 +64,82 @@ export default function RequestFreeIpaAccount(props: RequestFreeIpaAccountProps)
 
   const handleClick = async () => {
     const result = await prompts.form({
-      title: `Request ${props.appName || ""} FreeIPA Account`.trim(),
+      title: t().requestAccountTitle({ appName: props.appName || "Cloud" }),
       icon: "ti ti-building-fortress",
-      confirmText: "Submit Request",
+      confirmText: t().submitRequest,
       fields: {
         info: {
           type: "info",
           content: () => (
             <NoticeCard tone="info" icon={false}>
-              Please verify your details and explain why you need a centrally managed FreeIPA account.
+              {t().verifyRequestDetails}
             </NoticeCard>
           ),
         },
         firstName: {
           type: "text",
-          label: "First Name",
-          placeholder: "Your first name...",
+          label: t().firstName,
+          placeholder: t().yourFirstNamePlaceholder,
           icon: "ti ti-user",
           required: true,
           default: props.givenname,
         },
         lastName: {
           type: "text",
-          label: "Last Name",
-          placeholder: "Your last name...",
+          label: t().lastName,
+          placeholder: t().yourLastNamePlaceholder,
           icon: "ti ti-user",
           required: true,
           default: props.sn,
         },
         displayName: {
           type: "text",
-          label: "Display Name",
-          placeholder: "How should we call you?",
+          label: t().displayName,
+          placeholder: t().displayNameQuestion,
           icon: "ti ti-id-badge-2",
           default: props.displayName,
         },
         phone: {
           type: "text",
-          label: "Phone (optional)",
-          placeholder: "Your phone number...",
+          label: t().phoneOptional,
+          placeholder: t().yourPhonePlaceholder,
           icon: "ti ti-phone",
           default: props.phone ?? "",
         },
         comment: {
           type: "text",
           multiline: true,
-          label: "Why do you need a FreeIPA account?",
-          placeholder: "I need group-based access to ...",
-          description: "Explain your role and which centrally managed access you need.",
+          label: t().whyFreeIpa,
+          placeholder: t().freeIpaReasonPlaceholder,
+          description: t().freeIpaReasonDescription,
         },
         agbNotice: {
           type: "info",
           content: () => (
             <div class="text-xs text-dimmed">
-              By submitting this request, you agree to our{" "}
+              {t().termsPrefix}{" "}
               {props.agbUrl ? (
                 <a href={props.agbUrl} target="_blank" class="text-blue-500 hover:underline">
-                  Terms of Service
+                  {t().termsOfService}
                 </a>
               ) : (
-                <span>Terms of Service</span>
+                <span>{t().termsOfService}</span>
               )}{" "}
-              and{" "}
+              {t().and}{" "}
               {props.privacyUrl ? (
                 <a href={props.privacyUrl} target="_blank" class="text-blue-500 hover:underline">
-                  Privacy Policy
+                  {t().privacyPolicy}
                 </a>
               ) : (
-                <span>Privacy Policy</span>
+                <span>{t().privacyPolicy}</span>
               )}
-              .
+              {"."}
             </div>
           ),
         },
         acceptedAgb: {
           type: "boolean",
-          label: "I accept the Terms of Service and Privacy Policy",
+          label: t().acceptTerms,
           required: true,
         },
       },
@@ -156,9 +158,9 @@ export default function RequestFreeIpaAccount(props: RequestFreeIpaAccountProps)
   };
 
   return (
-    <Button type="button" size="sm" onClick={handleClick} loading={mutation.loading()} loadingLabel="Requesting">
+    <Button type="button" size="sm" onClick={handleClick} loading={mutation.loading()} loadingLabel={t().requesting}>
       {mutation.loading() ? <i class="ti ti-loader-2 animate-spin" /> : <i class="ti ti-building-fortress" />}
-      <span>Request FreeIPA Account</span>
+      <span>{t().requestFreeIpaAccount}</span>
     </Button>
   );
 }

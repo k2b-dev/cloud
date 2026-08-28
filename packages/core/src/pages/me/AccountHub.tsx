@@ -1,24 +1,18 @@
-import { Avatar } from "@k2b/ui";
+import { Avatar, useLocale } from "@k2b/ui";
 import type { User } from "@valentinkolb/cloud/contracts";
-import { getAccountTypeLabel, getManagementLabel, getSupplementalRoleLabel } from "@valentinkolb/cloud/shared";
 import type { JSXElement } from "solid-js";
+import { accountMessages } from "./messages";
 import ProfileActions from "./ProfileActions.island";
 
 export type AccountSection = "overview" | "profile" | "security" | "access" | "notifications" | "developer";
 
-export const notificationViews = [
-  { id: "preferences", href: "/me/notifications", label: "Preferences", icon: "ti ti-adjustments" },
-  { id: "history", href: "/me/notifications/history", label: "Delivery history", icon: "ti ti-history" },
-];
-
-const sections: { id: AccountSection; href: string; label: string; icon: string }[] = [
-  { id: "overview", href: "/me", label: "Overview", icon: "ti ti-layout-dashboard" },
-  { id: "profile", href: "/me/profile", label: "Profile", icon: "ti ti-user" },
-  { id: "security", href: "/me/security", label: "Security", icon: "ti ti-shield-lock" },
-  { id: "access", href: "/me/access", label: "Access", icon: "ti ti-users-group" },
-  { id: "notifications", href: "/me/notifications", label: "Notifications", icon: "ti ti-bell" },
-  { id: "developer", href: "/me/developer", label: "Developer", icon: "ti ti-terminal-2" },
-];
+export const notificationViews = (locale: string) => {
+  const { t } = accountMessages.resolve([locale]);
+  return [
+    { id: "preferences", href: "/me/notifications", label: t.preferences, icon: "ti ti-adjustments" },
+    { id: "history", href: "/me/notifications/history", label: t.deliveryHistory, icon: "ti ti-history" },
+  ];
+};
 
 const roleClass = (role: string): string =>
   role === "admin"
@@ -26,6 +20,8 @@ const roleClass = (role: string): string =>
     : "bg-violet-100 text-violet-700 dark:bg-violet-900/50 dark:text-violet-300";
 
 export default function AccountHub(props: { user: User; active: AccountSection; children: JSXElement; actions?: JSXElement }) {
+  const locale = useLocale();
+  const t = () => accountMessages.resolve([locale()]).t;
   const supplementalRoles = props.user.roles.filter((role) => role === "admin" || role === "group-manager");
   const expired = props.user.accountExpires ? new Date(props.user.accountExpires) < new Date() : false;
   const avatarSrc =
@@ -51,19 +47,28 @@ export default function AccountHub(props: { user: User; active: AccountSection; 
               {props.user.displayName && props.user.profile !== "guest" ? ` · ${props.user.uid}` : ""}
             </p>
             <div class="mt-2 flex flex-wrap gap-1.5">
-              <span class="tag tag-neutral">{getAccountTypeLabel(props.user)}</span>
-              <span class="tag tag-neutral">{getManagementLabel(props.user)}</span>
+              <span class="tag tag-neutral">{props.user.profile === "guest" ? t().accountTypeGuest : t().accountTypeFull}</span>
+              <span class="tag tag-neutral">{props.user.provider === "ipa" ? "FreeIPA" : t().managementLocal}</span>
               {supplementalRoles.map((role) => (
-                <span class={`tag ${roleClass(role)}`}>{getSupplementalRoleLabel(role)}</span>
+                <span class={`tag ${roleClass(role)}`}>{role === "group-manager" ? t().roleGroupManager : t().roleAdmin}</span>
               ))}
-              {expired && <span class="tag bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300">Expired</span>}
+              {expired && <span class="tag bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300">{t().expired}</span>}
             </div>
           </div>
           {props.actions && <div class="flex shrink-0 flex-wrap items-center gap-2">{props.actions}</div>}
         </div>
 
-        <nav class="mt-5 flex max-w-full flex-wrap gap-1" aria-label="Account sections">
-          {sections.map((section) => {
+        <nav class="mt-5 flex max-w-full flex-wrap gap-1" aria-label={t().accountSections}>
+          {(
+            [
+              { id: "overview", href: "/me", label: t().overview, icon: "ti ti-layout-dashboard" },
+              { id: "profile", href: "/me/profile", label: t().profile, icon: "ti ti-user" },
+              { id: "security", href: "/me/security", label: t().security, icon: "ti ti-shield-lock" },
+              { id: "access", href: "/me/access", label: t().access, icon: "ti ti-users-group" },
+              { id: "notifications", href: "/me/notifications", label: t().notifications, icon: "ti ti-bell" },
+              { id: "developer", href: "/me/developer", label: t().developer, icon: "ti ti-terminal-2" },
+            ] satisfies { id: AccountSection; href: string; label: string; icon: string }[]
+          ).map((section) => {
             const active = section.id === props.active;
             return (
               <a
@@ -124,10 +129,12 @@ export function AccountProfileActions(props: {
 }
 
 export function AccountSubnav(props: { active: string; items: { id: string; href: string; label: string; icon: string }[] }) {
+  const locale = useLocale();
+  const t = () => accountMessages.resolve([locale()]).t;
   return (
     <nav
       class="flex max-w-full flex-wrap gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-1"
-      aria-label="Section views"
+      aria-label={t().sectionViews}
     >
       {props.items.map((item) => {
         const active = item.id === props.active;

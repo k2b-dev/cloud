@@ -1,8 +1,9 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Checkbox, Placeholder, toast } from "@k2b/ui";
+import { Checkbox, Placeholder, toast, useLocale } from "@k2b/ui";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
 import type { UserNotificationPreference, UserNotificationPreferencesResponse } from "@valentinkolb/cloud/contracts";
 import { createSignal, For, Show } from "solid-js";
+import { accountMessages } from "./messages";
 import { notificationChannelAvailability, notificationChannelMeta } from "./notification-ui";
 
 export type NotificationAppMeta = { id: string; name: string; icon: string };
@@ -10,6 +11,8 @@ export type NotificationAppMeta = { id: string; name: string; icon: string };
 type PreferenceMutation = { type: "set"; channels: string[] } | { type: "reset"; channels: string[] };
 
 const PreferenceRow = (props: { preference: UserNotificationPreference; availableChannels: string[] }) => {
+  const locale = useLocale();
+  const t = () => accountMessages.resolve([locale()]).t;
   const [selected, setSelected] = createSignal([...props.preference.selectedChannels]);
   const [customized, setCustomized] = createSignal(props.preference.customized);
   const required = new Set(props.preference.requiredChannels);
@@ -32,13 +35,13 @@ const PreferenceRow = (props: { preference: UserNotificationPreference; availabl
           ? await endpoint.$delete({ param: { definitionId: props.preference.id } })
           : await endpoint.$put({ param: { definitionId: props.preference.id }, json: { channels: change.channels } });
       const data = await response.json();
-      if (!response.ok) throw new Error((data as { message?: string }).message ?? "Notification preference could not be saved.");
+      if (!response.ok) throw new Error(t().notificationPreferenceSaveFailed);
       return data as UserNotificationPreference;
     },
     onSuccess: (preference) => {
       setSelected(preference.selectedChannels);
       setCustomized(preference.customized);
-      toast.success("Notification preference saved.");
+      toast.success(t().notificationPreferenceSaved);
     },
     onError: (error, previous) => {
       if (previous) {
@@ -64,7 +67,7 @@ const PreferenceRow = (props: { preference: UserNotificationPreference; availabl
           <span
             class={`tag ${customized() ? "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" : "bg-zinc-100 text-dimmed dark:bg-zinc-800"}`}
           >
-            {customized() ? "Customized" : "App default"}
+            {customized() ? t().customized : t().appDefault}
           </span>
         </div>
         <p class="mt-1 text-xs leading-relaxed text-dimmed">{props.preference.description}</p>
@@ -76,7 +79,7 @@ const PreferenceRow = (props: { preference: UserNotificationPreference; availabl
             onClick={() => void update.mutate({ type: "reset", channels: defaults })}
           >
             <i class="ti ti-restore" />
-            Use app default
+            {t().useAppDefault}
           </button>
         </Show>
       </div>
@@ -84,11 +87,11 @@ const PreferenceRow = (props: { preference: UserNotificationPreference; availabl
       <div class="flex min-w-0 flex-col gap-2">
         <For each={props.preference.requiredChannels}>
           {(channel) => {
-            const meta = notificationChannelMeta(channel);
+            const meta = notificationChannelMeta(channel, locale());
             return (
               <Checkbox
-                label={`${meta.label} (required)`}
-                description="This channel is required for account access or platform operation."
+                label={t().requiredChannel({ label: meta.label })}
+                description={t().requiredChannelDescription}
                 value={() => true}
                 disabled
               />
@@ -97,8 +100,8 @@ const PreferenceRow = (props: { preference: UserNotificationPreference; availabl
         </For>
         <For each={optionalChannels}>
           {(channel) => {
-            const meta = notificationChannelMeta(channel);
-            const availability = () => notificationChannelAvailability(available.has(channel));
+            const meta = notificationChannelMeta(channel, locale());
+            const availability = () => notificationChannelAvailability(available.has(channel), locale());
             return (
               <Checkbox
                 label={meta.label}
@@ -111,7 +114,7 @@ const PreferenceRow = (props: { preference: UserNotificationPreference; availabl
           }}
         </For>
         <Show when={props.preference.requiredChannels.length === 0 && optionalChannels.length === 0}>
-          <p class="text-xs text-dimmed">No delivery channel is currently available.</p>
+          <p class="text-xs text-dimmed">{t().noDeliveryChannel}</p>
         </Show>
       </div>
     </div>
@@ -119,6 +122,8 @@ const PreferenceRow = (props: { preference: UserNotificationPreference; availabl
 };
 
 export default function NotificationPreferences(props: { initial: UserNotificationPreferencesResponse; apps: NotificationAppMeta[] }) {
+  const locale = useLocale();
+  const t = () => accountMessages.resolve([locale()]).t;
   const appMetadata = new Map(props.apps.map((app) => [app.id, app]));
   const groups = [...new Set(props.initial.definitions.map((definition) => definition.appId))]
     .map((appId) => ({
@@ -128,10 +133,7 @@ export default function NotificationPreferences(props: { initial: UserNotificati
     .sort((left, right) => left.app.name.localeCompare(right.app.name));
 
   return (
-    <Show
-      when={groups.length > 0}
-      fallback={<Placeholder surface="paper" description={<>No configurable notifications are registered.</>} />}
-    >
+    <Show when={groups.length > 0} fallback={<Placeholder surface="paper" description={<>{t().noConfigurableNotifications}</>} />}>
       <div class="flex flex-col gap-2">
         <For each={groups}>
           {(group) => (
@@ -142,9 +144,7 @@ export default function NotificationPreferences(props: { initial: UserNotificati
                 </span>
                 <div class="min-w-0">
                   <h2 class="truncate text-sm font-semibold text-primary">{group.app.name}</h2>
-                  <p class="text-xs text-dimmed">
-                    {group.definitions.length} notification {group.definitions.length === 1 ? "type" : "types"}
-                  </p>
+                  <p class="text-xs text-dimmed">{t().notificationTypeCount({ count: group.definitions.length })}</p>
                 </div>
               </div>
               <div class="mt-5 flex flex-col gap-6">

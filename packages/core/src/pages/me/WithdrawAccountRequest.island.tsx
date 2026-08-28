@@ -1,14 +1,16 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, prompts } from "@k2b/ui";
+import { Button, prompts, useLocale } from "@k2b/ui";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
+import { accountMessages } from "./messages";
 
 export default function WithdrawAccountRequest() {
+  const locale = useLocale();
+  const t = () => accountMessages.resolve([locale()]).t;
   const mutation = mutations.create<void, void>({
     mutation: async () => {
       const res = await apiClient.me["account-request"].$delete();
       if (!res.ok) {
-        const data = (await res.json()) as { message?: string };
-        throw new Error(data.message ?? "Failed to withdraw request.");
+        throw new Error(t().withdrawFailed);
       }
     },
     onSuccess: () => window.location.reload(),
@@ -16,11 +18,11 @@ export default function WithdrawAccountRequest() {
   });
 
   const handleClick = async () => {
-    const confirmed = await prompts.confirm("Are you sure you want to withdraw your FreeIPA account request?", {
-      title: "Withdraw Request",
+    const confirmed = await prompts.confirm(t().withdrawConfirm, {
+      title: t().withdrawRequest,
       icon: "ti ti-x",
-      confirmText: "Withdraw",
-      cancelText: "Cancel",
+      confirmText: t().withdraw,
+      cancelText: t().cancel,
       variant: "danger",
     });
 
@@ -36,11 +38,11 @@ export default function WithdrawAccountRequest() {
       size="sm"
       onClick={handleClick}
       loading={mutation.loading()}
-      loadingLabel="Withdrawing"
+      loadingLabel={t().withdrawing}
       class="leading-none"
     >
       {mutation.loading() ? <i class="ti ti-loader-2 animate-spin text-sm" /> : <i class="ti ti-x text-sm" />}
-      Withdraw Request
+      {t().withdrawRequest}
     </Button>
   );
 }

@@ -1,9 +1,10 @@
 import { dates } from "@k2b/stdlib";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
 import { coreSettings } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import AccountHub, { AccountPageHeader, AccountProfileActions } from "./AccountHub";
+import { accountMessages } from "./messages";
 
 const formatAddress = (address: {
   street: string | null;
@@ -17,6 +18,8 @@ const formatAddress = (address: {
 
 export default ssr<AuthContext>(async (c) => {
   const user = c.get("user");
+  const locale = getLocale(c);
+  const { t } = accountMessages.resolve([locale]);
   const [rawAppName, freeIpaEnabledRaw] = await Promise.all([
     coreSettings.get<string>("app.name"),
     coreSettings.get<boolean>("freeipa.enable"),
@@ -26,81 +29,79 @@ export default ssr<AuthContext>(async (c) => {
   const address = formatAddress(user.ipa?.address ?? { street: null, postalCode: null, city: null, state: null });
 
   return () => (
-    <Layout c={c} title={[{ title: "Start", href: "/" }, { title: "Account", href: "/me" }, { title: "Profile" }]}>
+    <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.profile }]}>
       <AccountHub user={user} active="profile">
         <div class="flex flex-col gap-2">
           <AccountPageHeader
-            title="Profile and contact"
-            description="Review the identity and contact information other Cloud users can see."
+            title={t.profileTitle}
+            description={t.profileDescription}
             actions={<AccountProfileActions user={user} appName={appName} freeIpaEnabled={freeIpaEnabled} />}
           />
 
           <section class="paper p-5 sm:p-6">
             <div class="grid gap-x-8 gap-y-5 sm:grid-cols-2">
               <div>
-                <p class="section-label mb-1">Display name</p>
+                <p class="section-label mb-1">{t.displayName}</p>
                 <p class="text-sm font-medium text-primary">{user.displayName || user.uid}</p>
               </div>
               <div>
-                <p class="section-label mb-1">Username</p>
+                <p class="section-label mb-1">{t.username}</p>
                 <p class="text-sm text-secondary">{user.uid}</p>
               </div>
               <div>
-                <p class="section-label mb-1">Email</p>
-                <p class="break-words text-sm text-secondary">{user.mail ?? "Not set"}</p>
+                <p class="section-label mb-1">{t.email}</p>
+                <p class="break-words text-sm text-secondary">{user.mail ?? t.notSet}</p>
               </div>
               <div>
-                <p class="section-label mb-1">Phone</p>
-                <p class="text-sm text-secondary">{user.ipa?.phone ?? "Not set"}</p>
+                <p class="section-label mb-1">{t.phone}</p>
+                <p class="text-sm text-secondary">{user.ipa?.phone ?? t.notSet}</p>
               </div>
               {user.ipa?.mobile && user.ipa.mobile !== user.ipa.phone && (
                 <div>
-                  <p class="section-label mb-1">Mobile</p>
+                  <p class="section-label mb-1">{t.mobile}</p>
                   <p class="text-sm text-secondary">{user.ipa.mobile}</p>
                 </div>
               )}
               {user.ipa?.employeeType && (
                 <div>
-                  <p class="section-label mb-1">Employee type</p>
+                  <p class="section-label mb-1">{t.employeeType}</p>
                   <p class="text-sm text-secondary">{user.ipa.employeeType}</p>
                 </div>
               )}
               <div class="sm:col-span-2">
-                <p class="section-label mb-1">Address</p>
-                <p class="text-sm text-secondary">{address ?? "Not set"}</p>
+                <p class="section-label mb-1">{t.address}</p>
+                <p class="text-sm text-secondary">{address ?? t.notSet}</p>
               </div>
             </div>
           </section>
 
           <section class="paper p-5 sm:p-6">
             <div class="mb-5">
-              <h3 class="text-sm font-semibold text-primary">Account facts</h3>
-              <p class="mt-1 text-xs text-dimmed">Provider-managed values and account lifecycle dates.</p>
+              <h3 class="text-sm font-semibold text-primary">{t.accountFacts}</h3>
+              <p class="mt-1 text-xs text-dimmed">{t.accountFactsDescription}</p>
             </div>
             <div class="grid gap-x-8 gap-y-5 sm:grid-cols-2">
               <div>
-                <p class="section-label mb-1">Provider</p>
-                <p class="text-sm text-secondary">{user.provider === "ipa" ? "FreeIPA" : "Local account"}</p>
+                <p class="section-label mb-1">{t.provider}</p>
+                <p class="text-sm text-secondary">{user.provider === "ipa" ? "FreeIPA" : t.localAccount}</p>
               </div>
               <div>
-                <p class="section-label mb-1">Profile</p>
-                <p class="text-sm text-secondary">{user.profile === "guest" ? "Guest account" : "Full account"}</p>
+                <p class="section-label mb-1">{t.profile}</p>
+                <p class="text-sm text-secondary">{user.profile === "guest" ? t.accountTypeGuest : t.accountTypeFull}</p>
               </div>
               <div>
-                <p class="section-label mb-1">Account expiry</p>
-                <p class="text-sm text-secondary">{user.accountExpires ? dates.formatDate(user.accountExpires) : "No expiry"}</p>
+                <p class="section-label mb-1">{t.accountExpiry}</p>
+                <p class="text-sm text-secondary">{user.accountExpires ? dates.formatDate(user.accountExpires, { locale }) : t.noExpiry}</p>
               </div>
               <div>
-                <p class="section-label mb-1">Password expiry</p>
+                <p class="section-label mb-1">{t.passwordExpiry}</p>
                 <p class="text-sm text-secondary">
-                  {user.ipa?.passwordExpires ? dates.formatDate(user.ipa.passwordExpires) : "Not applicable"}
+                  {user.ipa?.passwordExpires ? dates.formatDate(user.ipa.passwordExpires, { locale }) : t.notApplicable}
                 </p>
               </div>
               <div>
-                <p class="section-label mb-1">SSH keys</p>
-                <p class="text-sm text-secondary">
-                  {user.ipa?.sshPublicKeys.length ?? 0} {(user.ipa?.sshPublicKeys.length ?? 0) === 1 ? "key" : "keys"} configured
-                </p>
+                <p class="section-label mb-1">{t.sshKeys}</p>
+                <p class="text-sm text-secondary">{t.configuredKeys({ count: user.ipa?.sshPublicKeys.length ?? 0 })}</p>
               </div>
             </div>
           </section>

@@ -1,10 +1,11 @@
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { NoticeCard, Button, prompts, TextInput } from "@k2b/ui";
+import { Button, NoticeCard, prompts, TextInput, useLocale } from "@k2b/ui";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
 import type { UserProfile, UserProvider } from "@valentinkolb/cloud/contracts";
 import { createSignal, Show } from "solid-js";
 import { PasswordSetupFields } from "../auth/PasswordSetupFields";
 import { signOutCurrentSession } from "./account-session";
+import { accountMessages } from "./messages";
 
 type Props = {
   provider: UserProvider;
@@ -42,6 +43,8 @@ type ChangePasswordPayload = {
 };
 
 function ChangePasswordDialog(props: { close: (value: ChangePasswordPayload | null) => void }) {
+  const locale = useLocale();
+  const t = () => accountMessages.resolve([locale()]).t;
   const [currentPassword, setCurrentPassword] = createSignal("");
   const [newPassword, setNewPassword] = createSignal("");
   const [confirmPassword, setConfirmPassword] = createSignal("");
@@ -50,11 +53,11 @@ function ChangePasswordDialog(props: { close: (value: ChangePasswordPayload | nu
   const submit = () => {
     setError(null);
     if (!currentPassword().trim() || !newPassword() || !confirmPassword()) {
-      setError("Fill out all password fields.");
+      setError(t().changePasswordFieldsRequired);
       return;
     }
     if (newPassword() !== confirmPassword()) {
-      setError("Passwords do not match.");
+      setError(t().passwordsDoNotMatch);
       return;
     }
     props.close({
@@ -73,8 +76,8 @@ function ChangePasswordDialog(props: { close: (value: ChangePasswordPayload | nu
       }}
     >
       <TextInput
-        label="Current Password"
-        placeholder="Current password..."
+        label={t().currentPassword}
+        placeholder={t().currentPasswordPlaceholder}
         icon="ti ti-lock"
         password
         value={currentPassword}
@@ -87,6 +90,7 @@ function ChangePasswordDialog(props: { close: (value: ChangePasswordPayload | nu
         confirmPassword={confirmPassword}
         onNewPasswordChange={setNewPassword}
         onConfirmPasswordChange={setConfirmPassword}
+        locale={locale()}
       />
 
       {error() && (
@@ -97,11 +101,11 @@ function ChangePasswordDialog(props: { close: (value: ChangePasswordPayload | nu
 
       <div class="flex justify-end gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={() => props.close(null)}>
-          Cancel
+          {t().cancel}
         </Button>
         <Button type="submit" size="sm">
           <i class="ti ti-lock-check" />
-          Change
+          {t().change}
         </Button>
       </div>
     </form>
@@ -111,16 +115,17 @@ function ChangePasswordDialog(props: { close: (value: ChangePasswordPayload | nu
 // ── Main Component ──
 
 export default function ProfileSettings(props: Props) {
+  const locale = useLocale();
+  const t = () => accountMessages.resolve([locale()]).t;
   // ── Account mutations ──
   const passwordMutation = mutations.create<void, { currentPassword: string; newPassword: string; confirmPassword: string }>({
     mutation: async (vars) => {
       const res = await apiClient.me.password.$post({ json: vars });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message ?? "Failed to change password.");
+        throw new Error(res.status === 401 ? t().currentPasswordIncorrect : t().changePasswordFailed);
       }
     },
-    onSuccess: () => prompts.alert("Password changed successfully."),
+    onSuccess: () => prompts.alert(t().passwordChanged),
     onError: (err) => prompts.error(err.message),
   });
 
@@ -128,8 +133,7 @@ export default function ProfileSettings(props: Props) {
     mutation: async () => {
       const res = await apiClient.me.$delete({});
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message ?? "Failed to delete account.");
+        throw new Error(t().deleteAccountFailed);
       }
     },
     onSuccess: () => {
@@ -140,7 +144,7 @@ export default function ProfileSettings(props: Props) {
 
   const handleChangePassword = async () => {
     const result = await prompts.dialog<ChangePasswordPayload | null>((close) => <ChangePasswordDialog close={close} />, {
-      title: "Change Password",
+      title: t().changePasswordTitle,
       icon: "ti ti-lock",
       size: "medium",
     });
@@ -154,11 +158,11 @@ export default function ProfileSettings(props: Props) {
   };
 
   const handleDelete = async () => {
-    const confirmed = await prompts.confirm("Are you sure you want to delete your account? This action cannot be undone.", {
-      title: "Delete Account",
+    const confirmed = await prompts.confirm(t().deleteAccountConfirm, {
+      title: t().deleteAccountTitle,
       icon: "ti ti-trash",
-      confirmText: "Delete",
-      cancelText: "Cancel",
+      confirmText: t().delete,
+      cancelText: t().cancel,
       variant: "danger",
     });
     if (confirmed) {
@@ -174,23 +178,32 @@ export default function ProfileSettings(props: Props) {
       <div class="mb-5">
         <h2 class="flex items-center gap-1.5 text-sm font-semibold text-primary">
           <i class="ti ti-user-cog text-sm" />
-          Sign-in and account
+          {t().signInAndAccount}
         </h2>
-        <p class="mt-1 text-xs text-dimmed">Manage your password, current session, and account lifecycle.</p>
+        <p class="mt-1 text-xs text-dimmed">{t().signInAndAccountDescription}</p>
       </div>
 
       <div class="flex flex-col gap-1">
         <Show when={isIpa}>
-          <ActionRow icon="ti-lock" label="Change Password" description="Update your FreeIPA password" onClick={handleChangePassword} />
+          <ActionRow icon="ti-lock" label={t().changePassword} description={t().changeFreeIpaPassword} onClick={handleChangePassword} />
         </Show>
 
-        <ActionRow icon="ti-logout" label="Sign Out" description="End this browser session" onClick={() => void signOutCurrentSession()} />
+        <ActionRow
+          icon="ti-logout"
+          label={t().signOut}
+          description={t().signOutDescription}
+          onClick={() =>
+            void signOutCurrentSession(t().signOutFailed).catch((error) =>
+              prompts.error(error instanceof Error ? error.message : t().signOutFailed),
+            )
+          }
+        />
 
         <Show when={isGuest}>
           <ActionRow
             icon="ti-trash"
-            label="Delete Account"
-            description="Permanently delete your account and all data"
+            label={t().deleteAccount}
+            description={t().deleteAccountDescription}
             onClick={handleDelete}
             variant="danger"
           />

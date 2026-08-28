@@ -1,9 +1,10 @@
 import { dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { NoticeCard, Button, CopyButton, DateTimePicker, Placeholder, prompts, TextInput } from "@k2b/ui";
+import { Button, CopyButton, DateTimePicker, NoticeCard, Placeholder, prompts, TextInput, useLocale } from "@k2b/ui";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
 import type { ServiceAccountCredential } from "@valentinkolb/cloud/contracts";
 import { createSignal, For, Show } from "solid-js";
+import { accountMessages } from "./messages";
 
 type Props = {
   initialKeys: ServiceAccountCredential[];
@@ -20,22 +21,26 @@ const toInstant = (value: string | null): string | null => {
 };
 
 function TokenDialog(props: { token: string }) {
+  const locale = useLocale();
+  const t = () => accountMessages.resolve([locale()]).t;
   return (
     <div class="flex flex-col gap-4">
       <NoticeCard tone="warning" icon={false}>
-        Copy this API key now. It is shown once and cannot be recovered later.
+        {t().apiKeyOneTime}
       </NoticeCard>
       <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-900">
         <code class="block break-all font-mono text-xs text-primary">{props.token}</code>
       </div>
       <div class="flex justify-end">
-        <CopyButton text={props.token} label="Copy key" variant="primary" size="sm" />
+        <CopyButton text={props.token} label={t().copyKey} variant="primary" size="sm" />
       </div>
     </div>
   );
 }
 
 function ApiKeyCreateDialog(props: { close: (value: { name: string; expiresAt: string | null } | null) => void }) {
+  const locale = useLocale();
+  const t = () => accountMessages.resolve([locale()]).t;
   const [name, setName] = createSignal("");
   const [expiresAt, setExpiresAt] = createSignal<string | null>(presetDate(90));
   const [error, setError] = createSignal<string | undefined>();
@@ -43,7 +48,7 @@ function ApiKeyCreateDialog(props: { close: (value: { name: string; expiresAt: s
   const submit = () => {
     const trimmedName = name().trim();
     if (!trimmedName) {
-      setError("Name is required.");
+      setError(t().passkeyNameRequired);
       return;
     }
     props.close({ name: trimmedName, expiresAt: toInstant(expiresAt()) });
@@ -58,9 +63,9 @@ function ApiKeyCreateDialog(props: { close: (value: { name: string; expiresAt: s
       }}
     >
       <TextInput
-        label="Name"
-        description="Shown in your account so you can identify where this key is used."
-        placeholder="e.g. Desktop sync"
+        label={t().name}
+        description={t().apiKeyNameDescription}
+        placeholder={t().apiKeyNamePlaceholder}
         icon="ti ti-tag"
         value={name}
         onValueChange={(value) => {
@@ -71,25 +76,25 @@ function ApiKeyCreateDialog(props: { close: (value: { name: string; expiresAt: s
         required
       />
       <DateTimePicker
-        label="Expires"
-        description="Leave empty only for long-lived automation you actively maintain."
+        label={t().expires}
+        description={t().apiKeyExpiryDescription}
         value={expiresAt}
         onValueChange={setExpiresAt}
         clearable
         presets={[
-          { label: "30 days", value: presetDate(30) },
-          { label: "90 days", value: presetDate(90) },
-          { label: "1 year", value: presetDate(365) },
-          { label: "Never", value: null },
+          { label: t().days30, value: presetDate(30) },
+          { label: t().days90, value: presetDate(90) },
+          { label: t().year1, value: presetDate(365) },
+          { label: t().never, value: null },
         ]}
       />
       <div class="flex justify-end gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={() => props.close(null)}>
-          Cancel
+          {t().cancel}
         </Button>
         <Button type="submit" size="sm">
           <i class="ti ti-plus" />
-          Create key
+          {t().createKey}
         </Button>
       </div>
     </form>
@@ -97,6 +102,8 @@ function ApiKeyCreateDialog(props: { close: (value: { name: string; expiresAt: s
 }
 
 export default function ApiKeysSettings(props: Props) {
+  const locale = useLocale();
+  const t = () => accountMessages.resolve([locale()]).t;
   const [keys, setKeys] = createSignal<ServiceAccountCredential[]>(props.initialKeys);
   const rootClass = () => (props.surface === "section" ? "min-w-0" : "paper p-5");
 
@@ -107,13 +114,13 @@ export default function ApiKeysSettings(props: Props) {
     mutation: async (vars) => {
       const res = await apiClient.me["api-keys"].$post({ json: vars });
       const data = await res.json();
-      if (!res.ok) throw new Error((data as { message?: string }).message ?? "Failed to create API key.");
+      if (!res.ok) throw new Error(t().apiKeyCreateFailed);
       return data as { credential: ServiceAccountCredential; token: string };
     },
     onSuccess: async (data) => {
       setKeys([data.credential, ...keys()]);
       await prompts.dialog<void>(() => <TokenDialog token={data.token} />, {
-        title: "API key created",
+        title: t().apiKeyCreated,
         icon: "ti ti-key",
         size: "medium",
       });
@@ -126,8 +133,7 @@ export default function ApiKeysSettings(props: Props) {
     mutation: async (vars) => {
       const res = await apiClient.me["api-keys"][":id"].$delete({ param: { id: vars.id } });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message ?? "Failed to revoke API key.");
+        throw new Error(t().apiKeyRevokeFailed);
       }
     },
     onSuccess: (_, ctx) => {
@@ -139,17 +145,17 @@ export default function ApiKeysSettings(props: Props) {
   const openCreate = async () => {
     const result = await prompts.dialog<{ name: string; expiresAt: string | null } | null>(
       (close) => <ApiKeyCreateDialog close={close} />,
-      { title: "Create API key", icon: "ti ti-key", size: "medium" },
+      { title: t().createApiKey, icon: "ti ti-key", size: "medium" },
     );
     if (result) await createMutation.mutate(result);
   };
 
   const revoke = async (key: ServiceAccountCredential) => {
-    const confirmed = await prompts.confirm(`Revoke "${key.name}"? Applications using this key will lose access immediately.`, {
-      title: "Revoke API key",
+    const confirmed = await prompts.confirm(t().revokeApiKeyConfirm({ name: key.name }), {
+      title: t().revokeApiKey,
       icon: "ti ti-key-off",
       variant: "danger",
-      confirmText: "Revoke",
+      confirmText: t().revoke,
     });
     if (confirmed) await revokeMutation.mutate({ id: key.id, name: key.name });
   };
@@ -160,17 +166,17 @@ export default function ApiKeysSettings(props: Props) {
         <div>
           <h2 class="flex items-center gap-1.5 text-sm font-semibold text-primary">
             <i class="ti ti-key text-sm" />
-            API keys
+            {t().apiKeys}
           </h2>
-          <p class="mt-1 text-xs text-dimmed">Personal automation keys inherit your account permissions.</p>
+          <p class="mt-1 text-xs text-dimmed">{t().apiKeysDescription}</p>
         </div>
         <Button type="button" variant="secondary" size="sm" class="shrink-0" onClick={openCreate} disabled={createMutation.loading()}>
           <i class="ti ti-plus" />
-          Add
+          {t().add}
         </Button>
       </div>
 
-      <Show when={keys().length > 0} fallback={<Placeholder surface="paper" icon="ti ti-key" description={<>No API keys yet.</>} />}>
+      <Show when={keys().length > 0} fallback={<Placeholder surface="paper" icon="ti ti-key" description={<>{t().noApiKeys}</>} />}>
         <div class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-2">
           <For each={keys()}>
             {(key) => (
@@ -181,14 +187,20 @@ export default function ApiKeysSettings(props: Props) {
                     <span class="tag bg-zinc-100 text-dimmed dark:bg-zinc-800">{key.tokenPrefix}</span>
                   </div>
                   <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-dimmed">
-                    <span>Created {dates.formatDate(key.createdAt)}</span>
-                    <span>{key.expiresAt ? `Expires ${dates.formatDate(key.expiresAt)}` : "Never expires"}</span>
-                    <span>{key.lastUsedAt ? `Used ${dates.formatDateTimeRelative(key.lastUsedAt)}` : "Never used"}</span>
+                    <span>{t().created({ date: dates.formatDate(key.createdAt, { locale: locale() }) })}</span>
+                    <span>
+                      {key.expiresAt ? t().expiresOn({ date: dates.formatDate(key.expiresAt, { locale: locale() }) }) : t().neverExpires}
+                    </span>
+                    <span>
+                      {key.lastUsedAt
+                        ? t().used({ date: dates.formatDateTimeRelative(key.lastUsedAt, { locale: locale() }) })
+                        : t().neverUsed}
+                    </span>
                   </div>
                 </div>
                 <Button type="button" variant="ghost" size="sm" class="shrink-0 text-red-600 dark:text-red-400" onClick={() => revoke(key)}>
                   <i class="ti ti-trash" />
-                  Revoke
+                  {t().revoke}
                 </Button>
               </div>
             )}

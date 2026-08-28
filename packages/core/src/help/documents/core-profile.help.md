@@ -6,20 +6,20 @@ description: Account self-service, FreeIPA requests, API keys, passkeys, groups,
 order: 110
 ---
 
-The Profile page is the user's own account cockpit. It combines local Cloud data, optional FreeIPA data, and self-service account actions.
+The account area combines local Cloud data, optional FreeIPA data, and self-service actions for the signed-in user.
 
 ## Profile sections {icon="paperclip"}
 
 :::reference
 - **Identity:** Shows display name, uid, avatar, provider, profile type, supplemental roles, email, phone, address, account expiry, and password expiry when available.
-- **Groups:** Shows direct group membership by default. The page can switch to recursive group membership through the groups query parameter.
+- **Groups:** Shows direct group membership by default. **Show inherited** includes memberships inherited through the group hierarchy.
 - **FreeIPA request:** Local users can request a FreeIPA account when FreeIPA is enabled. Pending requests can be withdrawn from the same page.
-- **Activity:** Shows recent self-service audit activity for the selected time window.
+- **Activity:** Shows recent security-relevant account activity for the selected 7-, 30-, or 90-day period.
 :::
 
 ## Security controls {icon="shield-lock"}
 
 :::reference
-- **API keys:** Delegated service-account credentials owned by the user. Active keys can be managed from Profile.
-- **Passkeys:** WebAuthn passkeys attached to the signed-in user and used for passkey login.
+- **API keys:** Personal automation credentials that inherit the user's permissions. The full key is shown only once after creation.
+- **Passkeys:** WebAuthn passkeys attached to the signed-in user and used for passkey login. Removing one prevents future sign-in with that passkey.
 :::

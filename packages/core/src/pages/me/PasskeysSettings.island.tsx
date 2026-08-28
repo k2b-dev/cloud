@@ -1,10 +1,11 @@
 import { dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { Button, Placeholder, prompts, TextInput } from "@k2b/ui";
+import { Button, Placeholder, prompts, TextInput, useLocale } from "@k2b/ui";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
 import type { WebAuthnPasskey } from "@valentinkolb/cloud/contracts";
 import { createSignal, For, Show } from "solid-js";
+import { accountMessages } from "./messages";
 
 type Props = {
   initialPasskeys: WebAuthnPasskey[];
@@ -12,13 +13,15 @@ type Props = {
 };
 
 function PasskeyCreateDialog(props: { close: (value: { name: string } | null) => void }) {
+  const locale = useLocale();
+  const t = () => accountMessages.resolve([locale()]).t;
   const [name, setName] = createSignal("");
   const [error, setError] = createSignal<string | undefined>();
 
   const submit = () => {
     const trimmedName = name().trim();
     if (!trimmedName) {
-      setError("Name is required.");
+      setError(t().passkeyNameRequired);
       return;
     }
     props.close({ name: trimmedName });
@@ -33,9 +36,9 @@ function PasskeyCreateDialog(props: { close: (value: { name: string } | null) =>
       }}
     >
       <TextInput
-        label="Name"
-        description="Shown in your account so you can identify this passkey later."
-        placeholder="e.g. MacBook Touch ID"
+        label={t().name}
+        description={t().passkeyNameDescription}
+        placeholder={t().passkeyNamePlaceholder}
         icon="ti ti-tag"
         value={name}
         onValueChange={(value) => {
@@ -47,11 +50,11 @@ function PasskeyCreateDialog(props: { close: (value: { name: string } | null) =>
       />
       <div class="flex justify-end gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={() => props.close(null)}>
-          Cancel
+          {t().cancel}
         </Button>
         <Button type="submit" size="sm">
           <i class="ti ti-fingerprint" />
-          Add passkey
+          {t().addPasskey}
         </Button>
       </div>
     </form>
@@ -59,22 +62,24 @@ function PasskeyCreateDialog(props: { close: (value: { name: string } | null) =>
 }
 
 export default function PasskeysSettings(props: Props) {
+  const locale = useLocale();
+  const t = () => accountMessages.resolve([locale()]).t;
   const [passkeys, setPasskeys] = createSignal<WebAuthnPasskey[]>(props.initialPasskeys);
   const rootClass = () => (props.surface === "section" ? "min-w-0" : "paper p-5");
 
   const createMutation = mutations.create<WebAuthnPasskey, { name: string }>({
     mutation: async (vars) => {
-      if (!browserSupportsWebAuthn()) throw new Error("This browser does not support passkeys.");
+      if (!browserSupportsWebAuthn()) throw new Error(t().passkeysUnsupported);
       const optionsRes = await apiClient.me.passkeys.registration.start.$post();
       const options = await optionsRes.json();
-      if (!optionsRes.ok) throw new Error((options as { message?: string }).message ?? "Failed to start passkey registration.");
+      if (!optionsRes.ok) throw new Error(t().passkeyRegistrationFailed);
 
       const response = await startRegistration({ optionsJSON: options as never });
       const verifyRes = await apiClient.me.passkeys.registration.verify.$post({
         json: { name: vars.name, response },
       });
       const data = await verifyRes.json();
-      if (!verifyRes.ok) throw new Error((data as { message?: string }).message ?? "Failed to add passkey.");
+      if (!verifyRes.ok) throw new Error(t().passkeyAddFailed);
       return data as WebAuthnPasskey;
     },
     onSuccess: (passkey) => {
@@ -88,8 +93,7 @@ export default function PasskeysSettings(props: Props) {
     mutation: async (vars) => {
       const res = await apiClient.me.passkeys[":id"].$delete({ param: { id: vars.id } });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message ?? "Failed to delete passkey.");
+        throw new Error(t().passkeyDeleteFailed);
       }
     },
     onSuccess: (_, ctx) => {
@@ -100,7 +104,7 @@ export default function PasskeysSettings(props: Props) {
 
   const openCreate = async () => {
     const result = await prompts.dialog<{ name: string } | null>((close) => <PasskeyCreateDialog close={close} />, {
-      title: "Add passkey",
+      title: t().addPasskey,
       icon: "ti ti-fingerprint",
       size: "medium",
     });
@@ -108,11 +112,11 @@ export default function PasskeysSettings(props: Props) {
   };
 
   const remove = async (passkey: WebAuthnPasskey) => {
-    const confirmed = await prompts.confirm(`Delete "${passkey.name}"? This passkey will no longer sign in to your account.`, {
-      title: "Delete passkey",
+    const confirmed = await prompts.confirm(t().deletePasskeyConfirm({ name: passkey.name }), {
+      title: t().deletePasskey,
       icon: "ti ti-fingerprint-off",
       variant: "danger",
-      confirmText: "Delete",
+      confirmText: t().delete,
     });
     if (confirmed) await deleteMutation.mutate({ id: passkey.id, name: passkey.name });
   };
@@ -123,19 +127,19 @@ export default function PasskeysSettings(props: Props) {
         <div>
           <h2 class="flex items-center gap-1.5 text-sm font-semibold text-primary">
             <i class="ti ti-fingerprint text-sm" />
-            Passkeys
+            {t().passkeys}
           </h2>
-          <p class="mt-1 text-xs text-dimmed">Use device passkeys such as Touch ID, Windows Hello, or security keys to sign in.</p>
+          <p class="mt-1 text-xs text-dimmed">{t().passkeysDescription}</p>
         </div>
         <Button type="button" variant="secondary" size="sm" class="shrink-0" onClick={openCreate} disabled={createMutation.loading()}>
           <i class="ti ti-plus" />
-          Add
+          {t().add}
         </Button>
       </div>
 
       <Show
         when={passkeys().length > 0}
-        fallback={<Placeholder surface="paper" icon="ti ti-fingerprint" description={<>No passkeys yet.</>} />}
+        fallback={<Placeholder surface="paper" icon="ti ti-fingerprint" description={<>{t().noPasskeys}</>} />}
       >
         <div class="flex flex-col gap-1 rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-2">
           <For each={passkeys()}>
@@ -145,12 +149,16 @@ export default function PasskeysSettings(props: Props) {
                   <div class="flex min-w-0 items-center gap-2">
                     <span class="truncate text-sm font-medium text-primary">{passkey.name}</span>
                     {passkey.backedUp && (
-                      <span class="tag bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">synced</span>
+                      <span class="tag bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300">{t().synced}</span>
                     )}
                   </div>
                   <div class="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-dimmed">
-                    <span>Created {dates.formatDate(passkey.createdAt)}</span>
-                    <span>{passkey.lastUsedAt ? `Used ${dates.formatDateTimeRelative(passkey.lastUsedAt)}` : "Never used"}</span>
+                    <span>{t().created({ date: dates.formatDate(passkey.createdAt, { locale: locale() }) })}</span>
+                    <span>
+                      {passkey.lastUsedAt
+                        ? t().used({ date: dates.formatDateTimeRelative(passkey.lastUsedAt, { locale: locale() }) })
+                        : t().neverUsed}
+                    </span>
                     {passkey.transports.length > 0 && <span>{passkey.transports.join(", ")}</span>}
                   </div>
                 </div>
@@ -162,7 +170,7 @@ export default function PasskeysSettings(props: Props) {
                   onClick={() => remove(passkey)}
                 >
                   <i class="ti ti-trash" />
-                  Delete
+                  {t().delete}
                 </Button>
               </div>
             )}

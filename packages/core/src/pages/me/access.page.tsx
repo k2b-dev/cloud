@@ -1,16 +1,19 @@
 import { dates } from "@k2b/stdlib";
-import { NoticeCard, ButtonLink } from "@k2b/ui";
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { ButtonLink, NoticeCard } from "@k2b/ui";
+import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
 import { accountsAppService, coreSettings } from "@valentinkolb/cloud/services";
 import { canManageAnyGroups } from "@valentinkolb/cloud/shared";
 import { getRuntimeContext, hasDedicatedRuntimeRoute, Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import AccountHub, { AccountPageHeader, AccountProfileActions } from "./AccountHub";
+import { accountMessages } from "./messages";
 import RequestFreeIpaAccount from "./RequestFreeIpaAccount.island";
 import WithdrawAccountRequest from "./WithdrawAccountRequest.island";
 
 export default ssr<AuthContext>(async (c) => {
   const user = c.get("user");
+  const locale = getLocale(c);
+  const { t } = accountMessages.resolve([locale]);
   const [rawAppName, freeIpaEnabledRaw] = await Promise.all([
     coreSettings.get<string>("app.name"),
     coreSettings.get<boolean>("freeipa.enable"),
@@ -27,18 +30,18 @@ export default ssr<AuthContext>(async (c) => {
   const canManageGroups = canManageAnyGroups(user);
 
   return () => (
-    <Layout c={c} title={[{ title: "Start", href: "/" }, { title: "Account", href: "/me" }, { title: "Access" }]}>
+    <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.access }]}>
       <AccountHub user={user} active="access">
         <div class="flex flex-col gap-2">
           <AccountPageHeader
-            title="Access and groups"
-            description="Review your account provider, memberships, delegated management, and access lifecycle."
+            title={t.accessAndGroups}
+            description={t.accessDescription}
             actions={
               <div class="flex flex-wrap items-center gap-2">
                 {accountsUiAvailable && (
                   <ButtonLink href="/app/accounts/groups" variant="secondary" size="sm">
                     <i class="ti ti-users-group" />
-                    Browse groups
+                    {t.browseGroups}
                   </ButtonLink>
                 )}
                 <AccountProfileActions user={user} appName={appName} freeIpaEnabled={freeIpaEnabled} actions={["extend"]} />
@@ -49,15 +52,15 @@ export default ssr<AuthContext>(async (c) => {
           <section class="paper p-5 sm:p-6">
             <div class="grid gap-5 sm:grid-cols-3">
               <div>
-                <p class="section-label mb-1">Provider</p>
-                <p class="text-sm font-medium text-primary">{user.provider === "ipa" ? "FreeIPA" : "Local account"}</p>
+                <p class="section-label mb-1">{t.provider}</p>
+                <p class="text-sm font-medium text-primary">{user.provider === "ipa" ? "FreeIPA" : t.localAccount}</p>
               </div>
               <div>
-                <p class="section-label mb-1">Direct memberships</p>
+                <p class="section-label mb-1">{t.directMemberships}</p>
                 <p class="text-sm font-medium text-primary">{directGroups.length}</p>
               </div>
               <div>
-                <p class="section-label mb-1">Managed groups</p>
+                <p class="section-label mb-1">{t.managedGroups}</p>
                 <p class="text-sm font-medium text-primary">{user.manages.length}</p>
               </div>
             </div>
@@ -66,13 +69,13 @@ export default ssr<AuthContext>(async (c) => {
           {user.provider === "local" && (freeIpaEnabled || pendingRequest) && (
             <section class="paper p-5 sm:p-6">
               <div class="mb-4">
-                <h3 class="text-sm font-semibold text-primary">FreeIPA account</h3>
-                <p class="mt-1 text-xs text-dimmed">Request a centrally managed account for broader group-based access.</p>
+                <h3 class="text-sm font-semibold text-primary">{t.freeIpaAccount}</h3>
+                <p class="mt-1 text-xs text-dimmed">{t.freeIpaAccountDescription}</p>
               </div>
               {pendingRequest ? (
                 <div class="flex flex-col gap-3">
                   <NoticeCard tone="info" icon={false}>
-                    Request pending since {dates.formatDate(pendingRequest.createdAt.toISOString())}.
+                    {t.requestPendingSince({ date: dates.formatDate(pendingRequest.createdAt.toISOString(), { locale }) })}
                   </NoticeCard>
                   <div class="flex justify-end">
                     <WithdrawAccountRequest />
@@ -96,13 +99,13 @@ export default ssr<AuthContext>(async (c) => {
             <div class="paper p-5 sm:p-6">
               <div class="mb-4 flex items-start justify-between gap-3">
                 <div>
-                  <h3 class="text-sm font-semibold text-primary">Group memberships</h3>
-                  <p class="mt-1 text-xs text-dimmed">Direct and inherited access visible to your account.</p>
+                  <h3 class="text-sm font-semibold text-primary">{t.groupMemberships}</h3>
+                  <p class="mt-1 text-xs text-dimmed">{t.groupMembershipsDescription}</p>
                 </div>
                 {displayGroups.length > 0 && (
                   <ButtonLink href={showAllGroups ? "/me/access" : "/me/access?groups=all"} variant="ghost" size="sm" class="shrink-0">
                     <i class="ti ti-git-branch" />
-                    {showAllGroups ? "Direct only" : "Show inherited"}
+                    {showAllGroups ? t.directOnly : t.showInherited}
                   </ButtonLink>
                 )}
               </div>
@@ -125,28 +128,26 @@ export default ssr<AuthContext>(async (c) => {
                       <a
                         href={`/app/accounts/groups?scope=member&search=${encodeURIComponent(group)}`}
                         class={`${className} transition-colors hover:text-primary`}
-                        title={isDirect ? "Direct membership" : "Inherited via group hierarchy"}
+                        title={isDirect ? t.directMembership : t.inheritedMembership}
                       >
                         {label}
                       </a>
                     ) : (
-                      <span class={className} title={isDirect ? "Direct membership" : "Inherited via group hierarchy"}>
+                      <span class={className} title={isDirect ? t.directMembership : t.inheritedMembership}>
                         {label}
                       </span>
                     );
                   })}
                 </div>
               ) : (
-                <p class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-4 text-xs text-dimmed">
-                  You are not a member of any groups yet.
-                </p>
+                <p class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-4 text-xs text-dimmed">{t.noGroups}</p>
               )}
             </div>
 
             <div class="paper p-5 sm:p-6">
               <div class="mb-4">
-                <h3 class="text-sm font-semibold text-primary">Delegated management</h3>
-                <p class="mt-1 text-xs text-dimmed">Groups you can manage for other members.</p>
+                <h3 class="text-sm font-semibold text-primary">{t.delegatedManagement}</h3>
+                <p class="mt-1 text-xs text-dimmed">{t.delegatedManagementDescription}</p>
               </div>
               {canManageGroups && user.manages.length > 0 ? (
                 <div class="flex flex-wrap gap-1.5">
@@ -164,9 +165,7 @@ export default ssr<AuthContext>(async (c) => {
                   )}
                 </div>
               ) : (
-                <p class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-4 text-xs text-dimmed">
-                  You do not manage any groups.
-                </p>
+                <p class="rounded-[var(--ui-radius-surface)] bg-[var(--ui-surface-subtle)] p-4 text-xs text-dimmed">{t.noManagedGroups}</p>
               )}
             </div>
           </section>

@@ -1,9 +1,11 @@
+import { dates } from "@k2b/stdlib";
 import { mutation as mutations } from "@k2b/stdlib/solid";
-import { NoticeCard, Button, prompts, TextInput } from "@k2b/ui";
+import { Button, NoticeCard, prompts, TextInput, useLocale } from "@k2b/ui";
 import { openAvatarUploadDialog } from "@valentinkolb/cloud/account/ui";
 import { apiClient } from "@valentinkolb/cloud/clients/core";
 import type { UserProfile, UserProvider } from "@valentinkolb/cloud/contracts";
 import { createSignal, For, Show } from "solid-js";
+import { accountMessages } from "./messages";
 
 type Props = {
   userId: string;
@@ -33,24 +35,24 @@ type Props = {
 const SSH_KEY_PATTERN = /^(ssh-(rsa|ed25519|dss)|ecdsa-sha2-nistp(256|384|521))\s+[A-Za-z0-9+/=]+/;
 
 export default function ProfileActions(props: Props) {
+  const locale = useLocale();
+  const t = () => accountMessages.resolve([locale()]).t;
   const isIpa = props.provider === "ipa" && props.freeIpaEnabled;
   const canMutateAccount = props.provider !== "ipa" || props.freeIpaEnabled;
-  const holders = props.appName ? `${props.appName} account holders` : "all account holders";
+  const holders = () => (props.appName ? t().holdersNamed({ appName: props.appName }) : t().holdersAll);
 
   const saveAvatar = async (dataUrl: string) => {
     const res = await apiClient.me.avatar.$put({ json: { dataUrl } });
     if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.message ?? "Failed to update avatar.");
+      throw new Error(t().failedToUpdateAvatar);
     }
     window.location.reload();
   };
 
   const removeAvatar = async () => {
     const res = await apiClient.me.avatar.$delete();
-    const data = await res.json();
     if (!res.ok) {
-      throw new Error(data.message ?? "Failed to remove avatar.");
+      throw new Error(t().failedToRemoveAvatar);
     }
     window.location.reload();
   };
@@ -60,7 +62,28 @@ export default function ProfileActions(props: Props) {
       username: props.displayName || props.uid,
       userId: props.userId,
       avatarHash: props.avatarHash,
-      visibilityText: "Your profile picture is visible to all account holders.",
+      title: t().changeAvatar,
+      visibilityText: t().avatarVisibility,
+      saveLabel: t().save,
+      subtitle: t().avatarSubtitle,
+      messages: {
+        processFailed: t().avatarProcessFailed,
+        typeInvalid: t().avatarTypeInvalid,
+        tooLarge: t().avatarTooLarge,
+        empty: t().avatarEmpty,
+        unsupported: t().avatarUnsupported,
+        compressionFailed: t().avatarCompressionFailed,
+        saveFailed: t().avatarSaveFailed,
+        removeFailed: t().avatarRemoveFailed,
+        replaceDrop: t().avatarReplaceDrop,
+        chooseDrop: t().avatarChooseDrop,
+        cropHint: t().avatarCropHint,
+        removing: t().avatarRemoving,
+        remove: t().removeAvatar,
+        removeAria: t().removeAvatar,
+        cancel: t().cancel,
+        saving: t().avatarSaving,
+      },
       onSave: saveAvatar,
       onRemove: props.avatarHash ? removeAvatar : undefined,
     });
@@ -72,8 +95,7 @@ export default function ProfileActions(props: Props) {
     mutation: async (vars) => {
       const res = await apiClient.me.$patch({ json: vars });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message ?? "Failed to update profile.");
+        throw new Error(t().failedToUpdateProfile);
       }
     },
     onSuccess: () => window.location.reload(),
@@ -82,42 +104,42 @@ export default function ProfileActions(props: Props) {
 
   const handleEditProfile = async () => {
     const result = await prompts.form({
-      title: "Edit Profile",
+      title: t().editProfile,
       icon: "ti ti-pencil",
-      confirmText: "Save",
+      confirmText: t().save,
       fields: {
         notice: {
           type: "info" as const,
           content: () => (
             <NoticeCard tone="warning" icon={false}>
-              By accepting the terms of service you agreed to use your real name. Misuse will be penalized.
+              {t().realNameNotice}
             </NoticeCard>
           ),
         },
         visibility: {
           type: "info" as const,
-          content: () => <p class="text-xs text-dimmed">Your name and display name are visible to {holders}.</p>,
+          content: () => <p class="text-xs text-dimmed">{t().identityVisibility({ holders: holders() })}</p>,
         },
         givenname: {
           type: "text" as const,
-          label: "First Name",
-          placeholder: "First name...",
+          label: t().firstName,
+          placeholder: t().firstNamePlaceholder,
           icon: "ti ti-user",
           required: true,
           default: props.givenname,
         },
         sn: {
           type: "text" as const,
-          label: "Last Name",
-          placeholder: "Last name...",
+          label: t().lastName,
+          placeholder: t().lastNamePlaceholder,
           icon: "ti ti-user",
           required: true,
           default: props.sn,
         },
         displayName: {
           type: "text" as const,
-          label: "Display Name",
-          placeholder: "Display name...",
+          label: t().displayName,
+          placeholder: t().displayNamePlaceholder,
           icon: "ti ti-id-badge-2",
           required: true,
           default: props.displayName,
@@ -144,8 +166,7 @@ export default function ProfileActions(props: Props) {
     mutation: async (vars) => {
       const res = await apiClient.me.$patch({ json: vars });
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message ?? "Failed to update details.");
+        throw new Error(t().failedToUpdateDetails);
       }
     },
     onSuccess: () => window.location.reload(),
@@ -170,11 +191,11 @@ export default function ProfileActions(props: Props) {
           const key = newKey().trim();
           if (!key) return;
           if (!SSH_KEY_PATTERN.test(key)) {
-            setKeyError("Invalid SSH public key format. Paste the content of your .pub file.");
+            setKeyError(t().invalidSshKey);
             return;
           }
           if (keys().includes(key)) {
-            setKeyError("This key is already added.");
+            setKeyError(t().duplicateSshKey);
             return;
           }
           setKeys([...keys(), key]);
@@ -193,38 +214,44 @@ export default function ProfileActions(props: Props) {
 
         return (
           <div class="flex flex-col gap-5">
-            <p class="text-xs text-dimmed">Phone, address, and SSH key fingerprints are visible to {holders}.</p>
+            <p class="text-xs text-dimmed">{t().detailVisibility({ holders: holders() })}</p>
 
             <div class="flex flex-col gap-3">
-              <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">Contact</span>
-              <TextInput label="Phone" placeholder="Phone number..." icon="ti ti-phone" value={phone} onValueChange={setPhone} />
+              <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">{t().contact}</span>
+              <TextInput label={t().phone} placeholder={t().phonePlaceholder} icon="ti ti-phone" value={phone} onValueChange={setPhone} />
             </div>
 
             <Show when={isIpa}>
               <div class="flex flex-col gap-3">
-                <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">Address</span>
+                <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">{t().address}</span>
                 <div class="grid gap-3 sm:grid-cols-2">
                   <div class="sm:col-span-2">
                     <TextInput
-                      label="Street"
-                      placeholder="Street and house number..."
+                      label={t().street}
+                      placeholder={t().streetPlaceholder}
                       icon="ti ti-road"
                       value={street}
                       onValueChange={setStreet}
                     />
                   </div>
                   <TextInput
-                    label="Postal Code"
-                    placeholder="e.g. 89081"
+                    label={t().postalCode}
+                    placeholder={t().postalCodePlaceholder}
                     icon="ti ti-hash"
                     value={postalCode}
                     onValueChange={setPostalCode}
                   />
-                  <TextInput label="City" placeholder="e.g. Ulm" icon="ti ti-building-community" value={city} onValueChange={setCity} />
+                  <TextInput
+                    label={t().city}
+                    placeholder={t().cityPlaceholder}
+                    icon="ti ti-building-community"
+                    value={city}
+                    onValueChange={setCity}
+                  />
                   <div class="sm:col-span-2">
                     <TextInput
-                      label="State"
-                      placeholder="e.g. Baden-Wuerttemberg"
+                      label={t().state}
+                      placeholder={t().statePlaceholder}
                       icon="ti ti-map"
                       value={state}
                       onValueChange={setState}
@@ -234,14 +261,16 @@ export default function ProfileActions(props: Props) {
               </div>
 
               <div class="flex flex-col gap-3">
-                <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">SSH Keys</span>
+                <span class="text-[11px] uppercase tracking-[0.14em] text-dimmed">{t().sshKeys}</span>
                 <NoticeCard tone="info" icon={false} bodyClass="flex flex-col gap-1">
                   <p>
-                    Connect via <code class="bg-zinc-200 dark:bg-zinc-700 px-1 rounded text-[11px]">ssh {props.uid}@host-ip</code>
+                    {t().connectVia} <code class="bg-zinc-200 dark:bg-zinc-700 px-1 rounded text-[11px]">ssh {props.uid}@host-ip</code>
                   </p>
                   <p>
-                    Generate: <code class="bg-zinc-200 dark:bg-zinc-700 px-1 rounded text-[11px]">ssh-keygen -t ed25519</code>, then paste{" "}
-                    <code class="bg-zinc-200 dark:bg-zinc-700 px-1 rounded text-[11px]">~/.ssh/id_ed25519.pub</code>
+                    {t().generateSshKey} <code class="bg-zinc-200 dark:bg-zinc-700 px-1 rounded text-[11px]">ssh-keygen -t ed25519</code>
+                  </p>
+                  <p>
+                    {t().pasteSshKey} <code class="bg-zinc-200 dark:bg-zinc-700 px-1 rounded text-[11px]">~/.ssh/id_ed25519.pub</code>
                   </p>
                 </NoticeCard>
                 <Show when={keys().length > 0}>
@@ -263,8 +292,8 @@ export default function ProfileActions(props: Props) {
                               size="sm"
                               onClick={() => setKeys(keys().filter((_, idx) => idx !== i()))}
                               class="shrink-0 text-red-500 hover:text-red-700 dark:hover:text-red-400"
-                              title="Remove key"
-                              aria-label={`Remove ${info.comment || info.type} SSH key`}
+                              title={t().removeKey}
+                              aria-label={t().removeNamedSshKey({ name: info.comment || info.type })}
                             >
                               <i class="ti ti-trash text-sm" />
                             </Button>
@@ -290,7 +319,7 @@ export default function ProfileActions(props: Props) {
                   </Show>
                   <Button type="button" variant="secondary" size="sm" onClick={addKey} class="self-end">
                     <i class="ti ti-plus text-sm" />
-                    Add Key
+                    {t().addKey}
                   </Button>
                 </div>
               </div>
@@ -298,7 +327,7 @@ export default function ProfileActions(props: Props) {
 
             <div class="flex justify-end gap-3 pt-1">
               <Button type="button" variant="secondary" size="sm" onClick={() => close(undefined)}>
-                Cancel
+                {t().cancel}
               </Button>
               <Button
                 type="button"
@@ -307,13 +336,13 @@ export default function ProfileActions(props: Props) {
                   close({ phone: phone(), street: street(), postalCode: postalCode(), city: city(), state: state(), sshKeys: keys() })
                 }
               >
-                Save
+                {t().save}
               </Button>
             </div>
           </div>
         );
       },
-      { title: "Contact & Details", icon: "ti ti-address-book", size: "large" },
+      { title: t().contactAndDetails, icon: "ti ti-address-book", size: "large" },
     );
 
     if (!result) return;
@@ -347,15 +376,19 @@ export default function ProfileActions(props: Props) {
 
   // ── Extend Account ──
 
-  const extendMutation = mutations.create<void, void>({
+  const extendMutation = mutations.create<{ newExpiry?: string }, void>({
     mutation: async () => {
       const res = await apiClient.me["account-extension"].$post();
       if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message ?? "Failed to extend account.");
+        throw new Error(t().failedToExtendAccount);
       }
-      const data = await res.json();
-      await prompts.alert(data.message ?? "Account extended.");
+      const result = await res.json();
+      await prompts.alert(
+        result.newExpiry
+          ? t().accountExtendedUntil({ date: dates.formatDate(result.newExpiry, { locale: locale() }) })
+          : t().accountExtensionNotApplied,
+      );
+      return result;
     },
     onSuccess: () => window.location.reload(),
     onError: (err) => prompts.error(err.message),
@@ -366,21 +399,21 @@ export default function ProfileActions(props: Props) {
     {
       id: "avatar" as const,
       icon: "ti ti-camera",
-      label: "Change Avatar",
+      label: t().changeAvatar,
       action: () => void handleChangeAvatar(),
     },
     ...(canMutateAccount
-      ? [{ id: "profile" as const, icon: "ti ti-pencil", label: "Edit Profile", action: () => void handleEditProfile() }]
+      ? [{ id: "profile" as const, icon: "ti ti-pencil", label: t().editProfile, action: () => void handleEditProfile() }]
       : []),
     ...(isIpa
-      ? [{ id: "details" as const, icon: "ti ti-address-book", label: "Contact & SSH Details", action: () => void handleEditDetails() }]
+      ? [{ id: "details" as const, icon: "ti ti-address-book", label: t().contactAndSshDetails, action: () => void handleEditDetails() }]
       : []),
     ...(canMutateAccount
       ? [
           {
             id: "extend" as const,
             icon: "ti ti-calendar-plus",
-            label: extendMutation.loading() ? "Extending..." : "Extend Account",
+            label: extendMutation.loading() ? t().extending : t().extendAccount,
             action: () => void extendMutation.mutate(),
           },
         ]

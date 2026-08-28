@@ -1,20 +1,22 @@
 import { navigateTo } from "@k2b/ssr/nav";
-import { FilterChip, type FilterChipSection } from "@k2b/ui";
+import { FilterChip, type FilterChipSection, useLocale } from "@k2b/ui";
 import type { NotificationDeliveryStatus } from "@valentinkolb/cloud/contracts";
-
-const STATUS_OPTIONS: FilterChipSection[] = [
-  {
-    options: [
-      { value: "all", label: "All", icon: "ti ti-list" },
-      { value: "delivered", label: "Delivered", icon: "ti ti-check" },
-      { value: "pending", label: "Pending", icon: "ti ti-clock" },
-      { value: "failed", label: "Failed", icon: "ti ti-alert-triangle" },
-      { value: "suppressed", label: "Not sent", icon: "ti ti-bell-off" },
-    ],
-  },
-];
+import { accountMessages } from "./messages";
 
 export default function NotificationHistoryFilters(props: { status?: NotificationDeliveryStatus }) {
+  const locale = useLocale();
+  const t = () => accountMessages.resolve([locale()]).t;
+  const statusOptions = (): FilterChipSection[] => [
+    {
+      options: [
+        { value: "all", label: t().all, icon: "ti ti-list" },
+        { value: "delivered", label: t().delivered, icon: "ti ti-check" },
+        { value: "pending", label: t().pending, icon: "ti ti-clock" },
+        { value: "failed", label: t().failed, icon: "ti ti-alert-triangle" },
+        { value: "suppressed", label: t().notSent, icon: "ti ti-bell-off" },
+      ],
+    },
+  ];
   const setStatus = (value: string) => {
     const params = new URLSearchParams(window.location.search);
     params.delete("page");
@@ -26,9 +28,9 @@ export default function NotificationHistoryFilters(props: { status?: Notificatio
 
   return (
     <FilterChip
-      label="Status"
+      label={t().status}
       icon="ti ti-filter"
-      options={STATUS_OPTIONS}
+      options={statusOptions()}
       value={[props.status ?? "all"]}
       onValueChange={(value) => setStatus(value[0] ?? "all")}
       isActive={props.status !== undefined}

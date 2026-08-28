@@ -1,9 +1,10 @@
-import type { AuthContext } from "@valentinkolb/cloud/server";
+import { type AuthContext, getLocale } from "@valentinkolb/cloud/server";
 import { audit, coreSettings, webauthn } from "@valentinkolb/cloud/services";
 import { Layout } from "@valentinkolb/cloud/ssr";
 import { ssr } from "../../config";
 import AccountActivity from "./AccountActivity.island";
 import AccountHub, { AccountPageHeader } from "./AccountHub";
+import { accountMessages } from "./messages";
 import PasskeysSettings from "./PasskeysSettings.island";
 import ProfileSettings from "./ProfileSettings.island";
 
@@ -15,6 +16,7 @@ const parseActivityDays = (value: string | undefined): 7 | 30 | 90 => {
 
 export default ssr<AuthContext>(async (c) => {
   const user = c.get("user");
+  const { t } = accountMessages.resolve([getLocale(c)]);
   const activityDays = parseActivityDays(c.req.query("activityDays"));
   const [freeIpaEnabledRaw, passkeys, activityPage] = await Promise.all([
     coreSettings.get<boolean>("freeipa.enable"),
@@ -23,13 +25,10 @@ export default ssr<AuthContext>(async (c) => {
   ]);
 
   return () => (
-    <Layout c={c} title={[{ title: "Start", href: "/" }, { title: "Account", href: "/me" }, { title: "Security" }]}>
+    <Layout c={c} title={[{ title: t.start, href: "/" }, { title: t.account, href: "/me" }, { title: t.security }]}>
       <AccountHub user={user} active="security">
         <div class="flex flex-col gap-2">
-          <AccountPageHeader
-            title="Security"
-            description="Manage sign-in methods, your current session, and security-relevant account activity."
-          />
+          <AccountPageHeader title={t.security} description={t.securityDescription} />
           <PasskeysSettings initialPasskeys={passkeys} />
           <ProfileSettings provider={user.provider} profile={user.profile} freeIpaEnabled={Boolean(freeIpaEnabledRaw)} />
           <AccountActivity initialItems={activityPage.items} days={activityDays} />
