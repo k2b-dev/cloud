@@ -14,4 +14,13 @@ describe("proxyAuthHelp", () => {
     expect(proxyAuthHelp.getMarkdown("proxy-auth-setup")).toContain("Create a Proxy Auth client");
     expect(proxyAuthHelp.getMarkdown("proxy-auth-troubleshooting")).toContain("A successful Cloud login proves");
   });
+
+  test("translates every article to German with regional fallback", () => {
+    expect(proxyAuthHelp.documentsByLocale?.de?.map((document) => document.id)).toEqual(
+      proxyAuthHelp.documentsByLocale?.en?.map((document) => document.id),
+    );
+    expect(proxyAuthHelp.getMarkdown("proxy-auth-start", "de-CH")).toBe(proxyAuthHelp.getMarkdown("proxy-auth-start", "de"));
+    expect(proxyAuthHelp.getMarkdown("proxy-auth-start", "de-CH")).toContain("Mit Proxy Auth schützen");
+    expect(proxyAuthHelp.getMarkdown("proxy-auth-start", "fr")).toBe(proxyAuthHelp.getMarkdown("proxy-auth-start"));
+  });
 });

@@ -1,7 +1,10 @@
 import { defineHelp } from "@valentinkolb/cloud/server";
-import admin from "./documents/faq-admin.help.md" with { type: "text" };
-import start from "./documents/faq-start.help.md" with { type: "text" };
+import adminDe from "./documents/de/faq-admin.help.md" with { type: "text" };
+import startDe from "./documents/de/faq-start.help.md" with { type: "text" };
+import admin from "./documents/en/faq-admin.help.md" with { type: "text" };
+import start from "./documents/en/faq-start.help.md" with { type: "text" };
 
 export const faqHelp = defineHelp({
-  documents: [start, admin],
+  baseLocale: "en",
+  documents: { en: [start, admin], de: [startDe, adminDe] },
 });

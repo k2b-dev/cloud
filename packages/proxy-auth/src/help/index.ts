@@ -1,8 +1,12 @@
 import { defineHelp } from "@valentinkolb/cloud/server";
-import setup from "./documents/proxy-auth-setup.help.md" with { type: "text" };
-import start from "./documents/proxy-auth-start.help.md" with { type: "text" };
-import troubleshoot from "./documents/proxy-auth-troubleshooting.help.md" with { type: "text" };
+import setupDe from "./documents/de/proxy-auth-setup.help.md" with { type: "text" };
+import startDe from "./documents/de/proxy-auth-start.help.md" with { type: "text" };
+import troubleshootDe from "./documents/de/proxy-auth-troubleshooting.help.md" with { type: "text" };
+import setup from "./documents/en/proxy-auth-setup.help.md" with { type: "text" };
+import start from "./documents/en/proxy-auth-start.help.md" with { type: "text" };
+import troubleshoot from "./documents/en/proxy-auth-troubleshooting.help.md" with { type: "text" };
 
 export const proxyAuthHelp = defineHelp({
-  documents: [start, setup, troubleshoot],
+  baseLocale: "en",
+  documents: { en: [start, setup, troubleshoot], de: [startDe, setupDe, troubleshootDe] },
 });

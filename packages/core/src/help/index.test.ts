@@ -17,11 +17,16 @@ describe("coreHelp", () => {
     expect(coreHelp.getMarkdown("core-admin")).toContain("Core admin pages configure platform services");
   });
 
-  test("serves the account help in German with regional fallback", () => {
+  test("serves every article in German with regional fallback", () => {
+    expect(coreHelp.documentsByLocale?.de?.map((document) => document.id)).toEqual(
+      coreHelp.documentsByLocale?.en?.map((document) => document.id),
+    );
     expect(coreHelp.getMarkdown("core-profile", "de-CH")).toBe(coreHelp.getMarkdown("core-profile", "de"));
+    expect(coreHelp.getMarkdown("core-start", "de-CH")).toContain("Core besitzt die plattformweiten Seiten");
     expect(coreHelp.getMarkdown("core-profile", "de-CH")).toContain("Der Kontobereich bündelt lokale Cloud-Daten");
     expect(coreHelp.getMarkdown("core-security", "de-CH")).toContain("API-Schlüssel wie Passwörter");
     expect(coreHelp.getMarkdown("core-notifications", "de-CH")).toContain("Zustellverlauf prüfen");
-    expect(coreHelp.getMarkdown("core-admin", "de-CH")).toContain("Core admin pages configure platform services");
+    expect(coreHelp.getMarkdown("core-admin", "de-CH")).toContain("Die Core-Administrationsseiten konfigurieren Plattformdienste");
+    expect(coreHelp.getMarkdown("core-start", "fr")).toBe(coreHelp.getMarkdown("core-start"));
   });
 });

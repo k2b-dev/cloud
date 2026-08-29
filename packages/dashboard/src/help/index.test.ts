@@ -12,4 +12,13 @@ describe("dashboardHelp", () => {
     expect(startHtml).toContain("<span>Overview</span>");
     expect(dashboardHelp.getMarkdown("dashboard-troubleshooting")).toContain("App shortcuts can disappear");
   });
+
+  test("translates every article to German with regional fallback", () => {
+    expect(dashboardHelp.documentsByLocale?.de?.map((document) => document.id)).toEqual(
+      dashboardHelp.documentsByLocale?.en?.map((document) => document.id),
+    );
+    expect(dashboardHelp.getMarkdown("dashboard-start", "de-CH")).toBe(dashboardHelp.getMarkdown("dashboard-start", "de"));
+    expect(dashboardHelp.getMarkdown("dashboard-start", "de-CH")).toContain("Dashboard ist deine persönliche Startseite");
+    expect(dashboardHelp.getMarkdown("dashboard-start", "fr")).toBe(dashboardHelp.getMarkdown("dashboard-start"));
+  });
 });
