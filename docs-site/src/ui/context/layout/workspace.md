@@ -90,7 +90,8 @@ behavior. Section headers and their actions are hidden with the compact rail
 and mobile section layout, so expose an equivalent reachable action in those
 compositions. On hover-capable fine pointers, section actions remain quiet
 until the header is hovered or contains keyboard focus. They remain visible on
-touch and coarse-pointer devices.
+touch and coarse-pointer devices. An open dropdown keeps its section action
+visible and interactive until the menu closes.
 
 Section titles are quiet sentence-case labels. Keep them short and let the
 navigation rows carry the stronger visual emphasis.

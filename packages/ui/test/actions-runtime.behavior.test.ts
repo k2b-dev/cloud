@@ -393,15 +393,15 @@ describe("@k2b/ui action runtime behavior", () => {
     const dom = createDomTestHarness();
     installPopoverStub();
     const { SelectChip } = await import("../src/inputs/SelectChip");
-    let setValue: (value: string) => void = () => {};
     let openDuringChange: boolean | undefined;
 
     const dispose = render(() => {
       const [value, updateValue] = createSignal("comfortable");
-      setValue = updateValue;
       return createComponent(SelectChip, {
         "aria-label": "Density",
         value,
+        icon: "ti ti-adjustments",
+        iconOnly: true,
         onValueChange: (nextValue: string) => {
           openDuringChange = dom.root.querySelector<HTMLElement>(".k2b-dropdown__menu")?.matches(":popover-open");
           updateValue(nextValue);
@@ -414,22 +414,20 @@ describe("@k2b/ui action runtime behavior", () => {
       });
     }, dom.root);
 
-    dom.root.querySelector<HTMLButtonElement>(".k2b-select-chip")?.click();
+    const trigger = dom.root.querySelector<HTMLButtonElement>(".k2b-dropdown__trigger");
+    trigger?.click();
     await flush();
+    expect(trigger?.getAttribute("aria-expanded")).toBe("true");
     const options = Array.from(dom.root.querySelectorAll<HTMLButtonElement>("[role='menuitemradio']"));
     expect(options.map((option) => option.getAttribute("aria-checked"))).toEqual(["false", "true", "false"]);
     expect(options[2]?.disabled).toBe(true);
 
     const compact = options[0];
-    compact?.focus();
-    setValue("compact");
+    compact?.click();
     expect(dom.root.querySelectorAll("[role='menuitemradio']")[0]).toBe(compact);
     expect(compact?.getAttribute("aria-checked")).toBe("true");
-
-    options[1]?.click();
-
     expect(openDuringChange).toBe(false);
-    expect(dom.root.querySelector(".k2b-select-chip")?.getAttribute("aria-expanded")).toBe("false");
+    expect(trigger?.getAttribute("aria-expanded")).toBe("false");
 
     dispose();
     dom.cleanup();

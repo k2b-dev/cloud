@@ -214,7 +214,7 @@ describe("@k2b/ui complete advanced layout migrations", () => {
 
     expect(css).toContain("@media (hover: hover) and (pointer: fine)");
     expect(css).toContain(".k2b-app-workspace__sidebar-section-actions");
-    expect(css).toContain(".k2b-app-workspace__sidebar-section-header:is(:hover, :focus-within)");
+    expect(css).toContain(':has(.k2b-dropdown__trigger[aria-expanded="true"])');
     expect(css).toContain('.k2b-app-workspace__sidebar-item-action[data-visibility="hover"]');
     expect(css).toContain('.k2b-app-workspace__sidebar-item-meta[data-visibility="hover"]');
     expect(css).toContain('.k2b-app-workspace__sidebar-item-actions[data-visibility="hover"]');
