@@ -8,6 +8,8 @@ order: 120
 
 Spaces funktioniert am besten, wenn jeder Eintrag einen klaren nächsten Schritt beschreibt. Halte Titel kurz, ergänze den Kontext in den Notizen und kennzeichne den Arbeitsstand durch Status oder Datumsangaben. Verwende Termine, wenn die Arbeit hauptsächlich im Kalender geplant wird.
 
+Beim Erstellen eines Eintrags wählt Spaces anhand der aktuellen Ansicht zunächst Aufgabe oder Termin aus. Du kannst den Typ oben im Dialog wechseln. Das kompakte Formular fragt nach Titel und Beschreibung, bei Terminen zusätzlich nach der Zeit. Unter **Weitere Optionen** findest du alle Felder für Aufgaben oder Termine, ohne deine Eingaben zu verlieren. Eine Aufgabe verwendet den Status, in dem du sie erstellst, oder den ersten Status, wenn keiner ausgewählt ist.
+
 ## Einträge sinnvoll strukturieren {icon="point"}
 
 :::reference

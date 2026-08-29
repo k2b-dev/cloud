@@ -20,6 +20,7 @@ import { AssignedToFilterSchema, type CalendarItem, ItemTypeSchema, PrioritySche
 import { readResponseError } from "../../../lib/response";
 import { spaceMessages, useSpaceMessages } from "../../messages";
 import ItemForm, { type ItemFormData } from "../shared/ItemForm";
+import { itemCreateDialogOptions } from "../shared/item-form/dialog";
 import { invalidateSpacesData, requestSpacesRouteNavigation } from "../workspace/workspace-events";
 import { type CalendarFilter, defaultCalendarFilter, writeCalendarFilter } from "./filter";
 import type { CalendarProps, CalendarView } from "./types";
@@ -481,16 +482,17 @@ export default function Calendar(props: CalendarProps) {
       updateSubmitting = false;
     }
   };
-  const createEvent = mutations.create<void, ItemFormData>({
+  const createEvent = mutations.create<SpaceItem, ItemFormData>({
     mutation: async (intent) => {
       const res = await apiClient[":id"].items.$post({
         param: { id: props.spaceId },
         json: { ...normalizeCreatePayload(intent) },
       });
-      if (!res.ok) throw new Error(await readResponseError(res, t.eventCreateFailed));
+      if (!res.ok) throw new Error(await readResponseError(res, t.createItemFailed));
+      return res.json();
     },
-    onSuccess: () => {
-      toast.success(t.eventCreated);
+    onSuccess: (item) => {
+      toast.success(item.startsAt && item.endsAt ? t.eventCreated : t.taskCreated);
       reconcileAfterWrite();
     },
     onError: (error) => prompts.error(error.message),
@@ -516,12 +518,10 @@ export default function Calendar(props: CalendarProps) {
             }}
             onSubmit={(data) => close(data)}
             onCancel={() => close(null)}
-            title={t.newEvent}
-            icon="ti ti-calendar-plus"
             dateConfig={props.dateConfig}
           />
         ),
-        panelDialogOptions,
+        itemCreateDialogOptions,
       );
       if (intent) void createEvent.mutate(intent);
     } finally {

@@ -8,6 +8,8 @@ order: 120
 
 Spaces works best when each item has a clear next action. Keep item titles short, put context in notes, and use status or dates to make queues obvious. Use events when the calendar view should carry the work.
 
+When you create an item, Spaces initially selects a task or event based on the current view. You can switch the type at the top of the dialog. The compact form asks for a title and description; events also require their schedule. Choose **More options** for the complete task or event fields without losing what you entered. A task uses the status where you started creating it, or the first status when none was selected.
+
 ## Good item structure {icon="point"}
 
 :::reference

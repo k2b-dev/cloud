@@ -81,12 +81,11 @@ export default function ItemForm(props: ItemFormProps) {
   const [assignees, setAssignees] = createSignal<SpaceItemAssignee[]>(props.item?.assignees ?? []);
   const [selectedTags, setSelectedTags] = createSignal<string[]>(props.item?.tags?.map((t) => t.id) ?? props.defaults?.tagIds ?? []);
   const [error, setError] = createSignal("");
-  const [showFullEditor, setShowFullEditor] = createSignal(!props.quickCreate || isEditMode() || itemType() !== "event");
-  const [showQuickDescription, setShowQuickDescription] = createSignal(Boolean(description()));
-  const [showQuickEventDetails, setShowQuickEventDetails] = createSignal(Boolean(location() || url()));
+  const [showFullEditor, setShowFullEditor] = createSignal(!props.quickCreate || isEditMode());
 
   const isEvent = () => itemType() === "event";
   const defaultTitle = () => (isEditMode() ? (isEvent() ? t.editEvent : t.editTask) : isEvent() ? t.newEvent : t.newTask);
+  const defaultIcon = () => (isEditMode() ? "ti ti-pencil" : isEvent() ? "ti ti-calendar-plus" : "ti ti-square-plus");
   const defaultSubmitLabel = () => (isEditMode() ? (isEvent() ? t.saveEvent : t.saveTask) : isEvent() ? t.createEvent : t.createTask);
   const eventRange = () =>
     allDay() ? dateOnlyRange(startsAt(), endsAt(), props.dateConfig) : { start: startsAt() || null, end: endsAt() || null };
@@ -112,24 +111,6 @@ export default function ItemForm(props: ItemFormProps) {
 
   const defaultColumnId = () => props.columns[0]?.id ?? "";
   const quickCreate = () => props.quickCreate && !isEditMode() && !showFullEditor();
-  const quickRecurrenceValue = () => {
-    if (!recurrenceEnabled()) return "never";
-    if (
-      recurrenceInterval() === 1 &&
-      recurrenceByDay().length === 0 &&
-      recurrenceEndMode() === "never" &&
-      !recurrenceUntil() &&
-      !recurrenceCount()
-    ) {
-      return recurrenceFrequency();
-    }
-    return "custom";
-  };
-  const quickRecurrenceOptions = [
-    { id: "never", label: t.doesNotRepeat, icon: "ti ti-calendar-off" },
-    ...recurrenceFrequencyOptions(props.dateConfig),
-    { id: "custom", label: t.custom, icon: "ti ti-adjustments" },
-  ];
 
   const toggleRecurrenceDay = (day: string) => {
     setRecurrenceByDay((prev) => (prev.includes(day) ? prev.filter((value) => value !== day) : [...prev, day]));
@@ -148,33 +129,9 @@ export default function ItemForm(props: ItemFormProps) {
     }
   };
 
-  const handleQuickRecurrenceChange = (value: string | null) => {
-    if (!value || value === "never") {
-      handleRecurrenceEnabled(false);
-      return;
-    }
-    handleRecurrenceEnabled(true);
-    if (value === "custom") {
-      setShowFullEditor(true);
-      return;
-    }
-    setRecurrenceFrequency(value as RecurrenceFrequency);
-    setRecurrenceInterval(1);
-    setRecurrenceByDay([]);
-    setRecurrenceEndMode("never");
-    setRecurrenceUntil("");
-    setRecurrenceCount(null);
-  };
-
   const handleTypeChange = (type: ItemType) => {
     setItemType(type);
-    if (type === "task") {
-      setStartsAt("");
-      setEndsAt("");
-    } else {
-      setDeadline("");
-      setEstimatedDurationMinutes(null);
-    }
+    setError("");
   };
 
   const handleAllDayChange = (enabled: boolean) => {
@@ -275,32 +232,29 @@ export default function ItemForm(props: ItemFormProps) {
 
   return (
     <PanelDialog>
-      <form onSubmit={handleSubmit} class="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <PanelDialog.Header title={props.title ?? defaultTitle()} icon={props.icon ?? "ti ti-pencil"} close={props.onCancel} />
+      <form
+        onSubmit={handleSubmit}
+        class="spaces-item-form flex min-h-0 flex-1 flex-col overflow-hidden"
+        data-presentation={quickCreate() ? "compact" : "full"}
+      >
+        <PanelDialog.Header title={props.title ?? defaultTitle()} icon={props.icon ?? defaultIcon()} close={props.onCancel} />
         <PanelDialog.Body>
+          <Show when={!isEditMode()}>
+            <SegmentedControl
+              ariaLabel={t.type}
+              options={[
+                { value: "task" as const, label: t.task, icon: "ti ti-checkbox" },
+                { value: "event" as const, label: t.event, icon: "ti ti-calendar-event" },
+              ]}
+              value={itemType}
+              onValueChange={handleTypeChange}
+            />
+          </Show>
           <Show
             when={quickCreate()}
             fallback={
               <>
                 <PanelDialog.Section title={t.general} subtitle={t.generalDescription} icon="ti ti-info-circle">
-                  <Show when={!isEditMode() && !props.quickCreate}>
-                    <div>
-                      <p class="mb-1 block text-sm font-medium">{t.type}</p>
-                      <p class="mb-2 text-xs text-dimmed">{t.typeDescription}</p>
-                      <SegmentedControl
-                        options={[
-                          { value: "task" as const, label: t.task, icon: "ti ti-checkbox" },
-                          {
-                            value: "event" as const,
-                            label: t.event,
-                            icon: "ti ti-calendar-event",
-                          },
-                        ]}
-                        value={itemType}
-                        onValueChange={handleTypeChange}
-                      />
-                    </div>
-                  </Show>
                   <TextInput
                     label={t.title}
                     description={!isEditMode() ? t.titleDescription : undefined}
@@ -570,6 +524,15 @@ export default function ItemForm(props: ItemFormProps) {
                 required
               />
 
+              <TextInput
+                label={t.description}
+                placeholder={t.markdownDescriptionPlaceholder}
+                value={description}
+                onValueChange={setDescription}
+                multiline
+                lines={3}
+              />
+
               <Show when={isEvent()}>
                 <DateRangePicker
                   withTime={!allDay()}
@@ -589,76 +552,7 @@ export default function ItemForm(props: ItemFormProps) {
                 />
 
                 <Switch label={t.allDayEvent} value={allDay} onValueChange={handleAllDayChange} />
-
-                <Select
-                  label={t.repeat}
-                  icon="ti ti-repeat"
-                  value={quickRecurrenceValue}
-                  onValueChange={handleQuickRecurrenceChange}
-                  options={quickRecurrenceOptions}
-                />
-
-                <Show when={recurrenceEnabled()}>
-                  <div
-                    class="flex items-start gap-2 rounded-lg bg-zinc-50 px-3 py-2.5 text-sm text-zinc-700 dark:bg-zinc-900/50 dark:text-zinc-300"
-                    role="status"
-                    aria-live="polite"
-                    aria-atomic="true"
-                  >
-                    <i class="ti ti-calendar-repeat mt-0.5 shrink-0 text-blue-600 dark:text-blue-400" aria-hidden="true" />
-                    <span>{recurrenceSummary()}</span>
-                  </div>
-                </Show>
               </Show>
-
-              <Show when={showQuickDescription()}>
-                <TextInput
-                  label={t.description}
-                  placeholder={t.markdownDescriptionPlaceholder}
-                  value={description}
-                  onValueChange={setDescription}
-                  markdown
-                />
-              </Show>
-
-              <Show when={isEvent() && showQuickEventDetails()}>
-                <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <TextInput
-                    label={t.location}
-                    placeholder={t.locationPlaceholder}
-                    icon="ti ti-map-pin"
-                    value={location}
-                    onValueChange={setLocation}
-                  />
-                  <TextInput
-                    label={t.url}
-                    placeholder="https://..."
-                    icon="ti ti-link"
-                    type="url"
-                    inputMode="url"
-                    value={url}
-                    onValueChange={(value) => {
-                      setUrl(value);
-                      setError("");
-                    }}
-                  />
-                </div>
-              </Show>
-
-              <div class="flex flex-wrap items-center gap-1">
-                <Show when={!showQuickDescription()}>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setShowQuickDescription(true)}>
-                    <i class="ti ti-align-left" aria-hidden="true" />
-                    {t.addDescription}
-                  </Button>
-                </Show>
-                <Show when={isEvent() && !showQuickEventDetails()}>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => setShowQuickEventDetails(true)}>
-                    <i class="ti ti-map-pin" aria-hidden="true" />
-                    {t.addLocationOrLink}
-                  </Button>
-                </Show>
-              </div>
             </div>
           </Show>
 
